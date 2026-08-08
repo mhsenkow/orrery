@@ -1,0 +1,77 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ORRERY — foundations prototype</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html,body { margin:0; height:100%; background:#05060a; overflow:hidden;
+    font: 13px/1.5 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; color:#dfe6f2; }
+  canvas { display:block; width:100%; height:100%; touch-action:none; }
+  #ui { position:fixed; inset:0; pointer-events:none; padding:16px;
+        display:flex; flex-direction:column; justify-content:space-between; }
+  #ui.hidden { display:none; }
+  .row { display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap; }
+  .panel { pointer-events:auto; background:rgba(10,13,22,.72); backdrop-filter:blur(14px);
+           border:1px solid rgba(140,170,255,.16); border-radius:12px; padding:12px 14px; max-width:360px; }
+  h1 { font-size:13px; letter-spacing:.22em; text-transform:uppercase; margin:0 0 2px; color:#9fc0ff; font-weight:600; }
+  .sub { font-size:11.5px; color:#7f8ca6; margin:0 0 10px; }
+  button { pointer-events:auto; font:inherit; font-size:12px; color:#dfe6f2; cursor:pointer;
+    background:rgba(255,255,255,.055); border:1px solid rgba(140,170,255,.22);
+    border-radius:8px; padding:7px 11px; transition:background .13s, border-color .13s; }
+  button:hover { background:rgba(140,170,255,.16); border-color:rgba(140,170,255,.45); }
+  button[aria-pressed="true"] { background:#2f5fd0; border-color:#5b8cff; color:#fff; }
+  #vrbtn { background:#2f5fd0; border-color:#5b8cff; color:#fff; font-weight:600; letter-spacing:.02em; }
+  #vrbtn:disabled { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.12);
+                    color:#6a7488; cursor:default; }
+  .rules, .tools { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:10px; }
+  .tools button { font-size:11px; padding:5px 8px; }
+  .stats { font:11.5px/1.65 ui-monospace, SFMono-Regular, Menlo, monospace; color:#8fa0bd; }
+  .stats b { color:#cfe0ff; font-weight:500; }
+  .tier { margin-top:9px; padding-top:9px; border-top:1px solid rgba(140,170,255,.14); font-size:11.5px; }
+  .tier span { color:#9fc0ff; letter-spacing:.1em; text-transform:uppercase; font-size:10.5px; }
+  .hint { font-size:11.5px; color:#6f7c93; }
+  kbd { font:inherit; font-size:10.5px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);
+        border-radius:4px; padding:1px 5px; }
+  #inspect { display:none; margin-top:8px; font:12px/1.55 ui-monospace, Menlo, monospace; color:#b8c8e0;
+             max-width:320px; }
+  #err { position:fixed; left:50%; bottom:22px; transform:translateX(-50%); pointer-events:none;
+         background:rgba(180,40,50,.92); padding:9px 15px; border-radius:9px; font-size:12.5px;
+         opacity:0; transition:opacity .3s; max-width:80vw; text-align:center; }
+  #err.show { opacity:1; }
+</style>
+<canvas id="c"></canvas>
+<div id="ui">
+  <div class="row">
+    <div class="panel">
+      <h1>Orrery</h1>
+      <p class="sub">Plates · gases · water budget · evolution · chronicle · WebXR</p>
+      <div class="rules" id="rules"></div>
+      <div class="row" style="gap:6px;margin-bottom:8px">
+        <button id="newseed">New seed</button>
+        <button id="pause" aria-pressed="false">Pause</button>
+        <button id="budget" aria-pressed="false">Budget</button>
+        <button id="autopilot" aria-pressed="false">Gaia</button>
+        <button id="export">Chronicle</button>
+        <button id="vrbtn" disabled>Checking VR…</button>
+      </div>
+      <div class="tools" id="tools"></div>
+    </div>
+    <div class="panel" style="max-width:280px">
+      <div class="stats" id="stats"></div>
+      <div class="tier" id="tier"></div>
+      <div id="inspect"></div>
+    </div>
+  </div>
+  <div class="row">
+    <div class="panel">
+      <p class="hint" style="margin:0">
+        <b style="color:#9fc0ff">Desktop</b> — drag spin · scroll zoom · click tool on planet ·
+        <kbd>1</kbd>–<kbd>5</kbd> ruleset · <kbd>+/−</kbd> solar · <kbd>R</kbd> reseed · <kbd>space</kbd> pause<br>
+        <b style="color:#9fc0ff">In VR</b> — trigger rolls · both grips scale · grip-click uses tool · throw meteor with velocity · A/X cycles ruleset<br>
+        Gaia orb colour = planetary health. Right-click / selected tool paints the surface.
+      </p>
+    </div>
+  </div>
+</div>
+<div id="err"></div>
+<script type="module" src="./main.js"></script>

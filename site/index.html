@@ -1,0 +1,713 @@
+<meta charset="utf-8">
+<title>ORRERY — Program Briefs</title>
+<style>
+/* ---------------------------------------------------------------- tokens */
+:root{
+  --ground:#0c0f16; --panel:#151a24; --panel2:#1b2231; --rule:#252d3d;
+  --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688;
+  --accent:#e0a050; --accent-soft:rgba(224,160,80,.13); --accent-line:rgba(224,160,80,.34);
+  --crit:#e0554d; --crit-soft:rgba(224,85,77,.15);
+  --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 32px -18px rgba(0,0,0,.9);
+  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  --measure:68ch;
+}
+@media (prefers-color-scheme: light){
+  :root{
+    --ground:#eef0f3; --panel:#ffffff; --panel2:#f5f6f9; --rule:#d9dde5;
+    --text:#12151c; --dim:#4e5768; --faint:#727d90;
+    --accent:#9a5f14; --accent-soft:rgba(154,95,20,.09); --accent-line:rgba(154,95,20,.3);
+    --crit:#b4342c; --crit-soft:rgba(180,52,44,.09);
+    --shadow:0 1px 2px rgba(20,26,40,.05), 0 10px 30px -20px rgba(20,26,40,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0c0f16; --panel:#151a24; --panel2:#1b2231; --rule:#252d3d;
+  --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688;
+  --accent:#e0a050; --accent-soft:rgba(224,160,80,.13); --accent-line:rgba(224,160,80,.34);
+  --crit:#e0554d; --crit-soft:rgba(224,85,77,.15);
+  --shadow:0 1px 0 rgba(255,255,255,.03), 0 8px 32px -18px rgba(0,0,0,.9);
+}
+:root[data-theme="light"]{
+  --ground:#eef0f3; --panel:#ffffff; --panel2:#f5f6f9; --rule:#d9dde5;
+  --text:#12151c; --dim:#4e5768; --faint:#727d90;
+  --accent:#9a5f14; --accent-soft:rgba(154,95,20,.09); --accent-line:rgba(154,95,20,.3);
+  --crit:#b4342c; --crit-soft:rgba(180,52,44,.09);
+  --shadow:0 1px 2px rgba(20,26,40,.05), 0 10px 30px -20px rgba(20,26,40,.35);
+}
+
+*{box-sizing:border-box;}
+body{margin:0;background:var(--ground);color:var(--text);
+     font:400 16px/1.62 var(--sans); -webkit-font-smoothing:antialiased;}
+::selection{background:var(--accent-soft);}
+
+/* ---------------------------------------------------------------- layout */
+.shell{display:grid; grid-template-columns:225px minmax(0,1fr); gap:0; max-width:1180px; margin:0 auto;}
+.rail{position:sticky; top:0; height:100vh; padding:38px 22px 38px 26px;
+      border-right:1px solid var(--rule); display:flex; flex-direction:column; gap:26px; overflow-y:auto;}
+.main{padding:38px 40px 120px; min-width:0;}
+@media (max-width:900px){
+  .shell{grid-template-columns:minmax(0,1fr);}
+  .rail{position:static; height:auto; border-right:0; border-bottom:1px solid var(--rule); padding:24px 22px;}
+  .main{padding:28px 22px 80px;}
+}
+
+/* ------------------------------------------------------------------ rail */
+.mark{font:600 13px/1 var(--mono); letter-spacing:.3em; color:var(--accent); text-transform:uppercase;}
+.mark small{display:block; font:400 10.5px/1.5 var(--mono); letter-spacing:.14em; color:var(--faint); margin-top:7px;}
+.nav{display:flex; flex-direction:column; gap:1px;}
+.nav a{display:flex; gap:9px; align-items:baseline; text-decoration:none; color:var(--dim);
+       font:400 12.5px/1.45 var(--sans); padding:5px 8px; border-radius:5px; border-left:2px solid transparent;}
+.nav a code{font:500 10px/1 var(--mono); color:var(--faint); letter-spacing:.05em; min-width:34px;}
+.nav a:hover{color:var(--text); background:var(--panel);}
+.nav a.on{color:var(--accent); border-left-color:var(--accent); background:var(--accent-soft);}
+.nav a.on code{color:var(--accent);}
+.nav-h{font:500 10px/1 var(--mono); letter-spacing:.2em; text-transform:uppercase;
+       color:var(--faint); padding:14px 8px 6px;}
+.railfoot{margin-top:auto; font:400 11px/1.6 var(--mono); color:var(--faint);}
+
+/* --------------------------------------------------------------- masthead */
+.masthead{border-bottom:1px solid var(--rule); padding-bottom:30px; margin-bottom:38px;}
+.eyebrow{font:500 10.5px/1 var(--mono); letter-spacing:.24em; text-transform:uppercase; color:var(--accent);}
+h1{font:700 clamp(38px,6.2vw,60px)/1.02 var(--sans); letter-spacing:-.035em;
+   margin:16px 0 0; text-wrap:balance;}
+.thesis{font:italic 400 clamp(19px,2.6vw,24px)/1.45 var(--serif); color:var(--text);
+        margin:22px 0 0; max-width:34ch; text-wrap:balance;}
+.metagrid{display:grid; grid-template-columns:repeat(auto-fit,minmax(132px,1fr)); gap:1px;
+          background:var(--rule); border:1px solid var(--rule); border-radius:7px;
+          overflow:hidden; margin-top:30px;}
+.metagrid div{background:var(--panel); padding:11px 13px;}
+.metagrid dt{font:500 9.5px/1 var(--mono); letter-spacing:.16em; text-transform:uppercase; color:var(--faint);}
+.metagrid dd{margin:7px 0 0; font:500 13px/1.3 var(--mono); color:var(--text);
+             font-variant-numeric:tabular-nums;}
+
+/* --------------------------------------------------------------- sections */
+section{padding-top:52px; scroll-margin-top:20px;}
+.sechead{display:flex; align-items:baseline; gap:12px; border-bottom:1px solid var(--rule);
+         padding-bottom:11px; margin-bottom:26px;}
+.sechead code{font:500 10.5px/1 var(--mono); letter-spacing:.14em; color:var(--accent);
+              background:var(--accent-soft); border:1px solid var(--accent-line);
+              padding:4px 7px; border-radius:4px; white-space:nowrap;}
+.sechead h2{font:650 24px/1.2 var(--sans); letter-spacing:-.022em; margin:0; text-wrap:balance;}
+h3{font:600 16.5px/1.3 var(--sans); letter-spacing:-.012em; margin:34px 0 0;}
+h4{font:500 10.5px/1 var(--mono); letter-spacing:.18em; text-transform:uppercase;
+   color:var(--faint); margin:28px 0 0;}
+p{margin:13px 0 0; max-width:var(--measure); color:var(--dim);}
+p strong, li strong{color:var(--text); font-weight:600;}
+.lede{font-size:17.5px; color:var(--text);}
+ul{margin:13px 0 0; padding-left:19px; max-width:var(--measure); color:var(--dim);}
+li{margin:7px 0;}
+li::marker{color:var(--accent);}
+a{color:var(--accent); text-decoration-thickness:1px; text-underline-offset:2px;}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:3px;}
+
+/* ----------------------------------------------------------------- tables */
+.tw{overflow-x:auto; margin-top:20px; border:1px solid var(--rule); border-radius:8px; background:var(--panel);}
+table{border-collapse:collapse; width:100%; min-width:520px; font-size:13.5px;}
+th{font:500 9.5px/1.3 var(--mono); letter-spacing:.15em; text-transform:uppercase; color:var(--faint);
+   text-align:left; padding:11px 14px; border-bottom:1px solid var(--rule); white-space:nowrap;
+   background:var(--panel2);}
+td{padding:11px 14px; border-bottom:1px solid var(--rule); color:var(--dim); vertical-align:top;}
+tr:last-child td{border-bottom:0;}
+td strong{color:var(--text);}
+td code{font:500 11px/1 var(--mono); color:var(--accent);}
+.num{font-variant-numeric:tabular-nums; font-family:var(--mono); font-size:12.5px; white-space:nowrap;}
+
+/* chip — severity is red-only so it never reads as the accent */
+.sev{display:inline-block; font:600 9.5px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase;
+     padding:4px 7px; border-radius:3px; white-space:nowrap;}
+.sev.c{background:var(--crit); color:#fff;}
+.sev.h{background:var(--crit-soft); color:var(--crit); border:1px solid var(--crit);}
+.sev.m{background:transparent; color:var(--faint); border:1px solid var(--rule);}
+
+/* ------------------------------------------------------------------ notes */
+.note{margin-top:22px; padding:15px 17px; background:var(--panel); border:1px solid var(--rule);
+      border-left:2px solid var(--accent); border-radius:0 7px 7px 0; max-width:var(--measure);}
+.note p{margin:0; font-size:14.5px;}
+.note p + p{margin-top:10px;}
+.note .lbl{font:500 9.5px/1 var(--mono); letter-spacing:.18em; text-transform:uppercase;
+           color:var(--accent); display:block; margin-bottom:9px;}
+.gate{border-left-color:var(--crit);}
+.gate .lbl{color:var(--crit);}
+
+/* ------------------------------------------------------------------ figure */
+.fig{margin-top:26px; border:1px solid var(--rule); border-radius:9px; background:var(--panel);
+     overflow:hidden; box-shadow:var(--shadow);}
+.figbody{position:relative; background:
+  radial-gradient(120% 90% at 50% 15%, var(--panel2) 0%, var(--panel) 62%);}
+canvas{display:block; width:100%; height:auto;}
+.figbar{display:flex; flex-wrap:wrap; align-items:center; gap:16px;
+        padding:12px 15px; border-top:1px solid var(--rule); background:var(--panel2);}
+.ctl{display:flex; align-items:center; gap:9px;}
+.ctl label{font:500 9.5px/1 var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--faint);}
+input[type=range]{width:132px; accent-color:var(--accent); background:transparent;}
+.tog{font:500 11px/1 var(--mono); letter-spacing:.04em; color:var(--dim); cursor:pointer;
+     background:transparent; border:1px solid var(--rule); border-radius:5px; padding:7px 10px;}
+.tog[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent);}
+.figcap{padding:13px 15px; border-top:1px solid var(--rule);
+        font:400 12.5px/1.6 var(--mono); color:var(--faint);}
+.figcap b{color:var(--dim); font-weight:500;}
+.readout{margin-left:auto; font:500 11px/1 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums;}
+
+/* ------------------------------------------------------------------- cta */
+.cta{margin-top:26px; border:1px solid var(--accent-line); border-radius:9px;
+     background:linear-gradient(180deg,var(--accent-soft),transparent); padding:22px 24px;}
+.cta h3{margin:0; font-size:18px;}
+.cta p{max-width:60ch;}
+.btn{display:inline-block; margin-top:16px; font:500 12.5px/1 var(--mono); letter-spacing:.06em;
+     text-decoration:none; color:var(--ground); background:var(--accent);
+     padding:11px 16px; border-radius:6px;}
+.btn:hover{filter:brightness(1.09);}
+.btn.ghost{background:transparent; color:var(--accent); border:1px solid var(--accent-line); margin-left:9px;}
+pre{margin-top:14px; overflow-x:auto; background:var(--panel); border:1px solid var(--rule);
+    border-radius:7px; padding:13px 15px; font:400 12.5px/1.65 var(--mono); color:var(--dim);}
+pre b{color:var(--accent); font-weight:500;}
+
+.kv{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+    background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden; margin-top:22px;}
+.kv > div{background:var(--panel); padding:14px 15px;}
+.kv dt{font:500 9.5px/1 var(--mono); letter-spacing:.15em; text-transform:uppercase; color:var(--faint);}
+.kv dd{margin:9px 0 0; font:600 21px/1 var(--sans); letter-spacing:-.02em; color:var(--text);
+       font-variant-numeric:tabular-nums;}
+.kv dd small{display:block; font:400 11.5px/1.5 var(--mono); color:var(--faint);
+             letter-spacing:0; margin-top:7px;}
+
+footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
+       font:400 12px/1.7 var(--mono); color:var(--faint); max-width:var(--measure);}
+
+@media (prefers-reduced-motion: reduce){ *{animation:none !important; transition:none !important;} }
+</style>
+
+<div class="shell">
+<nav class="rail">
+  <div class="mark">Orrery<small>Program briefs · v0.1</small></div>
+  <div class="nav" id="nav">
+    <a href="#substrate"><code>FIG 1</code><span>The cube sphere</span></a>
+    <div class="nav-h">Product design</div>
+    <a href="#thesis"><code>PD 1</code><span>Thesis &amp; why now</span></a>
+    <a href="#player"><code>PD 3</code><span>Player &amp; core loop</span></a>
+    <a href="#pillars"><code>PD 5</code><span>Design pillars</span></a>
+    <a href="#scale"><code>PD 6</code><span>The scale transition</span></a>
+    <a href="#vector"><code>PD 7</code><span>Extruded vector</span></a>
+    <a href="#rulesets"><code>PD 8</code><span>Rulesets</span></a>
+    <a href="#nongoals"><code>PD 9</code><span>Non-goals</span></a>
+    <a href="#drisk"><code>PD 10</code><span>Risk &amp; kill criteria</span></a>
+    <div class="nav-h">Engineering</div>
+    <a href="#arch"><code>EN 1</code><span>System thesis</span></a>
+    <a href="#spec"><code>EN 2</code><span>Cube-sphere spec</span></a>
+    <a href="#layers"><code>EN 3</code><span>Layer architecture</span></a>
+    <a href="#voxel"><code>EN 6</code><span>Voxel skin</span></a>
+    <a href="#budget"><code>EN 7</code><span>Frame budget</span></a>
+    <a href="#platform"><code>EN 8</code><span>Platform decision</span></a>
+    <a href="#plan"><code>EN 9</code><span>Milestones &amp; staffing</span></a>
+    <a href="#erisk"><code>EN 11</code><span>Risk register</span></a>
+    <div class="nav-h">Built</div>
+    <a href="#proto"><code>P 0</code><span>Live prototype</span></a>
+    <a href="https://claude.ai/code/artifact/220b7f00-e527-462b-88b7-989a16e022e9" target="_blank" rel="noopener"><code>BL</code><span>Backlog — 200 items</span></a>
+  </div>
+  <div class="railfoot">Draft for review<br>2026-08-08</div>
+</nav>
+
+<main class="main">
+
+<header class="masthead">
+  <div class="eyebrow">Program proposal · confidential draft</div>
+  <h1>Orrery</h1>
+  <p class="thesis">A god game whose god is embodied. You hold a planet in your hands — and when you want to know what is happening on it, you shrink and walk in.</p>
+  <dl class="metagrid">
+    <div><dt>Codename</dt><dd>ORRERY</dd></div>
+    <div><dt>Status</dt><dd>Draft</dd></div>
+    <div><dt>Target</dt><dd>Standalone XR</dd></div>
+    <div><dt>Slice 1</dt><dd>~10 weeks</dd></div>
+    <div><dt>Peak team</dt><dd>4</dd></div>
+  </dl>
+  <p class="lede">Two companion briefs — product design and engineering — plus a working WebXR prototype of the substrate they both depend on. The second sentence of the thesis is the entire product; everything below is in service of making that descent feel inevitable rather than menu-driven.</p>
+</header>
+
+<!-- ============================================================ FIGURE 1 -->
+<section id="substrate">
+  <div class="sechead"><code>FIG 1</code><h2>One data structure carries the whole product</h2></div>
+  <p>Six square faces, projected onto a sphere. Commit to this and most of the hard problems in the concept stop being hard — simulation becomes 2D array code, agent navigation becomes a navmesh on six squares instead of a sphere, and the renderer's level-of-detail tree turns out to be the same mechanism as the product's information design.</p>
+  <p>Scrub the morph. Then toggle the tangent adjustment and watch what happens to the grid near the face edges — that is the decision the rest of the engineering brief rests on.</p>
+
+  <figure class="fig">
+    <div class="figbody"><canvas id="cs" width="1600" height="820" aria-label="Interactive diagram: a cube subdivided into a grid morphing into a sphere"></canvas></div>
+    <div class="figbar">
+      <div class="ctl"><label for="morph">Cube → sphere</label><input type="range" id="morph" min="0" max="100" value="100"></div>
+      <button class="tog" id="warp" aria-pressed="true">Tangent adjustment: ON</button>
+      <button class="tog" id="spin" aria-pressed="true">Rotate</button>
+      <span class="readout" id="ro"></span>
+    </div>
+    <figcaption class="figcap">
+      <b>Uniform grid parameter</b> s ∈ [−1,1] &nbsp;→&nbsp; <b>cube coordinate</b> u = tan(s·π/4).
+      tan(π/4) = 1, so the range is preserved and equal steps in s become equal steps in angle.
+      Turn it off and cells crowd toward the face edges, where dθ/du falls to half its value at face centre.
+    </figcaption>
+  </figure>
+
+  <div class="kv">
+    <div><dt>Cells, prototype</dt><dd>24,576<small>6 × 64² — 48× the 1990 original</small></dd></div>
+    <div><dt>Area distortion</dt><dd>1.40×<small>measured 0.843–1.178; naive mapping ≈1.9×</small></dd></div>
+    <div><dt>Seam groups welded</dt><dd>764<small>12 edges × 63, plus 8 three-way corners</small></dd></div>
+    <div><dt>Σ cell area</dt><dd>4π<small>rel. error 3.7 × 10⁻⁵</small></dd></div>
+  </div>
+</section>
+
+<!-- ================================================================= PD 1 -->
+<section id="thesis">
+  <div class="sechead"><code>PD 1</code><h2>Why this, why now</h2></div>
+  <p><strong>The category is dormant and the appetite is proven.</strong> SimEarth established planetary simulation as a genre in 1990 and then nobody meaningfully advanced it for thirty-five years. WorldBox — a 2D pixel map with sprite agents and almost no production value — has sold millions of copies. The demand signal is unambiguous and the supply is a decade behind.</p>
+  <p><strong>VR has exactly one superpower flat screens cannot replicate: scale.</strong> Not immersion, not presence, not 6DoF input — scale. The felt difference between holding something and standing inside it. God games are definitionally games about being large. This is the clearest genre/platform fit in VR and nobody has cashed it in.</p>
+  <p><strong>The art cost that historically killed this genre is now avoidable.</strong> Planetary sims need thousands of visually distinct entities, which used to require an art department. Vector-native entity art plus procedural rulesets means a small team can ship breadth.</p>
+</section>
+
+<!-- ================================================================= PD 3 -->
+<section id="player">
+  <div class="sechead"><code>PD 3</code><h2>Three archetypes, one simulation</h2></div>
+  <p>The dial between them is which tools we hand you, not which content we build.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Archetype</th><th>Reference</th><th>Wants</th><th>Fails if</th></tr></thead>
+    <tbody>
+      <tr><td><strong>The Tinkerer</strong></td><td>Kerbal, Factorio, Dwarf Fortress</td><td>Systems that bite back; legible causality</td><td>The sim is decorative — inputs don't propagate visibly</td></tr>
+      <tr><td><strong>The Gardener</strong></td><td>Animal Crossing, Viridi</td><td>A place worth returning to; slow change</td><td>Sessions demand constant input; nothing persists</td></tr>
+      <tr><td><strong>The Vandal</strong></td><td>WorldBox, Powder Toy</td><td>Immediate spectacular consequence</td><td>Destruction is abstracted into a number instead of a place</td></tr>
+    </tbody>
+  </table></div>
+  <p>The Vandal is the acquisition channel — it clips well. The Gardener is the retention engine. The Tinkerer writes the wiki and keeps the game alive for four years. We need all three, and the same simulation serves all three if, and only if, consequences are <strong>spatial</strong> rather than statistical.</p>
+
+  <h3>Core loop — about 90 seconds, repeatable indefinitely</h3>
+  <p><strong>Observe</strong> the planet at chest height: climate bands, ice extent, where life has taken hold. <strong>Perturb</strong> it with one deliberate act — raise a landmass, tilt the axis, drop a rock, seed a species. <strong>Descend</strong> and go look; this beat does not exist in any prior game in the genre. <strong>Read</strong> what your perturbation actually did — a coastline drowned, a herd migrating, a forest at its new treeline. <strong>Return</strong> with new intent.</p>
+  <div class="note"><span class="lbl">The failure mode</span>
+    <p>The loop fails if the descent is a camera move. It has to be a journey, and it has to be cheap enough to do forty times an hour.</p></div>
+</section>
+
+<!-- ================================================================= PD 5 -->
+<section id="pillars">
+  <div class="sechead"><code>PD 5</code><h2>Design pillars</h2></div>
+  <h3>The planet is an object, not a level</h3>
+  <p>It has a location in your room. It occludes. You can lean around it. You can set it down. It keeps running when you aren't looking at it. Everything that makes a level feel like software — a fixed frame, a UI border, a pause state — is disallowed.</p>
+  <h3>Every number is a place</h3>
+  <p>No dashboards, no graphs, no stat panels. If you want to know the ocean temperature, you go put your hand in the ocean. This constraint is what forces the descent loop to carry real informational weight instead of being a scenic detour. It is also the constraint the team will push back on hardest, repeatedly, for two years. Hold it.</p>
+  <h3>Legible at every distance, at a different resolution of truth</h3>
+  <p>From orbit you see bands. From 5&nbsp;km you see biomes and borders. From 50&nbsp;m you see individuals. Each altitude tells the truth; none tells the whole truth.</p>
+</section>
+
+<!-- ================================================================= PD 6 -->
+<section id="scale">
+  <div class="sechead"><code>PD 6</code><h2>The scale transition</h2></div>
+  <p class="lede">This is the riskiest interaction in the product, and everything else is downstream of it.</p>
+  <p>Two stable anchors: <strong>orbital</strong>, where the planet is a ~40&nbsp;cm sphere at chest height and you are outside it; and <strong>surface</strong>, where the planet is the horizon and you are 1.7&nbsp;m tall standing on it. The problem is the roughly millionfold scale change between them.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Variant</th><th>Mechanic</th><th>Risk</th></tr></thead>
+    <tbody>
+      <tr><td><strong>A · Pull-through</strong></td><td>Grab a point, pull it toward your face; the planet grows around you and swallows you. Continuous, no cut, maximally magical.</td><td>Continuous self-scaling is a known vection hazard — the visual field expands while the vestibular system reports nothing.</td></tr>
+      <tr><td><strong>B · Pinch-and-step</strong></td><td>Pinch a location, a diorama window opens, you step through. Discrete and well-understood.</td><td>Breaks the one-continuous-world feeling; re-introduces the sense of a level being loaded.</td></tr>
+      <tr><td><strong>C · Telescope</strong></td><td>Planet never changes scale; a held lens shows the surface. Maximally comfortable.</td><td>Loses the entire payoff. This is the flat-screen game with a headset strapped on.</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>Recommendation:</strong> prototype A and B head-to-head in week one, before any simulation work exists. Bet on A with aggressive comfort treatment — a hand-locked reference frame held rigid through the transition, ~350&nbsp;ms, snap-eased, with peripheral vignetting — and ship B as both the fallback and the permanent accessibility setting.</p>
+  <div class="note gate"><span class="lbl">Hard gate</span>
+    <p>If neither transition survives a 20-minute session without discomfort at n=12, this is a flat-screen game and we should know that in week two, not month eight.</p></div>
+
+  <h3>Progressive disclosure ladder</h3>
+  <p>This ladder is <em>identical</em> to the renderer's LOD tree. That is not a coincidence — it is the constraint that keeps the product affordable. One mechanism, two jobs.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Altitude</th><th>Metaphor</th><th>Renders</th><th>You can</th><th>Sim layer</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Orbital</strong><br><span class="num">≈40 cm</span></td><td>Snow globe</td><td>Climate bands, ice caps, ocean/land, night lights</td><td>Spin, tilt the axis, drop impactors, adjust the solar constant</td><td>Tectonics, climate, albedo</td></tr>
+      <tr><td><strong>Regional</strong><br><span class="num">~2,000 km</span></td><td>Relief map</td><td>Biomes, rivers, coastlines, territory borders</td><td>Paint terrain, seed species, raise and lower land</td><td>Hydrology, biome CA, species range</td></tr>
+      <tr><td><strong>Local</strong><br><span class="num">~20 km</span></td><td>Diorama</td><td>Settlements, herds, forest stands, weather cells</td><td>Place, remove, redirect</td><td>Agent populations, migration</td></tr>
+      <tr><td><strong>Surface</strong><br><span class="num">1.7 m</span></td><td>Standing there</td><td>Individual entities, ground texture, sky</td><td>Observe, pick up, listen</td><td>Individual agents, audio</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ================================================================= PD 7 -->
+<section id="vector">
+  <div class="sechead"><code>PD 7</code><h2>Extruded vector</h2></div>
+  <p>Entities are flat vector shapes extruded two to four millimetres into thin slabs — pop-up-book silhouettes on real terrain. This is the right call, not an art compromise:</p>
+  <ul>
+    <li><strong>Crisp at every zoom.</strong> A vector tree is correct at 40&nbsp;cm and at 40&nbsp;mm. This is literally the progressive-disclosure thesis expressed as an asset format.</li>
+    <li><strong>Stereo-correct.</strong> Pure camera-facing billboards are the single most common VR art failure — at arm's length, stereo vision makes flatness obvious in a way a monitor conceals. A 3&nbsp;mm extrusion fixes it entirely and costs nothing.</li>
+    <li><strong>Evolution becomes interpolation.</strong> A species mutating is a path morph and a palette shift, not a new asset. Speciation across a thousand-year sim is generated, not authored.</li>
+    <li><strong>Breadth without headcount.</strong> Thousands of visually distinct entities from a few dozen authored path families.</li>
+  </ul>
+  <p>The commitment has to be total — terrain, water and clouds all sitting in the same material language — or the entities read as an asset-store mistake rather than a deliberate paper diorama.</p>
+</section>
+
+<!-- ================================================================= PD 8 -->
+<section id="rulesets">
+  <div class="sechead"><code>PD 8</code><h2>The ruleset is the content unit</h2></div>
+  <p>We are not shipping infinite planets. We are shipping <strong>infinite seeds × authored rulesets</strong>, and the ruleset is the thing we actually make: a set of CA equations, a biome table, a palette, an entity family, and one signature phenomenon that exists nowhere else.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Ruleset</th><th>Chemistry</th><th>Signature phenomenon</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Terra</strong></td><td>Water / carbon</td><td>Glacial cycles</td></tr>
+      <tr><td><strong>Vermis</strong></td><td>Silicate, no free water</td><td>Apex megafauna that reshape terrain as they move</td></tr>
+      <tr><td><strong>Selene</strong></td><td>Airless</td><td>Everything is thermal shock and impact history</td></tr>
+      <tr><td><strong>Ares</strong></td><td>Thin CO₂</td><td>Dust storms that eat a hemisphere</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><span class="lbl">The cadence</span>
+    <p>Ten thousand procedural planets under one ruleset is a screensaver. Four rulesets × infinite seeds is a game.</p>
+    <p>A ruleset is roughly a designer plus an engineer for three weeks. That is the content cadence and the live-ops story.</p></div>
+</section>
+
+<!-- ================================================================= PD 9 -->
+<section id="nongoals">
+  <div class="sechead"><code>PD 9</code><h2>Non-goals for v1</h2></div>
+  <p>Explicitly out of scope. Each of these has killed a comparable project.</p>
+  <ul>
+    <li><strong>Multiplayer.</strong> Not in v1, and the architecture should not be contorted to preserve the option.</li>
+    <li><strong>Kingdoms, war, diplomacy.</strong> WorldBox's core. We are closer to SimEarth. Adding a civ layer before the planet layer is proven is how this becomes a mediocre 4X.</li>
+    <li><strong>Hand-authored planets.</strong> If a planet needs an artist, the ruleset is wrong.</li>
+    <li><strong>Universal voxel destructibility.</strong> Digging is scoped to where it earns its cost.</li>
+    <li><strong>Flat-screen as a co-target.</strong> A flat build is a port after ship, not a parallel design constraint — co-targeting will silently convert "every number is a place" into a dashboard.</li>
+  </ul>
+</section>
+
+<!-- ================================================================ PD 10 -->
+<section id="drisk">
+  <div class="sechead"><code>PD 10</code><h2>Design risk &amp; kill criteria</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>Risk</th><th>Sev</th><th>Mitigation</th></tr></thead>
+    <tbody>
+      <tr><td><code>D1</code></td><td>Scale transition causes discomfort in all variants</td><td><span class="sev c">Critical</span></td><td>Week-1 head-to-head prototype; hard gate before any sim work</td></tr>
+      <tr><td><code>D2</code></td><td>Simulation is invisible — players can't perceive causality</td><td><span class="sev h">High</span></td><td>Every perturbation produces a visible spatial change within 60&nbsp;s of sim time; instrumented as a metric, not a vibe</td></tr>
+      <tr><td><code>D3</code></td><td>Sessions have no shape; players bounce after novelty</td><td><span class="sev h">High</span></td><td>Ruleset-specific pressures — an ice age arriving, a worm migration — supply pacing without a quest system</td></tr>
+      <tr><td><code>D4</code></td><td>"No dashboards" proves unusable for the Tinkerer</td><td><span class="sev m">Medium</span></td><td>Diegetic instruments: a held thermometer, a core sample. Instruments are objects, not overlays</td></tr>
+      <tr><td><code>D5</code></td><td>Paper-diorama style reads as cheap rather than intentional</td><td><span class="sev m">Medium</span></td><td>Total material commitment; a strong lighting and atmosphere pass is what sells it</td></tr>
+      <tr><td><code>D6</code></td><td>Procedural planets feel same-y</td><td><span class="sev m">Medium</span></td><td>Invest in ruleset count over seed variety</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Slice-1 kill criteria</h3>
+  <p>The first vertical slice exists to answer three questions. It is not a demo. Everything else — rulesets, agents, digging, persistence — is deferred until all three pass.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Question</th><th>Bar</th><th>If it fails</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Comfort</strong></td><td>Median ≥ 4/5 across n=12 over 20 minutes, ≤1 dropout</td><td>Flat-screen pivot, or Variant B only</td></tr>
+      <tr><td><strong>Legibility</strong></td><td>≥8/10 naive participants correctly describe what their own perturbation did, unprompted, after descending</td><td>The sim is decorative — rework causality before adding systems</td></tr>
+      <tr><td><strong>Performance</strong></td><td>90&nbsp;Hz held with sim running, no dropped frames over 10 minutes</td><td>Re-open the platform decision</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- ================================================================= EN 1 -->
+<section id="arch">
+  <div class="sechead"><code>EN 1</code><h2>System thesis</h2></div>
+  <p class="lede">One data structure carries the whole product: a quadrilateralized cube sphere.</p>
+  <ul>
+    <li>Simulation becomes plain 2D array code — no spherical geodesics, no pole singularity, no icosahedral neighbour tables.</li>
+    <li>Neighbours are <code>(x±1, y±1)</code> within a face, plus one adjacency rule for the 24 face-edge seams.</li>
+    <li>Rendering is a per-face quadtree with chunked LOD — a well-trodden planetary renderer, not a research problem.</li>
+    <li><strong>Entity positions become <code>(face, u, v)</code>.</strong> This is the largest single cost saving in the architecture: it converts "navmesh on a sphere" into "navmesh on six squares."</li>
+    <li>The renderer's LOD quadtree <em>is</em> the product's progressive-disclosure ladder.</li>
+  </ul>
+  <p>The alternative — a geodesic icosphere — has better area uniformity and worse everything else. Indexing, seams, texture mapping and agent navigation all get harder. Not worth it.</p>
+</section>
+
+<!-- ================================================================= EN 2 -->
+<section id="spec">
+  <div class="sechead"><code>EN 2</code><h2>Cube-sphere specification</h2></div>
+  <h4>Mapping</h4>
+  <p>Uniform grid parameter <code>s ∈ [−1,1]</code> per axis, tangent-adjusted:</p>
+  <pre>u = tan(s · π/4)                  <b>// tan(π/4) = 1, so the range is preserved</b></pre>
+  <p>This exists because the naive mapping over-samples face edges: for a point <code>(1,u,0)</code> normalized, <code>dθ/du = 1/(1+u²)</code>, which is 1.0 at face centre and 0.5 at the edge. Uniform steps in <code>s</code> produce uniform steps in angle, cutting worst-case area distortion from about 1.9× to about 1.3×.</p>
+
+  <h4>Area weights — do not skip this</h4>
+  <p>The tangent adjustment is exact only along the face axes. The residual is <em>not</em> noise; it is a smooth systematic bias correlated with position on the face. The exact Jacobian:</p>
+  <pre>dA = du dv / (1 + u² + v²)^(3/2)</pre>
+  <p>Every conserved quantity — heat, water mass, biomass, insolation — must be multiplied by a per-cell area weight derived from this. Precompute once at init: four bytes per cell, nothing at runtime.</p>
+  <div class="note gate"><span class="lbl">Why this one gets its own callout</span>
+    <p>Skipping it does not produce an obvious bug. It produces a planet whose climate is subtly, permanently wrong in eight symmetric patches — and the team finds out six months in, when someone asks why deserts always form in the same relative position on every seed.</p></div>
+
+  <h4>Corners</h4>
+  <p>The eight cube corners have <strong>three</strong> neighbours, not four. Rather than hand-authoring 24 seam orientations — a classic source of long-lived off-by-one bugs — make the neighbour lookup generic by round-tripping through 3D: take the cell's direction vector, step in a tangent direction, re-project to <code>(face, i, j)</code>. Bake the result into a static index array at init. Pay once, never think about it again.</p>
+  <p>The prototype does exactly this, and it produced the correct topology on the first run: 764 seam vertex groups, being 12 edges × 63 interior vertices plus 8 three-way corners.</p>
+</section>
+
+<!-- ================================================================= EN 3 -->
+<section id="layers">
+  <div class="sechead"><code>EN 3</code><h2>Layer architecture</h2></div>
+  <p>Four layers, deliberately decoupled. The failure mode we are designing against is a monolith where an agent-AI spike drops a VR frame.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Layer</th><th>Where</th><th>Tick</th><th>Contents</th></tr></thead>
+    <tbody>
+      <tr><td><code>L4</code> <strong>Agents</strong></td><td>CPU, jobified</td><td class="num">10 Hz</td><td>Thousands of entities, positions as <code>(face,u,v)</code></td></tr>
+      <tr><td><code>L3</code> <strong>Voxel skin</strong></td><td>GPU, sparse</td><td class="num">on demand</td><td>Near-surface bricks only, where digging occurs</td></tr>
+      <tr><td><code>L2</code> <strong>Field simulation</strong></td><td>GPU compute</td><td class="num">8–15 Hz</td><td>Tectonics, climate, hydrology, biome CA</td></tr>
+      <tr><td><code>L1</code> <strong>Cube-sphere base</strong></td><td>Static</td><td class="num">once</td><td>Heightfield, area weights, neighbour tables</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>L2 writes to textures; L4 reads them and writes back sparsely</strong> — a settlement stamps its cell, a herd depresses local biomass. No layer calls up. Every layer runs on its own fixed tick with render-side interpolation, so no simulation spike can ever cause a dropped frame: the renderer draws the last completed state, always.</p>
+  <p>Field state is the cheap part of this product. At 6 × 256² = 393,216 cells — roughly 48× the 1990 original — a full tick is a handful of compute passes. Do not over-engineer it, and do not let it drive the platform decision.</p>
+</section>
+
+<!-- ================================================================= EN 6 -->
+<section id="voxel">
+  <div class="sechead"><code>EN 6</code><h2>Voxel skin — scope this hard</h2></div>
+  <p>The Womp-style sculpting model — GPU signed distance fields with real-time remeshing via surface nets or dual contouring — is genuinely the right <em>feel</em> for terrain sculpting, and it is a multi-month subsystem in its own right. A dense SDF at planet scale is not affordable on any target under consideration.</p>
+  <p><strong>Proposal: a voxel skin over a heightfield core.</strong> The planet is a displaced cube-sphere heightfield covering effectively the entire surface. Sparse voxel bricks are allocated <em>only where someone digs</em> — caves, tunnels, overhangs, the Vermis burrow network — keyed by quadtree node and resident only near the player.</p>
+  <p>Heightfields cannot represent overhangs. That is the only reason we need voxels. Pay exclusively for that.</p>
+  <div class="note"><span class="lbl">Recommendation</span>
+    <p>L3 is out of scope for Slice 1 entirely. It is the correct architecture to plan for and the wrong thing to build before the scale transition is validated.</p></div>
+</section>
+
+<!-- ================================================================= EN 7 -->
+<section id="budget">
+  <div class="sechead"><code>EN 7</code><h2>Frame budget</h2></div>
+  <p>The binding constraint. Every figure below is a design target derived from published hardware characteristics — <strong>not</strong> a measured result. All of it must be replaced with profiler output in M0 before it is used to make a staffing decision.</p>
+  <div class="tw"><table>
+    <thead><tr><th></th><th>Standalone (Quest-class)</th><th>PC-tethered</th></tr></thead>
+    <tbody>
+      <tr><td>Refresh target</td><td class="num">90 Hz</td><td class="num">90 Hz</td></tr>
+      <tr><td>Total frame</td><td class="num">11.1 ms</td><td class="num">11.1 ms</td></tr>
+      <tr><td>Compositor reserve <em>(est)</em></td><td class="num">~2.5 ms</td><td class="num">~1.5 ms</td></tr>
+      <tr><td><strong>App budget</strong> <em>(est)</em></td><td class="num"><strong>~8.5 ms</strong></td><td class="num"><strong>~9.5 ms</strong></td></tr>
+      <tr><td>Geometry ceiling <em>(est)</em></td><td class="num">~1–1.5 M tri</td><td class="num">~10 M+ tri</td></tr>
+      <tr><td>Verdict on SDF sculpting</td><td>Marginal at best</td><td>Comfortable</td></tr>
+    </tbody>
+  </table></div>
+  <p>Two rules follow directly and are not negotiable. <strong>One:</strong> simulation runs on a fixed decoupled tick with interpolated rendering, so a tectonics spike can never drop a frame. <strong>Two:</strong> every system gets a hard per-frame budget with an enforced degradation path, not a best-effort one — agent AI that occasionally takes 4&nbsp;ms is a shipped-product bug, not a tuning issue.</p>
+</section>
+
+<!-- ================================================================= EN 8 -->
+<section id="platform">
+  <div class="sechead"><code>EN 8</code><h2>Platform decision — needed by end of week 1</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>Option</th><th>Pro</th><th>Con</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Standalone native</strong><br>Unity</td><td>Where the install base is; no tether; best XR toolchain maturity, Burst/Jobs, compute shaders</td><td>Tightest budget; SDF sculpting likely never affordable</td><td><strong style="color:var(--accent)">Recommended</strong></td></tr>
+      <tr><td><strong>PC-tethered</strong></td><td>~5× headroom; voxel layer fully viable</td><td>Small addressable market; wrong platform for a 20-minute-session game</td><td>Reject for v1</td></tr>
+      <tr><td><strong>WebXR</strong></td><td>Zero-install, instantly shareable; excellent for prototyping and stakeholder review</td><td>No compute shaders in WebGL2; WebGPU coverage on standalone browsers still uneven</td><td>Prototypes and pitch, not ship</td></tr>
+    </tbody>
+  </table></div>
+  <p>Godot 4 is a credible open alternative but its XR and compute stories are both behind. Separately: build the pitch and validation prototype in WebXR regardless. A no-install URL that runs in the headset browser is worth a great deal for stakeholder review and early comfort studies, and it costs days rather than weeks. It is a communication tool, not the product — and one is already running.</p>
+</section>
+
+<!-- ================================================================= EN 9 -->
+<section id="plan">
+  <div class="sechead"><code>EN 9</code><h2>Milestones &amp; staffing</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>Milestone</th><th>Team</th><th>Scope</th><th>Exit gate</th></tr></thead>
+    <tbody>
+      <tr><td><code>M0</code> <strong>Bake-off</strong><br><span class="num">2 wks</span></td><td class="num">1 eng<br>1 PD</td><td>Scale-transition variants A and B. No sim, no art.</td><td>Comfort study passes. <strong>Hard gate — nothing else starts.</strong></td></tr>
+      <tr><td><code>M1</code> <strong>Substrate</strong><br><span class="num">3 wks</span></td><td class="num">2 eng<br>1 PD</td><td>Cube sphere with tangent adjustment, area weights, generic neighbour table. Quadtree LOD. Procedural generation. Profiler harness.</td><td>90&nbsp;Hz held at 6×256². Unit tests prove seam and corner continuity.</td></tr>
+      <tr><td><code>M2</code> <strong>Simulation</strong><br><span class="num">3 wks</span></td><td class="num">2 eng<br>1 TA, 1 PD</td><td>Field sim on GPU. One ruleset. Extruded-vector entity pipeline. Atmosphere.</td><td>Sim tick under budget. A perturbation produces a visible spatial change within 60&nbsp;s of sim time.</td></tr>
+      <tr><td><code>M3</code> <strong>Slice</strong><br><span class="num">2 wks</span></td><td class="num">full team</td><td>Assembly, one paint tool, comfort and legibility polish.</td><td>All three kill criteria pass.</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>Slice 1 total: about 10 weeks.</strong> No agents, no voxels, no persistence, one ruleset. Peak team is 2 engineers, 1 tech artist and 1 product designer — deliberately small, because the architecture is chosen so that it can be.</p>
+  <div class="note gate"><span class="lbl">On sequencing</span>
+    <p>M0 is a hard gate because if the scale transition cannot be made comfortable, M1 through M3 are all wasted. Do not let M1 start "in parallel to de-risk schedule." That is how you spend three engineer-months building a substrate for a game that does not exist.</p></div>
+  <p>Two skills must be on the team by M1: <strong>planetary quadtree LOD rendering</strong> and <strong>XR frame-budget discipline</strong>. These are the two places where inexperience costs months rather than days.</p>
+</section>
+
+<!-- ================================================================ EN 11 -->
+<section id="erisk">
+  <div class="sechead"><code>EN 11</code><h2>Engineering risk register</h2></div>
+  <div class="tw"><table>
+    <thead><tr><th>#</th><th>Risk</th><th>Sev</th><th>Mitigation</th><th>Detect by</th></tr></thead>
+    <tbody>
+      <tr><td><code>E1</code></td><td>Seam and corner bugs in the neighbour table surface late and everywhere</td><td><span class="sev h">High</span></td><td>Generic 3D round-trip; continuity unit test as an M1 exit gate</td><td class="num">M1</td></tr>
+      <tr><td><code>E2</code></td><td>Area-weight omission produces systematically wrong climate</td><td><span class="sev h">High</span></td><td>Bake weights at init; test asserts total surface sums to 4π within tolerance</td><td class="num">M1</td></tr>
+      <tr><td><code>E3</code></td><td>Standalone frame budget doesn't hold with sim and entities running</td><td><span class="sev h">High</span></td><td>Profile in M1 before any content; enforced per-system budgets with degradation paths</td><td class="num">M1</td></tr>
+      <tr><td><code>E4</code></td><td>SDF sculpting proves unaffordable on standalone</td><td><span class="sev m">Medium</span></td><td>Already scoped out of Slice 1; heightfield covers all v1 needs</td><td class="num">M2</td></tr>
+      <tr><td><code>E5</code></td><td>Agent count doesn't scale — bottleneck is per-agent AI, not the sphere</td><td><span class="sev m">Medium</span></td><td>ECS and Burst from day one; LOD agent AI to match render LOD</td><td class="num">M2</td></tr>
+      <tr><td><code>E6</code></td><td>XR toolchain churn between LTS versions</td><td><span class="sev m">Medium</span></td><td>Pin LTS at M0; no mid-program upgrades</td><td class="num">ongoing</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>Open questions</h3>
+  <ul>
+    <li><strong>Persistence model.</strong> Seed-plus-delta is obviously right for terrain edits. It is <em>not</em> obviously right for simulation state, which diverges continuously and irreversibly from its seed. Do we snapshot field state periodically, or accept that a planet's history is only replayable from its edit log? This changes save size by orders of magnitude.</li>
+    <li><strong>Determinism.</strong> GPU floating-point across vendors is not bit-identical. If we ever want shared or replayable worlds this must be settled early — probably fixed-point for the field sim — and it is far cheaper to decide now than to retrofit.</li>
+    <li><strong>Passthrough lighting.</strong> If the planet persists on a real table between sessions, it has to match real-room lighting. Meaningful graphics work; needs an early scope call rather than a late one.</li>
+  </ul>
+</section>
+
+<!-- ================================================================== P 0 -->
+<section id="proto">
+  <div class="sechead"><code>P 0</code><h2>What is already running</h2></div>
+  <p>A single-file WebXR prototype, raw WebGL2, no dependencies. It is not the game — it is the substrate both briefs depend on, built so the load-bearing claims can be checked rather than asserted.</p>
+  <div class="tw"><table>
+    <thead><tr><th>Claim</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td>Tangent-adjusted mapping reduces area distortion</td><td>Measured <span class="num">0.843–1.178×</span> against a naive <span class="num">≈1.9×</span></td></tr>
+      <tr><td>Per-cell area weights are correct</td><td>Σ area = 4π, relative error <span class="num">3.7 × 10⁻⁵</span></td></tr>
+      <tr><td>Generic 3D round-trip yields correct seam topology</td><td><span class="num">764</span> groups = 12 edges × 63 + 8 corners, first run</td></tr>
+      <tr><td>Seams are watertight in position <em>and</em> shading</td><td>Confirmed after welding duplicate border normals — see note below</td></tr>
+      <tr><td>Progressive disclosure driven by view distance</td><td>Four tiers, colour mode and entity fade bound to altitude</td></tr>
+      <tr><td>Ruleset as content unit produces genuinely different worlds</td><td>Four rulesets, distinct terrain, climate and biosphere outcomes</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><span class="lbl">One bug worth recording</span>
+    <p>Border vertices are duplicated per face, so each copy accumulated normals only from its own face's triangles. Positions matched exactly — no crack — but shading did not, painting a visible rectangle along every seam. It showed up on the high-relief ruleset and was nearly invisible on the smooth one.</p>
+    <p>This is exactly risk <code>E1</code>, and it found itself within an hour on a prototype. On a production codebase without a continuity test it would have surfaced in month five, in someone else's code.</p></div>
+
+  <div class="cta">
+    <h3>Run it in the headset</h3>
+    <p>Serve the folder over HTTP and open it in the Quest browser. The Quest treats <code>localhost</code> as a secure context, so <code>adb reverse</code> is enough — no HTTPS certificate needed. Press <strong>Enter VR</strong>; the planet appears at arm's length. Hold the trigger and move your hand to roll it, thumbstick to resize, A or X to cycle rulesets.</p>
+    <p>On desktop it runs as an ordinary web page: drag to spin, scroll to zoom.</p>
+    <a class="btn" href="https://claude.ai/code/artifact/0580d94f-0b23-4f59-8283-127d7ba8c131" target="_blank" rel="noopener">Open the prototype</a>
+    <a class="btn ghost" href="../vr/index.html">Local copy</a>
+  </div>
+  <pre>python3 -m http.server 8777          <b># from the project root</b>
+adb reverse tcp:8777 tcp:8777        <b># with the headset connected over USB</b>
+<b># then open</b> http://localhost:8777/vr/index.html <b>in the Quest browser</b></pre>
+</section>
+
+<footer>
+  ORRERY · program briefs, draft for review · 2026-08-08<br>
+  Figures marked <em>(est)</em> are design targets derived from published hardware characteristics, not measured results.<br>
+  SimEarth is a trademark of Electronic Arts; WorldBox of Maxim Karpenko. Referenced as prior art only.
+</footer>
+
+</main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const cv = document.getElementById('cs');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const mEl = document.getElementById('morph');
+  const wEl = document.getElementById('warp');
+  const sEl = document.getElementById('spin');
+  const roEl= document.getElementById('ro');
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  let morph = 1, warpOn = true, spinning = !reduce, rot = 0.62;
+  const M = 9, TAU4 = Math.PI/4;
+  const warp = s => warpOn ? Math.tan(s*TAU4) : s;
+
+  // face → cube point, matching the prototype's facePoint()
+  function face(f,u,v){
+    switch(f){
+      case 0: return [ 1, v,-u];
+      case 1: return [-1, v, u];
+      case 2: return [ u, 1,-v];
+      case 3: return [ u,-1, v];
+      case 4: return [ u, v, 1];
+      default:return [-u, v,-1];
+    }
+  }
+  function morphPt(f,s,t){
+    const c = face(f, warp(s), warp(t));
+    const l = Math.hypot(c[0],c[1],c[2]);
+    const k = morph;                      // 0 = cube, 1 = sphere
+    return [ c[0]*(1-k) + c[0]/l*k, c[1]*(1-k) + c[1]/l*k, c[2]*(1-k) + c[2]/l*k ];
+  }
+
+  const TILT = 0.42;
+  function xform(p){
+    const cy=Math.cos(rot), sy=Math.sin(rot);
+    let x = p[0]*cy + p[2]*sy, y = p[1], z = -p[0]*sy + p[2]*cy;
+    const cx=Math.cos(TILT), sx=Math.sin(TILT);
+    const y2 = y*cx - z*sx, z2 = y*sx + z*cx;
+    return [x, y2, z2];
+  }
+
+  function css(v){ return getComputedStyle(document.documentElement).getPropertyValue(v).trim(); }
+
+  function draw(){
+    const dpr = Math.min(devicePixelRatio||1, 2);
+    const w = cv.clientWidth, h = Math.round(w*0.512);
+    if (cv.width !== Math.round(w*dpr)){ cv.width = Math.round(w*dpr); cv.height = Math.round(h*dpr); }
+    cv.style.height = h+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,w,h);
+
+    const cx = w/2, cy = h/2, fov = h*0.84, D = 4.6;
+    const accent = css('--accent'), rule = css('--rule');
+    // three axis-pair hues, muted — not a rainbow toy
+    const HUES = [ [224,160,80], [224,160,80], [126,152,190], [126,152,190], [150,158,172], [150,158,172] ];
+    const SHADE= [1.0, 0.62, 1.0, 0.62, 1.0, 0.62];
+
+    const proj = p => { const q = xform(p); const z = q[2] + D;
+                        return [cx + q[0]*fov/z, cy - q[1]*fov/z, z]; };
+
+    ctx.lineJoin = 'round';
+    for (let f=0; f<6; f++){
+      const [r,g,b] = HUES[f], k = SHADE[f];
+      for (let j=0; j<M; j++) for (let i=0; i<M; i++){
+        const s0=i/M*2-1, s1=(i+1)/M*2-1, t0=j/M*2-1, t1=(j+1)/M*2-1;
+        const a=proj(morphPt(f,s0,t0)), c2=proj(morphPt(f,s1,t0)),
+              c3=proj(morphPt(f,s1,t1)), c4=proj(morphPt(f,s0,t1));
+        // backface cull via projected signed area (convex solid, so this is exact)
+        const area = (c2[0]-a[0])*(c3[1]-a[1]) - (c3[0]-a[0])*(c2[1]-a[1]);
+        if (area >= 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(a[0],a[1]); ctx.lineTo(c2[0],c2[1]);
+        ctx.lineTo(c3[0],c3[1]); ctx.lineTo(c4[0],c4[1]); ctx.closePath();
+        // fake lambert from the face's morphed centre
+        const n = morphPt(f,(s0+s1)/2,(t0+t1)/2);
+        const nl = Math.max(0, xform(n)[2]*-0.42 + 0.66);
+        ctx.fillStyle = `rgba(${(r*k)|0},${(g*k)|0},${(b*k)|0},${(0.10+nl*0.26).toFixed(3)})`;
+        ctx.fill();
+        ctx.strokeStyle = accent; ctx.globalAlpha = 0.10 + nl*0.26;
+        ctx.lineWidth = 0.9; ctx.stroke(); ctx.globalAlpha = 1;
+      }
+    }
+    // face outlines, drawn over the grid
+    ctx.lineWidth = 1.6;
+    for (let f=0; f<6; f++){
+      const pts = [];
+      for (let i=0;i<=M;i++) pts.push(morphPt(f, i/M*2-1, -1));
+      for (let i=0;i<=M;i++) pts.push(morphPt(f, 1, i/M*2-1));
+      for (let i=M;i>=0;i--) pts.push(morphPt(f, i/M*2-1, 1));
+      for (let i=M;i>=0;i--) pts.push(morphPt(f,-1, i/M*2-1));
+      const pr = pts.map(proj);
+      let area=0;
+      for (let i=0;i<pr.length;i++){ const q=pr[(i+1)%pr.length];
+        area += (q[0]-pr[i][0])*(q[1]+pr[i][1]); }
+      if (area <= 0) continue;
+      ctx.beginPath(); ctx.moveTo(pr[0][0],pr[0][1]);
+      for (let i=1;i<pr.length;i++) ctx.lineTo(pr[i][0],pr[i][1]);
+      ctx.closePath();
+      ctx.strokeStyle = accent; ctx.globalAlpha = 0.5; ctx.stroke(); ctx.globalAlpha = 1;
+    }
+  }
+
+  // Report the actual edge/centre cell-width ratio for the current setting —
+  // the number the tangent adjustment exists to move.
+  function readout(){
+    const mid = Math.atan(warp(1/M)) - Math.atan(warp(-1/M));
+    const edge= Math.atan(warp(1)) - Math.atan(warp(1-2/M));
+    roEl.textContent = `edge cell / centre cell = ${(edge/mid).toFixed(2)}×`;
+  }
+
+  let raf;
+  function tick(){ if (spinning) rot += 0.0042; draw(); raf = requestAnimationFrame(tick); }
+
+  mEl.addEventListener('input', ()=>{ morph = mEl.value/100; if(!spinning) draw(); });
+  wEl.addEventListener('click', ()=>{
+    warpOn = !warpOn;
+    wEl.setAttribute('aria-pressed', String(warpOn));
+    wEl.textContent = 'Tangent adjustment: ' + (warpOn ? 'ON' : 'OFF');
+    readout(); if(!spinning) draw();
+  });
+  sEl.addEventListener('click', ()=>{
+    spinning = !spinning;
+    sEl.setAttribute('aria-pressed', String(spinning));
+  });
+  addEventListener('resize', draw);
+  readout(); tick();
+
+  /* ------------------------------------------------- rail scroll tracking */
+  const links = [...document.querySelectorAll('.nav a')];
+  const map = new Map(links.map(a => [a.getAttribute('href').slice(1), a]));
+  const seen = new Set();
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => e.isIntersecting ? seen.add(e.target.id) : seen.delete(e.target.id));
+    let top = null;
+    for (const a of links){ const id = a.getAttribute('href').slice(1);
+      if (seen.has(id)){ top = id; break; } }
+    links.forEach(a => a.classList.toggle('on', a.getAttribute('href').slice(1) === top));
+  }, { rootMargin: '-10% 0px -70% 0px', threshold: 0 });
+  document.querySelectorAll('section[id]').forEach(s => { if (map.has(s.id)) io.observe(s); });
+})();
+</script>
