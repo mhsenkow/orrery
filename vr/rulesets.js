@@ -3,17 +3,32 @@
 import { clamp, lerp } from './math.js';
 
 const landTerra = (t, m, l, e, ice) => {
-  if (ice > 0.45) return [232, 240, 248];
+  // Thin ice over canopy still shows life — only thick ice blanks the cell
+  if (ice > 0.55 && l < 0.25) return [232, 240, 248];
   const rock = clamp((e - 0.55) * 2.4, 0, 1);
+  // Neon life vs barren rock — readable through orbital climate wash
+  if (l > 0.06) {
+    const k = clamp((l - 0.06) / 0.55, 0, 1);
+    // Frontier = electric lime; canopy = deep emerald. Stay very green-dominant.
+    const r = lerp(28, 6, k);
+    const g = lerp(255, 165, k);
+    const b = lerp(18, 48, k);
+    if (ice > 0.35) {
+      const frost = clamp((ice - 0.35) / 0.5, 0, 1);
+      return [lerp(r, 200, frost * 0.45), lerp(g, 230, frost * 0.35), lerp(b, 240, frost * 0.5)];
+    }
+    return [lerp(r, 40, rock * 0.15), lerp(g, 150, rock * 0.12), lerp(b, 50, rock * 0.15)];
+  }
+  // Barren: warm sand / cool rock — deliberately brown, never teal
   let r, g, b;
-  if (m < 0.30) { r = 196; g = 172; b = 118; }
-  else if (l > 0.55) { r = lerp(64, 32, l); g = lerp(122, 86, l); b = lerp(58, 44, l); }
-  else { r = lerp(150, 96, m); g = lerp(158, 140, m); b = lerp(96, 74, m); }
+  if (m < 0.28) { r = 186; g = 148; b = 96; }
+  else { r = 132; g = 112; b = 86; }
   if (t < 0.40) {
     const k = clamp((0.40 - t) * 3.2, 0, 1);
-    r = lerp(r, 140, k); g = lerp(g, 146, k); b = lerp(b, 132, k);
+    r = lerp(r, 148, k); g = lerp(g, 140, k); b = lerp(b, 128, k);
   }
-  return [lerp(r, 128, rock), lerp(g, 126, rock), lerp(b, 124, rock)];
+  if (ice > 0.45) return [232, 240, 248];
+  return [lerp(r, 118, rock), lerp(g, 108, rock), lerp(b, 98, rock)];
 };
 
 export const RULESETS = [
@@ -40,13 +55,17 @@ export const RULESETS = [
     signature: 'worms',
     ocean: (d) => [176 + 30 * d, 132 + 22 * d, 74 + 18 * d],
     land: (t, m, l, e, ice) => {
-      const rock = clamp((e - 0.5) * 2.0, 0, 1);
-      let r = lerp(214, 172, m), g = lerp(160, 116, m), b = lerp(88, 62, m);
-      if (l > 0.35) {
-        const k = clamp((l - 0.35) * 1.7, 0, 1);
-        r = lerp(r, 92, k); g = lerp(g, 62, k); b = lerp(b, 104, k);
-      }
       if (ice > 0.5) return [214, 206, 196];
+      const rock = clamp((e - 0.5) * 2.0, 0, 1);
+      if (l > 0.1) {
+        const k = clamp(l, 0, 1);
+        return [
+          lerp(120, 40, k),
+          lerp(60, 20, k),
+          lerp(200, 255, k),
+        ];
+      }
+      let r = lerp(214, 172, m), g = lerp(160, 116, m), b = lerp(88, 62, m);
       return [lerp(r, 150, rock), lerp(g, 116, rock), lerp(b, 86, rock)];
     },
   },
@@ -80,11 +99,11 @@ export const RULESETS = [
     land: (t, m, l, e, ice) => {
       if (ice > 0.42) return [226, 232, 240];
       const rock = clamp((e - 0.48) * 2.2, 0, 1);
-      let r = lerp(196, 146, m), g = lerp(104, 78, m), b = lerp(66, 58, m);
-      if (l > 0.3) {
-        const k = clamp((l - 0.3) * 1.5, 0, 1);
-        r = lerp(r, 110, k); g = lerp(g, 102, k); b = lerp(b, 72, k);
+      if (l > 0.08) {
+        const k = clamp(l, 0, 1);
+        return [lerp(80, 20, k), lerp(220, 140, k), lerp(30, 18, k)];
       }
+      let r = lerp(196, 146, m), g = lerp(104, 78, m), b = lerp(66, 58, m);
       return [lerp(r, 128, rock), lerp(g, 90, rock), lerp(b, 74, rock)];
     },
   },
@@ -101,12 +120,12 @@ export const RULESETS = [
     land: (t, m, l, e, ice, extra) => {
       if (ice > 0.5) return [240, 245, 250];
       const black = extra?.black || 0, white = extra?.white || 0;
-      const bare = 1 - black - white;
-      return [
-        lerp(lerp(110, 40, black), 240, white),
-        lerp(lerp(120, 50, black), 242, white),
-        lerp(lerp(70, 45, black), 248, white) * bare + lerp(50, 245, white) * (1 - bare) * 0.3 + 80 * bare,
-      ].map((v) => clamp(v, 0, 255));
+      const bare = clamp(1 - black - white, 0, 1);
+      // Near-pure black / white so orbital climate wash can't hide daisy bands
+      const r = bare * 110 + black * 8 + white * 255;
+      const g = bare * 100 + black * 10 + white * 252;
+      const b = bare * 78 + black * 14 + white * 248;
+      return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
     },
   },
 ];

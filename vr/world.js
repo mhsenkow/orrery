@@ -1,7 +1,7 @@
 /** World state: fields, generation, coupled tick. */
 
 import { clamp, mulberry32 } from './math.js';
-import { NC, AREA, DIR } from './sphere.js';
+import { NC, AREA, DIR, NBR } from './sphere.js';
 import { RULESETS } from './rulesets.js';
 import { createChronicle, logEvent, maybeNameEra } from './chronicle.js';
 import { generateTectonics, tectonicsTick, erosionTick } from './sim/tectonics.js';
@@ -23,6 +23,7 @@ export function createWorld() {
     flow: buf(), lake: buf(),
     windU: buf(), windV: buf(),
     life: buf(), lifeClass: u8(), soil: buf(), nutrientN: buf(), nutrientP: buf(), reef: buf(),
+    build: buf(), // settlement height 0–1 — raised by agent builders
     blackDaisy: buf(), whiteDaisy: buf(),
     _t: buf(), _m: buf(), _l: buf(), _h: buf(), _adv: buf(), _order: new Int32Array(NC),
 
@@ -36,7 +37,7 @@ export function createWorld() {
     plates: null, volcanoes: [], hotspots: [], tsunamis: [],
     chron: createChronicle(),
     _waterMass0: null, waterMass: 0, waterDrift: 0,
-    _oxEvent: false, pausedSolar: false,
+    _oxEvent: false, pausedSolar: false, _pauseBio: false,
     // render interpolation
     prevTemp: buf(), prevLife: buf(), prevIce: buf(),
   };
@@ -72,6 +73,7 @@ export function generate(seed, rule) {
   W.soil.fill(0); W.reef.fill(0);
   W.blackDaisy.fill(0); W.whiteDaisy.fill(0);
   W.life.fill(0); W.lifeClass.fill(0);
+  W.build.fill(0);
   W.iceLand.fill(0); W.iceSea.fill(0); W.ice.fill(0);
   W.clouds.fill(0); W.precip.fill(0); W.flow.fill(0); W.lake.fill(0);
 
@@ -92,31 +94,66 @@ export function generate(seed, rule) {
     }
   }
 
-  if (rule.daisyworld) {
-    const rng = mulberry32(seed);
+  // Climate-only warmup (life stays zero so we don't paint the whole globe green)
+  W._pauseBio = true;
+  const warm = rule.daisyworld ? 10 : 16;
+  for (let i = 0; i < warm; i++) simTick(true);
+  W._pauseBio = false;
+
+  // Carve arid belts so barren rock exists for blooms to invade
+  if (!rule.daisyworld) {
     for (let c = 0; c < NC; c++) {
-      if (rng() < 0.15) W.blackDaisy[c] = 0.3 + rng() * 0.3;
-      if (rng() < 0.15) W.whiteDaisy[c] = 0.3 + rng() * 0.3;
-      W.life[c] = W.blackDaisy[c] + W.whiteDaisy[c];
-      W.h[c] = 0.15 + (mulberry32(seed + c)() - 0.5) * 0.1;
-    }
-    W.seaLevel = -0.5;
-  } else {
-    // Seed prokaryotes in habitable cells
-    let seeded = 0;
-    for (let c = 0; c < NC && seeded < 200; c += 5) {
-      if (W.temp[c] > 0.25 && W.temp[c] < 0.85 && (W.h[c] < W.seaLevel || W.moist[c] > 0.15)) {
-        W.life[c] = 0.8;
-        W.lifeClass[c] = 0;
-        seeded++;
+      if (W.h[c] < W.seaLevel) continue;
+      const lat = Math.abs(DIR[c * 3 + 1]);
+      // Horse-latitude deserts — sticky dryness (tag via nutrient floor)
+      if ((lat > 0.28 && lat < 0.52) || W.moist[c] < 0.2) {
+        W.moist[c] = Math.min(W.moist[c], 0.08 + Math.random() * 0.06);
+        W.nutrientN[c] = Math.min(W.nutrientN[c], 0.25);
       }
     }
   }
 
-  // Geologic + climate warmup so first frame has history
-  const warm = rule.daisyworld ? 40 : 55;
-  for (let i = 0; i < warm; i++) simTick(true);
-  W._waterMass0 = null; // reset drift baseline after warmup
+  if (rule.daisyworld) {
+    const rng = mulberry32(seed ^ 0xD15A);
+    for (let c = 0; c < NC; c++) {
+      W.h[c] = 0.15 + (mulberry32(seed + c)() - 0.5) * 0.1;
+      if (rng() < 0.045) W.blackDaisy[c] = 0.75 + rng() * 0.2;
+      else if (rng() < 0.045) W.whiteDaisy[c] = 0.75 + rng() * 0.2;
+      W.life[c] = Math.min(1, W.blackDaisy[c] + W.whiteDaisy[c]);
+    }
+    W.seaLevel = -0.5;
+    W.rule.solar = 0.7;
+    W.solar = 0.7;
+    W._baseSolar = 0.7;
+  } else {
+    // Sparse bright nuclei (~4% of wet land) — green islands in a brown world
+    for (let c = 0; c < NC; c++) {
+      if (W.h[c] < W.seaLevel) continue;
+      if (W.moist[c] < 0.24) continue;
+      if (W.temp[c] < 0.28 || W.temp[c] > 0.88) continue;
+      if (Math.random() < 0.04) {
+        W.life[c] = 0.9 + Math.random() * 0.1;
+        W.lifeClass[c] = 0;
+        W.moist[c] = Math.max(W.moist[c], 0.5);
+      }
+    }
+    const edge = [];
+    for (let c = 0; c < NC; c++) {
+      if (W.life[c] < 0.7) continue;
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[c * 4 + k];
+        if (W.life[n] < 0.05 && W.h[n] >= W.seaLevel && W.moist[n] > 0.16) edge.push(n);
+      }
+    }
+    for (const n of edge) {
+      if (Math.random() < 0.55) {
+        W.life[n] = 0.4 + Math.random() * 0.3;
+        W.lifeClass[n] = 0;
+      }
+    }
+  }
+
+  W._waterMass0 = null;
   hydroTick(W);
   W._waterMass0 = W.waterMass;
 
@@ -148,7 +185,7 @@ export function simTick(silent = false) {
   atmoTick(W, _sunDir);
   hydroTick(W);
   tsunamiTick(W);
-  bioTick(W, log);
+  if (!W._pauseBio) bioTick(W, log);
   gaiaTick(W, log);
 
   if (!silent) {

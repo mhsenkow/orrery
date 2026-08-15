@@ -98,7 +98,7 @@ export function useToolAt(cell, extra = {}) {
       break;
     case 'seed':
       seedLife(W, cell, W.unlockedClass);
-      chronLog(W.year, 'seed', cell, 1, 'Life seeded');
+      chronLog(W.year, 'seed', cell, 1, 'Life bloom seeded');
       break;
     case 'raise':
       paintBrush(cell, (c, f) => { W.h[c] = Math.min(1.2, W.h[c] + 0.06 * f); W.crust[c] += 0.03 * f; });
@@ -185,6 +185,7 @@ export function inspectCell(cell) {
     clouds: W.clouds[cell],
     ore: W.ore[cell],
     soil: W.soil[cell],
+    build: W.build[cell],
     seaLevel: W.seaLevel,
   };
 }

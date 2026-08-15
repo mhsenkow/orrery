@@ -1,7 +1,7 @@
 /** WebGL2 rendering: planet, atmosphere, clouds, extruded entities. */
 
 import { m4, m4ident, m4mul, m4trs, m3fromM4rot, clamp, lerp } from './math.js';
-import { N, NF, NC, NV, VPF, warp, facePoint, dirToCell } from './sphere.js';
+import { N, NF, NC, NV, VPF, warp, facePoint, dirToCell, DIR, NBR } from './sphere.js';
 import { W } from './world.js';
 import { ENT, MAX_ENT } from './agents.js';
 import { showErr } from './math.js';
@@ -62,8 +62,9 @@ export let vIdx;
     const o = f * VPF;
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const a = o + j * (N + 1) + i, b = a + 1, c = a + (N + 1), d = c + 1;
-      idx[m++] = a; idx[m++] = c; idx[m++] = b;
-      idx[m++] = b; idx[m++] = c; idx[m++] = d;
+      // CCW when viewed from outside — previous order showed the interior of the far side
+      idx[m++] = a; idx[m++] = b; idx[m++] = c;
+      idx[m++] = b; idx[m++] = d; idx[m++] = c;
     }
   }
   vIdx = idx;
@@ -122,8 +123,16 @@ function buildAtlas() {
 
 /* ---------- programs / buffers ---------- */
 let planetProg, atmoProg, cloudProg, entProg, starProg, flatProg, healthProg;
-let buf, atlasTex, SPH_COUNT = 0, GRID_COUNT = 0, NSTAR = 1400;
+let buf, atlasTex, SPH_COUNT = 0, GRID_COUNT = 0, CELL_GRID_COUNT = 0, NSTAR = 1400;
 const MVP = m4(), MODEL = m4(), NRM = new Float32Array(9), TMP = m4();
+let _cellGrid = null;
+let _localRim = null;
+let LOCAL_RIM_COUNT = 0;
+let _localSet = null;
+let _localFocus = -1;
+let _localWash = false;
+let _localRimOn = false;
+let _localKey = '';
 
 export function initGL(cvs) {
   canvas = cvs;
@@ -140,12 +149,11 @@ void main(){
   gl_Position = uMVP*vec4(aPos,1.0);
 }`, F_HEAD + `
 in vec3 vN; in vec4 vD; in vec3 vW;
-uniform vec3 uSun, uCam, uAtmo; uniform float uDetail, uAtmoK, uNight;
+uniform vec3 uSun, uCam, uAtmo; uniform float uDetail, uAtmoK, uNight, uDaisy, uOpacity, uXRay;
 out vec4 o;
 vec3 climate(float t){
   vec3 a=vec3(0.15,0.22,0.55), b=vec3(0.2,0.55,0.72), c=vec3(0.28,0.62,0.38);
   vec3 d=vec3(0.82,0.72,0.32), e=vec3(0.75,0.35,0.22);
-  // colourblind-safer: blue→cyan→yellow→orange (less green/red exclusive)
   if(t<0.25) return mix(a,b,t/0.25);
   if(t<0.50) return mix(b,c,(t-0.25)/0.25);
   if(t<0.75) return mix(c,d,(t-0.50)/0.25);
@@ -153,19 +161,34 @@ vec3 climate(float t){
 }
 void main(){
   vec3 N=normalize(vN); vec3 V=normalize(uCam-vW);
-  vec3 base=mix(climate(vD.a), vD.rgb, uDetail);
+  // X-ray cutaway: discard front-facing fragments so interior shows through
+  float facing = max(dot(N, V), 0.0);
+  if(uXRay > 0.01 && facing > (1.0 - uXRay)) discard;
+  vec3 biome=vD.rgb;
+  float greenDom = biome.g - max(biome.r, biome.b);
+  float lifeGreen = smoothstep(0.08, 0.35, greenDom) * smoothstep(0.35, 0.7, biome.g) * (1.0 - uDaisy);
+  float lum = (biome.r+biome.g+biome.b)/3.0;
+  float daisyBW = max(smoothstep(0.72, 0.9, lum), smoothstep(0.32, 0.12, lum));
+  float lifeShow = max(lifeGreen, daisyBW * uDaisy + daisyBW * (1.0 - uDaisy) * 0.5);
+  // Daisyworld: always prefer raw albedo over climate bands
+  float show = max(uDetail, max(lifeShow, uDaisy * 0.92));
+  vec3 base=mix(climate(vD.a), biome, show);
   float nl=max(dot(N,uSun),0.0);
   float wrap=max(dot(N,uSun)*0.5+0.5,0.0);
-  vec3 col = base*(0.08 + 0.25*wrap*wrap + nl*0.95);
-  // night lights from alpha channel excess encoding in aDat.a reused — use vD.g hack: emissive in depth ocean via uniform
-  col += vec3(1.0,0.85,0.55)*uNight*pow(1.0-nl,3.0)*vD.b*0.15;
+  // Higher night-side ambient so the globe reads solid against space
+  float ambient = 0.18 + 0.12*wrap*wrap;
+  vec3 col = base*(ambient + nl*0.92);
+  col += vec3(0.015,0.025,0.055)*(1.0-nl);
+  col += vec3(0.12,0.55,0.08)*lifeGreen*(0.45+0.55*nl);
+  col = mix(col, biome * (0.55 + 0.7*nl), lifeGreen * 0.55);
+  col = mix(col, biome * (0.25 + 1.05*nl), daisyBW * max(uDaisy, 0.35));
+  col += vec3(1.0,0.85,0.55)*uNight*pow(1.0-nl,3.0)*vD.b*0.15*(1.0-uDaisy);
   float rim=pow(1.0-max(dot(N,V),0.0),3.0);
-  // Rayleigh-ish blue limb + Mie warm forward
   vec3 ray = uAtmo * rim * uAtmoK * (0.2+0.8*nl);
   vec3 mie = vec3(1.0,0.85,0.6) * pow(max(dot(V,-uSun),0.0),8.0) * rim * 0.25 * uAtmoK;
   col += ray + mie;
   col = col/(1.0+max(vec3(0.0),col-0.82)*0.9);
-  o=vec4(col,1.0);
+  o=vec4(col, uOpacity);
 }`);
 
   atmoProg = prog(V_HEAD + `
@@ -179,7 +202,8 @@ out vec4 o;
 void main(){
   vec3 N=normalize(vN), V=normalize(uCam-vW);
   float f=pow(1.0-abs(dot(N,V)),3.2);
-  float lit=clamp(dot(N,uSun)*0.5+0.55,0.0,1.0);
+  // Dimmer on night side so the rim doesn't read as a hollow soap-bubble
+  float lit=clamp(dot(N,uSun)*0.6+0.4,0.0,1.0);
   float mie=pow(max(dot(V,-uSun),0.0),6.0);
   vec3 col=uAtmo*f*lit*uAtmoK*0.85 + vec3(1.0,0.7,0.4)*mie*f*0.35*uAtmoK;
   o=vec4(col,1.0);
@@ -208,11 +232,17 @@ void main(){
   // Extruded vector entities: two quads (front+back) with thickness along normal
   entProg = prog(V_HEAD + `
 in vec3 aCorner; in vec3 iPos; in float iScale; in float iTile; in vec3 iTint;
-uniform mat4 uMVP; uniform vec3 uCamLocal; uniform float uCols;
-out vec2 vUV; out vec3 vTint; out vec3 vUp;
+uniform mat4 uMVP; uniform vec3 uCamLocal; uniform float uCols; uniform float uXRay;
+out vec2 vUV; out vec3 vTint; out vec3 vUp; out float vHide;
 void main(){
   vec3 up=normalize(iPos);
   vec3 toCam=normalize(uCamLocal-iPos);
+  // Hide far-side sprites — they must not show through the globe
+  float hemi=dot(up, normalize(uCamLocal));
+  vHide = hemi < 0.02 ? 1.0 : 0.0;
+  // Match planet X-ray cutaway (N·V) so trees don't float in the hole
+  float facing=max(dot(up, toCam), 0.0);
+  if(uXRay > 0.01 && facing > (1.0 - uXRay)) vHide = 1.0;
   // Blend toward camera-facing when looking nearly along radial (nadir fix)
   float along=abs(dot(up,toCam));
   vec3 faceDir=mix(toCam, up*0.001+toCam, smoothstep(0.85,0.98,along));
@@ -229,10 +259,11 @@ void main(){
   vUV=(vec2(aCorner.x+0.5, 1.0-aCorner.y)+vec2(tx,ty))/uCols;
   vTint=iTint; vUp=up;
 }`, F_HEAD + `
-in vec2 vUV; in vec3 vTint; in vec3 vUp;
+in vec2 vUV; in vec3 vTint; in vec3 vUp; in float vHide;
 uniform sampler2D uTex; uniform vec3 uSun; uniform float uFade;
 out vec4 o;
 void main(){
+  if(vHide > 0.5) discard;
   vec4 t=texture(uTex,vUV);
   if(t.a<0.45 || uFade<0.01) discard;
   float lit=0.42+0.58*clamp(dot(normalize(vUp),uSun)*0.5+0.5,0.0,1.0);
@@ -262,6 +293,8 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
     inst: gl.createBuffer(), quad: gl.createBuffer(),
     star: gl.createBuffer(), starMag: gl.createBuffer(),
     sph: gl.createBuffer(), sphIdx: gl.createBuffer(), grid: gl.createBuffer(),
+    cellGrid: gl.createBuffer(),
+    localRim: gl.createBuffer(),
     cloud: gl.createBuffer(), cloudCov: gl.createBuffer(),
   };
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
@@ -342,7 +375,9 @@ export function rebuildGeometry() {
   for (let k = 0; k < NV; k++) {
     const c = vCell[k];
     const e = Math.max(W.h[c], sea);
-    const r = 1 + (e - sea) * relief;
+    const build = W.build?.[c] || 0;
+    // Settlements extrude as blocky towers above the terrain
+    const r = 1 + (e - sea) * relief + build * 0.14;
     vPos[k * 3] = vDir[k * 3] * r;
     vPos[k * 3 + 1] = vDir[k * 3 + 1] * r;
     vPos[k * 3 + 2] = vDir[k * 3 + 2] * r;
@@ -367,7 +402,107 @@ export function rebuildGeometry() {
     vNrm[o] /= l; vNrm[o + 1] /= l; vNrm[o + 2] /= l;
   }
   if (gl) { upload(buf.pos, vPos); upload(buf.nrm, vNrm); }
+  uploadCellGrid();
   refreshColours(1);
+}
+
+/** Cell-edge wireframe following terrain relief — for View → Grid. */
+function uploadCellGrid() {
+  // 6 faces × (N rows of N segs horiz + N cols of N segs vert) × 2 verts × 3 floats
+  const segs = 6 * (N * (N + 1) + N * (N + 1));
+  if (!_cellGrid || _cellGrid.length < segs * 6) _cellGrid = new Float32Array(segs * 6);
+  const out = _cellGrid;
+  let m = 0;
+  const lift = 1.003; // sit slightly above the surface to avoid z-fighting
+  for (let f = 0; f < 6; f++) {
+    const o = f * VPF;
+    for (let j = 0; j <= N; j++) {
+      for (let i = 0; i < N; i++) {
+        const a = (o + j * (N + 1) + i) * 3, b = a + 3;
+        out[m++] = vPos[a] * lift; out[m++] = vPos[a + 1] * lift; out[m++] = vPos[a + 2] * lift;
+        out[m++] = vPos[b] * lift; out[m++] = vPos[b + 1] * lift; out[m++] = vPos[b + 2] * lift;
+      }
+    }
+    for (let j = 0; j < N; j++) {
+      for (let i = 0; i <= N; i++) {
+        const a = (o + j * (N + 1) + i) * 3, c = a + (N + 1) * 3;
+        out[m++] = vPos[a] * lift; out[m++] = vPos[a + 1] * lift; out[m++] = vPos[a + 2] * lift;
+        out[m++] = vPos[c] * lift; out[m++] = vPos[c + 1] * lift; out[m++] = vPos[c + 2] * lift;
+      }
+    }
+  }
+  CELL_GRID_COUNT = m / 3;
+  if (gl) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.cellGrid);
+    gl.bufferData(gl.ARRAY_BUFFER, out.subarray(0, m), gl.DYNAMIC_DRAW);
+  }
+}
+
+function cellSurfPos(c, lift = 1.005) {
+  const buildLift = (W.build[c] || 0) * 0.12;
+  const rr = (1 + (Math.max(W.h[c], W.seaLevel) - W.seaLevel) * W.rule.relief + buildLift) * lift;
+  return [DIR[c * 3] * rr, DIR[c * 3 + 1] * rr, DIR[c * 3 + 2] * rr];
+}
+
+/**
+ * Sync local-window highlight on the globe.
+ * mode: 'off' | 'rim' | 'wash' | 'both'
+ * patch: { focus, cells, side, radius, cellSet } from unwrapPatch / drawLocalView
+ */
+export function updateLocalHighlight(patch, mode = 'off') {
+  const wantWash = mode === 'wash' || mode === 'both';
+  const wantRim = mode === 'rim' || mode === 'both';
+  _localWash = wantWash;
+  _localRimOn = wantRim;
+  _localSet = wantWash || wantRim ? (patch?.cellSet || null) : null;
+  _localFocus = patch?.focus ?? -1;
+
+  if (!wantRim || !patch?.cells) {
+    LOCAL_RIM_COUNT = 0;
+    _localKey = '';
+    return;
+  }
+
+  const key = `${patch.focus}:${patch.radius}:${mode}`;
+  // Rebuild rim whenever focus/radius changes (relief drifts slowly — rebuild each call is fine for ~100 segs)
+  const { cells, side, radius, focus } = patch;
+  const maxSegs = side * 4 + 8; // perimeter + focus cross
+  if (!_localRim || _localRim.length < maxSegs * 6) _localRim = new Float32Array(maxSegs * 6);
+  const out = _localRim;
+  let m = 0;
+  const emit = (a, b) => {
+    out[m++] = a[0]; out[m++] = a[1]; out[m++] = a[2];
+    out[m++] = b[0]; out[m++] = b[1]; out[m++] = b[2];
+  };
+
+  // Square perimeter in unwrap space (outer ring of cells)
+  const ring = [];
+  for (let i = 0; i < side; i++) ring.push(cells[0 * side + i]);
+  for (let j = 1; j < side; j++) ring.push(cells[j * side + (side - 1)]);
+  for (let i = side - 2; i >= 0; i--) ring.push(cells[(side - 1) * side + i]);
+  for (let j = side - 2; j >= 1; j--) ring.push(cells[j * side + 0]);
+  const pts = ring.filter((c) => c >= 0).map((c) => cellSurfPos(c));
+  for (let i = 0; i < pts.length; i++) {
+    emit(pts[i], pts[(i + 1) % pts.length]);
+  }
+
+  // Focus crosshair on globe
+  if (focus >= 0) {
+    const f = cellSurfPos(focus, 1.008);
+    const arms = [];
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[focus * 4 + k];
+      if (n >= 0) arms.push(cellSurfPos(n, 1.008));
+    }
+    for (const a of arms) emit(f, a);
+  }
+
+  LOCAL_RIM_COUNT = m / 3;
+  _localKey = key;
+  if (gl && buf?.localRim) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.localRim);
+    gl.bufferData(gl.ARRAY_BUFFER, out.subarray(0, m), gl.DYNAMIC_DRAW);
+  }
 }
 
 export function refreshColours(alpha = 1) {
@@ -381,11 +516,11 @@ export function refreshColours(alpha = 1) {
     let col;
     if (W.h[c] < sea) {
       const d = clamp((sea - W.h[c]) * 1.9, 0, 1);
-      // depth-based water shading
+      // depth-based water shading — floor bright enough to read on night side
       const deep = [
-        lerp(40, 8, d),
-        lerp(90, 25, d),
-        lerp(140, 50, d),
+        lerp(48, 22, d),
+        lerp(100, 45, d),
+        lerp(155, 75, d),
       ];
       const base = R.ocean(1 - d);
       col = ice > 0.5 ? [222, 234, 246] : [
@@ -393,22 +528,59 @@ export function refreshColours(alpha = 1) {
         lerp(base[1], deep[1], 0.5),
         lerp(base[2], deep[2], 0.5),
       ];
-      if (W.reef[c] > 0.3) {
-        col[1] = lerp(col[1], 180, W.reef[c] * 0.4);
-        col[2] = lerp(col[2], 160, W.reef[c] * 0.3);
+      // Phytoplankton / reef blooms — turquoise patches readable from orbit
+      const bloom = Math.max(life * (W.h[c] < sea && (sea - W.h[c]) < 0.14 ? 1 : 0.35), W.reef[c]);
+      if (bloom > 0.12) {
+        const k = clamp((bloom - 0.12) / 0.7, 0, 1);
+        col = [
+          lerp(col[0], 20, k * 0.85),
+          lerp(col[1], 210, k * 0.9),
+          lerp(col[2], 160, k * 0.75),
+        ];
       }
     } else {
       const e = (W.h[c] - sea) / (1 - sea + 1e-6);
       const extra = R.daisyworld ? { black: W.blackDaisy[c], white: W.whiteDaisy[c] } : null;
       col = R.land(temp, W.moist[c], life, e, ice, extra);
-      // snowball / greenhouse tints
-      if (W.state === 'snowball') col = [lerp(col[0], 230, 0.5), lerp(col[1], 235, 0.5), lerp(col[2], 245, 0.5)];
-      if (W.state === 'moist-greenhouse') col = [lerp(col[0], 200, 0.3), lerp(col[1], 100, 0.3), lerp(col[2], 60, 0.3)];
+      // Force neon life through any ruleset wash — orbit-readable blooms
+      if (!R.daisyworld && life > 0.06 && ice < 0.7) {
+        const k = clamp((life - 0.06) / 0.55, 0, 1);
+        const neon = [lerp(22, 4, k), lerp(255, 150, k), lerp(12, 42, k)];
+        const mix = clamp(0.55 + k * 0.45, 0, 1) * (1 - clamp((ice - 0.35) / 0.5, 0, 1) * 0.6);
+        col = [lerp(col[0], neon[0], mix), lerp(col[1], neon[1], mix), lerp(col[2], neon[2], mix)];
+      }
+      // Settlements — stone / timber blocks punch through green
+      const build = W.build?.[c] || 0;
+      if (!R.daisyworld && build > 0.12) {
+        const k = clamp((build - 0.12) / 0.7, 0, 1);
+        const stone = [
+          lerp(168, 92, k),
+          lerp(148, 88, k),
+          lerp(120, 78, k),
+        ];
+        col = [
+          lerp(col[0], stone[0], 0.55 + k * 0.4),
+          lerp(col[1], stone[1], 0.55 + k * 0.4),
+          lerp(col[2], stone[2], 0.55 + k * 0.4),
+        ];
+      }
+      // snowball / greenhouse tints (keep living cells greener)
+      if (W.state === 'snowball' && life < 0.2) col = [lerp(col[0], 230, 0.5), lerp(col[1], 235, 0.5), lerp(col[2], 245, 0.5)];
+      if (W.state === 'moist-greenhouse' && life < 0.2) col = [lerp(col[0], 200, 0.3), lerp(col[1], 100, 0.3), lerp(col[2], 60, 0.3)];
     }
     // Dust veil
     if (W.dust[c] > 0.1) {
       const d = W.dust[c];
       col = [lerp(col[0], 180, d), lerp(col[1], 140, d), lerp(col[2], 90, d)];
+    }
+    // Local patch wash — amber window matching the flat view
+    if (_localWash && _localSet && _localSet.has(c)) {
+      const k = c === _localFocus ? 0.55 : 0.28;
+      col = [
+        lerp(col[0], 255, k),
+        lerp(col[1], 210, k * 0.75),
+        lerp(col[2], 90, k * 0.4),
+      ];
     }
     const o = k * 4;
     vDat[o] = col[0] | 0; vDat[o + 1] = col[1] | 0; vDat[o + 2] = col[2] | 0;
@@ -500,6 +672,30 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.disable(gl.BLEND); disableAll();
   }
 
+  /* interior core + mantle — only when X-ray cutaway is active */
+  const xray = S.xray || 0;
+  const opacity = S.opacity != null ? S.opacity : 1;
+  if (xray > 0.01) {
+    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
+    l = gl.getAttribLocation(healthProg, 'aPos');
+    // Mantle shell
+    m4trs(TMP, S.q, px, py, pz, scale * 0.72);
+    gl.useProgram(healthProg);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform1f(healthProg.u.uScale, 1);
+    gl.uniform3fv(healthProg.u.uCol, [0.55, 0.22, 0.08]);
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    // Inner core
+    m4trs(TMP, S.q, px, py, pz, scale * 0.32);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform3fv(healthProg.u.uCol, [0.95, 0.45, 0.12]);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    disableAll();
+  }
+
   /* planet */
   gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
   gl.useProgram(planetProg);
@@ -513,9 +709,56 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   gl.uniform1f(planetProg.u.uAtmoK, R.atmoStrength * (1 + (W.gases.dust || 0)));
   gl.uniform1f(planetProg.u.uDetail, S.detail);
   gl.uniform1f(planetProg.u.uNight, W.meanLife > 0.25 ? W.meanLife : 0);
+  gl.uniform1f(planetProg.u.uDaisy, R.daisyworld ? 1 : 0);
+  gl.uniform1f(planetProg.u.uOpacity, opacity);
+  gl.uniform1f(planetProg.u.uXRay, xray);
+  // Only alpha-blend when surface is intentionally translucent — X-ray uses discard, not blend
+  const translucent = opacity < 0.999;
+  if (translucent) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+  }
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
   gl.drawElements(gl.TRIANGLES, vIdx.length, gl.UNSIGNED_INT, 0);
+  if (translucent) {
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
   disableAll();
+
+  /* cell grid overlay */
+  const gridAmt = S.grid || 0;
+  if (gridAmt > 0.01 && CELL_GRID_COUNT > 0) {
+    gl.useProgram(flatProg);
+    gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+    const a = 0.15 + gridAmt * 0.75;
+    gl.uniform4f(flatProg.u.uCol, 0.55, 0.78, 1.0, a);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.cellGrid);
+    l = gl.getAttribLocation(flatProg, 'aPos');
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.drawArrays(gl.LINES, 0, CELL_GRID_COUNT);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+    disableAll();
+  }
+
+  /* local patch rim on globe */
+  if (_localRimOn && LOCAL_RIM_COUNT > 0) {
+    gl.useProgram(flatProg);
+    gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+    gl.uniform4f(flatProg.u.uCol, 1.0, 0.82, 0.35, 0.92);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.localRim);
+    l = gl.getAttribLocation(flatProg, 'aPos');
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    gl.lineWidth?.(2);
+    gl.drawArrays(gl.LINES, 0, LOCAL_RIM_COUNT);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+    disableAll();
+  }
 
   /* clouds */
   if (R.atmoStrength > 0.2) {
@@ -548,6 +791,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform3fv(entProg.u.uSun, sun);
     gl.uniform1f(entProg.u.uFade, S.entFade);
     gl.uniform1f(entProg.u.uCols, ATLAS_COLS);
+    gl.uniform1f(entProg.u.uXRay, xray);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasTex);
     gl.uniform1i(entProg.u.uTex, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.quad);

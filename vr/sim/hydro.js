@@ -77,10 +77,12 @@ export function iceTick(W) {
       iceSea[c] = 0;
       const elev = h[c] - seaLevel;
       const cold = temp[c] < snowline - elev * 0.15;
+      // Dense canopy holds heat / dark albedo — resists light glaciation
+      const canopy = W.life[c] > 0.45 ? 0.55 : W.life[c] > 0.2 ? 0.8 : 1;
       if (cold) {
-        iceLand[c] = clamp(iceLand[c] + precip[c] * 0.06 + 0.015, 0, 1);
+        iceLand[c] = clamp(iceLand[c] + (precip[c] * 0.06 + 0.015) * canopy, 0, 1);
       } else {
-        const melt = Math.max(0.04, (temp[c] - snowline) * 0.35);
+        const melt = Math.max(0.04, (temp[c] - snowline) * 0.35) * (2 - canopy);
         iceLand[c] = Math.max(0, iceLand[c] - melt);
       }
       // downhill ice flow (simple)
@@ -158,6 +160,11 @@ export function hydroTick(W) {
       const dM = (moist[NBR[c * 4]] + moist[NBR[c * 4 + 1]] + moist[NBR[c * 4 + 2]] + moist[NBR[c * 4 + 3]]) * 0.25;
       // wind bias: pull from upwind neighbour (simplified via windU as lat band)
       _m[c] = clamp(moist[c] * 0.92 + precip[c] * 0.55 + (dM - moist[c]) * 0.2 - rule.aridity * 0.08, 0, 1);
+      // Sticky horse-latitude deserts — keep barren rock for bloom contrast
+      const lat = Math.abs(DIR[c * 3 + 1]);
+      if (lat > 0.3 && lat < 0.5 && W.life[c] < 0.2) {
+        _m[c] = Math.min(_m[c], 0.14);
+      }
     }
   }
   moist.set(_m);
