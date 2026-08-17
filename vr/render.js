@@ -5,6 +5,14 @@ import { N, NF, NC, NV, VPF, warp, facePoint, dirToCell, DIR, NBR } from './sphe
 import { W } from './world.js';
 import { ENT, MAX_ENT } from './agents.js';
 import { showErr } from './math.js';
+import { lifeRGB, oceanLifeRGB, GUILD_RGB, dominantGuildAt } from './sim/lifeColour.js';
+import { GUILDS } from './sim/redox.js';
+import { getSpriteAtlas, ATLAS_COLS } from './sprites.js';
+import { buildTransmittanceLUT, uploadScatterLUT, buildMultipleScatterLUT, updateScatterLUT } from './sim/scatter.js';
+import { applyOverlay } from './sim/overlay.js';
+import { meshForEntity } from './sim/mesh.js';
+import { initGpgpu } from './sim/gpgpu/index.js';
+import { slotWorldPos, tickTable } from './sim/orreryTable.js';
 
 export let gl = null;
 export let canvas = null;
@@ -40,21 +48,52 @@ function upload(b, arr, usage) {
 }
 
 /* ---------- geometry lattice ---------- */
-export const vDir = new Float32Array(NV * 3);
-export const vCell = new Int32Array(NV);
-export const vPos = new Float32Array(NV * 3);
-export const vNrm = new Float32Array(NV * 3);
-export const vDat = new Uint8Array(NV * 4);
+export let vDir = new Float32Array(NV * 3);
+export let vCell = new Int32Array(NV);
+export let vPos = new Float32Array(NV * 3);
+export let vNrm = new Float32Array(NV * 3);
+export let vDat = new Uint8Array(NV * 4);
+/** Per-vertex atlas UV into field textures (6N × N). Next backlog gbuf. */
+export let vFieldUV = new Float32Array(NV * 2);
 export let vIdx;
 
-(function buildLattice() {
+const GUILD_INDEX = Object.fromEntries(GUILDS.map((g, i) => [g.id, i]));
+export let FIELD_W = 6 * N;
+export let FIELD_H = N;
+let fieldTex0 = null, fieldTex1 = null;
+let fieldPix0 = null, fieldPix1 = null;
+let bufFieldUV = null;
+let scatterTex = null;
+let scatterMsTex = null;
+let scatterLut = null;
+export let overlayMode = 'none';
+export function setOverlayMode(m) { overlayMode = m || 'none'; }
+
+let weldGroups = [];
+
+function buildLatticeArrays() {
+  vDir = new Float32Array(NV * 3);
+  vCell = new Int32Array(NV);
+  vPos = new Float32Array(NV * 3);
+  vNrm = new Float32Array(NV * 3);
+  vDat = new Uint8Array(NV * 4);
+  vFieldUV = new Float32Array(NV * 2);
+  FIELD_W = 6 * N;
+  FIELD_H = N;
   const p = [0, 0, 0];
   let k = 0;
   for (let f = 0; f < 6; f++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++, k++) {
     const s = i / N * 2 - 1, t = j / N * 2 - 1;
     facePoint(f, warp(s), warp(t), p);
     vDir[k * 3] = p[0]; vDir[k * 3 + 1] = p[1]; vDir[k * 3 + 2] = p[2];
-    vCell[k] = dirToCell(p[0], p[1], p[2]);
+    const c = dirToCell(p[0], p[1], p[2]);
+    vCell[k] = c;
+    const cf = (c / NF) | 0;
+    const rem = c - cf * NF;
+    const cj = (rem / N) | 0;
+    const ci = rem - cj * N;
+    vFieldUV[k * 2] = (cf * N + ci + 0.5) / FIELD_W;
+    vFieldUV[k * 2 + 1] = (cj + 0.5) / FIELD_H;
   }
   const idx = new Uint32Array(6 * N * N * 6);
   let m = 0;
@@ -62,67 +101,71 @@ export let vIdx;
     const o = f * VPF;
     for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
       const a = o + j * (N + 1) + i, b = a + 1, c = a + (N + 1), d = c + 1;
-      // CCW when viewed from outside — previous order showed the interior of the far side
       idx[m++] = a; idx[m++] = b; idx[m++] = c;
       idx[m++] = b; idx[m++] = d; idx[m++] = c;
     }
   }
   vIdx = idx;
-})();
-
-const weldGroups = (function () {
+  // Weld groups
   const map = new Map(), out = [];
   for (let f = 0; f < 6; f++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
     if (i !== 0 && i !== N && j !== 0 && j !== N) continue;
-    const k = f * VPF + j * (N + 1) + i;
-    const key = Math.round(vDir[k * 3] * 1e6) + ',' + Math.round(vDir[k * 3 + 1] * 1e6) + ',' + Math.round(vDir[k * 3 + 2] * 1e6);
+    const kk = f * VPF + j * (N + 1) + i;
+    const key = Math.round(vDir[kk * 3] * 1e6) + ',' + Math.round(vDir[kk * 3 + 1] * 1e6) + ',' + Math.round(vDir[kk * 3 + 2] * 1e6);
     let a = map.get(key);
     if (!a) { a = []; map.set(key, a); }
-    a.push(k);
+    a.push(kk);
   }
   for (const a of map.values()) if (a.length > 1) out.push(a);
-  return out;
-})();
+  weldGroups = out;
+}
 
+buildLatticeArrays();
+
+/** Remesh planet after setResolution(N). Reallocates GPU buffers. */
+export function remeshPlanet() {
+  buildLatticeArrays();
+  if (!gl || !buf) return;
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, vIdx, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
+  gl.bufferData(gl.ARRAY_BUFFER, vDat.byteLength, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.fieldUV);
+  gl.bufferData(gl.ARRAY_BUFFER, vFieldUV, gl.STATIC_DRAW);
+  fieldPix0 = new Uint8Array(FIELD_W * FIELD_H * 4);
+  fieldPix1 = new Uint8Array(FIELD_W * FIELD_H * 4);
+  for (const tex of [fieldTex0, fieldTex1]) {
+    if (!tex) continue;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FIELD_W, FIELD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+  }
+  rebuildScatterLUTs();
+  rebuildGeometry();
+}
+
+/** Rebuild transmittance / multi-scatter from current atmosphere knobs. */
+export function rebuildScatterLUTs(opts = {}) {
+  if (!gl) return;
+  const pack = {
+    size: 32,
+    ozone: opts.ozone ?? (W.ozone || 0.3),
+    aerosol: opts.aerosol ?? Math.min(1, (W.gases?.dust || 0) + (W.gases?.sulphate || 0) * 2),
+    albedo: opts.albedo || [0.2, 0.22, 0.2],
+  };
+  scatterLut = buildTransmittanceLUT(pack);
+  const ms = buildMultipleScatterLUT(pack);
+  if (scatterTex) updateScatterLUT(gl, scatterTex, scatterLut);
+  else scatterTex = uploadScatterLUT(gl, scatterLut);
+  if (scatterMsTex) updateScatterLUT(gl, scatterMsTex, ms);
+  else scatterMsTex = uploadScatterLUT(gl, ms);
+}
 /* ---------- sprites / atlas ---------- */
-const SPRITES = [
-  [['M28 64 L28 38 L36 38 L36 64 Z', '#6b4a2f'], ['M32 6 C13 6 6 21 6 30 C6 41 17 48 32 48 C47 48 58 41 58 30 C58 21 51 6 32 6 Z', '#3f9450'], ['M32 10 C20 10 14 20 14 27 C14 34 21 39 32 39 Z', '#4fae5f']],
-  [['M29 64 L29 50 L35 50 L35 64 Z', '#5a3f28'], ['M32 30 L57 58 L7 58 Z', '#2f7046'], ['M32 16 L52 44 L12 44 Z', '#387f52'], ['M32 3 L47 30 L17 30 Z', '#2f7046']],
-  [['M30 64 L21 33 L26 34 L33 64 Z', '#7fa04a'], ['M33 64 L44 36 L47 40 L37 64 Z', '#8fb055'], ['M32 64 L31 26 L35 28 L36 64 Z', '#9cbe61']],
-  [['M25 64 L25 20 C25 13 39 13 39 20 L39 64 Z', '#3f8452'], ['M25 42 L13 42 C8 42 8 33 13 33 L25 33 Z', '#3f8452'], ['M39 36 L50 36 C55 36 55 27 50 27 L39 27 Z', '#3f8452']],
-  [['M5 64 L13 38 L28 29 L47 36 L59 64 Z', '#7d7d87'], ['M13 38 L28 29 L34 47 Z', '#9a9aa6']],
-  [['M13 64 L13 41 L51 41 L51 64 Z', '#bd9463'], ['M4 44 L32 17 L60 44 Z', '#8c5b3d'], ['M27 64 L27 50 L37 50 L37 64 Z', '#5d4530']],
-  [['M32 2 L46 64 L18 64 Z', '#a9dcef'], ['M32 2 L39 64 L32 64 Z', '#e2f5fd']],
-  [['M2 64 C2 36 18 22 32 22 C47 22 62 36 62 64 L47 64 C47 44 40 36 32 36 C22 36 17 44 17 64 Z', '#c4884f'], ['M17 64 C17 46 22 38 32 38 L32 22 C18 22 2 36 2 64 Z', '#a86e3c']],
-  [['M12 64 C4 44 17 27 33 30 C51 33 58 49 54 64 Z', '#d9b276'], ['M24 64 C20 51 28 42 38 45 C47 48 49 56 47 64 Z', '#eccb97']],
-  [['M6 64 C6 53 18 48 27 53 C34 42 52 46 52 57 L55 64 Z', '#8c6fae'], ['M20 64 C20 57 28 54 33 58 L36 64 Z', '#a98ac9']],
-  [['M2 64 C10 49 24 44 32 44 C43 44 55 49 62 64 Z', '#8a8a94'], ['M18 64 C23 55 41 55 46 64 Z', '#6b6b76']],
-  [['M25 64 L25 5 L39 5 L39 64 Z', '#23232b'], ['M25 5 L39 5 L39 13 L25 13 Z', '#6ee0ff']],
-  /* 12 black daisy */ [['M32 32 m-20 0 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0', '#1a1a22'], ['M32 32 m-8 0 a8 8 0 1 0 16 0 a8 8 0 1 0 -16 0', '#3a3a48']],
-  /* 13 white daisy */ [['M32 32 m-20 0 a20 20 0 1 0 40 0 a20 20 0 1 0 -40 0', '#f2f4f8'], ['M32 32 m-6 0 a6 6 0 1 0 12 0 a6 6 0 1 0 -12 0', '#e8c84a']],
-  /* 14 reef */ [['M10 64 L18 40 L28 55 L38 32 L48 58 L54 44 L58 64 Z', '#2a8a8a'], ['M22 64 L30 48 L40 64 Z', '#3cb0a0']],
-  /* 15 fish */ [['M8 40 L32 22 L56 40 L32 52 Z', '#4a8ab8'], ['M56 40 L62 36 L62 44 Z', '#4a8ab8']],
-];
-const ATLAS_COLS = 4, TILE = 128;
-
 function buildAtlas() {
-  const cv = document.createElement('canvas');
-  cv.width = cv.height = ATLAS_COLS * TILE;
-  const g = cv.getContext('2d');
-  g.clearRect(0, 0, cv.width, cv.height);
-  SPRITES.forEach((sp, n) => {
-    const tx = (n % ATLAS_COLS) * TILE, ty = Math.floor(n / ATLAS_COLS) * TILE;
-    g.save();
-    g.translate(tx, ty);
-    g.scale(TILE / 64, TILE / 64);
-    for (const [d, fill] of sp) { g.fillStyle = fill; g.fill(new Path2D(d)); }
-    g.restore();
-  });
-  return cv;
+  return getSpriteAtlas();
 }
 
 /* ---------- programs / buffers ---------- */
-let planetProg, atmoProg, cloudProg, entProg, starProg, flatProg, healthProg;
+let planetProg, atmoProg, cloudProg, entProg, meshProg, starProg, flatProg, healthProg;
 let buf, atlasTex, SPH_COUNT = 0, GRID_COUNT = 0, CELL_GRID_COUNT = 0, NSTAR = 1400;
 const MVP = m4(), MODEL = m4(), NRM = new Float32Array(9), TMP = m4();
 let _cellGrid = null;
@@ -133,6 +176,80 @@ let _localFocus = -1;
 let _localWash = false;
 let _localRimOn = false;
 let _localKey = '';
+let _guildHL = null;
+let ORBIT_AXIS_COUNT = 0;
+let ORBIT_EQ_COUNT = 0;
+let ORBIT_ECL_COUNT = 0;
+let _orbitOblKey = NaN;
+
+/** Highlight cells dominated by a redox guild (Lab tower hover). */
+export function setGuildHighlight(guildId) {
+  _guildHL = guildId || null;
+}
+
+/** Build spin-axis + equator + ecliptic line overlays for a given obliquity. */
+function ensureOrbitGuides(obliquity) {
+  const key = ((obliquity * 1000) | 0);
+  if (key === _orbitOblKey && buf.orbitAxis) return;
+  _orbitOblKey = key;
+  const ε = obliquity || 0;
+  // Spin axis (mesh poles = ±Y)
+  const axis = new Float32Array([0, -1.42, 0, 0, 1.42, 0]);
+  ORBIT_AXIS_COUNT = 2;
+  // Equator in model XZ
+  const N = 64;
+  const eq = new Float32Array(N * 6);
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * Math.PI * 2;
+    const a1 = ((i + 1) / N) * Math.PI * 2;
+    const o = i * 6;
+    const r = 1.06;
+    eq[o] = Math.cos(a0) * r; eq[o + 1] = 0; eq[o + 2] = Math.sin(a0) * r;
+    eq[o + 3] = Math.cos(a1) * r; eq[o + 4] = 0; eq[o + 5] = Math.sin(a1) * r;
+  }
+  ORBIT_EQ_COUNT = N * 2;
+  // Ecliptic ring: plane whose normal is tilted by ε from spin axis
+  // n = (sin ε, cos ε, 0); basis u = (-cos ε, sin ε, 0), v = (0,0,1)
+  const s = Math.sin(ε), c = Math.cos(ε);
+  const ux = -c, uy = s, uz = 0;
+  const vx = 0, vy = 0, vz = 1;
+  const ecl = new Float32Array(N * 6);
+  const re = 1.12;
+  for (let i = 0; i < N; i++) {
+    const a0 = (i / N) * Math.PI * 2;
+    const a1 = ((i + 1) / N) * Math.PI * 2;
+    const o = i * 6;
+    ecl[o] = (ux * Math.cos(a0) + vx * Math.sin(a0)) * re;
+    ecl[o + 1] = (uy * Math.cos(a0) + vy * Math.sin(a0)) * re;
+    ecl[o + 2] = (uz * Math.cos(a0) + vz * Math.sin(a0)) * re;
+    ecl[o + 3] = (ux * Math.cos(a1) + vx * Math.sin(a1)) * re;
+    ecl[o + 4] = (uy * Math.cos(a1) + vy * Math.sin(a1)) * re;
+    ecl[o + 5] = (uz * Math.cos(a1) + vz * Math.sin(a1)) * re;
+  }
+  ORBIT_ECL_COUNT = N * 2;
+  if (!buf.orbitAxis) {
+    buf.orbitAxis = gl.createBuffer();
+    buf.orbitEq = gl.createBuffer();
+    buf.orbitEcl = gl.createBuffer();
+  }
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.orbitAxis);
+  gl.bufferData(gl.ARRAY_BUFFER, axis, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.orbitEq);
+  gl.bufferData(gl.ARRAY_BUFFER, eq, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.orbitEcl);
+  gl.bufferData(gl.ARRAY_BUFFER, ecl, gl.STATIC_DRAW);
+}
+
+function drawOrbitLines(prog, mvp, buffer, count, rgba) {
+  if (!count) return;
+  gl.uniformMatrix4fv(prog.u.uMVP, false, mvp);
+  gl.uniform4f(prog.u.uCol, rgba[0], rgba[1], rgba[2], rgba[3]);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  const l = gl.getAttribLocation(prog, 'aPos');
+  gl.enableVertexAttribArray(l);
+  gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+  gl.drawArrays(gl.LINES, 0, count);
+}
 
 export function initGL(cvs) {
   canvas = cvs;
@@ -140,54 +257,156 @@ export function initGL(cvs) {
   if (!gl) { showErr('WebGL2 is not available.'); throw new Error('no webgl2'); }
 
   planetProg = prog(V_HEAD + `
-in vec3 aPos; in vec3 aNrm; in vec4 aDat;
+in vec3 aPos; in vec3 aNrm; in vec4 aDat; in vec2 aFieldUV;
 uniform mat4 uMVP, uModel; uniform mat3 uNrmMat;
-out vec3 vN; out vec4 vD; out vec3 vW;
+out vec3 vN; out vec4 vD; out vec3 vW; out vec2 vFUV;
 void main(){
   vN = normalize(uNrmMat*aNrm);
-  vD = aDat; vW = (uModel*vec4(aPos,1.0)).xyz;
+  vD = aDat; vW = (uModel*vec4(aPos,1.0)).xyz; vFUV = aFieldUV;
   gl_Position = uMVP*vec4(aPos,1.0);
 }`, F_HEAD + `
-in vec3 vN; in vec4 vD; in vec3 vW;
-uniform vec3 uSun, uCam, uAtmo; uniform float uDetail, uAtmoK, uNight, uDaisy, uOpacity, uXRay;
+in vec3 vN; in vec4 vD; in vec3 vW; in vec2 vFUV;
+uniform vec3 uSun, uCam, uAtmo; uniform float uDetail, uAtmoK, uNight, uDaisy, uOpacity, uXRay, uEarth;
+uniform float uOzone, uAerosol, uMag, uTime, uHaze, uExposure;
+uniform float uStorm, uCloudShadow, uMagTilt;
+uniform sampler2D uField0; uniform sampler2D uField1; uniform sampler2D uScatter; uniform sampler2D uScatterMs;
 out vec4 o;
 vec3 climate(float t){
-  vec3 a=vec3(0.15,0.22,0.55), b=vec3(0.2,0.55,0.72), c=vec3(0.28,0.62,0.38);
-  vec3 d=vec3(0.82,0.72,0.32), e=vec3(0.75,0.35,0.22);
+  vec3 a=vec3(0.12,0.18,0.48), b=vec3(0.18,0.48,0.68), c=vec3(0.26,0.58,0.36);
+  vec3 d=vec3(0.78,0.68,0.30), e=vec3(0.72,0.32,0.20);
   if(t<0.25) return mix(a,b,t/0.25);
   if(t<0.50) return mix(b,c,(t-0.25)/0.25);
   if(t<0.75) return mix(c,d,(t-0.50)/0.25);
   return mix(d,e,clamp((t-0.75)/0.25,0.0,1.0));
 }
+vec3 tonemap(vec3 x){
+  const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
+}
 void main(){
   vec3 N=normalize(vN); vec3 V=normalize(uCam-vW);
-  // X-ray cutaway: discard front-facing fragments so interior shows through
   float facing = max(dot(N, V), 0.0);
   if(uXRay > 0.01 && facing > (1.0 - uXRay)) discard;
+  // Field textures — life/ice/moist/(sed+cloud packed) + npp/guild/height/wind
+  vec4 F0 = texture(uField0, vFUV);
+  vec4 F1 = texture(uField1, vFUV);
+  float lifeF = F0.r;
+  float iceF = F0.g;
+  float moistF = F0.b;
+  float packedSA = F0.a * 255.0;
+  float sedF = mod(packedSA, 16.0) / 15.0;
+  float cloudF = floor(packedSA / 16.0) / 15.0;
+  float nppF = F1.r;
+  float guildF = F1.g;
+  float heightF = F1.b; // 0 deep ocean → 1 high land
+  float windF = F1.a;
+  float waterMask = 1.0 - smoothstep(0.42, 0.55, heightF);
+  float landMask = 1.0 - waterMask;
+  // Intertidal coast band — real field + soft shoreline
+  float interF = sedF; // packed with intertidal emphasis near coast
+  float interBand = smoothstep(0.35, 0.55, heightF) * smoothstep(0.62, 0.48, heightF);
+  interBand = max(interBand * (0.35 + moistF), interF * landMask * 1.2);
   vec3 biome=vD.rgb;
   float greenDom = biome.g - max(biome.r, biome.b);
-  float lifeGreen = smoothstep(0.08, 0.35, greenDom) * smoothstep(0.35, 0.7, biome.g) * (1.0 - uDaisy);
+  float lifeGreen = max(
+    smoothstep(0.08, 0.35, greenDom) * smoothstep(0.35, 0.7, biome.g),
+    lifeF * landMask * smoothstep(0.06, 0.35, lifeF)
+  ) * (1.0 - uDaisy) * (1.0 - iceF * 0.85);
+  // Phenology / green wave from NPP pulse
+  lifeGreen *= 0.75 + 0.35 * nppF;
   float lum = (biome.r+biome.g+biome.b)/3.0;
   float daisyBW = max(smoothstep(0.72, 0.9, lum), smoothstep(0.32, 0.12, lum));
   float lifeShow = max(lifeGreen, daisyBW * uDaisy + daisyBW * (1.0 - uDaisy) * 0.5);
-  // Daisyworld: always prefer raw albedo over climate bands
   float show = max(uDetail, max(lifeShow, uDaisy * 0.92));
+  show = max(show, uEarth * 0.82);
   vec3 base=mix(climate(vD.a), biome, show);
+  // Guild pigment bias — retinal / cyanobacteria / sulfur diverge
+  vec3 guildTint = mix(vec3(0.2, 0.55, 0.25), vec3(0.45, 0.15, 0.55), smoothstep(0.2, 0.8, guildF));
+  guildTint = mix(guildTint, vec3(0.55, 0.45, 0.12), smoothstep(0.55, 0.95, guildF));
+  base = mix(base, guildTint, lifeGreen * landMask * 0.35 * (1.0 - uDaisy));
   float nl=max(dot(N,uSun),0.0);
   float wrap=max(dot(N,uSun)*0.5+0.5,0.0);
-  // Higher night-side ambient so the globe reads solid against space
-  float ambient = 0.18 + 0.12*wrap*wrap;
-  vec3 col = base*(ambient + nl*0.92);
-  col += vec3(0.015,0.025,0.055)*(1.0-nl);
-  col += vec3(0.12,0.55,0.08)*lifeGreen*(0.45+0.55*nl);
-  col = mix(col, biome * (0.55 + 0.7*nl), lifeGreen * 0.55);
-  col = mix(col, biome * (0.25 + 1.05*nl), daisyBW * max(uDaisy, 0.35));
-  col += vec3(1.0,0.85,0.55)*uNight*pow(1.0-nl,3.0)*vD.b*0.15*(1.0-uDaisy);
-  float rim=pow(1.0-max(dot(N,V),0.0),3.0);
-  vec3 ray = uAtmo * rim * uAtmoK * (0.2+0.8*nl);
-  vec3 mie = vec3(1.0,0.85,0.6) * pow(max(dot(V,-uSun),0.0),8.0) * rim * 0.25 * uAtmoK;
-  col += ray + mie;
-  col = col/(1.0+max(vec3(0.0),col-0.82)*0.9);
+  float ambient = 0.14 + 0.10*wrap*wrap;
+  float key = pow(nl, 1.15) * 1.05;
+  float fill = pow(wrap, 2.0) * 0.22;
+  // PBR-ish roughness by surface type
+  float rough = mix(0.85, 0.08, waterMask * (1.0 - iceF));
+  rough = mix(rough, 0.55, landMask * lifeGreen); // canopy softer
+  rough = mix(rough, 0.95, iceF * 0.7); // snow diffuse
+  float waterish = waterMask * (1.0 - iceF * 0.9) * (1.0 - lifeGreen * 0.5);
+  float gloss = mix(8.0, 96.0, 1.0 - rough) * mix(1.0, 0.35, clamp(windF * 1.4, 0.0, 1.0));
+  gloss = max(6.0, gloss);
+  vec3 H = normalize(uSun + V);
+  float spec = pow(max(dot(N, H), 0.0), gloss) * waterish * (1.0 - rough);
+  float specWide = pow(max(dot(N, H), 0.0), max(6.0, gloss * 0.2)) * waterish * (0.15 + windF * 0.4);
+  vec3 col = base * (ambient + key + fill);
+  col += vec3(0.95, 0.97, 1.0) * (spec * 0.9 + specWide);
+  col += vec3(0.02,0.04,0.08)*(1.0-nl);
+  // Sea-ice mosaic — floes + dark leads
+  float floe = fract(sin(dot(N.xy, vec2(12.9898,78.233))) * 43758.5453);
+  float lead = smoothstep(0.62, 0.78, floe) * iceF * waterMask;
+  col = mix(col, vec3(0.82, 0.88, 0.95), iceF * (1.0 - lead * 0.85));
+  col = mix(col, vec3(0.08, 0.18, 0.28), lead * 0.7);
+  // Intertidal ochre / wet sand
+  col = mix(col, vec3(0.58, 0.44, 0.28), interBand * 0.55);
+  // Whitecaps from wind field
+  col = mix(col, vec3(0.92, 0.94, 0.98), waterish * pow(clamp(windF, 0.0, 1.0), 3.0) * 0.45);
+  // Local cloud shadows — denser when coverage high
+  col *= 1.0 - cloudF * waterMask * 0.16 - cloudF * landMask * 0.38 * (0.4+0.6*nl);
+  col *= 1.0 - cloudF * cloudF * 0.18 * (0.3 + 0.7 * nl);
+  // Valley darkening from height field
+  col *= 1.0 - (1.0 - heightF) * landMask * pow(1.0 - nl, 1.4) * 0.14;
+  col = mix(col, vec3(0.72, 0.55, 0.28), sedF * waterMask * 0.35);
+  col = mix(col, vec3(0.12, 0.45, 0.22), nppF * waterMask * 0.4 * (1.0 - iceF));
+  float pop = lifeGreen * (1.0 - uEarth * 0.65);
+  col += vec3(0.08,0.38,0.10)*pop*(0.25+0.75*nl);
+  col = mix(col, biome * (0.52 + 0.72*nl), lifeGreen * mix(0.58, 0.30, uEarth));
+  col = mix(col, biome * (0.22 + 1.1*nl), daisyBW * max(uDaisy, 0.35));
+  float night = pow(1.0-nl, 3.2);
+  col += vec3(0.05, 0.65, 0.42) * uNight * night * max(lifeGreen, lifeF * waterMask) * 0.7;
+  col += vec3(1.0,0.72,0.35)*uNight*night*vD.b*0.14*(1.0-uDaisy);
+  col += vec3(1.0,0.35,0.08)*uNight*night*smoothstep(0.7,1.0,vD.a)*0.08;
+  float termBand = exp(-pow(nl - 0.05, 2.0) * 40.0);
+  // Lightning gated by local storm (cloud × precip) — flashes where storms are
+  float stormLocal = cloudF * max(moistF, 0.35) * max(uStorm, 0.15);
+  float stormFlash = step(0.988, fract(sin(dot(N.xy * 40.0 + cloudF * 9.0, vec2(12.9898,78.233)) + uTime*41.0)*43758.5453));
+  col += vec3(0.8, 0.88, 1.0) * stormFlash * stormLocal * (night + termBand*0.55) * 2.0;
+  float rim=pow(1.0-max(dot(N,V),0.0), 2.6);
+  float rim2=pow(1.0-max(dot(N,V),0.0), 5.0);
+  // Bruneton-ish transmittance + multiple scatter
+  float muV = max(dot(N,V), 0.0);
+  float muS = max(dot(N,uSun), 0.0);
+  vec3 T = texture(uScatter, vec2(muV, muS)).rgb;
+  vec3 MS = texture(uScatterMs, vec2(muV, muS)).rgb;
+  vec3 atmoCol = mix(uAtmo, vec3(0.06, 0.14, 0.62), uOzone * 0.65);
+  atmoCol = mix(atmoCol, vec3(0.9, 0.42, 0.18), uAerosol * 0.55);
+  atmoCol = mix(atmoCol, vec3(0.55, 0.35, 0.15), uHaze * 0.7);
+  atmoCol *= mix(vec3(1.0), T, 0.7);
+  // Multiple scatter fills limb + twilight; stronger opposite the sun
+  float msW = uAtmoK * (0.45 + 0.55 * (1.0 - muS) * (0.5 + 0.5 * rim));
+  atmoCol += MS * msW;
+  float sunEdge = pow(max(dot(V,-uSun),0.0), 5.0);
+  vec3 ray = atmoCol * rim * uAtmoK * (0.15+0.85*nl) * 1.15;
+  // Ozone Chappuis along long slant — deepen blue at twilight
+  ray = mix(ray, vec3(0.05, 0.12, 0.55) * rim2, uOzone * (1.0 - muS) * 0.5);
+  vec3 mie = vec3(1.0,0.82,0.55) * sunEdge * rim * (0.35 + uAerosol * 1.2) * uAtmoK;
+  vec3 crep = vec3(1.0, 0.55, 0.25) * termBand * rim2 * uAtmoK * 0.45;
+  // Inscatter wash from MS on the surface itself (soft sky light)
+  col += MS * uAtmoK * (0.08 + 0.12 * wrap) * (1.0 - waterish * 0.3);
+  col += ray + mie + crep;
+  float airglow = night * rim2 * (0.3 + uOzone * 0.5) * uAtmoK * 0.35;
+  col += vec3(0.15, 0.55, 0.35) * airglow;
+  // Aurora — dipole tilted from spin axis
+  float ct = cos(uMagTilt), st = sin(uMagTilt);
+  vec3 Nm = normalize(vec3(N.x*ct + N.y*st, -N.x*st + N.y*ct, N.z));
+  float magLat = abs(Nm.y);
+  float oval = exp(-pow(magLat - 0.72, 2.0) * 80.0) * uMag;
+  float aurPulse = 0.65 + 0.35 * sin(uTime * 2.1 + N.x * 12.0);
+  col += vec3(0.2, 0.95, 0.55) * oval * night * aurPulse * 0.55;
+  col += vec3(0.55, 0.25, 0.95) * oval * night * (1.0-aurPulse) * 0.25 * uMag;
+  float term = smoothstep(-0.18 - uAerosol * 0.25, 0.22 + uAtmoK * 0.12, nl);
+  col *= 0.42 + 0.58 * term;
+  col = tonemap(col * uExposure);
   o=vec4(col, uOpacity);
 }`);
 
@@ -197,36 +416,82 @@ out vec3 vN; out vec3 vW;
 void main(){ vN=normalize(uNrmMat*aPos); vW=(uModel*vec4(aPos,1.0)).xyz; gl_Position=uMVP*vec4(aPos,1.0); }
 `, F_HEAD + `
 in vec3 vN; in vec3 vW;
-uniform vec3 uSun, uCam, uAtmo; uniform float uAtmoK;
+uniform vec3 uSun, uCam, uAtmo; uniform float uAtmoK, uOzone, uAerosol, uMag, uTime;
 out vec4 o;
 void main(){
   vec3 N=normalize(vN), V=normalize(uCam-vW);
-  float f=pow(1.0-abs(dot(N,V)),3.2);
-  // Dimmer on night side so the rim doesn't read as a hollow soap-bubble
-  float lit=clamp(dot(N,uSun)*0.6+0.4,0.0,1.0);
-  float mie=pow(max(dot(V,-uSun),0.0),6.0);
-  vec3 col=uAtmo*f*lit*uAtmoK*0.85 + vec3(1.0,0.7,0.4)*mie*f*0.35*uAtmoK;
+  float f=pow(1.0-abs(dot(N,V)), 2.8);
+  float f2=pow(1.0-abs(dot(N,V)), 5.5);
+  float lit=clamp(dot(N,uSun)*0.55+0.45,0.0,1.0);
+  float mie=pow(max(dot(V,-uSun),0.0),5.5);
+  vec3 atmo = mix(uAtmo, vec3(0.05,0.12,0.55), uOzone*0.5);
+  atmo = mix(atmo, vec3(0.9,0.4,0.15), uAerosol*0.45);
+  vec3 col=atmo*f*lit*uAtmoK*1.05 + vec3(1.0,0.72,0.42)*mie*f*0.55*uAtmoK;
+  // Outer glow / limb airglow
+  col += vec3(0.2,0.55,0.4)*f2*(1.0-lit)*uAtmoK*0.4;
+  // Aurora contribution on shell
+  float magLat=abs(N.y);
+  float oval=exp(-pow(magLat-0.72,2.0)*70.0)*uMag;
+  float pulse=0.6+0.4*sin(uTime*2.0+N.x*10.0);
+  col += vec3(0.25,1.0,0.55)*oval*(1.0-lit)*pulse*0.7;
   o=vec4(col,1.0);
 }`);
 
   cloudProg = prog(V_HEAD + `
 in vec3 aPos; in float aCov;
-uniform mat4 uMVP, uModel;
-out float vC; out vec3 vN; out vec3 vW;
+uniform mat4 uMVP, uModel; uniform float uTime;
+out float vC; out float vType; out vec3 vN; out vec3 vW;
 void main(){
-  vec3 p=normalize(aPos)*(1.0+0.02*aCov);
-  vN=normalize(aPos); vW=(uModel*vec4(p,1.0)).xyz; vC=aCov;
+  float typ = smoothstep(0.15, 0.45, aCov) + smoothstep(0.55, 0.85, aCov);
+  float lift = mix(0.012, 0.042, smoothstep(0.25, 0.9, aCov));
+  float boil = aCov > 0.55 ? 0.008*sin(uTime*0.7 + aPos.x*18.0 + aPos.z*14.0) : 0.0;
+  vec3 p=normalize(aPos)*(1.0+lift+boil);
+  vN=normalize(aPos); vW=(uModel*vec4(p,1.0)).xyz; vC=aCov; vType=typ;
   gl_Position=uMVP*vec4(p,1.0);
 }`, F_HEAD + `
-in float vC; in vec3 vN; in vec3 vW;
-uniform vec3 uSun, uCam;
+in float vC; in float vType; in vec3 vN; in vec3 vW;
+uniform vec3 uSun, uCam; uniform float uTime;
 out vec4 o;
+float hash(vec3 p){
+  return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453);
+}
+float densAt(vec3 sp, float cov, float t){
+  float n = hash(sp * 6.0 + t * 0.08);
+  float n2 = hash(sp * 14.0 - t * 0.05);
+  return cov * (0.45 + 0.35 * n + 0.2 * n2);
+}
 void main(){
-  if(vC<0.08) discard;
-  float nl=max(dot(normalize(vN),uSun),0.0);
-  float a=smoothstep(0.08,0.55,vC)*0.72;
-  vec3 col=mix(vec3(0.75,0.78,0.85), vec3(1.0), nl);
-  o=vec4(col,a);
+  if(vC<0.04) discard;
+  vec3 N=normalize(vN);
+  vec3 V=normalize(uCam-vW);
+  vec3 L=normalize(uSun);
+  // Volumetric raymarch through cloud shell (10 steps)
+  float dens = 0.0;
+  float light = 0.0;
+  vec3 p = normalize(vW);
+  float g = 0.6; // Mie-ish forward scatter
+  for (int i = 0; i < 10; i++) {
+    float t = float(i) * 0.0045;
+    vec3 sp = normalize(p + V * (-t));
+    float d = densAt(sp, vC, uTime) * (1.0 - float(i) * 0.07);
+    dens += d;
+    float mu = max(0.0, dot(sp, L));
+    float phase = (1.0 - g*g) / pow(1.0 + g*g - 2.0*g*mu, 1.5);
+    light += d * (0.2 + 0.8 * mu) * (0.55 + 0.45 * phase);
+  }
+  dens = clamp(dens * 0.22, 0.0, 1.0);
+  float nl=max(dot(N,L),0.0);
+  float a=smoothstep(0.03,0.48,dens)*mix(0.38,0.95,smoothstep(0.0,2.0,vType));
+  float rim=pow(1.0-max(dot(N,V),0.0), 2.6);
+  vec3 cold=vec3(0.68,0.76,0.92);
+  vec3 warm=vec3(1.0,0.96,0.9);
+  vec3 body=mix(cold, warm, clamp(vType*0.5,0.0,1.0));
+  vec3 shade = body * (0.28 + light * 0.5 + nl * 0.22);
+  shade += vec3(1.0,0.9,0.75) * rim * nl * 0.4;
+  // Silver lining toward sun
+  shade += vec3(1.0,0.95,0.88) * pow(max(dot(V,-L),0.0), 8.0) * dens * 0.55;
+  shade *= 1.0 - dens * 0.2 * (1.0 - nl);
+  o=vec4(shade,a);
 }`);
 
   // Extruded vector entities: two quads (front+back) with thickness along normal
@@ -270,6 +535,20 @@ void main(){
   o=vec4(t.rgb*vTint*lit, t.a*uFade);
 }`);
 
+  meshProg = prog(V_HEAD + `
+in vec3 aPos; uniform mat4 uMVP; uniform vec3 uOrigin; uniform float uScale;
+uniform vec3 uUp; uniform vec3 uRight; uniform vec3 uFwd;
+void main(){
+  vec3 p = uOrigin + (uRight*aPos.x + uUp*aPos.y + uFwd*aPos.z) * uScale;
+  gl_Position = uMVP * vec4(p, 1.0);
+}
+`, F_HEAD + `
+uniform vec3 uTint; uniform vec3 uSun; uniform vec3 uUp; out vec4 o;
+void main(){
+  float lit = 0.4 + 0.6 * clamp(dot(normalize(uUp), uSun) * 0.5 + 0.5, 0.0, 1.0);
+  o = vec4(uTint * lit, 0.95);
+}`);
+
   starProg = prog(V_HEAD + `
 in vec3 aPos; in float aMag; uniform mat4 uVP; out float vM;
 void main(){ gl_Position=uVP*vec4(aPos,1.0); gl_PointSize=aMag*2.6; vM=aMag; }
@@ -290,6 +569,7 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
 
   buf = {
     pos: gl.createBuffer(), nrm: gl.createBuffer(), dat: gl.createBuffer(), idx: gl.createBuffer(),
+    fieldUV: gl.createBuffer(),
     inst: gl.createBuffer(), quad: gl.createBuffer(),
     star: gl.createBuffer(), starMag: gl.createBuffer(),
     sph: gl.createBuffer(), sphIdx: gl.createBuffer(), grid: gl.createBuffer(),
@@ -301,8 +581,40 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, vIdx, gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
   gl.bufferData(gl.ARRAY_BUFFER, vDat.byteLength, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.fieldUV);
+  gl.bufferData(gl.ARRAY_BUFFER, vFieldUV, gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.inst);
   gl.bufferData(gl.ARRAY_BUFFER, ENT.data.byteLength, gl.DYNAMIC_DRAW);
+
+  // gbuf field atlases: 6N × N RGBA8
+  fieldPix0 = new Uint8Array(FIELD_W * FIELD_H * 4);
+  fieldPix1 = new Uint8Array(FIELD_W * FIELD_H * 4);
+  fieldTex0 = gl.createTexture();
+  fieldTex1 = gl.createTexture();
+  for (const tex of [fieldTex0, fieldTex1]) {
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FIELD_W, FIELD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  }
+  scatterLut = buildTransmittanceLUT({ size: 32 });
+  scatterTex = uploadScatterLUT(gl, scatterLut);
+  scatterMsTex = uploadScatterLUT(gl, buildMultipleScatterLUT({ size: 24 }));
+  try {
+    initGpgpu(gl, { maxSlots: 8, enabled: true });
+  } catch (e) {
+    console.warn('[gpgpu]', e);
+  }
+
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault();
+    showErr('GPU context lost — reload the page to restore');
+  });
+  canvas.addEventListener('webglcontextrestored', () => {
+    showErr('GPU context restored — please reload');
+  });
 
   // Extruded quad: 2 slabs × 2 tris — corners as vec3
   const corners = [];
@@ -342,11 +654,14 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
   })();
 
   (function () {
+    // Deterministic starfield (seeded) — next backlog det
+    let s = 0xC0FFEE ^ 0x9e3779b9;
+    const rnd = () => { s |= 0; s = (s + 0x6d2b79f5) | 0; let t = Math.imul(s ^ (s >>> 15), 1 | s); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     const sp = new Float32Array(NSTAR * 3), mg = new Float32Array(NSTAR);
     for (let i = 0; i < NSTAR; i++) {
-      const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u);
+      const u = rnd() * 2 - 1, th = rnd() * Math.PI * 2, r = Math.sqrt(1 - u * u);
       sp[i * 3] = r * Math.cos(th) * 260; sp[i * 3 + 1] = u * 260; sp[i * 3 + 2] = r * Math.sin(th) * 260;
-      mg[i] = 0.25 + Math.pow(Math.random(), 2.6) * 0.95;
+      mg[i] = 0.25 + Math.pow(rnd(), 2.6) * 0.95;
     }
     upload(buf.star, sp); upload(buf.starMag, mg);
   })();
@@ -371,13 +686,22 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
 }
 
 export function rebuildGeometry() {
-  const sea = W.seaLevel, relief = W.rule.relief;
+  const sea = W.seaLevel;
+  const earth = !!W.rule.earthLike;
+  // Earth: gentle continents. Build towers stay tiny — colour carries settlements.
+  const relief = earth ? Math.min(W.rule.relief || 0.05, 0.018) : (W.rule.relief || 0.05);
+  const buildAmp = earth ? 0.0035 : 0.012;
   for (let k = 0; k < NV; k++) {
     const c = vCell[k];
-    const e = Math.max(W.h[c], sea);
-    const build = W.build?.[c] || 0;
-    // Settlements extrude as blocky towers above the terrain
-    const r = 1 + (e - sea) * relief + build * 0.14;
+    let e = Math.max(W.h[c], sea);
+    // Soften cell-to-cell cliffs so land reads as plates, not needles
+    if (earth) {
+      let s = e;
+      for (let i = 0; i < 4; i++) s += Math.max(W.h[NBR[c * 4 + i]], sea);
+      e = e * 0.45 + (s / 5) * 0.55;
+    }
+    const build = Math.min(1, W.build?.[c] || 0);
+    const r = 1 + (e - sea) * relief + build * buildAmp;
     vPos[k * 3] = vDir[k * 3] * r;
     vPos[k * 3 + 1] = vDir[k * 3 + 1] * r;
     vPos[k * 3 + 2] = vDir[k * 3 + 2] * r;
@@ -507,16 +831,19 @@ export function updateLocalHighlight(patch, mode = 'off') {
 
 export function refreshColours(alpha = 1) {
   const R = W.rule;
-  const sea = W.seaLevel;
+  const seaBase = W._seaBase ?? W.seaLevel;
+  const pigment = W.dominantPigment;
+  const season = W.season || 0;
   for (let k = 0; k < NV; k++) {
     const c = vCell[k];
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
     const ice = lerp(W.prevIce[c], W.ice[c], alpha);
+    const sea = seaBase + (W.tideHeight?.[c] || 0) * 0.85;
+    const inter = W.intertidal?.[c] || 0;
     let col;
     if (W.h[c] < sea) {
       const d = clamp((sea - W.h[c]) * 1.9, 0, 1);
-      // depth-based water shading — floor bright enough to read on night side
       const deep = [
         lerp(48, 22, d),
         lerp(100, 45, d),
@@ -528,28 +855,154 @@ export function refreshColours(alpha = 1) {
         lerp(base[1], deep[1], 0.5),
         lerp(base[2], deep[2], 0.5),
       ];
-      // Phytoplankton / reef blooms — turquoise patches readable from orbit
+      // Sea ice leads / polynyas — not a flat white sheet. Item 142.
+      if (ice > 0.35 && ice < 0.85) {
+        const lead = (Math.sin(c * 12.9898) * 43758.5453) % 1;
+        if (lead > 0.7) {
+          col = [lerp(col[0], 40, 0.55), lerp(col[1], 90, 0.55), lerp(col[2], 140, 0.55)];
+        } else {
+          col = [222, 234, 246];
+        }
+      } else if (ice >= 0.85) {
+        col = [230, 238, 248];
+      }
+      // Whitecaps / wind roughness — storm brightens the sea
+      const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
+      if (wind > 0.28 && ice < 0.3) {
+        const foam = clamp(Math.pow(wind, 3) * 0.55, 0, 0.45);
+        col = [lerp(col[0], 235, foam), lerp(col[1], 238, foam), lerp(col[2], 245, foam)];
+      }
+      // Rain darkening under storm cells
+      if ((W.precip?.[c] || 0) > 0.25 && ice < 0.2) {
+        const rk = clamp(W.precip[c], 0, 1) * 0.22;
+        col = [col[0] * (1 - rk), col[1] * (1 - rk), col[2] * (1 - rk * 0.65)];
+      }
+      // Ocean colour from NPP / CDOM / sediment — guild-tinted blooms.
+      const npp = W.npp?.[c] || 0;
+      const sed = W.sediment?.[c] || 0;
+      if (npp > 0.08) {
+        const k = clamp(npp, 0, 1) * 0.55;
+        const bloomCol = oceanLifeRGB(W, c, npp);
+        col = [
+          lerp(col[0], bloomCol[0], k),
+          lerp(col[1], bloomCol[1], k),
+          lerp(col[2], bloomCol[2], k),
+        ];
+      }
+      if (sed > 0.12) {
+        const k = clamp(sed, 0, 1) * 0.45;
+        col = [lerp(col[0], 180, k), lerp(col[1], 140, k), lerp(col[2], 70, k)];
+      }
+      // Phytoplankton / reef — guild-tinted
       const bloom = Math.max(life * (W.h[c] < sea && (sea - W.h[c]) < 0.14 ? 1 : 0.35), W.reef[c]);
       if (bloom > 0.12) {
-        const k = clamp((bloom - 0.12) / 0.7, 0, 1);
+        const k = clamp((bloom - 0.12) / 0.7, 0, 1) * (R.earthLike ? 0.6 : 1);
+        if (W.reef[c] > 0.05 && temp > 0.74 && life < 0.15) {
+          col = [lerp(col[0], 245, k), lerp(col[1], 242, k), lerp(col[2], 235, k)];
+        } else {
+          const live = oceanLifeRGB(W, c, bloom);
+          col = [
+            lerp(col[0], live[0], k * 0.8),
+            lerp(col[1], live[1], k * 0.85),
+            lerp(col[2], live[2], k * 0.75),
+          ];
+        }
+      }
+      // Sediment plumes at river mouths. Item 146.
+      if (W.flow?.[c] > 0.25 && (sea - W.h[c]) < 0.08) {
+        const k = clamp(W.flow[c], 0, 1) * 0.5;
+        col = [lerp(col[0], 190, k), lerp(col[1], 150, k), lerp(col[2], 80, k)];
+      }
+      // Storm field / surge — named cyclones read as bright rain + muddy surge
+      const storm = W.stormField?.[c] || 0;
+      const surge = W.surgeField?.[c] || 0;
+      if (storm > 0.12 && ice < 0.35) {
+        const sk = clamp(storm, 0, 1);
         col = [
-          lerp(col[0], 20, k * 0.85),
-          lerp(col[1], 210, k * 0.9),
-          lerp(col[2], 160, k * 0.75),
+          lerp(col[0], 48, sk * 0.55),
+          lerp(col[1], 58, sk * 0.45),
+          lerp(col[2], 72, sk * 0.35),
+        ];
+        if (W.h[c] < sea) {
+          col = [
+            lerp(col[0], 210, sk * 0.25),
+            lerp(col[1], 215, sk * 0.28),
+            lerp(col[2], 225, sk * 0.3),
+          ];
+        }
+      }
+      if (surge > 0.01) {
+        const gk = clamp(surge * 12, 0, 1);
+        col = [
+          lerp(col[0], 90, gk * 0.4),
+          lerp(col[1], 130, gk * 0.35),
+          lerp(col[2], 150, gk * 0.45),
+        ];
+      }
+      if (inter > 0.15 && (sea - W.h[c]) < 0.035) {
+        col = [
+          lerp(col[0], 125, inter * 0.5),
+          lerp(col[1], 115, inter * 0.45),
+          lerp(col[2], 72, inter * 0.4),
         ];
       }
     } else {
       const e = (W.h[c] - sea) / (1 - sea + 1e-6);
       const extra = R.daisyworld ? { black: W.blackDaisy[c], white: W.whiteDaisy[c] } : null;
       col = R.land(temp, W.moist[c], life, e, ice, extra);
-      // Force neon life through any ruleset wash — orbit-readable blooms
-      if (!R.daisyworld && life > 0.06 && ice < 0.7) {
-        const k = clamp((life - 0.06) / 0.55, 0, 1);
-        const neon = [lerp(22, 4, k), lerp(255, 150, k), lerp(12, 42, k)];
-        const mix = clamp(0.55 + k * 0.45, 0, 1) * (1 - clamp((ice - 0.35) / 0.5, 0, 1) * 0.6);
-        col = [lerp(col[0], neon[0], mix), lerp(col[1], neon[1], mix), lerp(col[2], neon[2], mix)];
+      // Intertidal ochre — coast that breathes
+      if (inter > 0.08) {
+        const wet = W.tideWet?.[c] || 0;
+        const mud = [150 + wet * 40, 118 + wet * 22, 68];
+        const ik = clamp(inter, 0, 1) * (0.55 + wet * 0.35);
+        col = [lerp(col[0], mud[0], ik), lerp(col[1], mud[1], ik), lerp(col[2], mud[2], ik)];
       }
-      // Settlements — stone / timber blocks punch through green
+      // Seasonal phenology green wave. Item 140.
+      const lat = DIR[c * 3 + 1];
+      const spring = Math.max(0, Math.sin(season + lat * 1.2));
+      if (!R.daisyworld && life > 0.06 && ice < 0.7) {
+        const k = clamp((life - 0.06) / 0.55, 0, 1) * (0.75 + spring * 0.35);
+        const live = lifeRGB(W, c, life);
+        if (live) {
+          const mix = R.earthLike ? (0.4 + k * 0.35) : (0.55 + k * 0.4);
+          col = [
+            lerp(col[0], live[0], mix),
+            lerp(col[1], live[1], mix),
+            lerp(col[2], live[2], mix),
+          ];
+        } else if (R.earthLike) {
+          let lush = [lerp(col[0], 22, k * 0.35), lerp(col[1], 140, k * 0.4), lerp(col[2], 48, k * 0.3)];
+          if (pigment === 'bchl') lush = [lerp(lush[0], 140, 0.35), lerp(lush[1], 50, 0.35), lerp(lush[2], 120, 0.35)];
+          if (pigment === 'retinal') lush = [lerp(lush[0], 180, 0.4), lerp(lush[1], 40, 0.4), lerp(lush[2], 140, 0.4)];
+          const mix = 0.35 + k * 0.25;
+          col = [lerp(col[0], lush[0], mix), lerp(col[1], lush[1], mix), lerp(col[2], lush[2], mix)];
+        } else {
+          const neon = [lerp(22, 4, k), lerp(255, 150, k), lerp(12, 42, k)];
+          const mix = clamp(0.55 + k * 0.45, 0, 1) * (1 - clamp((ice - 0.35) / 0.5, 0, 1) * 0.6);
+          col = [lerp(col[0], neon[0], mix), lerp(col[1], neon[1], mix), lerp(col[2], neon[2], mix)];
+        }
+      }
+      // BIF / ejecta surface hints
+      if (W.bifRock?.[c] > 0.2) {
+        const k = W.bifRock[c] * 0.4;
+        col = [lerp(col[0], 120, k), lerp(col[1], 70, k), lerp(col[2], 40, k)];
+      }
+      if (W.ejecta?.[c] > 0.15) {
+        const k = W.ejecta[c] * 0.35;
+        col = [lerp(col[0], 90, k), lerp(col[1], 85, k), lerp(col[2], 80, k)];
+      }
+      // Stromatolite texture on shores
+      if (W.stromatolite?.[c] > 0.2) {
+        const k = W.stromatolite[c] * 0.3;
+        col = [lerp(col[0], 100, k), lerp(col[1], 110, k), lerp(col[2], 90, k)];
+      }
+      // Sulfur allotropes. Item 133.
+      if (W.sulfurPaint?.[c] > 0.05) {
+        const t = W.sulfurPaint[c];
+        const sulf = t < 0.3 ? [220, 200, 40] : t < 0.6 ? [220, 120, 30] : [40, 30, 30];
+        const k = 0.35;
+        col = [lerp(col[0], sulf[0], k), lerp(col[1], sulf[1], k), lerp(col[2], sulf[2], k)];
+      }
       const build = W.build?.[c] || 0;
       if (!R.daisyworld && build > 0.12) {
         const k = clamp((build - 0.12) / 0.7, 0, 1);
@@ -564,16 +1017,13 @@ export function refreshColours(alpha = 1) {
           lerp(col[2], stone[2], 0.55 + k * 0.4),
         ];
       }
-      // snowball / greenhouse tints (keep living cells greener)
       if (W.state === 'snowball' && life < 0.2) col = [lerp(col[0], 230, 0.5), lerp(col[1], 235, 0.5), lerp(col[2], 245, 0.5)];
       if (W.state === 'moist-greenhouse' && life < 0.2) col = [lerp(col[0], 200, 0.3), lerp(col[1], 100, 0.3), lerp(col[2], 60, 0.3)];
     }
-    // Dust veil
     if (W.dust[c] > 0.1) {
       const d = W.dust[c];
       col = [lerp(col[0], 180, d), lerp(col[1], 140, d), lerp(col[2], 90, d)];
     }
-    // Local patch wash — amber window matching the flat view
     if (_localWash && _localSet && _localSet.has(c)) {
       const k = c === _localFocus ? 0.55 : 0.28;
       col = [
@@ -582,15 +1032,35 @@ export function refreshColours(alpha = 1) {
         lerp(col[2], 90, k * 0.4),
       ];
     }
+    // Lab redox-tower hover — light up matching guild cells
+    if (_guildHL && W.guildDens?.[_guildHL]) {
+      const dens = W.guildDens[_guildHL][c] || 0;
+      const rgb = GUILD_RGB[_guildHL];
+      if (dens > 0.06 && rgb) {
+        const k = 0.35 + dens * 0.55;
+        col = [
+          lerp(col[0], rgb[0], k),
+          lerp(col[1], rgb[1], k),
+          lerp(col[2], rgb[2], k),
+        ];
+      } else {
+        col = [
+          lerp(col[0], 18, 0.55),
+          lerp(col[1], 22, 0.55),
+          lerp(col[2], 28, 0.55),
+        ];
+      }
+    }
     const o = k * 4;
     vDat[o] = col[0] | 0; vDat[o + 1] = col[1] | 0; vDat[o + 2] = col[2] | 0;
     vDat[o + 3] = clamp(temp, 0, 1) * 255 | 0;
   }
   if (gl) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
+    if (overlayMode && overlayMode !== 'none') applyOverlay(W, vDat, vCell, NV, overlayMode);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, vDat);
+    uploadFieldTextures(alpha);
   }
-  // cloud coverage upload
   if (buf._cloudCov) {
     const pos = buf._cloudPos;
     for (let i = 0; i < buf._cloudCov.length; i++) {
@@ -606,6 +1076,68 @@ export function uploadEntities() {
   if (!gl) return;
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.inst);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, ENT.data.subarray(0, ENT.n * 8));
+}
+
+const _meshGPU = new Map();
+function gpuMesh(key, mesh) {
+  let g = _meshGPU.get(key);
+  if (g) return g;
+  const pos = gl.createBuffer();
+  const idx = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, pos);
+  gl.bufferData(gl.ARRAY_BUFFER, mesh.positions, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, mesh.indices, gl.STATIC_DRAW);
+  g = { pos, idx, count: mesh.indices.length };
+  _meshGPU.set(key, g);
+  return g;
+}
+
+function drawEntityMeshes(MVP, sun, fade) {
+  if (!meshProg || fade < 0.45) return;
+  const lim = Math.min(ENT.n, fade > 0.85 ? 48 : 24);
+  gl.useProgram(meshProg);
+  gl.uniformMatrix4fv(meshProg.u.uMVP, false, MVP);
+  gl.uniform3fv(meshProg.u.uSun, sun);
+  gl.enable(gl.DEPTH_TEST);
+  gl.disable(gl.BLEND);
+  let drawn = 0;
+  for (let i = 0; i < ENT.n && drawn < lim; i++) {
+    const m = ENT.meta[i];
+    if (!m?.plan) continue;
+    const o = i * 8;
+    const ox = ENT.data[o], oy = ENT.data[o + 1], oz = ENT.data[o + 2];
+    const sc = ENT.data[o + 3] * 2.8;
+    const mesh = meshForEntity(m);
+    const key = `${m.plan.limbs}-${m.plan.segments}-${m.plan.appendage}`;
+    const g = gpuMesh(key, mesh);
+    const up = [ox, oy, oz];
+    const len = Math.hypot(up[0], up[1], up[2]) || 1;
+    up[0] /= len; up[1] /= len; up[2] /= len;
+    let right = [-up[2], 0, up[0]];
+    let rl = Math.hypot(right[0], right[1], right[2]);
+    if (rl < 1e-5) right = [1, 0, 0];
+    else { right[0] /= rl; right[2] /= rl; }
+    const fwd = [
+      up[1] * right[2] - up[2] * right[1],
+      up[2] * right[0] - up[0] * right[2],
+      up[0] * right[1] - up[1] * right[0],
+    ];
+    gl.uniform3fv(meshProg.u.uOrigin, [ox, oy, oz]);
+    gl.uniform1f(meshProg.u.uScale, sc);
+    gl.uniform3fv(meshProg.u.uUp, up);
+    gl.uniform3fv(meshProg.u.uRight, right);
+    gl.uniform3fv(meshProg.u.uFwd, fwd);
+    gl.uniform3fv(meshProg.u.uTint, [ENT.data[o + 5], ENT.data[o + 6], ENT.data[o + 7]]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, g.pos);
+    const ap = gl.getAttribLocation(meshProg, 'aPos');
+    gl.enableVertexAttribArray(ap);
+    gl.vertexAttribPointer(ap, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.idx);
+    gl.drawElements(gl.TRIANGLES, g.count, gl.UNSIGNED_SHORT, 0);
+    drawn++;
+  }
+  disableAll();
 }
 
 function disableAll() { for (let i = 0; i < 8; i++) gl.disableVertexAttribArray(i); }
@@ -624,12 +1156,56 @@ function bindPlanetAttribs(p) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
     gl.enableVertexAttribArray(a2); gl.vertexAttribPointer(a2, 4, gl.UNSIGNED_BYTE, true, 0, 0);
   }
+  const a3 = gl.getAttribLocation(p, 'aFieldUV');
+  if (a3 >= 0) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.fieldUV);
+    gl.enableVertexAttribArray(a3); gl.vertexAttribPointer(a3, 2, gl.FLOAT, false, 0, 0);
+  }
+}
+
+/** Pack sim fields into GPU atlases. Next backlog item 1 (gbuf). */
+export function uploadFieldTextures(alpha = 1) {
+  if (!gl || !fieldTex0 || !fieldPix0) return;
+  const seaBase = W._seaBase ?? W.seaLevel;
+  for (let c = 0; c < NC; c++) {
+    const f = (c / NF) | 0;
+    const rem = c - f * NF;
+    const j = (rem / N) | 0;
+    const i = rem - j * N;
+    const px = (j * FIELD_W + f * N + i) * 4;
+    const life = lerp(W.prevLife[c], W.life[c], alpha);
+    const ice = lerp(W.prevIce[c], W.ice[c], alpha);
+    fieldPix0[px] = clamp(life, 0, 1) * 255;
+    fieldPix0[px + 1] = clamp(ice, 0, 1) * 255;
+    fieldPix0[px + 2] = clamp(W.moist[c] || 0, 0, 1) * 255;
+    // Pack max(sediment, intertidal) + clouds — coast reads without overlay
+    const sed = Math.max(W.sediment?.[c] || 0, W.intertidal?.[c] || 0);
+    const sedQ = Math.min(15, (clamp(sed, 0, 1) * 15) | 0);
+    const cldQ = Math.min(15, (clamp(W.clouds?.[c] || 0, 0, 1) * 15) | 0);
+    fieldPix0[px + 3] = sedQ + cldQ * 16;
+
+    const guild = dominantGuildAt(W, c);
+    const gi = guild != null ? (GUILD_INDEX[guild] ?? 0) : 0;
+    const localSea = seaBase + (W.tideHeight?.[c] || 0) * 0.85;
+    const hs = clamp(0.5 + (W.h[c] - localSea) * 2.2, 0, 1);
+    const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
+    fieldPix1[px] = clamp(W.npp?.[c] || 0, 0, 1) * 255;
+    fieldPix1[px + 1] = (gi / Math.max(1, GUILDS.length - 1)) * 255;
+    fieldPix1[px + 2] = hs * 255;
+    fieldPix1[px + 3] = clamp(wind, 0, 1) * 255;
+  }
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex0);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix0);
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex1);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix1);
 }
 
 export function drawScene(proj, view, camPos, inXR, S, hands) {
   const R = W.rule;
-  const sun = [Math.cos(S.sunAng), 0.34 + Math.sin(W.season || 0) * W.obliquity * 0.5, Math.sin(S.sunAng)];
-  const sl = Math.hypot(...sun); sun[0] /= sl; sun[1] /= sl; sun[2] /= sl;
+  // Sun tracks seasons on the ecliptic; obliquity sets how far it climbs
+  const sunY = Math.sin(W.season || 0) * Math.sin(W.obliquity || 0);
+  const sun = [Math.cos(S.sunAng), sunY, Math.sin(S.sunAng)];
+  const sl = Math.hypot(...sun) || 1; sun[0] /= sl; sun[1] /= sl; sun[2] /= sl;
 
   const scale = inXR ? S.scaleXR : 1;
   const px = inXR ? S.posXR[0] : 0, py = inXR ? S.posXR[1] : 0, pz = inXR ? S.posXR[2] : 0;
@@ -679,20 +1255,37 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
     l = gl.getAttribLocation(healthProg, 'aPos');
-    // Mantle shell
-    m4trs(TMP, S.q, px, py, pz, scale * 0.72);
-    gl.useProgram(healthProg);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
-    gl.uniform1f(healthProg.u.uScale, 1);
-    gl.uniform3fv(healthProg.u.uCol, [0.55, 0.22, 0.08]);
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
-    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
-    // Inner core
-    m4trs(TMP, S.q, px, py, pz, scale * 0.32);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
-    gl.uniform3fv(healthProg.u.uCol, [0.95, 0.45, 0.12]);
-    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    if (W._iceShell) {
+      // Ice-shell stack: mantle → ocean → lid
+      const layers = [
+        { s: 0.55, c: [0.55, 0.22, 0.1] },
+        { s: 0.72, c: [0.12, 0.35, 0.55] },
+        { s: 0.88, c: [0.75, 0.85, 0.95] },
+      ];
+      for (const ly of layers) {
+        m4trs(TMP, S.q, px, py, pz, scale * ly.s);
+        gl.useProgram(healthProg);
+        gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+        gl.uniform1f(healthProg.u.uScale, 1);
+        gl.uniform3fv(healthProg.u.uCol, ly.c);
+        gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+        gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+      }
+    } else {
+      m4trs(TMP, S.q, px, py, pz, scale * 0.72);
+      gl.useProgram(healthProg);
+      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      gl.uniform1f(healthProg.u.uScale, 1);
+      gl.uniform3fv(healthProg.u.uCol, [0.55, 0.22, 0.08]);
+      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+      gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+      m4trs(TMP, S.q, px, py, pz, scale * 0.32);
+      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      gl.uniform3fv(healthProg.u.uCol, [0.95, 0.45, 0.12]);
+      gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    }
     disableAll();
   }
 
@@ -708,10 +1301,66 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   gl.uniform3fv(planetProg.u.uAtmo, R.atmo);
   gl.uniform1f(planetProg.u.uAtmoK, R.atmoStrength * (1 + (W.gases.dust || 0)));
   gl.uniform1f(planetProg.u.uDetail, S.detail);
-  gl.uniform1f(planetProg.u.uNight, W.meanLife > 0.25 ? W.meanLife : 0);
+  // Night lights from settlements
+  gl.uniform1f(planetProg.u.uNight, Math.max(
+    W.meanLife > 0.12 ? W.meanLife * 1.15 : 0,
+    (W.build && W.meanLife > 0.05) ? 0.15 : 0,
+    (W._cityLights || 0) * 1.2
+  ));
   gl.uniform1f(planetProg.u.uDaisy, R.daisyworld ? 1 : 0);
+  gl.uniform1f(planetProg.u.uEarth, R.earthLike ? 1 : 0);
   gl.uniform1f(planetProg.u.uOpacity, opacity);
   gl.uniform1f(planetProg.u.uXRay, xray);
+  if (planetProg.u.uOzone) gl.uniform1f(planetProg.u.uOzone, W.ozone || 0);
+  if (planetProg.u.uAerosol) {
+    gl.uniform1f(planetProg.u.uAerosol, clamp((W.gases.dust || 0) + (W.gases.sulphate || 0) * 2, 0, 1));
+  }
+  if (planetProg.u.uMag) {
+    const mag = (R.magnetosphere || 0) * (R.earthLike && !R.deepTime ? 0.22 : 1);
+    gl.uniform1f(planetProg.u.uMag, mag);
+  }
+  if (planetProg.u.uTime) gl.uniform1f(planetProg.u.uTime, (S._t || 0) * 0.001);
+  if (planetProg.u.uHaze) gl.uniform1f(planetProg.u.uHaze, W.hazeAntiGreenhouse || 0);
+  // Physical-ish exposure from insolation (hdr lite) + eye adaptation
+  const baseExpo = clamp(0.85 + Math.log2(Math.max(0.05, W.solar || 1)) * 0.12, 0.55, 1.85);
+  const adapt = S.exposure != null ? S.exposure : baseExpo;
+  if (planetProg.u.uExposure) gl.uniform1f(planetProg.u.uExposure, adapt * 1.15);
+  // Storm + cloud shadow uniforms — count convective cells
+  let storm = 0, cloudMean = 0, cn = 0;
+  if (W.clouds && W.precip) {
+    for (let c = 0; c < NC; c += 17) {
+      cloudMean += W.clouds[c];
+      const convective = (W.converg?.[c] || 0) > 0.12;
+      if (W.clouds[c] > 0.5 && ((W.precip[c] || 0) > 0.28 || convective)) storm += 1;
+      cn++;
+    }
+    cloudMean /= Math.max(1, cn);
+    storm = clamp(storm / Math.max(1, cn * 0.12), 0, 1);
+  }
+  if (planetProg.u.uStorm) gl.uniform1f(planetProg.u.uStorm, storm);
+  if (planetProg.u.uCloudShadow) gl.uniform1f(planetProg.u.uCloudShadow, cloudMean);
+  if (planetProg.u.uMagTilt) {
+    gl.uniform1f(planetProg.u.uMagTilt, (W.obliquity || 0) * 0.35 + (W.magTilt || 0.12));
+  }
+  if (planetProg.u.uField0 && fieldTex0) {
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, fieldTex0);
+    gl.uniform1i(planetProg.u.uField0, 1);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, fieldTex1);
+    gl.uniform1i(planetProg.u.uField1, 2);
+    if (planetProg.u.uScatter && scatterTex) {
+      gl.activeTexture(gl.TEXTURE3);
+      gl.bindTexture(gl.TEXTURE_2D, scatterTex);
+      gl.uniform1i(planetProg.u.uScatter, 3);
+    }
+    if (planetProg.u.uScatterMs && scatterMsTex) {
+      gl.activeTexture(gl.TEXTURE4);
+      gl.bindTexture(gl.TEXTURE_2D, scatterMsTex);
+      gl.uniform1i(planetProg.u.uScatterMs, 4);
+    }
+    gl.activeTexture(gl.TEXTURE0);
+  }
   // Only alpha-blend when surface is intentionally translucent — X-ray uses discard, not blend
   const translucent = opacity < 0.999;
   if (translucent) {
@@ -769,6 +1418,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniformMatrix4fv(cloudProg.u.uModel, false, TMP);
     gl.uniform3fv(cloudProg.u.uSun, sun);
     gl.uniform3fv(cloudProg.u.uCam, camPos);
+    if (cloudProg.u.uTime) gl.uniform1f(cloudProg.u.uTime, (S._t || 0) * 0.001);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloud);
     l = gl.getAttribLocation(cloudProg, 'aPos');
     gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
@@ -809,6 +1459,11 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.enable(gl.CULL_FACE); gl.disable(gl.BLEND);
     for (const [nm] of defs) { const li = gl.getAttribLocation(entProg, nm); gl.vertexAttribDivisor(li, 0); }
     disableAll();
+
+    // Local LOD — low-poly meshes for entities with body plans (retire pure billboards close-in)
+    if (S.entFade > 0.45 && meshProg) {
+      drawEntityMeshes(MVP, sun, S.entFade);
+    }
   }
 
   /* atmosphere */
@@ -823,7 +1478,16 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform3fv(atmoProg.u.uSun, sun);
     gl.uniform3fv(atmoProg.u.uCam, camPos);
     gl.uniform3fv(atmoProg.u.uAtmo, R.atmo);
-    gl.uniform1f(atmoProg.u.uAtmoK, R.atmoStrength);
+    gl.uniform1f(atmoProg.u.uAtmoK, R.atmoStrength * (1.05 + (W.gases.dust || 0) * 0.5));
+    if (atmoProg.u.uOzone) gl.uniform1f(atmoProg.u.uOzone, W.ozone || 0);
+    if (atmoProg.u.uAerosol) {
+      gl.uniform1f(atmoProg.u.uAerosol, clamp((W.gases.dust || 0) + (W.gases.sulphate || 0) * 2, 0, 1));
+    }
+    if (atmoProg.u.uMag) {
+      const mag = (R.magnetosphere || 0) * (R.earthLike && !R.deepTime ? 0.22 : 1);
+      gl.uniform1f(atmoProg.u.uMag, mag);
+    }
+    if (atmoProg.u.uTime) gl.uniform1f(atmoProg.u.uTime, (S._t || 0) * 0.001);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
     l = gl.getAttribLocation(atmoProg, 'aPos');
     gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
@@ -859,6 +1523,89 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.disable(gl.BLEND); disableAll();
   }
 
+  /* orbit guides — spin axis, equator, ecliptic (tilt becomes visible) */
+  {
+    const climTools = S.orbitGuides || S.orbitFlash > (S._t || 0)
+      || ['tilt', 'spin', 'moon', 'solar', 'shade'].includes(S.activeTool || '');
+    const flash = S.orbitFlash > (S._t || 0);
+    const show = climTools || flash || S.orbitGuides;
+    if (show) {
+      ensureOrbitGuides(W.obliquity || 0);
+      const a = flash ? 0.95 : (climTools ? 0.7 : 0.32);
+      gl.useProgram(flatProg);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      // Axis (cyan) — day spin poles
+      drawOrbitLines(flatProg, MVP, buf.orbitAxis, ORBIT_AXIS_COUNT, [0.45, 0.85, 1.0, a]);
+      // Equator (soft white)
+      drawOrbitLines(flatProg, MVP, buf.orbitEq, ORBIT_EQ_COUNT, [0.85, 0.9, 1.0, a * 0.45]);
+      // Ecliptic (gold) — orbital plane; angle from equator = obliquity
+      drawOrbitLines(flatProg, MVP, buf.orbitEcl, ORBIT_ECL_COUNT, [1.0, 0.78, 0.32, a * 0.85]);
+      gl.depthMask(true); gl.disable(gl.BLEND); disableAll();
+    }
+  }
+
+  /* Moon — orbit + phase synced to tidal lunar angle */
+  if (W.moon && W.moon.mass > 0.05) {
+    const ε = W.obliquity || 0;
+    const dist = Math.max(0.38, W.moon.distance || 1);
+    const mass = Math.max(0.2, Math.min(2.5, W.moon.mass || 1));
+    const ang = W.moonAngle != null ? W.moonAngle : ((S._t || 0) * 0.00012) / dist;
+    const s = Math.sin(ε), c = Math.cos(ε);
+    const ux = -c, uy = s;
+    const re = 1.55 + dist * 0.45;
+    const lx = (ux * Math.cos(ang)) * re;
+    const ly = (uy * Math.cos(ang)) * re;
+    const lz = Math.sin(ang) * re;
+    const wx = MODEL[0] * lx + MODEL[4] * ly + MODEL[8] * lz + MODEL[12];
+    const wy = MODEL[1] * lx + MODEL[5] * ly + MODEL[9] * lz + MODEL[13];
+    const wz = MODEL[2] * lx + MODEL[6] * ly + MODEL[10] * lz + MODEL[14];
+    const moonR = (inXR ? 0.018 : 0.055) * Math.cbrt(mass) * (1.15 / dist) * scale;
+    m4trs(TMP, [0, 0, 0, 1], wx, wy, wz, moonR);
+    const toMoon = [wx - px, wy - py, wz - pz];
+    const ml = Math.hypot(...toMoon) || 1;
+    const mdir = [toMoon[0] / ml, toMoon[1] / ml, toMoon[2] / ml];
+    // Lit fraction from sun; earthshine on dark limb
+    const sunDot = mdir[0] * sun[0] + mdir[1] * sun[1] + mdir[2] * sun[2];
+    const lit = W.moonIllum != null
+      ? clamp(W.moonIllum, 0.06, 1)
+      : clamp(0.5 + 0.5 * sunDot, 0.06, 1);
+    const earthshine = 0.1 + (W.iceFrac || 0) * 0.08 + (W.meanLife || 0) * 0.04;
+    const shade = lit * 0.88 + earthshine * (1 - lit);
+    // Warm crescent rim when nearly new
+    const warm = lit < 0.35 ? 1.08 : 1;
+    gl.useProgram(healthProg);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform1f(healthProg.u.uScale, 1);
+    gl.uniform3fv(healthProg.u.uCol, [0.72 * shade * warm, 0.68 * shade, 0.58 * shade]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
+    l = gl.getAttribLocation(healthProg, 'aPos');
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+    gl.enable(gl.DEPTH_TEST);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    disableAll();
+  }
+
+  /* L1 solar shade — dark disc between sun and planet */
+  if ((W.solarShade || 0) > 0.002) {
+    const d = 1.85 * scale;
+    const sx = px - sun[0] * d, sy = py - sun[1] * d, sz = pz - sun[2] * d;
+    const shadeR = (0.04 + W.solarShade * 0.12) * scale * (inXR ? 0.5 : 1);
+    m4trs(TMP, [0, 0, 0, 1], sx, sy, sz, shadeR);
+    gl.useProgram(healthProg);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform1f(healthProg.u.uScale, 1);
+    gl.uniform3fv(healthProg.u.uCol, [0.08, 0.09, 0.12]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
+    l = gl.getAttribLocation(healthProg, 'aPos');
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.BLEND); disableAll();
+  }
+
   if (inXR && hands) {
     gl.useProgram(flatProg);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
@@ -870,7 +1617,45 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       m4trs(TMP, [0, 0, 0, 1], h.pos[0], h.pos[1], h.pos[2], h.grab ? 0.017 : 0.011);
       gl.uniformMatrix4fv(flatProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
       if (h.grab) gl.uniform4f(flatProg.u.uCol, 0.55, 0.78, 1.0, 1.0);
+      else if (h.gesture === 'pinch') gl.uniform4f(flatProg.u.uCol, 0.9, 0.7, 0.3, 1.0);
       else gl.uniform4f(flatProg.u.uCol, 0.30, 0.36, 0.48, 1.0);
+      gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    }
+    disableAll();
+  }
+
+  /* Orrery table — shelf worlds as tinted mini spheres around a star */
+  if (S.table?.enabled && S.table.slots?.length) {
+    tickTable(S.table, 0.016);
+    const origin = inXR ? [0, 0, 0] : [0, -1.15, 0];
+    const th = S.table.height || 0.92;
+    const xz = inXR ? 1 : 0.38;
+    gl.useProgram(healthProg);
+    m4trs(TMP, [0, 0, 0, 1], origin[0], origin[1] + th - 0.04, origin[2], (S.table.radius || 0.55) * xz);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform1f(healthProg.u.uScale, 1);
+    gl.uniform3fv(healthProg.u.uCol, [0.16, 0.14, 0.12]);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
+    l = gl.getAttribLocation(healthProg, 'aPos');
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    const starR = (S.table.starScale || 0.04) * (inXR ? 1 : 0.4);
+    m4trs(TMP, [0, 0, 0, 1], origin[0], origin[1] + th + 0.05, origin[2], starR);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform3fv(healthProg.u.uCol, [1.0, 0.85, 0.45]);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    for (const sl of S.table.slots) {
+      if (sl.live) continue;
+      const p = slotWorldPos(S.table, sl, origin, xz);
+      const sc = (sl.scale || 0.055) * (inXR ? 1 : 0.5);
+      const active = S.table.activeId === sl.id;
+      m4trs(TMP, [0, 0, 0, 1], p[0], p[1], p[2], sc * (active ? 1.15 : 1));
+      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      const tint = sl.tint || [0.35, 0.55, 0.75];
+      gl.uniform3fv(healthProg.u.uCol, active
+        ? [Math.min(1, tint[0] + 0.25), Math.min(1, tint[1] + 0.2), Math.min(1, tint[2] + 0.15)]
+        : tint);
       gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
     }
     disableAll();

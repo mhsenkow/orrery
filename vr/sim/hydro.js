@@ -16,17 +16,28 @@ export function updateSeaLevel(W) {
     }
   }
   const meanOceanT = oceanW > 0 ? oceanHeat / oceanW : 0.5;
-  // Base from ruleset water inventory; land ice locks water out of the ocean
-  const base = -0.05 + rule.totalWater * 0.42;
+  // Base from fitted Earth sea level, or ruleset water inventory
+  const base = W._seaBase != null ? W._seaBase : (-0.05 + rule.totalWater * 0.42);
+  // Fitted worlds keep land fraction stable — hypsometry is steep near the shelf
+  if (W._seaBase != null) {
+    const thermal = (meanOceanT - 0.45) * 0.006;
+    const iceDrawdown = Math.min(0.006, iceVol * 0.0008);
+    W.seaLevel = clamp(base - iceDrawdown + thermal, -0.55, 0.85);
+    return;
+  }
   const iceDrawdown = Math.min(0.25, iceVol * 0.08);
   const thermal = (meanOceanT - 0.45) * 0.035;
-  W.seaLevel = clamp(base - iceDrawdown + thermal, -0.55, 0.45);
+  W.seaLevel = clamp(base - iceDrawdown + thermal, -0.55, 0.85);
 }
 
 /** Triple-point gate: below ~0.006 bar, water won't pool. */
 export function liquidWaterOk(W) {
   if (W.rule.airless) return false;
-  return totalPressure(W.gases) > 0.006;
+  const P = W.rule.surfacePressureBar != null
+    ? W.rule.surfacePressureBar
+    : totalPressure(W.gases, W.rule);
+  if (W.rule.methaneSolvent) return P > 0.02; // Titan methane triple-point sketch
+  return P > 0.006;
 }
 
 /**
@@ -63,29 +74,45 @@ export function computeRivers(W) {
 /** Ice mass balance: accumulate above snowline, ablate below; separate sea/land. */
 export function iceTick(W) {
   const { h, temp, iceLand, iceSea, seaLevel, moist, precip, rule } = W;
-  const snowline = rule.freeze + 0.05;
+  // Seasonal snow line migration. Item 141.
+  const season = W.season || 0;
+  const snowline = rule.freeze + 0.05 + Math.sin(season) * 0.04;
+  const earth = !!rule.earthLike && !rule.deepTime;
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
+    const lat = DIR[c * 3 + 1];
+    const absLat = Math.abs(lat);
+    // Keep Holocene polar caps: high latitudes stay below snowline even when
+    // heat diffusion flattens the global mean.
+    const polar = earth ? clamp((absLat - 0.72) / 0.28, 0, 1) : 0;
+    const seasonalCold = Math.sin(season) * lat; // NH winter when season~3π/2
     if (isSea) {
       iceLand[c] = 0;
-      if (temp[c] < rule.freeze && liquidWaterOk(W)) {
-        iceSea[c] = clamp(iceSea[c] + 0.08, 0, 1);
+      const seaFreeze = rule.freeze - seasonalCold * 0.03 - polar * 0.1;
+      if (temp[c] < seaFreeze && liquidWaterOk(W)) {
+        iceSea[c] = clamp(iceSea[c] + 0.06 + polar * 0.04, 0, 1);
       } else {
-        iceSea[c] = Math.max(0, iceSea[c] - 0.1);
+        const melt = earth && polar > 0.4 ? 0.035 : 0.1;
+        iceSea[c] = Math.max(0, iceSea[c] - melt * (1 - polar * 0.8));
+      }
+      if (earth && absLat > 0.88) {
+        iceSea[c] = Math.max(iceSea[c], 0.2 + (absLat - 0.88) * 3);
       }
     } else {
       iceSea[c] = 0;
       const elev = h[c] - seaLevel;
-      const cold = temp[c] < snowline - elev * 0.15;
-      // Dense canopy holds heat / dark albedo — resists light glaciation
+      const cold = temp[c] < snowline - elev * 0.15 - seasonalCold * 0.05 - polar * 0.14;
       const canopy = W.life[c] > 0.45 ? 0.55 : W.life[c] > 0.2 ? 0.8 : 1;
       if (cold) {
-        iceLand[c] = clamp(iceLand[c] + (precip[c] * 0.06 + 0.015) * canopy, 0, 1);
+        iceLand[c] = clamp(iceLand[c] + (precip[c] * 0.06 + 0.015 + polar * 0.02) * canopy, 0, 1);
       } else {
-        const melt = Math.max(0.04, (temp[c] - snowline) * 0.35) * (2 - canopy);
+        const melt = Math.max(0.04, (temp[c] - snowline) * 0.35) * (2 - canopy) * (1 - polar * 0.85);
         iceLand[c] = Math.max(0, iceLand[c] - melt);
       }
-      // downhill ice flow (simple)
+      // Holocene residual ice sheet — Antarctica / Greenland scale floor
+      if (earth && absLat > 0.86 && h[c] - seaLevel > 0.02) {
+        iceLand[c] = Math.max(iceLand[c], 0.25 + (absLat - 0.86) * 2.5);
+      }
       if (iceLand[c] > 0.3) {
         for (let k = 0; k < 4; k++) {
           const n = NBR[c * 4 + k];
@@ -150,6 +177,10 @@ export function hydroTick(W) {
   // Remove precipitated vapour
   const remove = Math.min(vapour, precipTotal * 0.08);
   vapour = Math.max(0, vapour - remove);
+  // Earth column H₂O is ~1%; the 0.25 cap was a steam greenhouse floor.
+  if (rule.earthLike && !rule.deepTime) {
+    vapour = Math.min(0.025, vapour);
+  }
   gases.H2O = vapour;
 
   // Land moisture from precip; seas stay saturated
@@ -185,7 +216,8 @@ export function hydroTick(W) {
   // Soft conservation: bleed excess into/out of vapour rather than inventing water
   const drift = mass - W._waterMass0;
   if (Math.abs(drift) > 0.5) {
-    gases.H2O = clamp(gases.H2O - drift * 0.002, 0, 0.25);
+    const h2oCap = (rule.earthLike && !rule.deepTime) ? 0.025 : 0.25;
+    gases.H2O = clamp(gases.H2O - drift * 0.002, 0, h2oCap);
     mass = W._waterMass0 + drift * 0.85;
   }
   W.waterMass = mass;

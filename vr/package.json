@@ -1,5 +1,14 @@
 {
   "name": "orrery-vr",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "test": "node sim/test.mjs && node sim/test-worldParams.mjs",
+    "smoke": "node sim/smoke.mjs",
+    "calibrate": "node sim/calibrate.mjs",
+    "golden": "node sim/headless.mjs --golden --ticks=40",
+    "headless": "node sim/headless.mjs --ticks=100",
+    "params": "node ../scripts/exoparams.mjs",
+    "fetch-archive": "node ../scripts/fetch-exoarchive.mjs"
+  }
 }

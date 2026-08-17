@@ -1,7 +1,9 @@
 /** Plate tectonics → crustal thickness → isostatic elevation. */
 
 import { clamp, lerp, mulberry32, fbm, ridged } from '../math.js';
+import { rngOf } from './rng.js';
 import { NC, NF, N, NBR, NBR8, DIR, AREA, dirToCell } from '../sphere.js';
+
 
 const DIV = 0, CONV = 1, TRANS = 2;
 
@@ -23,21 +25,28 @@ function plateVelocityAt(plate, x, y, z) {
  */
 export function generateTectonics(W, seed, rule) {
   const rng = mulberry32(seed ^ 0x7f4a7c15);
-  const nPlates = rule.nPlates | 0 || 10;
+  const vigor = W.interior?.vigor ?? 1;
+  const lid = W.interior?.lidMode || 'mobile';
+  let nPlates = rule.nPlates | 0 || 10;
+  if (lid === 'none') nPlates = Math.min(nPlates, 4);
+  if (lid === 'stagnant') nPlates = Math.max(4, Math.min(nPlates, 8));
   const plates = [];
+  const omegaScale = lid === 'stagnant' ? 0.08 : lid === 'episodic' ? 0.45 : lid === 'ice' ? 0.2 : 1;
   for (let i = 0; i < nPlates; i++) {
     const centre = randomUnit(rng);
     const pole = randomUnit(rng);
     plates.push({
       centre, pole,
-      omega: (rng() - 0.5) * 0.08,
-      oceanic: true, // assigned below to hit continent fraction
+      omega: (rng() - 0.5) * 0.08 * omegaScale * clamp(vigor, 0.05, 1.5),
+      oceanic: true,
       density: 3.0,
       baseThick: 0.22 + rng() * 0.08,
     });
   }
-  // Guarantee continent coverage — Voronoi area ≈ plate count share
-  const nCont = Math.max(3, Math.round(nPlates * Math.max(0.28, rule.continentFrac)));
+  const contShare = lid === 'stagnant' || lid === 'ice'
+    ? Math.max(0.55, rule.continentFrac || 0.5)
+    : Math.max(0.28, rule.continentFrac || 0.4);
+  const nCont = Math.max(1, Math.round(nPlates * contShare));
   const order = plates.map((_, i) => i).sort(() => rng() - 0.5);
   for (let i = 0; i < nCont; i++) {
     const pl = plates[order[i]];
@@ -176,9 +185,10 @@ export function generateTectonics(W, seed, rule) {
     W.ore[c] = o * (0.5 + rng());
   }
 
-  // Seed volcanoes on arcs and hotspots
+  // Seed volcanoes on arcs and hotspots — scaled by interior heat
+  const eruptChance = 0.015 + (W.interior?.heatFlow || 1) * 0.03 * (lid === 'stagnant' ? 0.25 : 1);
   for (let c = 0; c < NC; c++) {
-    if (bound[c] === CONV && crust[c] > 0.5 && rng() < 0.04) {
+    if (bound[c] === CONV && crust[c] > 0.5 && rng() < eruptChance) {
       W.volcanoes.push({ cell: c, magma: 0.5 + rng(), next: rng() * 40 });
     }
   }
@@ -188,51 +198,240 @@ export function generateTectonics(W, seed, rule) {
       const d = DIR[c * 3] * hs.pos[0] + DIR[c * 3 + 1] * hs.pos[1] + DIR[c * 3 + 2] * hs.pos[2];
       if (d > bd) { bd = d; best = c; }
     }
-    W.volcanoes.push({ cell: best, magma: 1.2, next: 5, hotspot: true });
+    W.volcanoes.push({ cell: best, magma: 1.2 * (W.interior?.heatFlow || 1), next: 5, hotspot: true });
   }
 
   return plates;
 }
 
-/** Slow plate advection of age at ridges + strain build for quakes. */
+const BOUND_NAMES = { [-1]: 'interior', 0: 'divergent', 1: 'convergent', 2: 'transform' };
+
+const PLATE_NAMES = [
+  'Aether', 'Basalt', 'Craton', 'Drift', 'Euler', 'Farallon', 'Gondwana', 'Hadley',
+  'Iapetus', 'Jade', 'Kerguelen', 'Laurentia', 'Moho', 'Nuna', 'Oceanus', 'Pangaea',
+  'Qaidam', 'Rodinia', 'Shield', 'Tethys', 'Ural', 'Vestigia', 'Wilson', 'Xenolith',
+];
+
+/** Stable display names for plates (assigned once per generate). */
+export function ensurePlateNames(W) {
+  if (!W.plates?.length) return;
+  if (W._plateNames?.length === W.plates.length) return;
+  W._plateNames = W.plates.map((_, i) => PLATE_NAMES[i % PLATE_NAMES.length]
+    + (i >= PLATE_NAMES.length ? ` ${((i / PLATE_NAMES.length) | 0) + 1}` : ''));
+}
+
+export function plateName(W, pid) {
+  ensurePlateNames(W);
+  return W._plateNames?.[pid] || `Plate ${pid}`;
+}
+
+export function boundLabel(b) {
+  return BOUND_NAMES[b] ?? '—';
+}
+
+/** Recompute boundary types from current Euler poles (after redirects). */
+export function reclassifyBoundaries(W) {
+  const plates = W.plates;
+  if (!plates?.length) return;
+  const { plateId, bound, crust, age, rock, strain } = W;
+  for (let c = 0; c < NC; c++) {
+    const pid = plateId[c];
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    const v0 = plateVelocityAt(plates[pid], x, y, z);
+    let bType = -1, maxRel = 0;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      if (plateId[n] === pid) continue;
+      const v1 = plateVelocityAt(plates[plateId[n]], DIR[n * 3], DIR[n * 3 + 1], DIR[n * 3 + 2]);
+      const rvx = v0[0] - v1[0], rvy = v0[1] - v1[1], rvz = v0[2] - v1[2];
+      const mx = (x + DIR[n * 3]) * 0.5, my = (y + DIR[n * 3 + 1]) * 0.5, mz = (z + DIR[n * 3 + 2]) * 0.5;
+      const ml = Math.hypot(mx, my, mz) || 1;
+      const nx = mx / ml, ny = my / ml, nz = mz / ml;
+      let tx = DIR[n * 3] - x, ty = DIR[n * 3 + 1] - y, tz = DIR[n * 3 + 2] - z;
+      const td = tx * nx + ty * ny + tz * nz;
+      tx -= td * nx; ty -= td * ny; tz -= td * nz;
+      const tl = Math.hypot(tx, ty, tz) || 1;
+      tx /= tl; ty /= tl; tz /= tl;
+      const diverge = rvx * tx + rvy * ty + rvz * tz;
+      const speed = Math.hypot(rvx, rvy, rvz);
+      if (speed < maxRel) continue;
+      maxRel = speed;
+      if (diverge > 0.002) bType = DIV;
+      else if (diverge < -0.002) bType = CONV;
+      else bType = TRANS;
+    }
+    bound[c] = bType;
+    if (bType === TRANS && strain[c] < 0.2) strain[c] = 0.25;
+  }
+}
+
+/** Panel / HUD aggregate. */
+export function platesDeskSnapshot(W) {
+  ensurePlateNames(W);
+  const plates = W.plates || [];
+  const counts = { div: 0, conv: 0, trans: 0, interior: 0 };
+  const areaByPlate = new Float32Array(plates.length);
+  let meanCrust = 0, meanAge = 0, n = 0;
+  for (let c = 0; c < NC; c++) {
+    const b = W.bound[c];
+    if (b === DIV) counts.div++;
+    else if (b === CONV) counts.conv++;
+    else if (b === TRANS) counts.trans++;
+    else counts.interior++;
+    const pid = W.plateId[c];
+    if (pid >= 0 && pid < areaByPlate.length) areaByPlate[pid] += AREA[c] || 1;
+    meanCrust += W.crust[c];
+    meanAge += W.age[c];
+    n++;
+  }
+  const totalA = areaByPlate.reduce((s, a) => s + a, 0) || 1;
+  const list = plates.map((pl, i) => ({
+    id: i,
+    name: plateName(W, i),
+    oceanic: !!pl.oceanic,
+    omega: pl.omega,
+    density: pl.density,
+    areaFrac: areaByPlate[i] / totalA,
+    crust: pl.baseThick,
+  })).sort((a, b) => b.areaFrac - a.areaFrac);
+
+  const volcanoes = (W.volcanoes || []).map((v, i) => ({
+    i,
+    cell: v.cell,
+    magma: v.magma,
+    hotspot: !!v.hotspot,
+    next: v.next,
+  }));
+  const hotspots = (W.hotspots || []).map((h, i) => ({
+    i,
+    strength: h.strength,
+    fixed: !!h.fixed,
+  }));
+
+  return {
+    nPlates: plates.length,
+    nCont: plates.filter((p) => !p.oceanic).length,
+    nOcean: plates.filter((p) => p.oceanic).length,
+    counts,
+    list,
+    volcanoes,
+    hotspots,
+    meanCrust: n ? meanCrust / n : 0,
+    meanAge: n ? meanAge / n : 0,
+    note: plates.length
+      ? `${plates.length} plates · ${counts.conv} convergent · ${counts.div} divergent · ${counts.trans} transform`
+      : 'No plate model on this world',
+  };
+}
+
+/** Inspect helper. */
+export function tectonicsAtCell(W, cell) {
+  if (cell < 0 || !W.plates) return null;
+  const pid = W.plateId[cell];
+  const pl = W.plates[pid];
+  return {
+    plate: pid,
+    name: plateName(W, pid),
+    oceanic: pl?.oceanic,
+    omega: pl?.omega,
+    bound: W.bound[cell],
+    boundLabel: boundLabel(W.bound[cell]),
+    crust: W.crust[cell],
+    ageMyr: W.age[cell],
+    strain: W.strain[cell],
+    rock: W.rock[cell],
+    ore: W.ore?.[cell],
+  };
+}
+
+/** Nudge selected plate angular velocity. */
+export function nudgePlateOmega(W, pid, dOmega) {
+  const pl = W.plates?.[pid];
+  if (!pl) return { ok: false, note: 'No plate' };
+  pl.omega = clamp(pl.omega + dOmega, -0.2, 0.2);
+  reclassifyBoundaries(W);
+  return { ok: true, omega: pl.omega, plate: pid };
+}
+
+/** Slow plate advection of age at ridges + strain + mild plate morph. */
 export function tectonicsTick(W, chron, log) {
+  const rng = rngOf(W, 'rngGeo');
   const { bound, strain, age, crust, plateId, h } = W;
   const plates = W.plates;
   if (!plates) return;
+  const vigor = W.interior?.vigor ?? 1;
+  const lid = W.interior?.lidMode || 'mobile';
+  const morph = lid === 'mobile' || lid === 'episodic';
+
+  // Mild morph: drift plate centres along Euler velocity (mobile lids only, live ticks)
+  if (log && morph && vigor > 0.2) {
+    const step = 0.00035 * vigor;
+    for (const pl of plates) {
+      const c = pl.centre;
+      const v = plateVelocityAt(pl, c[0], c[1], c[2]);
+      let x = c[0] + v[0] * step, y = c[1] + v[1] * step, z = c[2] + v[2] * step;
+      const L = Math.hypot(x, y, z) || 1;
+      pl.centre = [x / L, y / L, z / L];
+    }
+    if (((W.ageYr | 0) % 48) === 0) {
+      reassignPlatesVoronoi(W);
+      reclassifyBoundaries(W);
+    }
+  }
 
   for (let c = 0; c < NC; c++) {
     if (bound[c] === DIV) {
-      age[c] = Math.max(0, age[c] * 0.995);
-      // seafloor spreading: slight uplift then age-depth handled in elev refresh
+      age[c] = Math.max(0, age[c] * (1 - 0.005 * vigor));
     }
     if (bound[c] === TRANS || bound[c] === CONV) {
-      strain[c] = Math.min(2, strain[c] + 0.008);
-      if (strain[c] > 1.1 && Math.random() < strain[c] * 0.002) {
+      strain[c] = Math.min(2, strain[c] + 0.008 * vigor);
+      if (strain[c] > 1.1 && rng() < strain[c] * 0.002 * vigor) {
         const mag = strain[c];
         strain[c] = 0.1;
         if (log) log(W.year, 'quake', c, mag, `Quake M${(4 + mag * 3).toFixed(1)}`);
-        // shake relief slightly
         h[c] -= mag * 0.008;
       }
     }
-    age[c] += 0.02; // Myr per tick approx at geologic scale
+    age[c] += 0.02 * Math.max(0.2, vigor);
   }
 
-  // volcano eruptions
+  // Magma charge & eruptions — heatFlow scales recharge
+  const heat = W.interior?.heatFlow || 1;
   for (const v of W.volcanoes) {
     v.next -= 1;
-    v.magma = Math.min(2, v.magma + 0.01);
+    v.magma = Math.min(2, v.magma + 0.01 * heat);
     if (v.next <= 0 && v.magma > 0.6) {
       const power = v.magma;
       v.magma *= 0.3;
-      v.next = 20 + Math.random() * 80;
+      v.next = (20 + rng() * 80) / Math.max(0.35, heat);
       h[v.cell] = Math.min(1.2, h[v.cell] + power * 0.04);
       crust[v.cell] = Math.min(1.6, crust[v.cell] + power * 0.05);
       W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.4);
-      W.gases.sulphate = Math.min(0.3, W.gases.sulphate + power * 0.015);
-      W.gases.CO2 = Math.min(0.5, W.gases.CO2 + power * 0.004);
+      // Earth-like: Pinatubo-scale pulses, not permanent aerosol winter.
+      // Non-Earth / deep-time worlds keep the stronger climate lever.
+      const sulphPulse = W.rule.earthLike ? power * 0.0007 : power * 0.015;
+      const sulphCap = W.rule.earthLike ? 0.04 : 0.3;
+      W.gases.sulphate = Math.min(sulphCap, W.gases.sulphate + sulphPulse);
+      const co2Pulse = W.rule.earthLike ? power * 0.000015 : power * 0.004;
+      W.gases.CO2 = Math.min(0.5, W.gases.CO2 + co2Pulse);
       if (log) log(W.year, 'eruption', v.cell, power, power > 1 ? 'Major eruption' : 'Eruption');
     }
+  }
+}
+
+/** Re-Voronoi cells from drifted plate centres (keeps plate objects, moves ownership). */
+export function reassignPlatesVoronoi(W) {
+  const plates = W.plates;
+  if (!plates?.length) return;
+  const plateId = W.plateId;
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    let best = 0, bestD = -2;
+    for (let p = 0; p < plates.length; p++) {
+      const d = x * plates[p].centre[0] + y * plates[p].centre[1] + z * plates[p].centre[2];
+      if (d > bestD) { bestD = d; best = p; }
+    }
+    plateId[c] = best;
   }
 }
 

@@ -1,0 +1,5 @@
+{
+  "_comment": "Per-field overrides with citations. Applied after archive fetch.",
+  "_cadence": "on-demand — re-run scripts/fetch-exoarchive.mjs; commit the snapshot.",
+  "overrides": {}
+}

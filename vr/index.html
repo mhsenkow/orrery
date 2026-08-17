@@ -1,145 +1,818 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>ORRERY — foundations prototype</title>
+<title>ORRERY</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: dark;
-    --bg: #05060a; --panel: rgba(10,13,22,.82); --line: rgba(140,170,255,.16);
-    --text: #dfe6f2; --dim: #7f8ca6; --accent: #5b8cff; --accent2: #2f5fd0;
-    --ok: #7dd6a0; }
+    --bg: #03050a;
+    --panel: rgba(8,12,20,.78);
+    --line: rgba(120,160,220,.14);
+    --text: #e6eef8;
+    --dim: #7a8aa3;
+    --accent: #6ea0ff;
+    --accent2: #2a55c8;
+    --ok: #6fd6a4;
+    --amber: #e4b86a;
+    --copper: #c4784a;
+    --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  }
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; background:var(--bg); overflow:hidden;
-    font: 12.5px/1.45 ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif; color:var(--text); }
-  #c { display:block; width:100%; height:100%; touch-action:none; }
-  #ui { position:fixed; inset:0; pointer-events:none; }
+    font: 12.5px/1.45 "IBM Plex Mono", ui-monospace, Menlo, monospace; color:var(--text); }
+  body::before {
+    content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+    background:
+      radial-gradient(ellipse 80% 50% at 70% 20%, rgba(40,70,140,.18), transparent 55%),
+      radial-gradient(ellipse 60% 40% at 15% 80%, rgba(30,90,70,.12), transparent 50%),
+      linear-gradient(180deg, #05070e 0%, #03050a 100%);
+  }
+  #c { display:block; width:100%; height:100%; touch-action:none; position:relative; z-index:1; }
+  #ui { position:fixed; inset:0; pointer-events:none; z-index:2; }
   #ui.hidden { display:none; }
-  button { pointer-events:auto; font:inherit; font-size:12px; color:var(--text); cursor:pointer;
-    background:rgba(255,255,255,.05); border:1px solid var(--line);
-    border-radius:7px; padding:6px 9px; transition:background .12s, border-color .12s; }
-  button:hover { background:rgba(140,170,255,.14); border-color:rgba(140,170,255,.4); }
+  button { pointer-events:auto; font:inherit; font-size:11.5px; color:var(--text); cursor:pointer;
+    background:rgba(255,255,255,.04); border:1px solid var(--line);
+    border-radius:8px; padding:6px 9px;
+    transition: background .35s var(--ease), border-color .35s var(--ease), transform .25s var(--ease); }
+  button:hover { background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4); }
+  button:active { transform: scale(0.97); }
   button[aria-pressed="true"] { background:var(--accent2); border-color:var(--accent); color:#fff; }
-  button:disabled { opacity:.45; cursor:default; }
-  kbd { font:inherit; font-size:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);
+  button:disabled { opacity:.4; cursor:default; }
+  button.tool-locked { opacity:.35; filter:grayscale(.6); cursor:not-allowed; }
+  kbd { font:inherit; font-size:10px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
         border-radius:3px; padding:0 4px; }
 
-  #topbar {
-    pointer-events:auto; position:absolute; top:10px; left:10px; right:10px; z-index:5;
-    display:flex; align-items:center; gap:8px; padding:7px 10px;
-    background:var(--panel); backdrop-filter:blur(14px); border:1px solid var(--line); border-radius:11px;
+  #bootload {
+    position:fixed; inset:0; z-index:40; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:14px;
+    background:
+      radial-gradient(ellipse 70% 50% at 50% 40%, rgba(40,70,140,.28), transparent 60%),
+      #03050a;
+    pointer-events:all;
+    transition: opacity .55s var(--ease);
   }
-  #topbar .brand { font-size:11px; letter-spacing:.2em; text-transform:uppercase; color:#9fc0ff; font-weight:600; }
-  #worldchip { flex:1; min-width:0; font:12px ui-monospace, Menlo, monospace; color:#cfe0ff;
+  #bootload.hidden { opacity:0; pointer-events:none; visibility:hidden; }
+  #bootload .boot-brand {
+    font-family: Syne, sans-serif; font-weight:800; font-size:clamp(28px, 5vw, 42px);
+    letter-spacing:.28em; text-transform:uppercase; color:#b8d0ff;
+  }
+  #bootload .boot-msg { font-size:12px; color:var(--dim); letter-spacing:.12em; text-transform:uppercase; }
+  #bootload .boot-spin {
+    width:28px; height:28px; border-radius:50%;
+    border:2px solid rgba(110,160,255,.25); border-top-color:var(--accent);
+    animation: bootSpin .9s linear infinite;
+  }
+  @keyframes bootSpin { to { transform: rotate(360deg); } }
+
+  #topbar {
+    pointer-events:auto; position:absolute; top:12px; left:12px; right:12px; z-index:5;
+    display:flex; align-items:center; gap:10px; padding:8px 12px;
+    background:var(--panel); backdrop-filter:blur(18px) saturate(1.2);
+    border:1px solid var(--line); border-radius:14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,.35);
+  }
+  #topbar .brand {
+    font-family: Syne, sans-serif; font-size:13px; letter-spacing:.28em; text-transform:uppercase;
+    color:#b8d0ff; font-weight:800;
+  }
+  #worldchip { flex:1; min-width:0; font-size:12px; color:#d0e0ff;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #worldchip b { font-family: Syne, sans-serif; font-weight:700; letter-spacing:.02em; }
   #worldchip small { color:var(--dim); font-weight:400; }
   #topbar .actions { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
-  #topbar .actions button { padding:5px 8px; font-size:11.5px; }
-  #vrbtn { background:var(--accent2); border-color:var(--accent); color:#fff; font-weight:600; }
-  #vrbtn:disabled { background:rgba(255,255,255,.05); border-color:rgba(255,255,255,.12); color:#6a7488; }
+  #topbar .actions button { padding:5px 9px; }
+  #vrbtn { background:linear-gradient(135deg, #2a55c8, #1a3a90); border-color:var(--accent); color:#fff; font-weight:600; }
+  #vrbtn:disabled { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.1); color:#5a6478; }
 
   #dock {
-    pointer-events:auto; position:absolute; top:58px; left:10px; z-index:4;
-    width:min(300px, calc(100vw - 20px)); max-height:calc(100vh - 70px);
-    background:var(--panel); backdrop-filter:blur(14px); border:1px solid var(--line);
-    border-radius:12px; padding:8px; display:flex; flex-direction:column; gap:6px; overflow:hidden;
+    pointer-events:auto; position:absolute; top:62px; left:12px; z-index:4;
+    width:min(318px, calc(100vw - 24px)); max-height:calc(100vh - 100px);
+    background:var(--panel); backdrop-filter:blur(18px) saturate(1.15);
+    border:1px solid var(--line); border-radius:14px; padding:9px;
+    display:flex; flex-direction:column; gap:7px; overflow:hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.4);
+    animation: dockIn .5s var(--ease) both;
   }
+  @keyframes dockIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
   #dock.collapsed .dock-body, #dock.collapsed .dock-tabs { display:none; }
   .dock-tabs { display:flex; gap:3px; }
-  .dock-tabs button { flex:1; font-size:11px; padding:5px 6px; }
-  .dock-body { overflow:auto; flex:1; min-height:0; }
-  .dock-pane { display:none; }
+  .dock-tabs button {
+    flex:1; min-width:0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; padding: 7px 2px 6px;
+    font-size:9px; letter-spacing:.04em; text-transform:uppercase;
+  }
+  .dock-tabs button .ico { width: 14px; height: 14px; opacity: 0.8; }
+  .dock-tabs button[aria-pressed="true"] .ico { opacity: 1; }
+  .dock-tabs button .btn-label { line-height: 1.1; }
+
+  /* Climate panel */
+  .clim-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px;
+    margin: 0 0 10px;
+  }
+  .clim-chip {
+    background: rgba(0,0,0,.28); border: 1px solid var(--line); border-radius: 8px;
+    padding: 6px 7px; min-width: 0;
+  }
+  .clim-chip span {
+    display: block; font-size: 8.5px; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 2px;
+  }
+  .clim-chip b {
+    font-family: Syne, sans-serif; font-weight: 700; font-size: 12px; color: #d8e6ff;
+    letter-spacing: .02em; word-break: break-word;
+  }
+  .clim-chart { margin-top: 2px; }
+  .clim-chart svg { width: 100%; height: auto; border-radius: 8px; display: block; }
+  .clim-overlays { margin-top: 4px; }
+  .clim-overlays button { font-size: 10.5px; padding: 5px 7px; }
+  .clim-explain {
+    margin-top: 10px; padding: 8px 9px; border-radius: 8px;
+    background: rgba(0,0,0,.22); border: 1px solid var(--line);
+  }
+  .clim-fact {
+    font-size: 10.5px; color: #9aacc4; line-height: 1.45; margin: 0 0 5px;
+  }
+  .clim-fact:last-child { margin-bottom: 0; }
+  .clim-fact b { color: #d4e4ff; font-weight: 500; }
+  #pane-climate { padding-bottom: 6px; }
+
+  .clim-desks, .suite-desks {
+    display: flex; gap: 3px; flex-wrap: wrap; margin: 0 0 10px;
+    padding: 3px; border-radius: 9px;
+    background: rgba(0,0,0,.22); border: 1px solid var(--line);
+  }
+  .clim-desk-tab, .suite-desk-tab {
+    flex: 1 1 auto; min-width: 56px;
+    display: inline-flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px;
+    font-size: 9.5px; padding: 6px 4px; border-radius: 6px;
+    background: transparent; border: 0; color: #9aacc4; cursor: pointer;
+    letter-spacing: .03em; text-transform: uppercase;
+  }
+  .clim-desk-tab:hover, .suite-desk-tab:hover { color: #d4e4ff; background: rgba(110,160,255,.08); }
+  .clim-desk-tab[aria-pressed="true"], .suite-desk-tab[aria-pressed="true"] {
+    color: #e8f0ff; background: rgba(110,160,255,.18);
+  }
+  .clim-desk-tab .ico, .suite-desk-tab .ico { width: 13px; height: 13px; opacity: 0.85; }
+  .clim-desk-tab[aria-pressed="true"] .ico, .suite-desk-tab[aria-pressed="true"] .ico { opacity: 1; }
+  .clim-desk, .suite-desk { display: none; }
+  .clim-desk.on, .suite-desk.on { display: block; animation: paneIn .35s var(--ease); }
+
+  .sec-h, #pane-god .god-h, .lab-card h3 {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .sec-h .ico, #pane-god .god-h .ico, .lab-card h3 .ico {
+    flex: 0 0 auto; opacity: 0.9;
+  }
+  .sec-h {
+    font-family: Syne, sans-serif; font-size: 10px; font-weight: 700;
+    letter-spacing: .16em; text-transform: uppercase; color: #9fc0ff; margin: 0 0 8px;
+  }
+  .lab-card[hidden], .suite-desk[hidden] { display: none !important; }
+  .clim-list { display: flex; flex-direction: column; gap: 4px; }
+  .clim-row {
+    display: flex; flex-direction: column; gap: 2px; text-align: left;
+    padding: 7px 8px; border-radius: 7px;
+    background: rgba(0,0,0,.24); border: 1px solid var(--line);
+    color: #c5d4ec; cursor: pointer; font: inherit;
+  }
+  .clim-row.static { cursor: default; }
+  .clim-row:hover:not(.static) { border-color: rgba(110,160,255,.35); }
+  .clim-row[aria-pressed="true"] {
+    border-color: rgba(110,160,255,.55); background: rgba(110,160,255,.12);
+  }
+  .clim-row-name {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: #e8f0ff; font-weight: 500;
+  }
+  .clim-row-meta { font-size: 10px; color: #8fa0bd; }
+  .clim-empty {
+    font-size: 11px; color: #8fa0bd; padding: 8px; border-radius: 7px;
+    background: rgba(0,0,0,.18); border: 1px dashed var(--line);
+  }
+  .clim-actions { margin-top: 4px; }
+  .clim-callout {
+    margin-top: 8px; padding: 8px 9px; border-radius: 8px;
+    font-size: 11px; line-height: 1.45; color: #b8c8e0;
+    background: linear-gradient(135deg, rgba(40,70,120,.35), rgba(20,30,50,.4));
+    border: 1px solid rgba(110,160,255,.22);
+  }
+  .clim-callout b { color: #e8f0ff; font-weight: 600; }
+  .clim-meter { margin-top: 2px; }
+  .clim-meter-bar {
+    height: 6px; border-radius: 999px; background: rgba(0,0,0,.35);
+    overflow: hidden; border: 1px solid var(--line);
+  }
+  .clim-meter-bar i {
+    display: block; height: 100%; border-radius: inherit;
+    background: linear-gradient(90deg, #5a8fd4, #e0a060 70%, #e07060);
+  }
+  .clim-meter-lab { font-size: 11px; color: #c5d4ec; margin: 6px 0 4px; line-height: 1.4; }
+  .clim-compare {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
+  }
+  .clim-compare-pane {
+    padding: 6px; border-radius: 8px;
+    background: rgba(0,0,0,.24); border: 1px solid var(--line);
+    min-width: 0;
+  }
+  .clim-compare-h {
+    font-size: 9.5px; letter-spacing: .04em; color: #9fc0ff;
+    margin-bottom: 4px; line-height: 1.35;
+  }
+  .clim-compare-chart svg { width: 100%; height: auto; display: block; border-radius: 4px; }
+  @media (max-width: 420px) {
+    .clim-compare { grid-template-columns: 1fr; }
+  }
+
+  .dock-body { overflow:auto; flex:1; min-height:0; scrollbar-width:thin; }
+  .dock-pane { display:none; animation: paneIn .4s var(--ease); }
   .dock-pane.on { display:block; }
+  @keyframes paneIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
   .tools { display:flex; gap:4px; flex-wrap:wrap; }
-  .tools button { font-size:11px; padding:4px 7px; }
+  .tools button, .dock-foot button, .god-actions button, .god-primary {
+    display: inline-flex; align-items: center; gap: 5px;
+  }
+  .tools button { font-size:11px; padding:5px 8px; }
+  button .ico {
+    flex: 0 0 auto; opacity: 0.85; display: block;
+  }
+  button[aria-pressed="true"] .ico { opacity: 1; }
+  button .btn-label { line-height: 1; }
   .tools-more { display:none; margin-top:6px; padding-top:6px; border-top:1px solid var(--line); }
   .tools-more.open { display:flex; gap:4px; flex-wrap:wrap; }
-  #moretools[aria-pressed="true"] { background:rgba(140,170,255,.2); }
   .rules { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px; }
-  .rules button { font-size:11px; padding:4px 7px; }
-  .view-row { display:flex; align-items:center; gap:8px; margin:5px 0; font-size:11.5px; color:#a8b6ce; }
-  .view-row label { min-width:52px; }
+  .rules button { font-size:11px; padding:5px 8px; }
+  .view-row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:11px; color:#9aacc4; }
+  .view-row label { min-width:52px; letter-spacing:.06em; text-transform:uppercase; font-size:9.5px; color:var(--dim); }
   .view-row input[type="range"] { flex:1; accent-color:var(--accent); }
   .view-row input[type="checkbox"] { accent-color:var(--accent); width:13px; height:13px; }
-  .view-row .val { min-width:34px; text-align:right; font:11px ui-monospace, Menlo, monospace; color:#cfe0ff; }
+  .view-row .val { min-width:34px; text-align:right; font-size:11px; color:#cfe0ff; }
   .stats {
-    margin-top:4px; padding-top:6px; border-top:1px solid var(--line);
-    font:11px/1.55 ui-monospace, Menlo, monospace; color:#8fa0bd;
+    margin-top:6px; padding-top:8px; border-top:1px solid var(--line);
+    font-size:11px; line-height:1.55; color:#8fa0bd;
   }
-  .stats b { color:#cfe0ff; font-weight:500; }
-  #inspect { display:none; margin-top:6px; font:11px/1.45 ui-monospace, Menlo, monospace; color:#b8c8e0; }
+  .stats b { color:#d4e4ff; font-weight:500; }
+  .stats .era-name {
+    font-family: Syne, sans-serif; font-weight:700; font-size:13px; color:#f0f4ff;
+    letter-spacing:.02em; display:block; margin-bottom:2px;
+  }
+  #inspect { display:none; margin-top:8px; padding:8px; border-radius:8px;
+    background:rgba(0,0,0,.28); border:1px solid var(--line);
+    font-size:11px; line-height:1.5; color:#b8c8e0; }
   .dock-foot { display:flex; gap:4px; flex-wrap:wrap; }
-  .dock-foot button { font-size:11px; padding:4px 7px; }
-  .hint-mini { font-size:10.5px; color:var(--dim); margin:4px 0 0; }
+  .dock-foot button { font-size:11px; padding:5px 8px; }
+  .hint-mini { font-size:10px; color:var(--dim); margin:6px 0 0; line-height:1.4; }
+
+  /* Lab instruments */
+  .lab-card {
+    margin:0 0 10px; padding:10px; border-radius:10px;
+    background:rgba(0,0,0,.28); border:1px solid var(--line);
+  }
+  .lab-card h3 {
+    margin:0 0 8px; font-family: Syne, sans-serif; font-size:10px; font-weight:700;
+    letter-spacing:.16em; text-transform:uppercase; color:#9fc0ff;
+  }
+  .lab-card .chart, .lab-card .tower { display:block; width:100%; height:auto; }
+  .lab-meta { font-size:10.5px; color:#8fa0bd; margin-top:6px; line-height:1.45; }
+  .lab-meta b { color:#d4e4ff; font-weight:500; }
+
+  /* Lab uses the full dock column — instruments scroll inside */
+  #dock.lab-mode {
+    height: calc(100vh - 88px);
+    max-height: calc(100vh - 88px);
+    width: min(340px, calc(100vw - 24px));
+  }
+  #dock.lab-mode .dock-body {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  #pane-lab {
+    display: none;
+    flex-direction: column;
+    min-height: 0;
+    flex: 1 1 auto;
+  }
+  #pane-lab.on { display: flex; }
+  #pane-lab select {
+    font: inherit; font-size: 11px; color: var(--text);
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 8px; max-width: 100%;
+  }
+  #labstats {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+    scrollbar-width: thin;
+    padding-right: 2px;
+  }
+  .lab-card.lab-hero {
+    background: linear-gradient(165deg, rgba(20,36,56,.55), rgba(0,0,0,.32));
+    border-color: rgba(110,160,255,.28);
+  }
+  .guild-row.on rect.gbar { stroke: rgba(255,255,255,.9) !important; stroke-width: 1.5; }
+
+  /* ICS ribbon — deep-time corner instrument */
+  #timeribbon {
+    pointer-events:none; position:absolute; left:12px; bottom:12px;
+    width:min(300px, calc(100vw - 24px)); z-index:4;
+  }
+  #timeribbon .rib-clock { pointer-events:auto; }
+  .ics-ribbon {
+    padding:8px 10px 7px; border-radius:12px;
+    background:var(--panel); backdrop-filter:blur(16px) saturate(1.1);
+    border:1px solid var(--line);
+    box-shadow: 0 8px 28px rgba(0,0,0,.4);
+  }
+  .rib-kicker {
+    display:flex; justify-content:space-between; align-items:baseline;
+    margin:0 0 6px; font-size:8.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:#6a7a94;
+  }
+  .rib-kicker b {
+    font-family: Syne, sans-serif; font-weight:700; letter-spacing:.1em;
+    color:#9fc0ff;
+  }
+  .rib-track {
+    position:relative; height:6px; border-radius:3px;
+    background:rgba(255,255,255,.05); overflow:visible;
+  }
+  .rib-seg {
+    position:absolute; top:0; height:100%; opacity:.42;
+    transition: opacity .4s var(--ease), box-shadow .4s var(--ease);
+  }
+  .rib-seg:first-child { border-radius:3px 0 0 3px; }
+  .rib-seg:nth-child(4) { border-radius:0 3px 3px 0; }
+  .rib-seg.on {
+    opacity:1;
+    box-shadow: 0 0 10px color-mix(in srgb, var(--seg, #5b8cff) 55%, transparent);
+  }
+  .rib-marks {
+    position:relative; height:11px; margin-top:3px;
+    font-size:7.5px; letter-spacing:.04em; color:#5a6a82; text-transform:uppercase;
+  }
+  .rib-mark { position:absolute; top:0; transform:translateX(-50%); white-space:nowrap; }
+  .rib-mark:first-child { transform:none; }
+  .rib-mark:last-child { transform:translateX(-100%); }
+  .rib-mark.on { color:#c5d4ec; }
+  .rib-needle {
+    position:absolute; top:-4px; width:2px; height:14px; margin-left:-1px;
+    background:#fff; border-radius:1px;
+    box-shadow: 0 0 6px rgba(255,255,255,.75), 0 0 14px rgba(110,160,255,.35);
+    transition: left .6s var(--ease);
+  }
+  .rib-needle::after {
+    content:""; position:absolute; left:50%; top:-3px; width:5px; height:5px;
+    margin-left:-2.5px; border-radius:50%; background:#fff;
+    box-shadow: 0 0 6px rgba(255,255,255,.9);
+  }
+  .rib-meta {
+    display:flex; justify-content:space-between; align-items:baseline;
+    gap:8px; margin-top:5px; font-size:10px;
+  }
+  .rib-age {
+    font-family: Syne, sans-serif; font-weight:700; font-size:12px;
+    color:#e8eef8; letter-spacing:.03em;
+  }
+  .rib-era {
+    color:var(--amber); font-size:9.5px; letter-spacing:.02em;
+    text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .rib-clock {
+    display:flex; align-items:center; gap:4px; margin-top:7px; padding-top:6px;
+    border-top:1px solid rgba(120,160,220,.1);
+  }
+  .rib-step, .rib-rate {
+    pointer-events:auto; font:inherit; cursor:pointer;
+    background:rgba(255,255,255,.04); border:1px solid var(--line);
+    color:var(--text); border-radius:6px;
+    transition: background .25s var(--ease), border-color .25s var(--ease);
+  }
+  .rib-step {
+    flex:0 0 auto; width:22px; height:22px; padding:0;
+    font-size:14px; line-height:1; color:#c5d4ec;
+  }
+  .rib-rate {
+    flex:0 1 auto; min-width:0; padding:3px 7px;
+    font-family: Syne, sans-serif; font-weight:700; font-size:10px;
+    letter-spacing:.04em; color:#e8eef8;
+  }
+  .rib-step:hover, .rib-rate:hover {
+    background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4);
+  }
+  .rib-step:focus-visible, .rib-rate:focus-visible {
+    outline: none; border-color:rgba(110,160,255,.65);
+    box-shadow: 0 0 0 2px rgba(110,160,255,.25);
+  }
+  .rib-step:active, .rib-rate:active { transform: scale(0.97); }
+  .rib-dt {
+    margin-left:auto; font-size:9px; color:#6a7a94; letter-spacing:.02em;
+    white-space:nowrap;
+  }
+  .ics-ribbon.is-paused .rib-needle { opacity:.35; }
+  .ics-ribbon.is-paused .rib-dt { color:var(--amber); }
+
+  /* Moment toast */
+  #moment {
+    pointer-events:none; position:absolute; left:50%; top:22%; transform:translate(-50%, -20px);
+    z-index:8; text-align:center; opacity:0;
+    transition: opacity .55s var(--ease), transform .55s var(--ease);
+  }
+  #moment.show { opacity:1; transform:translate(-50%, 0); }
+  #moment .m-kicker {
+    font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:var(--amber);
+    margin-bottom:6px;
+  }
+  #moment .m-title {
+    font-family: Syne, sans-serif; font-weight:800; font-size:clamp(22px, 4vw, 36px);
+    letter-spacing:.02em; color:#fff; text-shadow: 0 4px 40px rgba(0,0,0,.6), 0 0 60px rgba(110,160,255,.35);
+    line-height:1.1;
+  }
+  #moment .m-sub { margin-top:8px; font-size:12px; color:#a8b8d0; }
+  #moment .m-chip {
+    width:14px; height:14px; border-radius:3px; margin:0 auto 10px;
+    border:1px solid rgba(255,255,255,.35);
+    box-shadow: 0 0 24px rgba(110,200,140,.45);
+  }
+
+  /* First-run reveal */
+  #reveal {
+    position:absolute; left:50%; bottom:12%; transform:translateX(-50%);
+    z-index:12; width:min(420px, 92vw);
+    background:rgba(8,12,20,.88); border:1px solid rgba(160,190,255,.25);
+    border-radius:14px; padding:18px 20px 16px;
+    backdrop-filter:blur(16px);
+    box-shadow: 0 20px 60px rgba(0,0,0,.45), 0 0 80px rgba(80,120,255,.12);
+    animation: revealIn .7s var(--ease) both;
+  }
+  #reveal[hidden] { display:none !important; }
+  @keyframes revealIn {
+    from { opacity:0; transform:translateX(-50%) translateY(16px); }
+    to { opacity:1; transform:translateX(-50%) translateY(0); }
+  }
+  #reveal .rv-kicker {
+    font-size:10px; letter-spacing:.28em; text-transform:uppercase; color:var(--amber);
+    margin-bottom:8px;
+  }
+  #reveal .rv-title {
+    font-family: Syne, sans-serif; font-weight:800; font-size:22px; color:#fff;
+    letter-spacing:.02em; margin-bottom:8px;
+  }
+  #reveal .rv-body { font-size:13px; line-height:1.5; color:#b8c8e0; margin-bottom:14px; }
+  #reveal .rv-actions { display:flex; gap:10px; align-items:center; }
+  #reveal button {
+    font: inherit; cursor:pointer; border-radius:8px; padding:8px 14px;
+    border:1px solid rgba(160,190,255,.35); background:rgba(80,120,220,.35); color:#e8eef8;
+  }
+  #reveal button.ghost { background:transparent; color:#9aacc8; border-color:transparent; }
+  #reveal button:hover { border-color:rgba(200,220,255,.55); }
+
+  body.ceremony #moment .m-title {
+    font-size:clamp(28px, 5vw, 48px);
+    text-shadow: 0 4px 50px rgba(0,0,0,.7), 0 0 80px rgba(120,220,160,.5);
+  }
+  body.ceremony #globe-wrap, body.ceremony canvas {
+    filter: saturate(1.15) brightness(1.05);
+    transition: filter 1.2s ease;
+  }
+
+  .guild-row.on rect:nth-child(2) { stroke: rgba(255,255,255,.9) !important; stroke-width: 1.5px; }
+  .tower { overflow: visible; }
+
+  #receipt {
+    pointer-events:none; position:absolute; left:50%; bottom:18%; transform:translate(-50%, 12px);
+    z-index:7; opacity:0; transition: opacity .4s var(--ease), transform .4s var(--ease);
+    background:rgba(10,14,22,.82); border:1px solid var(--line); border-radius:10px;
+    padding:10px 14px; font-size:12px; color:#c8d6ef; max-width:min(420px, 90vw);
+    backdrop-filter:blur(12px);
+  }
+  #receipt.show { opacity:1; transform:translate(-50%, 0); }
+  #receipt b { color:#9fc0ff; }
+
+  #commitring {
+    pointer-events:none; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+    z-index:9; width:120px; height:120px; opacity:0; transition: opacity .3s;
+  }
+  #commitring.show { opacity:1; }
+  #commitring::before {
+    content:''; position:absolute; inset:0; border-radius:50%;
+    background: conic-gradient(#e4a060 calc(var(--p,0) * 1turn), rgba(255,255,255,.08) 0);
+    mask: radial-gradient(farthest-side, transparent calc(100% - 8px), #000 calc(100% - 7px));
+  }
+  #commitring .cr-label {
+    position:absolute; inset:0; display:grid; place-items:center; text-align:center;
+    font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:#e4a060; padding:18px;
+  }
+  body.letitrun #dock, body.letitrun #localpanel, body.letitrun #topbar .tools { opacity:0; pointer-events:none; }
+  body.letitrun #timeribbon { opacity:.85; }
+  #pane-god select, #pane-god input { min-width:0; }
+  #pane-god .god-lead, #pane-climate .god-lead, #pane-rock .god-lead {
+    margin:0 0 10px; font-size:11.5px; color:#b8c8e0; line-height:1.45;
+  }
+  #pane-god .god-lead b, #pane-climate .god-lead b, #pane-rock .god-lead b { color:#9fc0ff; font-weight:500; }
+  #pane-god .god-block, #pane-climate .god-block, #pane-rock .god-block {
+    margin-bottom:12px; padding-bottom:10px;
+    border-bottom:1px solid rgba(120,160,220,.1);
+  }
+  #pane-god .god-h, #pane-climate .god-h, #pane-rock .god-h {
+    font-family: Syne, sans-serif; font-size:10px; font-weight:700;
+    letter-spacing:.16em; text-transform:uppercase; color:#9fc0ff; margin:0 0 8px;
+  }
+  #pane-god .god-note, #pane-climate .god-note, #pane-rock .god-note {
+    margin:6px 0 0; font-size:10.5px; color:var(--dim); line-height:1.4;
+  }
+  #pane-god .god-actions { gap:4px; }
+  #pane-god .god-actions button { font-size:10.5px; padding:5px 7px; }
+  #pane-god .god-primary {
+    width:100%; margin-top:8px; background:rgba(42,85,200,.35); border-color:rgba(110,160,255,.45);
+  }
+  #pane-god .god-details {
+    margin:0 0 10px; padding:8px 0; border-bottom:1px solid rgba(120,160,220,.1);
+  }
+  #pane-god .god-details summary {
+    cursor:pointer; list-style:none; font-family: Syne, sans-serif;
+    font-size:10px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+    color:#8fa0bd; margin-bottom:8px; user-select:none;
+  }
+  #pane-god .god-details summary::-webkit-details-marker { display:none; }
+  #pane-god .god-details summary::before { content:'▸ '; color:var(--accent); }
+  #pane-god .god-details[open] summary::before { content:'▾ '; }
+  #pane-god .god-details[open] summary { color:#9fc0ff; }
+  #pane-god select, #pane-god input[type="text"], #pane-god input:not([type]),
+  #pane-god input[placeholder] {
+    flex:1; width:100%; font:11px inherit; background:#0c1018; color:#c8d6ef;
+    border:1px solid var(--line); border-radius:6px; padding:6px; margin-bottom:4px;
+  }
+  #pane-god .view-row select { margin-bottom:0; width:auto; }
 
   #catpanel {
-    display:none; position:absolute; z-index:6; top:58px; right:10px;
-    width:min(380px, calc(100vw - 20px)); max-height:calc(100vh - 70px);
-    background:var(--panel); backdrop-filter:blur(16px); border:1px solid var(--line);
-    border-radius:12px; padding:10px; pointer-events:auto; overflow:hidden;
-    flex-direction:column; gap:6px;
+    display:none; position:absolute; z-index:6; top:62px; right:12px;
+    width:min(380px, calc(100vw - 24px)); max-height:calc(100vh - 90px);
+    background:var(--panel); backdrop-filter:blur(18px); border:1px solid var(--line);
+    border-radius:14px; padding:10px; pointer-events:auto; overflow:hidden;
+    flex-direction:column; gap:6px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
   }
-  #catpanel.open { display:flex; }
+  #catpanel.open { display:flex; animation: dockIn .4s var(--ease); }
   #catpanel .cat-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  #catpanel h1 { font-size:11px; letter-spacing:.18em; text-transform:uppercase; margin:0; color:#9fc0ff; }
+  #catpanel h1 { font-family: Syne, sans-serif; font-size:11px; letter-spacing:.2em; text-transform:uppercase; margin:0; color:#9fc0ff; font-weight:700; }
   .cat-nav { display:flex; gap:4px; align-items:center; }
   .cat-nav button { padding:4px 8px; font-size:11px; }
   #catkinds, #catcats { display:flex; flex-wrap:wrap; gap:3px; }
   #catkinds button, #catcats button { font-size:10.5px; padding:3px 7px; }
   #catq { width:100%; font:12px inherit; color:var(--text); background:rgba(0,0,0,.35);
-    border:1px solid var(--line); border-radius:7px; padding:6px 8px; }
-  #catq:focus { outline:none; border-color:rgba(91,140,255,.7); }
+    border:1px solid var(--line); border-radius:8px; padding:7px 9px; }
+  #catq:focus { outline:none; border-color:rgba(110,160,255,.7); }
   #catlist { overflow:auto; flex:1; min-height:140px; display:flex; flex-direction:column; gap:3px; }
   .cat-item { text-align:left; padding:7px 8px; border-radius:8px; width:100%;
     display:grid; grid-template-columns:32px 1fr; gap:1px 8px; }
-  .cat-item .cid { font:10px ui-monospace, Menlo, monospace; color:var(--dim); padding-top:2px; }
-  .cat-item .ct { font-size:12px; font-weight:600; color:#e8eef8; }
+  .cat-item .cid { font-size:10px; color:var(--dim); padding-top:2px; }
+  .cat-item .ct { font-size:12px; font-weight:600; color:#e8eef8; font-family: Syne, sans-serif; }
   .cat-item .cm { font-size:10px; color:var(--dim); grid-column:2; }
   .cat-item .cd { display:none; }
-  .cat-item.BODY { border-color:rgba(125,214,160,.25); }
-  .cat-item.BODY:hover { background:rgba(125,214,160,.1); }
+  .cat-item.BODY { border-color:rgba(111,214,164,.25); }
+  .cat-item.BODY:hover { background:rgba(111,214,164,.1); }
   .cat-item.PHYS, .cat-item.UX { opacity:.7; }
-  .cat-item[aria-pressed="true"] { background:rgba(47,95,208,.4); border-color:var(--accent); }
+  .cat-item[aria-pressed="true"] { background:rgba(42,85,200,.4); border-color:var(--accent); }
   #catmeta { font-size:10.5px; color:var(--dim); }
   #catdetail { font-size:11px; color:#b8c8e0; line-height:1.4; max-height:90px; overflow:auto;
     padding-top:6px; border-top:1px solid var(--line); display:none; }
   #catdetail.show { display:block; }
 
   #localpanel {
-    position:absolute; z-index:3; padding:8px; max-width:none; pointer-events:auto;
-    background:var(--panel); backdrop-filter:blur(14px); border:1px solid var(--line); border-radius:12px;
+    position:absolute; z-index:3; padding:6px; max-width:none; pointer-events:auto;
+    background:var(--panel); backdrop-filter:blur(16px); border:1px solid var(--line); border-radius:12px;
+    box-shadow: 0 8px 28px rgba(0,0,0,.35);
+    display:flex; flex-direction:column; gap:3px;
+    /* Docked corner stays put; free edge grows toward the globe */
+    transition: top .28s var(--ease), right .28s var(--ease), bottom .28s var(--ease), left .28s var(--ease),
+      width .28s var(--ease), max-height .28s var(--ease), padding .28s var(--ease), transform .28s var(--ease),
+      box-shadow .28s var(--ease);
   }
-  #localpanel.snap-tl { top:58px; left:10px; right:auto; bottom:auto; }
-  #localpanel.snap-tr { top:58px; right:10px; left:auto; bottom:auto; }
-  #localpanel.snap-bl { bottom:10px; left:10px; right:auto; top:auto; }
-  #localpanel.snap-br { bottom:10px; right:10px; left:auto; top:auto; }
-  #localpanel h1 { font-size:11px; letter-spacing:.16em; text-transform:uppercase; margin:0 0 6px; color:#9fc0ff;
-    display:flex; justify-content:space-between; align-items:center; }
-  #localview { display:block; width:180px; height:180px; border-radius:7px;
-    background:#07090f; border:1px solid rgba(140,170,255,.2); image-rendering:pixelated; }
-  #localopts { display:none; margin-top:6px; }
-  #localopts.open { display:block; }
-  .local-opts { display:flex; flex-direction:column; gap:4px; }
-  .local-opt { display:flex; align-items:center; gap:5px; flex-wrap:wrap; }
-  .local-opt > span { min-width:36px; font-size:10px; color:var(--dim); letter-spacing:.06em; text-transform:uppercase; }
-  .local-opt .seg { display:flex; gap:2px; flex-wrap:wrap; }
-  .local-opt .seg button { font-size:10px; padding:2px 6px; }
-  #localMove { display:grid; grid-template-columns:repeat(3, 1fr); gap:2px; width:100%; max-width:120px; }
-  #localMove button { font-size:10px; padding:3px 0; min-width:0; }
-  #localhint { margin:5px 0 0; font-size:10px; color:var(--dim); max-width:180px; }
+  #localpanel.snap-tl { top:62px; left:12px; right:auto; bottom:auto; }
+  #localpanel.snap-tr { top:62px; right:12px; left:auto; bottom:auto; }
+  #localpanel.snap-bl { bottom:108px; left:12px; right:auto; top:auto; }
+  #localpanel.snap-br { bottom:12px; right:12px; left:auto; top:auto; }
+  #localpanel.expanded {
+    top:56px; left:50%; right:auto; bottom:108px;
+    transform:translateX(-50%);
+    width:min(960px, calc(100vw - 24px));
+    max-height:calc(100vh - 110px);
+    padding:10px 12px;
+    z-index:6;
+    box-shadow: 0 16px 60px rgba(0,0,0,.55);
+    gap:6px;
+  }
+  #localpanel:not(.expanded) { transform:none; }
+  #localpanel.expanded .local-corner-only { display:none; }
+  #localpanel:not(.expanded) .local-expand-only { display:none; }
 
-  #err { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); pointer-events:none;
-         background:rgba(180,40,50,.92); padding:8px 14px; border-radius:8px; font-size:12px;
-         opacity:0; transition:opacity .3s; max-width:80vw; text-align:center; z-index:20; }
-  #err.show { opacity:1; }
+  #localmapwrap {
+    position:relative; flex:1; min-height:0; display:flex; justify-content:center; align-items:center;
+    overflow:visible;
+  }
+  #localbar {
+    position:absolute; z-index:2; top:0; left:6px; right:6px;
+    transform:translateY(-50%);
+    display:flex; align-items:center; gap:0; flex-wrap:nowrap;
+    padding:4px 5px;
+    border-radius:9px;
+    background:rgba(6,10,18,.88); border:1px solid rgba(140,170,255,.22);
+    backdrop-filter:blur(12px);
+    pointer-events:auto;
+    box-shadow: 0 4px 16px rgba(0,0,0,.28);
+    overflow:hidden;
+  }
+  #localbar .local-tools {
+    display:flex; align-items:center; gap:5px; flex:1 1 auto; min-width:0;
+    justify-content:flex-start; overflow:hidden;
+  }
+  #localbar .local-cluster {
+    display:inline-flex; align-items:center; gap:2px; flex:0 0 auto;
+    padding:2px; border-radius:7px;
+    background:rgba(255,255,255,.03); border:1px solid rgba(140,170,255,.08);
+  }
+  #localbar .local-sep {
+    width:1px; align-self:stretch; min-height:20px; flex:0 0 auto;
+    background:rgba(140,170,255,.16);
+  }
+  #localbar .local-sep[hidden] { display:none !important; }
+  #localframe {
+    display:inline-flex; align-items:center; gap:2px; flex:0 0 auto;
+  }
+  #localframe button,
+  #localbar .seg button,
+  #localbar .local-iconbtn,
+  #localMove button {
+    display:inline-flex; align-items:center; justify-content:center;
+    box-sizing:border-box;
+    background:rgba(16,22,34,.75);
+    border-radius:5px;
+  }
+  #localframe button {
+    font-size:12px; padding:0; width:20px; height:20px; min-width:20px; line-height:1;
+    color:#c8d6f0;
+  }
+  #localframetag {
+    min-width:22px; height:20px; padding:0 4px;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-family: Syne, sans-serif; font-size:9px; letter-spacing:.08em;
+    color:#b8d0ff; font-weight:800; text-transform:uppercase;
+    user-select:none; cursor:pointer; border-radius:4px;
+  }
+  #localframetag:hover { background:rgba(110,160,255,.12); color:#e8f0ff; }
+  #localbar .seg { display:flex; gap:2px; flex-wrap:nowrap; }
+  #localbar .seg button {
+    font-size:9px; padding:0; width:20px; height:20px; min-width:20px; line-height:1;
+    font-variant-numeric: tabular-nums; color:#c4d2ea;
+  }
+  #localbar .seg button[aria-pressed="true"] {
+    background:rgba(42,85,200,.55); border-color:rgba(140,190,255,.85);
+    color:#fff; box-shadow: 0 0 0 1px rgba(140,190,255,.35);
+  }
+  #localbar .local-iconbtn {
+    font-size:12px; padding:0; width:22px; height:22px; min-width:22px; line-height:1;
+    letter-spacing:0; color:#c4d2ea; flex:0 0 auto; margin-left:auto;
+  }
+  #localbar .local-iconbtn[data-packed="true"] {
+    border-color:rgba(140,190,255,.45); color:#cfe0ff;
+  }
+  #localMove {
+    display:grid; grid-template-columns:repeat(3, 15px); gap:2px; flex:0 0 auto;
+  }
+  #localMove button {
+    font-size:8px; padding:0; width:15px; height:15px; min-width:15px; line-height:1;
+    border-radius:4px; color:#c4d2ea;
+  }
+  #localMove button[data-auto] {
+    font-family: Syne, sans-serif; font-size:7px; font-weight:700; letter-spacing:.04em;
+  }
+
+  #localmore {
+    display:none; position:absolute; z-index:3; top:28px; left:5px; right:5px;
+    align-items:flex-start; gap:8px 10px; flex-wrap:wrap;
+    padding:7px 8px;
+    border-radius:8px;
+    background:rgba(8,12,20,.92); border:1px solid rgba(140,170,255,.22);
+    backdrop-filter:blur(10px);
+  }
+  #localmore.open { display:flex; }
+  #localmore .local-opt {
+    display:inline-flex; align-items:center; gap:5px;
+  }
+  #localmore .local-opt > span {
+    font-size:8px; color:var(--dim); letter-spacing:.08em; text-transform:uppercase;
+    min-width:2.6em;
+  }
+  #localmore .local-opt[hidden] { display:none !important; }
+  #localmore .seg { display:flex; gap:2px; }
+  #localmore .seg button { font-size:9px; padding:3px 6px; }
+  #localmore #localMove {
+    grid-template-columns:repeat(3, 24px); gap:3px;
+  }
+  #localmore #localMove button {
+    width:24px; height:24px; min-width:24px; font-size:11px; border-radius:5px;
+  }
+  #localmore #localMove button[data-auto] { font-size:9px; }
+  #localmore #localRadius.seg button {
+    width:24px; height:24px; min-width:24px; font-size:10px; padding:0;
+  }
+
+  #localview {
+    display:block; width:280px; height:280px; border-radius:6px;
+    background:#07090f; border:1px solid rgba(140,170,255,.18);
+    image-rendering:pixelated; image-rendering:crisp-edges; cursor:crosshair;
+    transition: width .28s var(--ease), height .28s var(--ease);
+  }
+  #localpanel.expanded #localview {
+    width:min(80vh, calc(100vw - 64px), 860px) !important;
+    height:min(80vh, calc(100vw - 64px), 860px) !important;
+    max-width:100%; max-height:calc(100vh - 160px);
+    border-radius:8px;
+  }
+  #locallegend {
+    display:flex; flex-wrap:wrap; gap:2px 3px; align-items:center;
+    max-width:100%;
+  }
+  #locallegend .leg {
+    display:inline-flex; align-items:center; gap:3px; font-size:8px; color:#8fa0bd;
+    padding:1px 4px; border-radius:4px; border:1px solid transparent; cursor:pointer;
+    transition: background .15s, border-color .15s, color .15s, opacity .15s;
+  }
+  #locallegend .leg i {
+    width:7px; height:7px; border-radius:1.5px; display:block; flex:0 0 auto;
+  }
+  /* S only: chips alone, reveal name on the active key */
+  #localpanel[data-frame="S"]:not(.expanded) #locallegend .leg {
+    font-size:0; gap:0; padding:3px; letter-spacing:0;
+  }
+  #localpanel[data-frame="S"]:not(.expanded) #locallegend .leg.on {
+    font-size:8px; gap:3px; padding:1px 4px;
+  }
+  #localpanel[data-frame="S"]:not(.expanded) #locallegend .leg i {
+    width:8px; height:8px;
+  }
+  #localpanel.expanded #locallegend .leg { font-size:9.5px; padding:2px 5px; gap:4px; }
+  #localpanel.expanded #locallegend .leg i { width:8px; height:8px; }
+  #locallegend .leg.on {
+    color:#e8eef8; border-color:rgba(110,160,255,.55); background:rgba(110,160,255,.14);
+  }
+  #locallegend .leg.dim { opacity:0.28; }
+  #localstatus {
+    font-size:9px; color:#b8c8e0; min-height:1.1em; line-height:1.35;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
+    display:flex; flex-wrap:nowrap; gap:0 7px; align-items:baseline;
+  }
+  #localstatus .st { display:inline-flex; align-items:baseline; gap:3px; min-width:0; }
+  #localstatus .st em {
+    font-style:normal; font-size:7.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:#6a7a94; flex:0 0 auto;
+  }
+  #localstatus .st b { font-weight:500; color:#d4e0f4; }
+  #localstatus.pinned .st[data-k="focus"] b { color:#ffd080; }
+
+  #tip {
+    position:fixed; z-index:30; max-width:min(280px, calc(100vw - 24px));
+    pointer-events:none; opacity:0; transform:translateY(4px);
+    transition: opacity .18s var(--ease), transform .18s var(--ease);
+    background:rgba(10,14,22,.94); border:1px solid rgba(110,160,255,.35);
+    border-radius:10px; padding:10px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.55);
+    backdrop-filter: blur(12px);
+  }
+  #tip.show { opacity:1; transform:none; }
+  #tip .tip-title {
+    font-family: Syne, sans-serif; font-weight:700; font-size:12px;
+    letter-spacing:.04em; color:#e8eef8; margin:0 0 5px;
+  }
+  #tip .tip-body { margin:0; font-size:11px; line-height:1.45; color:#a8b8d0; }
+  #tip .tip-meta { margin:6px 0 0; font-size:10px; color:#6a7a94; }
 
   @media (max-width:820px) {
-    #dock { width:min(260px, calc(100vw - 20px)); }
-    #catpanel { left:10px; right:10px; width:auto; }
+    #dock { width:min(270px, calc(100vw - 24px)); }
+    #catpanel { left:12px; right:12px; width:auto; }
+    #timeribbon { left:10px; bottom:10px; width:min(280px, calc(100vw - 20px)); }
+    #localpanel.snap-bl { bottom:100px; }
+    #localpanel.expanded { bottom:100px; }
   }
 </style>
 <canvas id="c"></canvas>
+<div id="bootload" aria-live="polite">
+  <div class="boot-brand">Orrery</div>
+  <div class="boot-spin" aria-hidden="true"></div>
+  <div class="boot-msg">Forming world</div>
+</div>
+<div id="tip" role="tooltip" hidden>
+  <div class="tip-title"></div>
+  <p class="tip-body"></p>
+  <p class="tip-meta"></p>
+</div>
 <div id="ui">
   <div id="topbar">
     <div class="brand">Orrery</div>
-    <div id="worldchip">Terra</div>
+    <div id="worldchip">Earth</div>
     <div class="actions">
       <button type="button" id="catprev" title="Previous world [">‹</button>
       <button type="button" id="catbtn" aria-pressed="false">Worlds</button>
@@ -154,51 +827,259 @@
   <div id="dock">
     <div class="dock-tabs">
       <button type="button" data-tab="tools" aria-pressed="true">Tools</button>
+      <button type="button" data-tab="god" aria-pressed="false">Play</button>
+      <button type="button" data-tab="climate" aria-pressed="false" title="Atmosphere, storms & coasts">Sky</button>
+      <button type="button" data-tab="rock" aria-pressed="false" title="Plates, boundaries & crust">Rock</button>
       <button type="button" data-tab="view" aria-pressed="false">View</button>
-      <button type="button" data-tab="sandbox" aria-pressed="false">Sandbox</button>
+      <button type="button" data-tab="lab" aria-pressed="false">Lab</button>
+      <button type="button" data-tab="sandbox" aria-pressed="false">World</button>
     </div>
     <div class="dock-body">
       <div class="dock-pane on" id="pane-tools">
-        <div class="tools" id="tools"></div>
-        <button type="button" id="moretools" aria-pressed="false" style="margin-top:6px;width:100%">More tools</button>
-        <div class="tools tools-more" id="toolsMore"></div>
-        <div class="stats" id="stats"></div>
-        <div id="inspect"></div>
+        <div class="suite-desks" role="tablist" aria-label="Tools desks">
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="verbs" aria-pressed="true" title="Primary verbs"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="more" aria-pressed="false" title="Extra tools"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="station" aria-pressed="false" title="World status & inspect"></button>
+        </div>
+        <div class="suite-desk on" data-suite-panel="tools" data-desk-panel="verbs">
+          <p class="god-note" style="margin:0 0 8px">Click a tool, then right-click (or Alt-click) the planet. Inspect left-drags to spin.</p>
+          <div class="tools" id="tools"></div>
+          <div id="godprice" class="hint-mini" style="margin-top:6px"></div>
+        </div>
+        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="more" hidden>
+          <p class="god-note" style="margin:0 0 8px">Secondary verbs — disasters, chemistry, climate brushes.</p>
+          <div class="tools" id="toolsMore"></div>
+        </div>
+        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="station" hidden>
+          <div class="sec-h" data-sec-icon="station">Station</div>
+          <div class="stats" id="stats"></div>
+          <div id="inspect"></div>
+        </div>
       </div>
+      <div class="dock-pane" id="pane-god">
+        <p class="god-lead">
+          <b>Tools</b> are the verbs. This tab aims them — life, brush, challenges, new worlds.
+        </p>
+        <div class="suite-desks" role="tablist" aria-label="Play desks">
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="aim" aria-pressed="true" title="Life, clock, play actions"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="brush" aria-pressed="false" title="Brush mask and edge"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="challenge" aria-pressed="false" title="Scenarios"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="genesis" aria-pressed="false" title="Author a new world"></button>
+        </div>
+
+        <div class="suite-desk on" data-suite-panel="god" data-desk-panel="aim">
+          <div class="god-block">
+            <div class="god-h" data-sec-icon="seedGuild">While you play</div>
+            <div class="view-row">
+              <label for="guildsel" title="Used by the Seed guild tool">Life</label>
+              <select id="guildsel" title="Metabolism to plant with Seed guild"></select>
+            </div>
+            <p class="god-note" id="guildhint">Pick Seed guild in Tools, then click the planet.</p>
+            <div class="tools god-actions">
+              <button type="button" id="godundo" title="Ctrl+Z — reverts the last stroke, not time">Undo stroke</button>
+              <button type="button" id="godff" aria-pressed="false" title="Run fast until something notable happens">Skip ahead</button>
+              <button type="button" id="godwatch" aria-pressed="false" title="Hide UI and just watch">Watch mode</button>
+              <button type="button" id="godbookmark" title="Mark this moment">Bookmark</button>
+              <button type="button" id="orbitguides" aria-pressed="true" title="Cyan axis · white equator · gold ecliptic">Axis guides</button>
+            </div>
+            <div class="view-row">
+              <label for="timerate">Clock</label>
+              <select id="timerate"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="suite-desk" data-suite-panel="god" data-desk-panel="brush" hidden>
+          <div class="god-h" data-sec-icon="brush">Brush options</div>
+          <div class="view-row">
+            <label for="brushmask">Only on</label>
+            <select id="brushmask">
+              <option value="">anywhere</option>
+              <option value="land">land</option>
+              <option value="ocean">ocean</option>
+              <option value="dry">dry ground</option>
+              <option value="wet">wet ground</option>
+              <option value="continent">continents</option>
+              <option value="snow">ice</option>
+              <option value="belowSnow">ice-free</option>
+            </select>
+          </div>
+          <div class="view-row">
+            <label for="brushsnap">Snap to</label>
+            <select id="brushsnap">
+              <option value="">off</option>
+              <option value="coast">coastline</option>
+              <option value="bound">plate edge</option>
+              <option value="river">river</option>
+              <option value="biome">biome edge</option>
+            </select>
+          </div>
+          <div class="view-row">
+            <label for="brushhard">Edge</label>
+            <input type="range" id="brushhard" min="0" max="100" value="35" title="Soft → hard brush">
+          </div>
+          <p class="god-note">Right-drag with Raise / Lower / Ice to stroke. Brush size follows zoom.</p>
+        </div>
+
+        <div class="suite-desk" data-suite-panel="god" data-desk-panel="challenge" hidden>
+          <div class="god-h" data-sec-icon="challenge">Challenge</div>
+          <select id="scenariosel"></select>
+          <p class="god-note" id="scenarioblurb">A short goal with limits — optional. Campaign order listed first.</p>
+          <button type="button" id="scenariostart" class="god-primary">Start challenge</button>
+        </div>
+
+        <div class="suite-desk" data-suite-panel="god" data-desk-panel="genesis" hidden>
+          <div class="god-h" data-sec-icon="genesis">New world</div>
+          <input id="genesisname" placeholder="Name (optional)">
+          <input id="genesisseed" placeholder="Seed number (optional)">
+          <select id="genesispreset"></select>
+          <div class="tools god-actions" style="margin-top:6px">
+            <button type="button" id="genesisrand">Random habitable</button>
+            <button type="button" id="genesisgo">Create</button>
+            <button type="button" id="dailyseed">Today’s world</button>
+          </div>
+          <div class="tools god-actions" style="margin-top:6px">
+            <button type="button" id="godshelf">Save world</button>
+            <button type="button" id="godshare">Copy link-seed</button>
+          </div>
+          <p class="god-note" style="margin-top:10px">World tab → Free / Observe / Budget controls whether tools cost energy.</p>
+        </div>
+      </div>
+      <div class="dock-pane" id="pane-climate"></div>
+      <div class="dock-pane" id="pane-rock"></div>
       <div class="dock-pane" id="pane-view">
-        <div class="view-row">
-          <label for="opacity">Opacity</label>
-          <input type="range" id="opacity" min="15" max="100" value="100" step="1">
-          <span class="val" id="opacityVal">100%</span>
+        <div class="suite-desks" role="tablist" aria-label="View desks">
+          <button type="button" class="suite-desk-tab" data-suite="view" data-desk="look" aria-pressed="true" title="Opacity & grid"></button>
+          <button type="button" class="suite-desk-tab" data-suite="view" data-desk="layers" aria-pressed="false" title="Field overlays"></button>
+          <button type="button" class="suite-desk-tab" data-suite="view" data-desk="slice" aria-pressed="false" title="X-ray cut"></button>
+          <button type="button" class="suite-desk-tab" data-suite="view" data-desk="guides" aria-pressed="false" title="Guides & keys"></button>
         </div>
-        <div class="view-row">
-          <label for="xray">X-Ray</label>
-          <input type="checkbox" id="xray">
-          <span class="val" style="text-align:left;flex:1">core / mantle</span>
+        <div class="suite-desk on" data-suite-panel="view" data-desk-panel="look">
+          <div class="sec-h" data-sec-icon="appear">Appear</div>
+          <div class="view-row">
+            <label for="opacity">Opacity</label>
+            <input type="range" id="opacity" min="15" max="100" value="100" step="1">
+            <span class="val" id="opacityVal">100%</span>
+          </div>
+          <div class="view-row">
+            <label for="grid">Grid</label>
+            <input type="range" id="grid" min="0" max="100" value="0" step="5">
+            <span class="val" id="gridVal">off</span>
+          </div>
+          <div class="tools clim-actions" style="margin-top:6px">
+            <button type="button" id="viewClear" title="Full opacity, no grid">Clear view</button>
+            <button type="button" id="viewGhost" title="Fade surface to read overlays">Ghost 40%</button>
+          </div>
+          <p class="hint-mini">Opacity fades the surface so atmosphere and overlays read more clearly.</p>
         </div>
-        <div class="view-row" id="xrayRow" style="opacity:0.45;pointer-events:none">
-          <label for="xrayAmt">Cut</label>
-          <input type="range" id="xrayAmt" min="0" max="85" value="45" step="1">
-          <span class="val" id="xrayVal">45%</span>
+        <div class="suite-desk" data-suite-panel="view" data-desk-panel="layers" hidden>
+          <div class="sec-h" data-sec-icon="survey">Layers</div>
+          <p class="god-note" style="margin-top:0">Paint a field on the globe. Same list as Lab — kept here so you needn’t leave View.</p>
+          <div class="tools clim-overlays" id="viewOverlays"></div>
+          <p class="hint-mini" id="viewOverlayHint">None selected.</p>
         </div>
-        <div class="view-row">
-          <label for="grid">Grid</label>
-          <input type="range" id="grid" min="0" max="100" value="0" step="5">
-          <span class="val" id="gridVal">off</span>
+        <div class="suite-desk" data-suite-panel="view" data-desk-panel="slice" hidden>
+          <div class="sec-h" data-sec-icon="slice">X-Ray</div>
+          <div class="view-row">
+            <label for="xray">X-Ray</label>
+            <input type="checkbox" id="xray">
+            <span class="val" style="text-align:left;flex:1">core / mantle</span>
+          </div>
+          <div class="view-row" id="xrayRow" style="opacity:0.45;pointer-events:none">
+            <label for="xrayAmt">Cut</label>
+            <input type="range" id="xrayAmt" min="0" max="85" value="45" step="1">
+            <span class="val" id="xrayVal">45%</span>
+          </div>
+          <p class="hint-mini">Cut reveals interior shells — useful with Rock → Core and ice-shell worlds.</p>
         </div>
-        <p class="hint-mini"><kbd>scroll</kbd> zoom · drag spin · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>[ ]</kbd> worlds</p>
+        <div class="suite-desk" data-suite-panel="view" data-desk-panel="guides" hidden>
+          <div class="sec-h" data-sec-icon="orbitguides">Guides</div>
+          <div class="tools clim-actions" style="margin-bottom:8px">
+            <button type="button" id="viewOrbitGuides" aria-pressed="true" title="Cyan axis · white equator · gold ecliptic">Axis guides</button>
+          </div>
+          <div class="sec-h" data-sec-icon="keys">Keys</div>
+          <p class="hint-mini"><kbd>scroll</kbd> zoom · drag spin · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>,.</kbd> clock · <kbd>[ ]</kbd> worlds · <kbd>D</kbd> dock</p>
+        </div>
+      </div>
+      <div class="dock-pane" id="pane-lab">
+        <div class="suite-desks" role="tablist" aria-label="Lab desks">
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="all" aria-pressed="true" title="All instruments"></button>
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="tower" aria-pressed="false" title="Redox & Gaia"></button>
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="curves" aria-pressed="false" title="Time series"></button>
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="survey" aria-pressed="false" title="Maps & spectra"></button>
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="notes" aria-pressed="false" title="Limits & glossary"></button>
+        </div>
+        <div class="tools lab-toolbar">
+          <button type="button" id="labRefresh">Refresh</button>
+          <button type="button" id="labPaper">Paper</button>
+          <button type="button" id="labSave">Save</button>
+          <button type="button" id="labFinale" title="Write an ending artefact">Finale</button>
+          <button type="button" id="labPng" title="Export first instrument chart as PNG">PNG</button>
+          <button type="button" id="labDual" title="Headless dual-run check (worker)">Dual</button>
+          <select id="overlayMode" title="Field overlay" aria-label="Field overlay"></select>
+        </div>
+        <div id="labstats"></div>
       </div>
       <div class="dock-pane" id="pane-sandbox">
-        <div class="rules" id="rules"></div>
-        <div class="dock-foot">
-          <button type="button" id="budget" aria-pressed="false">Budget</button>
-          <button type="button" id="autopilot" aria-pressed="false">Gaia</button>
-          <button type="button" id="export">Chronicle</button>
+        <div class="suite-desks" role="tablist" aria-label="World desks">
+          <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="planet" aria-pressed="true" title="Ruleset / planet type"></button>
+          <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="modes" aria-pressed="false" title="Energy, Gaia, resolution"></button>
+          <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="archive" aria-pressed="false" title="Table & chronicle"></button>
         </div>
-        <p class="hint-mini">Sandbox presets. Use Worlds for the 120-catalogue.</p>
+        <div class="suite-desk on" data-suite-panel="sandbox" data-desk-panel="planet">
+          <div class="sec-h" data-sec-icon="planet">Planet</div>
+          <div class="rules" id="rules"></div>
+          <p class="hint-mini">Daisyworld is the feedback tutorial. Deep time starts at the CAI age.</p>
+        </div>
+        <div class="suite-desk" data-suite-panel="sandbox" data-desk-panel="modes" hidden>
+          <div class="sec-h" data-sec-icon="modes">Modes</div>
+          <div class="clim-strip" id="worldModeStrip" aria-live="polite"></div>
+          <div class="dock-foot">
+            <button type="button" id="budget" aria-pressed="false">Free</button>
+            <button type="button" id="autopilot" aria-pressed="false">Gaia</button>
+            <button type="button" id="deeptime" aria-pressed="false" title="Start at 4.567 Ga with adaptive ticks">Deep time</button>
+            <select id="simN" title="Cube-sphere resolution" aria-label="Resolution">
+              <option value="32">N=32 fast</option>
+              <option value="48">N=48</option>
+              <option value="64" selected>N=64</option>
+              <option value="96">N=96 heavy</option>
+            </select>
+          </div>
+          <p class="hint-mini">Free / Observe / Budget controls whether tools cost energy. Core / ice-core tools feed the Lab. Interior details live under <b>Rock → Core</b>.</p>
+        </div>
+        <div class="suite-desk" data-suite-panel="sandbox" data-desk-panel="archive" hidden>
+          <div class="sec-h" data-sec-icon="archive">Archive</div>
+          <div class="dock-foot">
+            <button type="button" id="orreryTable" aria-pressed="false" title="Show orrery table — click a world to load it">Table</button>
+            <button type="button" id="export">Chronicle</button>
+          </div>
+          <p class="hint-mini">Shelf worlds appear on the orrery table. Chronicle exports the era log as markdown.</p>
+        </div>
       </div>
     </div>
   </div>
+
+  <div id="receipt" aria-live="polite"></div>
+  <div id="commitring" style="--p:0"><div class="cr-label">Hold to commit</div></div>
+
+  <div id="moment" aria-live="polite">
+    <div class="m-chip" hidden></div>
+    <div class="m-kicker">First occurrence</div>
+    <div class="m-title"></div>
+    <div class="m-sub"></div>
+  </div>
+
+  <div id="reveal" hidden>
+    <div class="rv-kicker">Welcome</div>
+    <div class="rv-title"></div>
+    <div class="rv-body"></div>
+    <div class="rv-actions">
+      <button type="button" id="revealnext">Continue</button>
+      <button type="button" id="revealskip" class="ghost">Skip</button>
+    </div>
+  </div>
+
+  <div id="timeribbon"></div>
 
   <div id="catpanel">
     <div class="cat-head">
@@ -209,29 +1090,52 @@
     </div>
     <div id="catkinds"></div>
     <input id="catq" type="search" placeholder="Search Europa, TRAPPIST, iron…" autocomplete="off">
+    <div class="cat-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0">
+      <label class="cm">Sort
+        <select id="catsort">
+          <option value="id">catalogue</option>
+          <option value="dist">nearest</option>
+          <option value="obs">observable</option>
+          <option value="known">best known</option>
+        </select>
+      </label>
+      <label class="cm">CSV
+        <input id="catcsv" type="file" accept=".csv,text/csv" style="max-width:11rem">
+      </label>
+    </div>
     <div id="catcats"></div>
     <div id="catlist"></div>
     <div id="catmeta"></div>
     <div id="catdetail"></div>
   </div>
 
-  <div id="localpanel" class="snap-br">
-    <h1>
-      <span>Local</span>
-      <button type="button" id="localoptsbtn" aria-pressed="false" style="font-size:10px;padding:2px 6px">Opts</button>
-    </h1>
-    <canvas id="localview" width="180" height="180"></canvas>
-    <div id="localopts">
-      <div class="local-opts">
-        <div class="local-opt"><span>Size</span><div class="seg" id="localSize"></div></div>
-        <div class="local-opt"><span>Snap</span><div class="seg" id="localSnap"></div></div>
-        <div class="local-opt"><span>Globe</span><div class="seg" id="localGlobe"></div></div>
-        <div class="local-opt"><span>Patch</span><div class="seg" id="localRadius"></div></div>
-        <div class="local-opt"><span>Move</span><div id="localMove"></div></div>
+  <div id="localpanel" class="snap-br" data-frame="M">
+    <div id="localmapwrap">
+      <div id="localbar">
+        <div class="local-tools">
+          <div class="local-cluster" id="localframe" title="Panel size · grows from snap corner · Alt+scroll">
+            <button type="button" id="localshrink" aria-label="Shrink panel">−</button>
+            <span id="localframetag">M</span>
+            <button type="button" id="localgrow" aria-label="Grow panel">+</button>
+          </div>
+          <div class="local-sep" id="localSepZoom" aria-hidden="true"></div>
+          <div class="local-cluster seg" id="localRadius" title="Map zoom · scroll"></div>
+          <div class="local-sep" id="localSepMove" aria-hidden="true"></div>
+          <div class="local-cluster" id="localMove" title="Nudge patch"></div>
+          <button type="button" class="local-iconbtn" id="localmorebtn" aria-pressed="false" title="More local controls">⋯</button>
+        </div>
       </div>
+      <div id="localmore">
+        <div class="local-opt" id="localRadiusMoreWrap" hidden><span>Zoom</span></div>
+        <div class="local-opt" id="localMoveMoreWrap" hidden><span>Nudge</span></div>
+        <div class="local-opt local-corner-only"><span>Snap</span><div class="seg" id="localSnap"></div></div>
+        <div class="local-opt"><span>Globe</span><div class="seg" id="localGlobe"></div></div>
+      </div>
+      <canvas id="localview" width="280" height="280"></canvas>
     </div>
-    <p id="localhint">Drag map · arrows · Ctrl+click globe</p>
+    <div id="locallegend"></div>
+    <div id="localstatus"></div>
   </div>
 </div>
 <div id="err"></div>
-<script type="module" src="./main.js?v=ui3"></script>
+<script type="module" src="./main.js?v=tides1"></script>

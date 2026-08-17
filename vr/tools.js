@@ -1,46 +1,80 @@
-/** God tools & disasters — all write through shared world mutators. */
+/** God tools & disasters — brush, receipts, thermo, guilds, sculpt, climate. */
 
 import { clamp } from './math.js';
-import { NC, DIR, NBR, dirToCell } from './sphere.js';
+import { NC, DIR, dirToCell, cellKm } from './sphere.js';
 import { W, applyImpact, chronLog, seedLife } from './world.js';
 import { injectGas } from './sim/atmo.js';
 import { startTsunami } from './sim/hydro.js';
+import { coreSample, iceCore } from './sim/instruments.js';
+import {
+  BRUSH, paintBrush, beginStroke, undoStroke, canUndo,
+  startDrag, continueDrag, endDrag, isDragging, previewBrush, brushKm, brushForTier,
+} from './sim/god/brush.js';
+import { issueReceipt, forecastAct, causalChain } from './sim/god/receipt.js';
+import { tryPay, pricePreview, setScarcityMode, SCARCITY } from './sim/god/economy.js';
+import {
+  seedGuildAt, seedClassAt, selectedGuild, setSelectedGuild,
+  declareRefuge, cullClade, forceTransition, diagnoseBiome, seedRefusal,
+} from './sim/god/life.js';
+import {
+  thickenCrust, thinCrust, paintCrustType, setPlatePole, placePlume,
+  carveRiver, setGateway, shiftSeaLevel, stampTerrain, paintSoil, drawRift, forceOrogeny,
+} from './sim/god/sculpt.js';
+import {
+  setOrbit, injectAerosol, paintAlbedo, setSolarShade, seedClouds,
+  tripOceanConveyor, setMagnetosphere, setMoon, setThermostat, localWeather, settlingTime,
+} from './sim/god/climate.js';
+import {
+  strikeImpact, placeLIP, triggerGRB, stellarFlare, releaseClathrate,
+  releasePathogen, theiaImpact,
+} from './sim/god/disaster.js';
+import { seedStorm } from './sim/storms.js';
 
 export const TOOLS = [
-  { id: 'inspect', name: 'Inspect', key: 'q', cost: 0 },
-  { id: 'solar', name: 'Solar±', key: 't', cost: 5 },
-  { id: 'co2', name: 'CO₂ inject', key: 'c', cost: 8 },
-  { id: 'o2', name: 'O₂ inject', key: 'o', cost: 8 },
-  { id: 'seed', name: 'Seed life', key: 'v', cost: 10 },
-  { id: 'raise', name: 'Raise land', key: 'e', cost: 6 },
-  { id: 'lower', name: 'Lower land', key: 'f', cost: 6 },
-  { id: 'meteor', name: 'Meteor', key: 'm', cost: 25 },
-  { id: 'volcano', name: 'Force erupt', key: 'u', cost: 15 },
-  { id: 'quake', name: 'Quake', key: 'g', cost: 12 },
-  { id: 'plague', name: 'Plague', key: 'p', cost: 20 },
-  { id: 'ice', name: 'Ice meteor', key: 'i', cost: 12 },
-  { id: 'tilt', name: 'Tilt axis', key: 'y', cost: 10 },
-  { id: 'spin', name: 'Spin±', key: 'k', cost: 8 },
-  { id: 'buster', name: 'Planet buster', key: 'b', cost: 80 },
+  { id: 'inspect', name: 'Inspect', key: 'q', cost: 0, group: 'see' },
+  { id: 'core', name: 'Core sample', key: 'x', cost: 0, group: 'see' },
+  { id: 'icecore', name: 'Ice core', key: 'z', cost: 0, group: 'see' },
+  { id: 'seedGuild', name: 'Seed guild', key: 'v', cost: 10, group: 'life' },
+  { id: 'seed', name: 'Seed class', key: 'V', cost: 10, group: 'life' },
+  { id: 'refuge', name: 'Refuge', key: '', cost: 14, group: 'life' },
+  { id: 'raise', name: 'Thicken crust', key: 'e', cost: 22, group: 'land', drag: true },
+  { id: 'lower', name: 'Thin crust', key: 'f', cost: 18, group: 'land', drag: true },
+  { id: 'plume', name: 'Mantle plume', key: '', cost: 28, group: 'land' },
+  { id: 'plate', name: 'Plate pole', key: '', cost: 45, group: 'land' },
+  { id: 'river', name: 'Carve river', key: '', cost: 8, group: 'land', drag: true },
+  { id: 'albedo', name: 'Paint albedo', key: '', cost: 10, group: 'clim', drag: true },
+  { id: 'solar', name: 'Solar±', key: 't', cost: 40, group: 'clim' },
+  { id: 'co2', name: 'CO₂ inject', key: 'c', cost: 25, group: 'clim' },
+  { id: 'o2', name: 'O₂ inject', key: 'o', cost: 20, group: 'clim' },
+  { id: 'shade', name: 'L1 shade', key: '', cost: 40, group: 'clim' },
+  { id: 'aerosol', name: 'Aerosol', key: '', cost: 18, group: 'clim' },
+  { id: 'weather', name: 'Local rain', key: '', cost: 5, group: 'clim' },
+  { id: 'meteor', name: 'Meteor', key: 'm', cost: 60, group: 'dis' },
+  { id: 'volcano', name: 'Force erupt', key: 'u', cost: 40, group: 'dis' },
+  { id: 'lip', name: 'LIP', key: '', cost: 80, group: 'dis' },
+  { id: 'quake', name: 'Quake', key: 'g', cost: 28, group: 'dis' },
+  { id: 'plague', name: 'Pathogen', key: 'p', cost: 35, group: 'dis' },
+  { id: 'ice', name: 'Ice meteor', key: 'i', cost: 30, group: 'dis', drag: true },
+  { id: 'tilt', name: 'Tilt axis', key: 'y', cost: 35, group: 'clim' },
+  { id: 'spin', name: 'Spin±', key: 'k', cost: 30, group: 'clim' },
+  { id: 'moon', name: 'Moon', key: '', cost: 50, group: 'clim' },
+  { id: 'buster', name: 'Theia impact', key: 'b', cost: 200, group: 'dis', irreversible: true },
 ];
 
 export let activeTool = 'inspect';
-export function setTool(id) { activeTool = id; }
-
-function afford(cost) {
-  if (!W.budgetMode) return true;
-  if (W.energy < cost) return false;
-  W.energy -= cost;
-  return true;
+export function setTool(id) {
+  activeTool = id;
+  forecastAct(id, 0);
 }
+
+export { BRUSH, brushKm, brushForTier, previewBrush, undoStroke, canUndo, paintBrush };
+export { pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild };
 
 /** Ray–sphere hit → cell index, or -1. */
 export function pickCell(origin, direction, planetPos, planetScale, planetQ) {
-  // Transform ray into planet-local space
   const ocx = (origin[0] - planetPos[0]) / planetScale;
   const ocy = (origin[1] - planetPos[1]) / planetScale;
   const ocz = (origin[2] - planetPos[2]) / planetScale;
-  // Inverse rotate by planet quaternion
   const q = planetQ;
   const ix = -q[0], iy = -q[1], iz = -q[2], iw = q[3];
   const rot = (vx, vy, vz) => {
@@ -63,110 +97,264 @@ export function pickCell(origin, direction, planetPos, planetScale, planetQ) {
   return dirToCell(hx, hy, hz);
 }
 
-export function paintBrush(cell, fn, radius = 2) {
-  if (cell < 0) return;
-  const cx = DIR[cell * 3], cy = DIR[cell * 3 + 1], cz = DIR[cell * 3 + 2];
-  const thresh = Math.cos(radius * 0.04);
-  for (let c = 0; c < NC; c++) {
-    const d = DIR[c * 3] * cx + DIR[c * 3 + 1] * cy + DIR[c * 3 + 2] * cz;
-    if (d > thresh) fn(c, (d - thresh) / (1 - thresh + 1e-6));
-  }
+function payOrFail(tool, mag = 1, opts = {}) {
+  const pay = tryPay(tool, mag, opts);
+  if (!pay.ok) return { error: pay.error || 'Cannot afford', pay };
+  return { pay };
+}
+
+/** Continuous drag entry. Item 4. */
+export function beginToolDrag(cell) {
+  const tool = TOOLS.find((t) => t.id === activeTool);
+  if (!tool?.drag || cell < 0) return null;
+  const gate = payOrFail(tool.id, 0.5);
+  if (gate.error) return gate;
+
+  const apply = dragApplier(tool.id);
+  if (!apply) return null;
+  const r = startDrag(cell, apply, dragFields(tool.id));
+  return { ok: true, tool: tool.id, drag: true, brush: r, pay: gate.pay };
+}
+
+export function moveToolDrag(cell) {
+  if (!isDragging()) return null;
+  const r = continueDrag(cell);
+  return r ? { ok: true, brush: r } : null;
+}
+
+export function endToolDrag() {
+  const d = endDrag();
+  if (!d) return null;
+  issueReceipt({
+    tool: activeTool,
+    cell: d.last,
+    intent: `Drag ${activeTool}`,
+    expected: `${d.cells} cells stroked · ${brushKm().toFixed(0)} km brush`,
+  });
+  return { ok: true, cells: d.cells };
+}
+
+function dragApplier(id) {
+  if (id === 'raise') return (c, f) => { W.crust[c] = Math.min(1.8, W.crust[c] + 0.03 * f); W.h[c] = Math.min(1.3, W.h[c] + 0.02 * f); };
+  if (id === 'lower') return (c, f) => { W.crust[c] = Math.max(0.05, W.crust[c] - 0.03 * f); W.h[c] = Math.max(-1.2, W.h[c] - 0.025 * f); };
+  if (id === 'ice') return (c, f) => {
+    W.temp[c] = Math.max(0, W.temp[c] - 0.15 * f);
+    W.iceLand[c] = Math.min(1, W.iceLand[c] + 0.3 * f);
+    W.ice[c] = Math.max(W.ice[c], W.iceLand[c]);
+  };
+  if (id === 'albedo') return (c, f) => { if (!W.albedoPaint) W.albedoPaint = new Float32Array(NC); W.albedoPaint[c] = 0.75; };
+  if (id === 'river') return (c, f) => { W.h[c] -= 0.02 * f; W.flow[c] = Math.max(W.flow[c] || 0, 0.5 * f); };
+  return null;
+}
+
+function dragFields(id) {
+  if (id === 'raise' || id === 'lower') return ['h', 'crust'];
+  if (id === 'ice') return ['temp', 'ice', 'iceLand'];
+  if (id === 'albedo') return ['albedoPaint'];
+  return ['h'];
 }
 
 export function useToolAt(cell, extra = {}) {
   if (cell < 0) return null;
   const tool = TOOLS.find((t) => t.id === activeTool) || TOOLS[0];
-  if (!afford(tool.cost)) return { error: 'No energy' };
+
+  // Irreversible commit gate. Item 6 / 80.
+  if (tool.irreversible && !extra.confirm && !extra.commit) {
+    return theiaImpact(cell, false);
+  }
+
+  // Forecast before commit when requested. Item 87.
+  if (extra.forecastOnly) {
+    return { ok: true, forecast: forecastAct(tool.id, cell) };
+  }
+
+  const withGrain = extra.withGrain || (tool.id === 'ice' && W.meanTemp < 0.4)
+    || (tool.id === 'co2' && W.meanTemp < 0.35);
+  const gate = payOrFail(tool.id, extra.magnitude ?? 1, { withGrain, againstGrain: extra.againstGrain });
+  if (gate.error) return { error: gate.error, pay: gate.pay };
+
+  let result = { ok: true, tool: tool.id, pay: gate.pay };
 
   switch (tool.id) {
     case 'inspect':
-      return inspectCell(cell);
+      return { ...inspectCell(cell), ok: true, tool: 'inspect', pay: gate.pay };
+
+    case 'core': {
+      const sample = coreSample(W, cell);
+      chronLog(W.year, 'core', cell, sample.layers.length, `Core @${cell}`);
+      issueReceipt({ tool: 'core', cell, intent: 'Core sample', expected: `${sample.layers.length} strata` });
+      return { ok: true, tool: 'core', sample, pay: gate.pay };
+    }
+    case 'icecore': {
+      const sample = iceCore(W, cell);
+      chronLog(W.year, 'icecore', cell, sample.ok ? 1 : 0, sample.ok ? 'Ice core' : sample.reason);
+      issueReceipt({ tool: 'icecore', cell, intent: 'Ice core', expected: sample.ok ? 'Bubbles + isotopes' : sample.reason });
+      if (!sample.ok) {
+        return { ok: false, tool: 'icecore', sample, pay: gate.pay, error: sample.reason || 'Ice core failed' };
+      }
+      return { ok: true, tool: 'icecore', sample, pay: gate.pay };
+    }
+
     case 'solar': {
       const d = extra.delta ?? 0.05;
-      W.solar = clamp(W.solar + d, 0.3, 2.0);
-      W._baseSolar = W.solar;
-      chronLog(W.year, 'tool', cell, W.solar, `Solar → ${W.solar.toFixed(2)}`);
+      setOrbit({ solar: clamp((W._baseSolar || W.solar) + d, 0.3, 2.0) });
+      result.settling = settlingTime('solar');
+      result.orbitFlash = true;
       break;
     }
     case 'co2':
       injectGas(W, 'CO2', 0.02);
+      issueReceipt({
+        tool: 'co2', cell, intent: 'CO₂ injection',
+        expected: causalChain(['CO₂ up', 'ocean acidifies', 'reef stress', 'warming']),
+        delayYr: 500, delayLabel: 'Weathering thermostat answering your CO₂',
+      });
       chronLog(W.year, 'tool', cell, W.gases.CO2, 'CO₂ injection');
+      result.settling = settlingTime('co2');
+      // Planet argues. Item 91.
+      W.argueResponses.push({ t: W.ageYr, text: 'Silicate weathering will oppose this CO₂ — on a 10⁵ yr clock.', kind: 'argue' });
       break;
     case 'o2':
       injectGas(W, 'O2', 0.02);
+      issueReceipt({ tool: 'o2', cell, intent: 'O₂ injection', expected: `O₂ → ${(W.gases.O2 * 100).toFixed(1)}%` });
       chronLog(W.year, 'tool', cell, W.gases.O2, 'O₂ injection');
       break;
-    case 'seed':
-      seedLife(W, cell, W.unlockedClass);
-      chronLog(W.year, 'seed', cell, 1, 'Life bloom seeded');
-      break;
-    case 'raise':
-      paintBrush(cell, (c, f) => { W.h[c] = Math.min(1.2, W.h[c] + 0.06 * f); W.crust[c] += 0.03 * f; });
-      chronLog(W.year, 'sculpt', cell, 1, 'Uplift');
-      break;
-    case 'lower':
-      paintBrush(cell, (c, f) => { W.h[c] = Math.max(-1.2, W.h[c] - 0.06 * f); });
-      chronLog(W.year, 'sculpt', cell, 1, 'Subsidence');
-      break;
-    case 'meteor': {
-      const power = extra.power ?? 0.8;
-      applyImpact(cell, power);
+
+    case 'seedGuild': {
+      const r = seedGuildAt(cell, extra.guild || selectedGuild);
+      if (r.refused) return { ...r, pay: gate.pay };
+      result = { ...result, ...r };
       break;
     }
+    case 'seed':
+      seedClassAt(cell);
+      break;
+    case 'refuge':
+      declareRefuge(cell);
+      break;
+
+    case 'raise':
+      thickenCrust(cell, 0.05);
+      break;
+    case 'lower':
+      thinCrust(cell, 0.05);
+      break;
+    case 'plume':
+      placePlume(cell);
+      break;
+    case 'plate':
+      setPlatePole(cell);
+      break;
+    case 'river':
+      carveRiver(cell);
+      break;
+    case 'albedo':
+      paintAlbedo(cell, extra.albedo ?? 0.7);
+      break;
+    case 'shade':
+      setSolarShade(extra.fraction ?? Math.min(0.12, (W.solarShade || 0) + 0.02));
+      result.orbitFlash = true;
+      break;
+    case 'aerosol':
+      injectAerosol(0.04, extra.hemi ?? 0);
+      break;
+    case 'weather': {
+      // Prefer seeding a named storm when conditions allow; else local rain
+      const seeded = seedStorm(W, cell, {});
+      if (seeded?.ok) {
+        result = { ...result, ...seeded, note: seeded.note };
+      } else {
+        localWeather(cell, extra.kind || 'rain');
+        if (seeded?.note) result.note = `Rain · ${seeded.note}`;
+      }
+      break;
+    }
+
+    case 'meteor':
+      result = { ...result, ...strikeImpact(cell, {
+        mass: extra.mass ?? 1,
+        velocity: extra.velocity ?? (extra.power ?? 0.8),
+        density: extra.density ?? 1,
+        angle: extra.angle ?? 45,
+      }) };
+      break;
     case 'ice':
+      beginStroke(['temp', 'ice', 'iceLand']);
       paintBrush(cell, (c, f) => {
         W.temp[c] = Math.max(0, W.temp[c] - 0.25 * f);
         W.iceLand[c] = Math.min(1, W.iceLand[c] + 0.4 * f);
         W.ice[c] = Math.max(W.ice[c], W.iceLand[c]);
-      }, 3);
+      });
       W.gases.H2O = Math.min(0.2, W.gases.H2O + 0.01);
+      issueReceipt({ tool: 'ice', cell, intent: 'Ice meteor', expected: 'Local freeze · H₂O up' });
       chronLog(W.year, 'tool', cell, 1, 'Ice meteor');
       break;
-    case 'volcano': {
+    case 'volcano':
       W.volcanoes.push({ cell, magma: 1.5, next: 0 });
       W.ash[cell] = 1;
       W.gases.sulphate = Math.min(0.3, W.gases.sulphate + 0.04);
+      issueReceipt({ tool: 'volcano', cell, intent: 'Forced eruption', expected: 'Ash + sulphate aerosol' });
       chronLog(W.year, 'eruption', cell, 1.5, 'Forced eruption');
       break;
-    }
+    case 'lip':
+      placeLIP(cell, extra.durationMyr ?? 1);
+      break;
     case 'quake':
       W.strain[cell] = 0;
       W.h[cell] -= 0.03;
       startTsunami(W, cell, 0.7);
+      issueReceipt({ tool: 'quake', cell, intent: 'Quake', expected: 'Tsunami launched' });
       chronLog(W.year, 'quake', cell, 1, 'Triggered quake');
       break;
     case 'plague':
-      W.plague = Math.min(1, W.plague + 0.5);
-      chronLog(W.year, 'plague', cell, W.plague, 'Plague released');
+      releasePathogen(extra);
       break;
-    case 'tilt':
-      W.obliquity = clamp(W.obliquity + (extra.delta ?? 0.1), 0, 0.8);
-      W._baseObliquity = W.obliquity;
-      W.rule.obliquity = W.obliquity;
-      chronLog(W.year, 'tool', cell, W.obliquity, `Obliquity → ${(W.obliquity * 180 / Math.PI).toFixed(0)}°`);
+    case 'tilt': {
+      const next = clamp(W.obliquity + (extra.delta ?? 0.1), 0, 0.8);
+      setOrbit({ obliquity: next });
+      result.obliquityDeg = (next * 180 / Math.PI);
+      result.settling = settlingTime('tilt');
+      result.orbitFlash = true;
+      issueReceipt({
+        tool: 'tilt', cell, intent: 'Tilt axis',
+        expected: `Obliquity → ${result.obliquityDeg.toFixed(1)}° · seasons strengthen`,
+      });
+      chronLog(W.year, 'tool', cell, next, `Tilt → ${result.obliquityDeg.toFixed(1)}°`);
       break;
-    case 'spin':
-      W.rotationPeriod = clamp(W.rotationPeriod * (extra.delta ?? 0.8), 0.15, 40);
-      chronLog(W.year, 'tool', cell, W.rotationPeriod, `Day → ${W.rotationPeriod.toFixed(2)}`);
+    }
+    case 'spin': {
+      const sign = (W.rotationPeriod || 1) < 0 ? -1 : 1;
+      const next = sign * clamp(Math.abs(W.rotationPeriod || 1) * (extra.delta ?? 0.8), 0.15, 40);
+      W.rotationPeriod = next;
+      if (W.rule) W.rule.rotationPeriod = next;
+      const label = (next < 0 ? '−' : '') + `${Math.abs(next).toFixed(2)}×`;
+      issueReceipt({ tool: 'spin', cell, intent: 'Day length', expected: `Day → ${label}` });
+      chronLog(W.year, 'tool', cell, next, `Day → ${label}`);
+      result.day = next;
+      result.orbitFlash = true;
       break;
+    }
+    case 'moon': {
+      const has = W.moon && W.moon.mass > 0.1;
+      const r = has ? setMoon(0.02, 2.2) : setMoon(1, 1);
+      result = { ...result, ...r, orbitFlash: true, note: has ? 'Moon stripped — obliquity will wander' : 'Moon set — axis stabilised' };
+      break;
+    }
     case 'buster':
-      if (!extra.confirm) return { needConfirm: true };
-      for (let c = 0; c < NC; c++) {
-        W.h[c] -= 0.3 + Math.random() * 0.4;
-        W.life[c] = 0;
-        W.temp[c] = 1.4;
-      }
-      W.gases.dust = 0.5;
-      W.state = 'moist-greenhouse';
-      chronLog(W.year, 'buster', cell, 10, 'PLANET BUSTER');
+      result = { ...result, ...theiaImpact(cell, true) };
       break;
     default:
       break;
   }
-  return { ok: true, tool: tool.id };
+
+  result.price = pricePreview(tool.id);
+  result.forecast = forecastAct(tool.id, cell);
+  return result;
 }
 
 export function inspectCell(cell) {
+  const refuse = seedRefusal(cell);
+  const wind = Math.hypot(W.windU?.[cell] || 0, W.windV?.[cell] || 0);
   return {
     cell,
     h: W.h[cell],
@@ -183,10 +371,32 @@ export function inspectCell(cell) {
     rock: W.rock[cell],
     flow: W.flow[cell],
     clouds: W.clouds[cell],
+    precip: W.precip?.[cell],
+    windU: W.windU?.[cell],
+    windV: W.windV?.[cell],
+    wind,
+    press: W.press?.[cell],
+    converg: W.converg?.[cell],
     ore: W.ore[cell],
     soil: W.soil[cell],
     build: W.build[cell],
     seaLevel: W.seaLevel,
+    crust: W.crust[cell],
+    tideHeight: W.tideHeight?.[cell],
+    tideRange: W.tideRange?.[cell],
+    intertidal: W.intertidal?.[cell],
+    tideWet: W.tideWet?.[cell],
+    npp: W.npp?.[cell],
+    cellKm: Number(cellKm()),
+    iceShell: W._iceShell ? {
+      lid: W.shellLid?.[cell],
+      ocean: W.shellOcean?.[cell],
+      mantle: W.shellMantle?.[cell],
+      vent: W.shellVent?.[cell],
+    } : null,
+    seedOk: refuse.ok,
+    seedWhy: refuse.reasons,
+    biomeGap: diagnoseBiome(cell),
   };
 }
 
@@ -194,9 +404,17 @@ export function inspectCell(cell) {
 export function fingerOfGod(cell, mode = 'boost') {
   if (cell < 0) return;
   if (mode === 'delete') {
-    paintBrush(cell, (c) => { W.life[c] = 0; }, 1);
+    paintBrush(cell, (c) => { W.life[c] = 0; });
     chronLog(W.year, 'finger', cell, 0, 'Erased');
   } else {
-    seedLife(W, cell, W.unlockedClass);
+    seedGuildAt(cell);
   }
 }
+
+// Re-export advanced acts for UI panels
+export {
+  setPlatePole, placePlume, setGateway, shiftSeaLevel, stampTerrain, paintSoil,
+  paintCrustType, drawRift, forceOrogeny, cullClade, forceTransition,
+  triggerGRB, stellarFlare, releaseClathrate, setMagnetosphere, setMoon,
+  setThermostat, tripOceanConveyor, setOrbit,
+};

@@ -1,12 +1,15 @@
-/** Cube-sphere substrate: mapping, neighbours, area weights. */
+/** Cube-sphere substrate: mapping, neighbours, area weights.
+ *  N is runtime-settable via setResolution() — live ES bindings. */
 
 import { TAU4, clamp } from './math.js';
 
-export const N = 64;
-export const NF = N * N;
-export const NC = 6 * NF;
-export const NV = 6 * (N + 1) * (N + 1);
-export const VPF = (N + 1) * (N + 1);
+export let N = 64;
+export let NF = N * N;
+export let NC = 6 * NF;
+export let NV = 6 * (N + 1) * (N + 1);
+export let VPF = (N + 1) * (N + 1);
+
+export const N_ALLOWED = [32, 48, 64, 96];
 
 export function warp(s) {
   return s >= 1 ? 1 : s <= -1 ? -1 : Math.tan(s * TAU4);
@@ -46,7 +49,7 @@ export function dirToCell(x, y, z, n = N) {
   return f * nf + j * n + i;
 }
 
-export function buildNeighbours() {
+function buildNeighbours() {
   const nbr = new Int32Array(NC * 4);
   const p = [0, 0, 0];
   for (let f = 0; f < 6; f++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
@@ -66,7 +69,7 @@ export function buildNeighbours() {
   return nbr;
 }
 
-export function buildAreas() {
+function buildAreas() {
   const a = new Float32Array(NC);
   const ds = 2 / N;
   let sum = 0;
@@ -79,7 +82,7 @@ export function buildAreas() {
     sum += w;
   }
   const err = Math.abs(sum - 4 * Math.PI) / (4 * Math.PI);
-  console.log(`[orrery] Σ cell area = ${sum.toFixed(6)}  (4π = ${(4 * Math.PI).toFixed(6)}, rel err ${(err * 100).toExponential(2)}%)`);
+  console.log(`[orrery] N=${N} Σ area = ${sum.toFixed(6)}  (rel err ${(err * 100).toExponential(2)}%)`);
   const mean = sum / NC;
   let mn = Infinity, mx = 0;
   for (let c = 0; c < NC; c++) {
@@ -88,28 +91,22 @@ export function buildAreas() {
     if (r > mx) mx = r;
     a[c] = r;
   }
-  console.log(`[orrery] cell-area distortion ${mn.toFixed(3)}× … ${mx.toFixed(3)}×`);
   return a;
 }
 
-export function buildDirections() {
-  const DIR = new Float32Array(NC * 3);
+function buildDirections() {
+  const dir = new Float32Array(NC * 3);
   const p = [0, 0, 0];
   for (let f = 0; f < 6; f++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const s = (i + 0.5) / N * 2 - 1, t = (j + 0.5) / N * 2 - 1;
     facePoint(f, warp(s), warp(t), p);
     const c = f * NF + j * N + i;
-    DIR[c * 3] = p[0]; DIR[c * 3 + 1] = p[1]; DIR[c * 3 + 2] = p[2];
+    dir[c * 3] = p[0]; dir[c * 3 + 1] = p[1]; dir[c * 3 + 2] = p[2];
   }
-  return DIR;
+  return dir;
 }
 
-export const NBR = buildNeighbours();
-export const AREA = buildAreas();
-export const DIR = buildDirections();
-
-/** D8-ish: 4 face neighbours + diagonals via 3D step (approx). */
-export function buildNbr8() {
+function buildNbr8() {
   const nbr = new Int32Array(NC * 8);
   const p = [0, 0, 0], q = [0, 0, 0];
   const steps = [
@@ -118,14 +115,12 @@ export function buildNbr8() {
   ];
   for (let f = 0; f < 6; f++) for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
     const c = f * NF + j * N + i;
-    facePoint(f, warp((i + 0.5) / N * 2 - 1), warp((j + 0.5) / N * 2 - 1), p);
     for (let k = 0; k < 8; k++) {
       const ni = i + steps[k][0], nj = j + steps[k][1];
       if (ni >= 0 && ni < N && nj >= 0 && nj < N) {
         nbr[c * 8 + k] = f * NF + nj * N + ni;
         continue;
       }
-      // tangent step in cube space then reproject
       const s = (ni + 0.5) / N * 2 - 1, t = (nj + 0.5) / N * 2 - 1;
       facePoint(f, Math.tan(clamp(s, -1.5, 1.5) * TAU4), Math.tan(clamp(t, -1.5, 1.5) * TAU4), q);
       nbr[c * 8 + k] = dirToCell(q[0], q[1], q[2]);
@@ -134,4 +129,28 @@ export function buildNbr8() {
   return nbr;
 }
 
-export const NBR8 = buildNbr8();
+export let NBR = buildNeighbours();
+export let AREA = buildAreas();
+export let DIR = buildDirections();
+export let NBR8 = buildNbr8();
+
+/** Rebuild topology for a new face resolution. Call before generate/remesh. */
+export function setResolution(n) {
+  const nn = N_ALLOWED.includes(n) ? n : 64;
+  if (nn === N && NBR && NBR.length === NC * 4) return { N, NC, NF, NV };
+  N = nn;
+  NF = N * N;
+  NC = 6 * NF;
+  NV = 6 * (N + 1) * (N + 1);
+  VPF = (N + 1) * (N + 1);
+  NBR = buildNeighbours();
+  AREA = buildAreas();
+  DIR = buildDirections();
+  NBR8 = buildNbr8();
+  return { N, NC, NF, NV };
+}
+
+/** ~km across a cell at Earth radius. */
+export function cellKm(n = N) {
+  return (40075 / (n * 4)).toFixed(0); // rough equator / (4N) faces
+}

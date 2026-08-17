@@ -1,48 +1,106 @@
-/** Gaia: weathering thermostat, runaway states, health metric, autopilot. */
+/** Gaia: weathering thermostat, tipping elements, regulation metrics.
+ *  Items 105–106 (via carbon), 113–122. */
 
 import { clamp } from '../math.js';
 import { NC, AREA } from '../sphere.js';
 import { greenhouseFromGases } from '../rulesets.js';
+import { daisyNSpeciesTick } from './alien.js';
+
+/** Named tipping elements. Item 116. */
+export const TIPPING = [
+  { id: 'iceSheet', label: 'Polar ice sheets', threshold: 0.55, field: 'iceFrac', hysteresis: 0.15 },
+  { id: 'amoc', label: 'Overturning circulation', threshold: 0.25, field: '_amoc', hysteresis: 0.1 },
+  { id: 'amazon', label: 'Tropical forest dieback', threshold: 0.2, field: '_forestFrac', hysteresis: 0.12 },
+  { id: 'boreal', label: 'Boreal forest shift', threshold: 0.35, field: '_borealStress', hysteresis: 0.1 },
+  { id: 'permafrost', label: 'Permafrost carbon', threshold: 0.6, field: 'meanTemp', hysteresis: 0.08 },
+  { id: 'coral', label: 'Coral reefs', threshold: 0.7, field: 'meanTemp', hysteresis: 0.05 },
+  { id: 'monsoon', label: 'Monsoon systems', threshold: 0.2, field: '_monsoon', hysteresis: 0.1 },
+];
 
 export function gaiaTick(W, chronLog) {
   const { temp, ice, life, h, seaLevel, gases, moist } = W;
 
-  // Silicate weathering: warmer + wetter → draw down CO2 (slow)
-  if (!W.rule.daisyworld) {
+  if (W.rule.daisyworld) daisyNSpeciesTick(W);
+
+  // Legacy one-line weathering kept as weak backup when carbon module absent
+  if (!W.rule.daisyworld && !W.carbon) {
     let weather = 0;
     for (let c = 0; c < NC; c++) {
       if (h[c] < seaLevel) continue;
+      // provenance: fitted — Walker et al. sketch scaled for tick rate
       weather += Math.max(0, temp[c] - 0.3) * moist[c] * AREA[c] * 0.0000004;
     }
-    gases.CO2 = Math.max(0.0008, gases.CO2 - weather);
+    const floor = W.rule.minCO2 ?? 0.0008;
+    const rate = W.rule.earthLike ? 0.12 : 1;
+    gases.CO2 = Math.max(floor, gases.CO2 - weather * rate);
   }
 
-  // Planetary means
-  let tSum = 0, iceSum = 0, lifeSum = 0, land = 0;
+  let tSum = 0, iceSum = 0, lifeSum = 0, land = 0, forest = 0;
   for (let c = 0; c < NC; c++) {
     tSum += temp[c] * AREA[c];
     iceSum += ice[c] * AREA[c];
     lifeSum += life[c] * AREA[c];
-    if (h[c] >= seaLevel) land += AREA[c];
+    if (h[c] >= seaLevel) {
+      land += AREA[c];
+      if (life[c] > 0.45 && moist[c] > 0.3) forest += AREA[c];
+    }
   }
   W.meanTemp = tSum / NC;
   W.iceFrac = iceSum / NC;
   W.meanLife = lifeSum / NC;
   W.landFrac = land / NC;
+  W._forestFrac = land > 0 ? forest / land : 0;
+  W._amoc = W._amoc ?? 0.7;
+  W._monsoon = W._monsoon ?? 0.5;
+  W._borealStress = clamp(W.meanTemp - 0.4, 0, 1);
 
-  // Resilience: diversity of life classes + distance from terminals
+  // Rate of change tolerance. Item 117.
+  const dT = W.meanTemp - (W._prevMeanTemp ?? W.meanTemp);
+  W._prevMeanTemp = W.meanTemp;
+  W.dTempDt = dT / Math.max(1, (W.dtYr || 200) / 1e4);
+  W.rateStress = clamp(Math.abs(W.dTempDt) * 2, 0, 1);
+
+  // Anti-greenhouse from haze
+  const gh = greenhouseFromGases(gases, W.rule) - (W.hazeAntiGreenhouse || 0);
+
+  // Resilience
   let classBits = 0;
   for (let c = 0; c < NC; c++) if (life[c] > 0.1) classBits |= (1 << (W.lifeClass[c] & 7));
   const diversity = Math.min(1, popcount(classBits) / 5);
+  const treeDiv = W.tree ? Math.min(1, W.tree.living.length / 12) : diversity;
+  const tIdeal = W.rule.targetMeanTemp ?? 0.55;
   W.resilience = clamp(
-    diversity * 0.4 + W.meanLife * 0.3 + (1 - Math.abs(W.meanTemp - 0.55)) * 0.3,
+    treeDiv * 0.35 + W.meanLife * 0.25 + (1 - Math.abs(W.meanTemp - tIdeal)) * 0.25
+      + (1 - W.rateStress) * 0.15,
     0, 1
   );
 
-  // Health orb colour driver: regulating vs failing
-  const gh = greenhouseFromGases(gases);
+  // Split habitability / inhabitance. Item 118.
+  W.habitability = W.habitability ?? clamp(
+    (W.meanTemp > 0.25 && W.meanTemp < 0.9 ? 0.5 : 0.1) + (W.rule.airless ? 0 : 0.3),
+    0, 1
+  );
+  W.inhabitance = clamp(W.meanLife * 1.2, 0, 1);
+
   const regulating = W.resilience > 0.45 && W.meanTemp > 0.25 && W.meanTemp < 0.85;
   W.health = clamp(W.resilience * (regulating ? 1.1 : 0.6), 0, 1);
+
+  // Feedback gain estimate. Item 122.
+  W.feedbackGain = clamp((W.carbon?.weatheringFlux || 0) * 20 - (W.rateStress || 0), -1, 1);
+
+  // Tipping elements. Item 116.
+  W.tips = W.tips || {};
+  for (const tip of TIPPING) {
+    const val = W[tip.field] ?? 0;
+    const was = W.tips[tip.id];
+    let on = was?.on || false;
+    if (!on && val > tip.threshold) on = true;
+    if (on && val < tip.threshold - tip.hysteresis) on = false;
+    if (on && !was?.on && chronLog) {
+      chronLog(W.year, 'tipping', 0, val, `Tipping: ${tip.label}`);
+    }
+    W.tips[tip.id] = { on, val, label: tip.label };
+  }
 
   // Runaway states with hysteresis
   if (W.iceFrac > 0.72 && W.meanTemp < 0.35) {
@@ -51,7 +109,6 @@ export function gaiaTick(W, chronLog) {
       if (chronLog) chronLog(W.year, 'runaway', 0, W.iceFrac, 'Snowball planet');
     }
   } else if (W.state === 'snowball') {
-    // Need strong greenhouse to escape
     if (gh > 0.22 && W.meanTemp > 0.42) {
       W.state = 'recovering';
       if (chronLog) chronLog(W.year, 'recovery', 0, gh, 'Snowball breaking');
@@ -69,24 +126,33 @@ export function gaiaTick(W, chronLog) {
     W.state = W.state || 'stable';
   }
 
-  // Snowball hysteresis: lock ice only once deeply frozen (harder to escape)
+  // Sequential selection wording — survivorship not purpose. Item 115.
+  if (W.rule.daisyworld) W.gaiaMode = 'tutorial-feedback';
+  else W.gaiaMode = regulating ? 'survivorship' : 'transient';
+
+  // Medea: biosphere self-harm score. Item 120.
+  W.medeaScore = clamp(
+    (W._extinctionPulse || 0) * 0.15
+      + (W.transitions?.oxygenicPhotosynthesis && W.gases.O2 < 0.05 ? 0.2 : 0)
+      + (W.carbon && W.carbon.surfacePH < 7.6 ? 0.2 : 0),
+    0, 1
+  );
+
   if (W.state === 'snowball') {
     for (let c = 0; c < NC; c++) {
       if (temp[c] < 0.38) W.ice[c] = Math.max(W.ice[c], 0.8);
     }
   }
 
-  // Autopilot: gentle nudges toward habitability
   if (W.autopilot) {
-    if (W.meanTemp < 0.35) W.solar = Math.min(1.4, W.solar + 0.002);
-    if (W.meanTemp > 0.85) W.solar = Math.max(0.5, W.solar - 0.002);
-    if (gases.CO2 < 0.005 && W.meanTemp < 0.4) gases.CO2 += 0.0005;
-    if (gases.CO2 > 0.15 && W.meanTemp > 0.7) gases.CO2 *= 0.998;
+    // Handled by god/observe gaiaPolicyTick — keeps a visible policy log.
   }
 
-  // Energy income from biosphere health (for budgeted mode)
-  W.energyIncome = 0.5 + W.health * 1.5 + W.meanLife;
-  if (W.budgetMode) W.energy = Math.min(W.energyCap, W.energy + W.energyIncome * 0.05);
+  // Economy income handled in god/economy when present; keep fallback.
+  if (!W.receipts) {
+    W.energyIncome = 0.5 + W.health * 1.5 + W.meanLife;
+    if (W.budgetMode) W.energy = Math.min(W.energyCap, W.energy + W.energyIncome * 0.05);
+  }
 }
 
 function popcount(x) {

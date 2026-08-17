@@ -1,0 +1,1764 @@
+{
+  "generated": "2026-08-17T05:53:03.943Z",
+  "citation": "This research has made use of the NASA Exoplanet Archive, which is operated by the California Institute of Technology, under contract with the National Aeronautics and Space Administration under the Exoplanet Exploration Program.",
+  "bodies": [
+    {
+      "name": "Earth",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Venus",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Mars",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Mercury",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Jupiter",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Saturn",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Uranus",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Neptune",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Pluto",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Ceres",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Eris / Sedna",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Arrokoth / Bennu / 67P",
+      "category": "sol",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Luna",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Io",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Europa",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Ganymede",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Callisto",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Titan",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Enceladus",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Triton",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Miranda",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Iapetus",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Mimas",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Charon",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Uranian moons",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Rhea / Dione / Tethys / Hyperion",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Phobos / Deimos",
+      "category": "moons",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "TRAPPIST-1 e",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TRAPPIST-1 f",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TRAPPIST-1 g, h",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TRAPPIST-1 d",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TRAPPIST-1 b, c",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TRAPPIST-1 system",
+      "category": "temperate",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Proxima Cen b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "Proxima Cen d",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "LHS 1140 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TOI-700 d",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "TOI-700 e",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "Teegarden b, c, d",
+      "category": "temperate",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Ross 128 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "GJ 273 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "Wolf 1061 c / K2-3 d",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "Gliese 12 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TOI-715 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "LP 890-9 c",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 357 d",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "Kepler-186 f",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "Kepler-442 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "Kepler-452 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "Kepler-1649 c",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "Kepler-62 e, f",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-22 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-438 b, 1229 b",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "tau Cet f",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "Kapteyn c",
+      "category": "temperate",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Msini"
+      }
+    },
+    {
+      "name": "Barnard b–e",
+      "category": "temperate",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "55 Cnc e",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "K2-141 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "CoRoT-7 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-10 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-78 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 367 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "LHS 3844 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 1132 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 486 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HD 219134 b / HD 3167 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "K2-137 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-1520 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "M-R relationship"
+      }
+    },
+    {
+      "name": "K2-22 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TOI-849 b",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 9827 d",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "LP 791-18 d",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-36 b, c",
+      "category": "furnace",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "51 Peg b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HD 209458 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HD 189733 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-12 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-76 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-121 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "KELT-9 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TOI-2109 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-33 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-19 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-17 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "TrES-2 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-7 b / HAT-P-7 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WASP-127 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "KELT-1 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 436 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 3470 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HAT-P-11 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "LTT 9779 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 1214 b",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "K2-18 b / TOI-270 d",
+      "category": "giant",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HR 8799",
+      "category": "arch",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "beta Pic b, c",
+      "category": "arch",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "51 Eri b",
+      "category": "arch",
+      "archiveHit": true,
+      "fields": {
+        "radius": "seed",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HIP 65426 b",
+      "category": "arch",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "seed",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "GJ 504 b / HD 106906 b",
+      "category": "arch",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "seed",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "AU Mic b",
+      "category": "arch",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "V1298 Tau b / K2-33 b",
+      "category": "arch",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "HD 80606 b / HD 20782 b / Kepler-1704 b",
+      "category": "arch",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-11 / Kepler-90",
+      "category": "arch",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Kepler-444 / Kepler-1625 b",
+      "category": "arch",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Kepler-16 b",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "Kepler-47 c, Kepler-1647 b, TOI-1338 b",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "PSO J318.5-22",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "WISE 0855-0714",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "SIMP J0136 / CFBDSIR 2149",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "OGLE-2016-BLG-1928",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "MOA-2011-BLG-262L b",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "2M1207 b",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "Luhman 16 AB",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "OTS 44",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "WD 1856+534 b",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "archive",
+        "teq": "archive",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "WD J0914+1914",
+      "category": "dark",
+      "archiveHit": false,
+      "fields": {
+        "radius": "seed",
+        "mass": "seed",
+        "a": "seed",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed"
+      }
+    },
+    {
+      "name": "PSR B1257+12 b, c, d",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "PSR B1620-26 b",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "seed",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "seed",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "PSR J1719-1438 b / KOI-55",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "seed",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "seed",
+        "teq": "seed",
+        "teff": "archive",
+        "massProv": "Mass"
+      }
+    },
+    {
+      "name": "OGLE-2005-BLG-390L b",
+      "category": "dark",
+      "archiveHit": true,
+      "fields": {
+        "radius": "archive",
+        "mass": "archive",
+        "a": "archive",
+        "P": "archive",
+        "S": "seed",
+        "teq": "archive",
+        "teff": "seed",
+        "massProv": "Mass"
+      }
+    }
+  ]
+}

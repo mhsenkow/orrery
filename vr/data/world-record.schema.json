@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orrery.local/schemas/world-record.json",
+  "title": "ORRERY WorldRecord",
+  "type": "object",
+  "required": ["schema", "key", "name", "category"],
+  "properties": {
+    "schema": { "const": 1 },
+    "key": { "type": "string", "minLength": 1 },
+    "name": { "type": "string" },
+    "primary": { "type": "string" },
+    "category": {
+      "type": "string",
+      "enum": ["sol", "moons", "temperate", "furnace", "giant", "arch", "dark"]
+    },
+    "synthetic": { "type": "boolean" },
+    "confidence": {
+      "type": "string",
+      "enum": ["confirmed", "candidate", "contested", "retracted"]
+    },
+    "hostId": { "type": ["string", "null"] },
+    "radius": { "$ref": "#/$defs/field" },
+    "mass": { "$ref": "#/$defs/field" },
+    "a": { "$ref": "#/$defs/field" },
+    "P": { "$ref": "#/$defs/field" },
+    "e": { "$ref": "#/$defs/field" },
+    "obl": { "$ref": "#/$defs/field" },
+    "rot": { "$ref": "#/$defs/field" },
+    "S": { "$ref": "#/$defs/field" },
+    "teq": { "$ref": "#/$defs/field" },
+    "albedo": { "$ref": "#/$defs/field" },
+    "press": { "$ref": "#/$defs/field" },
+    "density": { "$ref": "#/$defs/field" },
+    "gravity": { "$ref": "#/$defs/field" },
+    "escape": { "$ref": "#/$defs/field" },
+    "tidallyLocked": { "type": "boolean" },
+    "gaps": { "type": "array", "items": { "type": "string" } },
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "provenance": { "type": "object" }
+  },
+  "$defs": {
+    "field": {
+      "type": "object",
+      "required": ["v", "tier", "unit"],
+      "properties": {
+        "v": { "type": ["number", "null"] },
+        "tier": {
+          "type": "string",
+          "enum": ["measured", "derived", "assumed", "limit", "missing"]
+        },
+        "unit": { "type": "string" },
+        "err1": { "type": ["number", "null"] },
+        "err2": { "type": ["number", "null"] },
+        "limit": { "type": ["string", "null"], "enum": ["upper", "lower", null] },
+        "source": { "type": "string" },
+        "note": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

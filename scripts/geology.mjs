@@ -1,0 +1,677 @@
+#!/usr/bin/env node
+// Single source of truth for the ORRERY geology backlog.
+// Emits  briefs/geology-backlog.md  and  site/geology.html.
+//
+//   node scripts/geology.mjs
+//
+// k:  SIM = the rock physics · EYE = what it looks like · PLAY = instrument, lever, legibility.
+// e:  effort S/M/L.  i: impact 1..3.
+// g:  capability token this item provides.  n: tokens it needs first.
+
+import { writeFile, mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+const CATS = [
+  ['mantle', 'The mantle underneath it all',
+    '`core.js` reduces the entire interior to five scalars — `coreMassFrac`, `heatFlow`, `conductivity`, `vigor` and a `lidMode` string — and `generateTectonics` reads them to scale plate count and `omega`. Plates therefore move because they were assigned a random Euler pole, not because anything is pushing them. There is no convection, no plume source, and nowhere for a slab to go.'],
+  ['plates', 'Plates as objects with a life',
+    'Plates are a fixed-length array of Voronoi seeds created once in `generateTectonics`. `reassignPlatesVoronoi` drifts the seeds and re-assigns cell ownership, which is a real and good piece of work — but the *number* of plates never changes. None is ever born, split, merged, or consumed. A plate cannot disappear the way the Farallon did.'],
+  ['bounds', 'What happens where plates meet',
+    'Boundary type is recomputed per cell from relative velocity, which is the right foundation. What sits on top of it is four `if` branches: subduction thins crust and thickens a neighbour, orogeny adds 0.35, ridges clamp to 0.28, transform sets strain. Every structure a real margin has — the prism, the forearc, the back-arc, the suture, the triple junction — is downstream of a boundary being a *curve* rather than a set of tagged cells.'],
+  ['crustlife', 'Continental crust and its history',
+    '`crust[c] = pl.baseThick * (0.85 + 0.3 * fbm(...))` and `age[c] = 200 + rng() * 800` for continental cells. A continent is one thickness value plus noise, with an age drawn from a uniform distribution. Real continents are collages — Archean cratons stitched together by younger orogenic belts — and that structure is most of why they look the way they do.'],
+  ['wilson', 'The supercontinent cycle',
+    'The one item the original backlog still lists as Partial, and the largest missing rhythm in the model. Plate centres drift and cells are reassigned, but with a fixed plate count and no ocean basin ever closing, continents cannot assemble and cannot disperse. Deep time has no heartbeat.'],
+  ['deform', 'Deformation, faults and earthquakes',
+    '`strain[c]` accumulates at convergent and transform cells and releases stochastically at `strain > 1.1`, logging a magnitude of `4 + mag * 3`. That is a per-cell counter, not a fault. There is no rupture that propagates, no segment, no aftershock sequence, and no reason for the magnitudes to follow the distribution real ones do.'],
+  ['volc', 'Volcanism, properly',
+    'A volcano is `{ cell, magma, next }`. It recharges linearly with `heatFlow`, erupts above 0.6, raises `h` by `power * 0.04`, and injects ash, sulphate and CO₂. It has no composition, no chamber, no edifice, and no way to fail catastrophically. Composition is the variable that decides whether a volcano is Hawaii or Krakatoa.'],
+  ['rockcycle', 'The rock cycle as a cycle',
+    '`rock` is one `Uint8Array` per cell — 0 igneous, 1 sedimentary, 2 metamorphic, plus 4 for banded iron from `redox.js` and 5 for the extinction ejecta layer. It is a label assigned at generation and overwritten by events. Nothing lithifies, nothing is buried, nothing is metamorphosed by burial, and nothing is exhumed.'],
+  ['strata', 'Stratigraphy and the record',
+    'The core sampler is one of the best things in the build and it is reading a planet with no layers in it. `coreSample` reconstructs strata from present-day field values; a real column is a stack that was deposited in order and can contain gaps. The distinction matters because the gaps are where most of the information is.'],
+  ['surface', 'Surface processes beyond stream power',
+    '`erosionTick` is a clean stream-power law — `discharge * slope² * 0.15`, capped at 0.004, deposited into the single steepest downhill neighbour. It is the correct first process and it is the only one. No hillslopes, no landslides, no ice, no wind, no chemistry, which is why terrain reads as fluvially incised everywhere including the places that never had a river.'],
+  ['basins', 'Basins, margins and the shelf',
+    'Sediment accumulates in `sediment[c]` and saturates at 1. There is no accommodation space, no subsidence to create it, and no basin as an object. The continental shelf — which is where almost all the fossil record and almost all the hydrocarbons are — does not exist as a distinct thing.'],
+  ['mech', 'Flexure, isostasy and rheology',
+    'Isostasy is one line computed once at generation: `freeboard = thick * (1 - dens / mantle) * (oceanic ? 1.6 : 3.4)`. That is local Airy compensation. Real lithosphere has elastic strength, so loads are supported regionally — which is what produces foreland basins, forebulges, and the delayed rebound that is still lifting Scandinavia.'],
+  ['world', 'Geology on worlds that are not Earth',
+    '`lidMode` already distinguishes mobile, stagnant, episodic, ice and none, which is a genuinely good abstraction and mostly changes plate count and `omega`. What each regime actually produces on the surface — Venus resurfacing, Io’s tidal volcanism, Europa’s ice tectonics, Mars’s frozen dichotomy — is not modelled.'],
+  ['time', 'Making deep geological time legible',
+    '`platesPanel.js` is 444 lines and genuinely good: plate list, boundary counts, hotspots, core mass, heat flow. What it cannot do is show you the past. The single most compelling thing a tectonics model can offer is a reconstruction — the same planet, 200 million years ago — and nothing in the build can produce one.'],
+  ['god', 'God tools for geology',
+    '`sculpt.js` has fifteen verbs and they are well chosen — thicken crust, set a plate pole, draw a rift, force orogeny, place a plume, carve a river, open a gateway. Most of them write a field directly and let the simulation argue afterwards. The next step is tools that operate on the *objects* this document creates: a plate, a boundary, a fault, a basin.'],
+];
+
+const D = [
+/* ------------------------------------------------------------- mantle -- */
+{c:'mantle',t:'Convection cells that actually drive the plates',g:'convection',d:'`plates.push({ pole: randomUnit(rng), omega: (rng() - 0.5) * 0.08 * ... })` — every plate’s motion is a random draw scaled by `vigor`. A coarse convection field under the lithosphere, with plates riding it, means tectonics has an energy source instead of a prescribed velocity. This is the root of the category and the original backlog’s one deferred geosphere item.',k:'SIM',e:'L',i:3},
+{c:'mantle',t:'Slab pull and ridge push as the real force balance',n:['convection'],d:'Slab pull dominates — plates with long subducting margins move several times faster than those without, which is why the Pacific plate outruns the African. Deriving `omega` from the boundary force balance rather than a random number makes plate speed a consequence of plate geometry.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'Give slabs somewhere to go',n:['convection'],d:'Subducted lithosphere stalls at the 660 km discontinuity, pools, and eventually flushes to the core–mantle boundary. Slab graveyards are visible in tomography under every place an ocean has closed, and they are the memory of the plate system.',k:'SIM',e:'M',i:2},
+{c:'mantle',t:'Plumes that rise from the core–mantle boundary',g:'plume',n:['convection'],d:'`W.hotspots` are placed by `randomUnit(rng)` at generation and never move, appear or die. Real plumes rise from thermal boundary layers, arrive as a large head followed by a narrow tail, and switch off. Fixed-forever hotspots is why the model can produce an island chain but never a flood basalt province.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'Plume head then plume tail',n:['plume'],d:'The head arrives first and produces a large igneous province in under a million years; the tail follows for a hundred million and produces the chain. Deccan then Réunion, Siberian Traps then nothing. One mechanism, two completely different surface expressions, separated in time.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'LLSVPs as plume nurseries',n:['plume'],d:'Two enormous low-shear-velocity provinces sit under Africa and the Pacific, and most large igneous provinces of the last 300 Myr erupted above their margins. Two persistent features that anchor where plumes come from turns hotspot placement from random into structural.',k:'SIM',e:'M',i:2},
+{c:'mantle',t:'Secular cooling over the run',n:['convection'],d:'`heatFlow` is a constant per interior profile. The Earth’s mantle has cooled roughly 200 K since the Archean, which is why komatiites stopped erupting and why plate behaviour in the early Earth is genuinely contested. Let heat flow decay and the geology of the Hadean stops looking like the geology of now.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'Radiogenic heat with real half-lives',n:['convection'],d:'Uranium-238, thorium-232 and potassium-40 supply roughly half the heat budget and decay on 0.7–14 Gyr timescales, so a young planet is dramatically more active. It is four constants and it makes interior evolution a curve rather than a setting.',k:'SIM',e:'S',i:3},
+{c:'mantle',t:'Temperature-dependent viscosity',n:['convection'],d:'Mantle viscosity varies by orders of magnitude with temperature, which is the whole reason the lid-mode distinction exists. Making it a computed quantity rather than a mode string lets a world transition between regimes during a run.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'Derive the lid mode instead of declaring it',n:['convection'],d:'`lidMode` is a string on the interior profile that scales `nPlates` and `omegaScale`. Whether a planet has mobile-lid tectonics is an outcome of the Rayleigh number, the lithospheric yield stress and the presence of water. Deriving it is what makes plate tectonics itself a thing a planet can fail to have.',k:'SIM',e:'L',i:3},
+{c:'mantle',t:'Mantle wedge melting, which is why arcs exist',n:['convection'],d:'Subducting slabs release water into the overlying wedge, lowering the melting point and generating the magma that builds the arc. `generateTectonics` thickens the neighbour’s crust by 0.18 at a subduction cell; this is the actual mechanism behind that number.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'Dynamic topography',g:'dyntopo',n:['convection'],d:'Mantle flow deflects the surface by hundreds of metres to a kilometre over thousands of kilometres, entirely independent of crustal thickness. It is why parts of Africa sit high with no orogeny to explain it, and it is a long-wavelength signal isostasy alone can never produce.',k:'SIM',e:'M',i:2},
+{c:'mantle',t:'Episodic overturn on stagnant-lid worlds',n:['convection'],d:'`lidMode: "episodic"` currently scales `omegaScale` to 0.45. The physical picture is a lid that immobilises, traps heat for hundreds of millions of years, and then catastrophically founders. Venus’s resurfacing is the candidate example and it is a spectacular thing to watch happen.',k:'SIM',e:'M',i:3},
+{c:'mantle',t:'A tomography view',n:['convection'],d:'The x-ray mode already discards front-facing geometry to show the interior. Showing the actual convection field, the slabs and the plumes inside the planet is the payoff for building any of this, and the rendering path exists.',k:'EYE',e:'M',i:3},
+
+/* ------------------------------------------------------------- plates -- */
+{c:'plates',t:'Let plates be born and die',g:'platelife',d:'`nPlates` is fixed at generation and `plates.length` never changes. The Farallon plate was almost entirely consumed and the remnants are the Juan de Fuca and Cocos. Until a plate can vanish, ocean basins cannot close and there is no Wilson cycle.',k:'SIM',e:'L',i:3},
+{c:'plates',t:'Consume oceanic lithosphere at trenches',n:['platelife'],d:'Crust is created at ridges — `crust[c] = min(crust[c], 0.28); age[c] = 0` — and never destroyed anywhere. Subduction thins crust by a factor but the cell stays in the plate. Actual consumption is what closes the mass budget and what makes a shrinking ocean shrink.',k:'SIM',e:'M',i:3},
+{c:'plates',t:'Conserve surface area',n:['platelife'],d:'The planet’s surface is fixed, so metres of ridge created must equal metres of trench consumed globally. Asserting it — the `assert.js` pattern is already there for water and carbon — turns plate motions from independent random walks into a constrained system.',k:'SIM',e:'M',i:3},
+{c:'plates',t:'Boundaries as curves, not tagged cells',g:'boundcurve',d:'`bound` is an `Int8Array` holding -1/0/1/2 per cell. A boundary should be a polyline with a length, a spreading or convergence rate, an age, and two plates either side. Almost everything in the next category needs a boundary to be an object before it can attach to one.',k:'SIM',e:'L',i:3},
+{c:'plates',t:'Triple junctions',n:['boundcurve'],d:'Three plates meet at a point, and the junction’s stability and migration is determined by the three relative velocity vectors. It is the piece of plate geometry that makes the whole system work as a closed puzzle, and it is where the most interesting tectonics happens.',k:'SIM',e:'M',i:2},
+{c:'plates',t:'Break the Voronoi assumption',n:['boundcurve'],d:'`reassignPlatesVoronoi` assigns each cell to its nearest plate centre, so every boundary is a perpendicular bisector and every plate is convex. Real plates are irregular and their boundaries are inherited from older structures. This single assumption is why the map reads as a diagram.',k:'SIM',e:'L',i:3},
+{c:'plates',t:'Plates split along rifts',n:['platelife','boundcurve'],d:'`drawRift` in `sculpt.js` thins crust along a corridor. The tectonic consequence — one plate becoming two, with a new spreading boundary between them — does not follow. Continental breakup is the single most dramatic event in the whole system.',k:'SIM',e:'M',i:3},
+{c:'plates',t:'Plates merge when the ocean between them closes',n:['platelife'],d:'When the last oceanic lithosphere is consumed the two continents suture and the boundary becomes internal. That is a collision, an orogeny and a plate merger, all one event, and it is how supercontinents are built.',k:'SIM',e:'M',i:3},
+{c:'plates',t:'Microplates and terranes',n:['platelife'],d:'Not everything is one of eight large plates. Slivers get caught between larger ones, rotate, and eventually accrete. Most of western North America is assembled from them.',k:'SIM',e:'M',i:2},
+{c:'plates',t:'Plate reorganisation events',n:['boundcurve'],d:'Plate motions are steady for tens of millions of years and then change globally in under five — the Hawaii–Emperor bend at about 47 Ma is the classic record of one. Punctuated plate motion gives tectonics a tempo instead of a drift.',k:'SIM',e:'M',i:2},
+{c:'plates',t:'Absolute versus relative motion',n:['plume'],d:'The hotspot reference frame is what lets you say a plate is moving at all rather than just moving relative to its neighbour. `plateVelocityAt` computes relative velocities; the absolute frame is what a reconstruction needs.',k:'SIM',e:'M',i:2},
+{c:'plates',t:'True polar wander',d:'The whole solid planet can reorient relative to the spin axis to keep its largest moment of inertia at the equator. It moves everything at once, it is distinguishable from plate motion in the paleomagnetic record, and it is a genuinely strange thing to watch.',k:'SIM',e:'M',i:1},
+{c:'plates',t:'Realistic plate speeds',n:['convection'],d:'`omega = (rng() - 0.5) * 0.08` is uniform and symmetric. Real plates span roughly 1 to 10 cm per year, skewed by whether they have a subducting margin, and the distribution is what makes some boundaries active and others dormant.',k:'SIM',e:'S',i:3},
+{c:'plates',t:'Give plates a size distribution',d:'Seven large plates and a long tail of small ones is a robust observation, and Voronoi seeding from uniform random points does not reproduce it. It is a small change to generation with a large effect on how the map reads.',k:'SIM',e:'S',i:2},
+{c:'plates',t:'Name plates from their history, not a fixed list',d:'`PLATE_NAMES` is a 24-entry array indexed modulo the plate count. Once plates split and merge, the interesting name is a genealogy — this plate is the western remnant of that older one — and the chronicle can carry it.',k:'PLAY',e:'M',i:2},
+
+/* ------------------------------------------------------------- bounds -- */
+{c:'bounds',t:'Subduction zones with a dip angle',g:'subduct',n:['boundcurve'],d:'Slab dip varies from near-flat to near-vertical and it controls how far inland the arc sits, whether there is a back-arc basin, and how wide the deformed belt is. It is one number per margin that reorganises everything above it.',k:'SIM',e:'M',i:3},
+{c:'bounds',t:'The forearc–arc–backarc triad',n:['subduct'],d:'Trench, accretionary prism, forearc basin, volcanic arc, back-arc — five distinct environments in a fixed order across a margin. `generateTectonics` produces two: a thinned cell and a thickened neighbour. Getting the sequence right makes every convergent margin instantly readable.',k:'SIM',e:'M',i:3},
+{c:'bounds',t:'Accretionary prisms',n:['subduct'],d:'Sediment scraped off the descending plate and stacked into an imbricate wedge. It is where oceanic sediment becomes continental crust, and it is one of the two mechanisms by which continents grow.',k:'SIM',e:'M',i:2},
+{c:'bounds',t:'Slab rollback and back-arc spreading',n:['subduct'],d:'A retreating trench stretches the overriding plate and opens a basin behind the arc — the Sea of Japan, the Aegean, the Tyrrhenian. It is extension happening at a convergent margin, which is exactly the sort of counter-intuitive result that proves a model is doing physics.',k:'SIM',e:'M',i:2},
+{c:'bounds',t:'Flat-slab subduction',n:['subduct'],d:'When the slab flattens, the arc shuts off and deformation migrates hundreds of kilometres inland. It built the Rocky Mountains, a thousand kilometres from any plate margin, which is otherwise inexplicable.',k:'SIM',e:'M',i:2},
+{c:'bounds',t:'Continental collision produces a suture',n:['boundcurve'],d:'`crust[c] = min(1.6, crust[c] + 0.35); rock[c] = 2` at continental convergence. A real collision leaves a suture zone with ophiolite slivers, a doubled crustal thickness, a foreland basin on each side, and lateral escape of material along strike-slip faults.',k:'SIM',e:'M',i:3},
+{c:'bounds',t:'Ophiolites — ocean floor on a mountain top',n:['subduct'],d:'Slices of oceanic lithosphere obducted onto a continent during collision. They are how the ocean-floor spreading hypothesis was confirmed, they sit at 5,000 metres in Oman, and finding one in a core sample is a genuinely thrilling piece of evidence.',k:'SIM',e:'M',i:2},
+{c:'bounds',t:'Terrane accretion as the growth mechanism',g:'terrane',n:['subduct'],d:'Island arcs, oceanic plateaus and microcontinents arrive at a trench, refuse to subduct, and are welded on. Western North America is a collage of dozens. It is the second growth mechanism for continents and it makes their internal structure legible.',k:'SIM',e:'M',i:3},
+{c:'bounds',t:'Arc–continent collision',n:['terrane'],d:'A shorter, sharper event than continent–continent collision, and the most common way a margin grows. Taiwan is one happening now, at about 8 cm a year.',k:'SIM',e:'M',i:2},
+{c:'bounds',t:'Transform faults with real offsets',n:['boundcurve'],d:'`bound[c] === TRANS` sets `strain[c] = 0.4 + rng() * 0.5`. A transform is a fault with a length, a slip rate, a cumulative offset and a sense of motion, and mid-ocean ridges are segmented by them into the characteristic zigzag that is visible in every seafloor map.',k:'SIM',e:'M',i:3},
+{c:'bounds',t:'Ridge segmentation',n:['boundcurve'],d:'Spreading centres are not continuous lines — they are offset segments linked by transforms, at a spacing set by the spreading rate. It is the single most recognisable pattern on the ocean floor.',k:'EYE',e:'M',i:2},
+{c:'bounds',t:'Fast versus slow spreading ridges',n:['boundcurve'],d:'The East Pacific Rise spreads at 15 cm a year and has a smooth axial high; the Mid-Atlantic Ridge does 2.5 cm and has a deep rifted valley. Same process, two completely different landforms, from one parameter.',k:'EYE',e:'M',i:2},
+{c:'bounds',t:'Oblique convergence and strain partitioning',n:['subduct'],d:'When plates meet at an angle the motion splits into a dip-slip component at the trench and a strike-slip fault behind the arc — Sumatra is the textbook case, and the two systems produce very different earthquakes.',k:'SIM',e:'M',i:1},
+{c:'bounds',t:'Ridge subduction and slab windows',n:['subduct'],d:'When a spreading centre reaches a trench, a gap opens in the descending slab and hot mantle wells through it. It is a rare, dramatic, and geologically legible event with a very specific surface signature.',k:'SIM',e:'M',i:1},
+{c:'bounds',t:'Boundary age and inheritance',n:['boundcurve'],d:'New rifts open along old sutures because that is where the lithosphere is weak — the Atlantic reopened close to the line where Pangaea assembled. Structural inheritance is why continental margins have the shapes they do.',k:'SIM',e:'M',i:2},
+
+/* ---------------------------------------------------------- crustlife -- */
+{c:'crustlife',t:'Cratons as distinct, ancient, immovable things',g:'craton',d:'`age[c] = 200 + rng() * 800` gives every continental cell a random age between 200 Myr and 1 Gyr. Cratons are 2.5–3.8 Gyr old, thick, cold, buoyant, and essentially undeformable — they are why continents have stable interiors and deform only at their edges.',k:'SIM',e:'M',i:3},
+{c:'crustlife',t:'Mobile belts between the cratons',n:['craton'],d:'The younger, weaker orogenic belts that stitch cratons together and absorb almost all subsequent deformation. Craton plus mobile belt is the fundamental two-part structure of every continent and it explains where mountains can and cannot form.',k:'SIM',e:'M',i:3},
+{c:'crustlife',t:'Continents as collages with a province map',n:['craton','terrane'],d:'A continent should be a set of blocks with individual ages and origins, not a `baseThick` with fbm on top. The province map is the thing a geologist looks at first and it makes the continent’s history readable from its shape.',k:'SIM',e:'M',i:3},
+{c:'crustlife',t:'Grow continental crust through time',n:['terrane'],d:'Continental volume grew rapidly through the Archean and has been roughly steady since. An early planet with almost no continent, becoming one with 29% land, is a four-billion-year arc the model currently short-circuits by setting `targetLandFrac` at generation.',k:'SIM',e:'M',i:3},
+{c:'crustlife',t:'Recycle continental crust as well as making it',n:['platelife'],d:'Sediment subducts, lower crust delaminates, and some continental material returns to the mantle. Without a sink, any growth model runs away, and the balance between the two is what sets the steady state.',k:'SIM',e:'M',i:2},
+{c:'crustlife',t:'Delamination of dense eclogite roots',n:['craton'],d:'A thickened orogenic root converts to eclogite, becomes denser than the mantle, and drops off — after which the surface rebounds sharply. It is a mechanism for a plateau to rise long after the collision stopped, and the Sierra Nevada is the case study.',k:'SIM',e:'M',i:1},
+{c:'crustlife',t:'A Moho with a depth',d:'`crust[c]` is a dimensionless thickness feeding one isostasy formula. Giving it a depth in kilometres — 7 km under ocean, 35 under continent, 70 under Tibet — makes it a real surface that the core sampler could in principle reach and that the cross-section instrument needs.',k:'SIM',e:'S',i:3},
+{c:'crustlife',t:'Continental freeboard as a regulated quantity',d:'The mean elevation of continents above sea level has stayed within a few hundred metres for billions of years, balanced between crustal growth, erosion and ocean volume. It is a genuine planetary-scale feedback and it belongs alongside the weathering thermostat.',k:'SIM',e:'M',i:2},
+{c:'crustlife',t:'Archean crust was made differently',n:['craton'],d:'TTG suites rather than modern granites, komatiite lavas that require mantle temperatures no longer reachable, and a genuinely open argument about whether plate tectonics operated at all. The early Earth should not look like a younger version of the present one.',k:'SIM',e:'M',i:2},
+{c:'crustlife',t:'A realistic crustal thickness distribution',d:'Bimodal — a tight oceanic peak near 7 km and a broad continental one near 35 with a tail to 70. `baseThick` draws continental from `0.55 + rng() * 0.35` and oceanic from `0.22 + rng() * 0.08`, which is uniform in both cases.',k:'SIM',e:'S',i:2},
+{c:'crustlife',t:'Passive margins as a distinct crustal type',d:'Stretched, thinned continental crust between full continent and full ocean, subsiding for a hundred million years after breakup. It is where the shelf is, which is where the fossils are.',k:'SIM',e:'M',i:3},
+{c:'crustlife',t:'The zircon record',n:['craton'],d:'Detrital zircons are the only direct evidence of crust older than the oldest surviving rock, and the Jack Hills grains at 4.4 Ga are why we think there was water in the Hadean. A mineral that survives everything and carries a date is exactly the sort of object the core sampler should be able to find.',k:'PLAY',e:'M',i:3},
+{c:'crustlife',t:'Show the age of the crust',n:['craton'],d:'`age[c]` is tracked in Myr and never rendered. An age-of-crust map is one of the most beautiful images in geology and it makes the whole history of a continent visible in one glance.',k:'EYE',e:'S',i:3},
+
+/* ------------------------------------------------------------- wilson -- */
+{c:'wilson',t:'Actually run the Wilson cycle',g:'wilsoncycle',n:['platelife'],d:'Rift, drift, subduct, close, collide, suture, and rift again — the six stages, running on their own. The original backlog has listed this as Partial since the beginning and it is the single largest missing rhythm in the model.',k:'SIM',e:'L',i:3},
+{c:'wilson',t:'Supercontinent assembly',n:['wilsoncycle'],d:'Continents converge on one hemisphere because the ocean basins between them close preferentially. Watching your own Pangaea come together over 200 million years, without anybody scripting it, is the headline result of this entire document.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'And dispersal',n:['wilsoncycle'],d:'A supercontinent insulates the mantle beneath it, heat accumulates, and it rifts apart. The mechanism is the reason the cycle is a cycle rather than a one-way trip to a single landmass.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'A 400–600 Myr period',n:['wilsoncycle'],d:'Kenorland, Nuna, Rodinia, Pangaea — roughly four cycles in the geological record, each a few hundred million years. It gives deep time a beat, which is exactly what the ICS ribbon needs to sit against.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'Introversion, extroversion, orthoversion',n:['wilsoncycle'],d:'Does the next supercontinent form by closing the ocean that just opened, by closing the one on the far side, or at ninety degrees? Three competing hypotheses, all testable in a model, and the answer changes the whole paleogeography.',k:'SIM',e:'M',i:2},
+{c:'wilson',t:'Sea level from ridge volume',n:['wilsoncycle'],d:'Fast spreading means young, hot, buoyant ocean floor, which displaces water onto the continents. The Cretaceous high stand flooded a third of North America for this reason, and it is a tectonic control on sea level entirely separate from ice.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'Epicontinental seas',n:['wilsoncycle'],d:'Shallow seas flooding continental interiors — the Western Interior Seaway, the Zechstein, the Sundance. They are where most limestone forms, where most marine fossils are preserved, and they only exist when sea level is tectonically high.',k:'EYE',e:'M',i:3},
+{c:'wilson',t:'Supercontinent climate',n:['wilsoncycle'],d:'A single landmass has a brutal continental interior, a weak hydrological cycle, and reduced weathering because there is less coastline. Pangaea’s interior deserts are a direct consequence of its geometry.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'Vicariance on a schedule',n:['wilsoncycle'],d:'`evolve.js` already speciates from range fragmentation. The supercontinent cycle is the largest and most regular generator of fragmentation there is, which means the phylogeny should carry the tectonic rhythm in its branching pattern.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'Faunal interchange at assembly',n:['wilsoncycle'],d:'When continents join, their biotas mix and the results are lopsided. The Great American Interchange is the small version; supercontinent assembly is the same thing at a hundred times the scale.',k:'SIM',e:'M',i:2},
+{c:'wilson',t:'Weathering and CO₂ across the cycle',n:['wilsoncycle'],d:'Dispersal creates coastline, rainfall and weathering, drawing CO₂ down. Assembly does the opposite. The carbonate–silicate thermostat’s gain is modulated by continental geometry, which links `carbon.js` to plate motion directly.',k:'SIM',e:'M',i:3},
+{c:'wilson',t:'The early Earth had nothing to collide',n:['craton'],d:'With little continental crust, the first billion years cannot have a Wilson cycle. The rhythm should start when there is enough continent to make it, which turns crustal growth into the thing that switches the cycle on.',k:'SIM',e:'M',i:2},
+{c:'wilson',t:'A Wilson cycle clock in the interface',n:['wilsoncycle'],d:'Where in the cycle is this planet right now, and how long until the next stage. One readout that makes the largest rhythm in the model visible, in the same way the ICS ribbon makes deep time visible.',k:'PLAY',e:'S',i:3},
+
+/* ------------------------------------------------------------- deform -- */
+{c:'deform',t:'Faults as objects',g:'fault',n:['boundcurve'],d:'`strain[c]` is a per-cell float that accumulates and releases. A fault has a trace, a length, a dip, a slip rate, a locked depth and a slip deficit. Every item below needs the fault to exist before it can attach to one.',k:'SIM',e:'M',i:3},
+{c:'deform',t:'Ruptures that propagate along a fault',n:['fault'],d:'`strain[c] = 0.1` and a log line at a single cell. Real ruptures nucleate at a point and unzip for tens to hundreds of kilometres, and the length of the rupture is what determines the magnitude.',k:'SIM',e:'M',i:3},
+{c:'deform',t:'Magnitude from rupture area, not from a counter',n:['fault'],d:'The quake log computes its magnitude as `4 + mag * 3`, mapping a strain value straight onto a number. Moment magnitude is derived from rupture area times slip times rigidity, which means a magnitude 9 requires a very long locked megathrust and cannot happen on a short fault.',k:'SIM',e:'M',i:3},
+{c:'deform',t:'Gutenberg–Richter',n:['fault'],d:'Ten times as many magnitude 5s as magnitude 6s, robustly, everywhere. It is one of the cleanest power laws in nature and it falls out for free once ruptures have lengths drawn from a fault-length distribution.',k:'SIM',e:'S',i:3},
+{c:'deform',t:'Elastic rebound',n:['fault'],d:'Strain accumulates elastically across a locked fault and releases in seconds. Reid worked it out from the 1906 San Francisco rupture and it is the reason earthquakes are quasi-periodic rather than random.',k:'SIM',e:'M',i:2},
+{c:'deform',t:'Aftershock sequences',n:['fault'],d:'Omori’s law: aftershock rate decays as one over time since the mainshock. A single event followed by a decaying swarm reads completely differently from an isolated spike, and it costs one decay curve.',k:'SIM',e:'S',i:2},
+{c:'deform',t:'Fault segments and barriers',n:['fault'],d:'Faults are segmented, and whether a rupture jumps a step-over decides between a moderate earthquake and a great one. It is the source of most of the genuine uncertainty in seismic hazard.',k:'SIM',e:'M',i:2},
+{c:'deform',t:'Three fault types with three signatures',n:['fault'],d:'Normal at extension, reverse and megathrust at convergence, strike-slip at transforms. They produce different magnitudes, different depths, different tsunamis and different landforms — and the boundary classification already knows which is which.',k:'SIM',e:'M',i:3},
+{c:'deform',t:'Focal depth',n:['fault'],d:'Shallow crustal earthquakes do far more damage than deep ones of the same magnitude, and the Wadati–Benioff zone of deepening seismicity down a subducting slab is the observation that proved subduction happens.',k:'SIM',e:'M',i:2},
+{c:'deform',t:'Aseismic creep',n:['fault'],d:'Some fault segments slide continuously and never store enough strain to break. The creeping section of the San Andreas is why the two locked halves are treated separately, and it is a nice counter-example to the elastic rebound story.',k:'SIM',e:'S',i:1},
+{c:'deform',t:'Folds as well as faults',d:'Shortening produces folds before it produces thrusts, and fold-and-thrust belts are the characteristic structure of every mountain front. They are also the shape that makes a geological map look like a geological map.',k:'SIM',e:'M',i:2},
+{c:'deform',t:'Paleoseismology in the record',n:['fault','column'],d:'Past earthquakes leave offset strata, liquefaction features and uplifted terraces. Reading a fault’s history out of the ground with the core sampler is exactly the sort of thing the instrument layer should be able to do.',k:'PLAY',e:'M',i:2},
+{c:'deform',t:'A seismic hazard map',n:['fault'],d:'Expected ground shaking with a return period, which is what actually governs where it is sensible to build. Once `city.js` places settlements, this becomes a decision the player and the civilisation both have to make.',k:'PLAY',e:'M',i:2},
+
+/* --------------------------------------------------------------- volc -- */
+{c:'volc',t:'Give magma a composition',g:'magma',d:'A volcano is `{ cell, magma, next }` where `magma` is a quantity. Silica content is the master variable — it sets viscosity, which sets whether an eruption flows or explodes, which decides everything else about the volcano and its effect on climate.',k:'SIM',e:'M',i:3},
+{c:'volc',t:'Composition from tectonic setting',n:['magma'],d:'Ridges and hotspots make basalt; arcs make andesite because of the water in the wedge; continental crust melts to rhyolite. The boundary classification already knows the setting, so the composition is nearly free and it makes each margin volcanically distinct.',k:'SIM',e:'M',i:3},
+{c:'volc',t:'Magma chambers with depth and volume',n:['magma'],d:'`v.magma = min(2, v.magma + 0.01 * heat)` is a linear recharge. A chamber has a volume, a depth, a crystallisation state and an overpressure threshold, and the interval between eruptions follows from those rather than from `v.next = 20 + rng() * 80`.',k:'SIM',e:'M',i:3},
+{c:'volc',t:'Fractional crystallisation',n:['magma'],d:'A basaltic magma sitting in a chamber crystallises out the mafic minerals and the residue becomes progressively more silicic and more dangerous. It is why a long-dormant volcano is the one to worry about.',k:'SIM',e:'M',i:2},
+{c:'volc',t:'The VEI scale, logarithmically',n:['magma'],d:'Eruption `power` currently spans about 0.6 to 2. VEI runs 0 to 8 and each step is roughly a factor of ten in erupted volume, so a VEI 7 is ten thousand times a VEI 3. The log scale is the whole reason volcanic risk is counter-intuitive.',k:'SIM',e:'S',i:3},
+{c:'volc',t:'Build an edifice',n:['magma'],d:'`h[v.cell] += power * 0.04` at one cell. A volcano grows a cone with a characteristic profile over many eruptions — shallow shield for basalt, steep stratocone for andesite — and the shape is the most recognisable landform there is.',k:'EYE',e:'M',i:3},
+{c:'volc',t:'Caldera collapse',n:['magma'],d:'When a large chamber empties, the roof founders and leaves a depression tens of kilometres across where a mountain used to be. Crater Lake, Santorini, Yellowstone, Toba. A volcano that produces a hole rather than a hill is the model’s best argument that it understands the mechanism.',k:'EYE',e:'M',i:3},
+{c:'volc',t:'Flank collapse and debris avalanches',n:['magma'],d:'Volcanic edifices are structurally weak and periodically shed a sector into the sea, generating enormous tsunamis. The tsunami machinery already exists in `hydro.js`; this is a new and very real trigger for it.',k:'SIM',e:'M',i:2},
+{c:'volc',t:'Degassing chemistry per composition',n:['magma'],d:'`gases.sulphate += power * 0.015` and a CO₂ pulse, both scaled only by power. What a volcano emits depends on what it is made of, and sulphate versus CO₂ is the difference between a cooling event and a warming one — which the climate model is fully equipped to express.',k:'SIM',e:'M',i:3},
+{c:'volc',t:'Large igneous provinces from plume heads',n:['plume'],d:'`placeLIP` exists in `disaster.js` as a god tool. LIPs should also arrive on their own when a plume head reaches the base of the lithosphere — which is what connects the mantle model to the end-Permian and the end-Triassic extinctions.',k:'SIM',e:'M',i:3},
+{c:'volc',t:'Flood basalt morphology',n:['plume'],d:'Millions of cubic kilometres of lava in flows hundreds of metres thick, building a stepped plateau. The Deccan and Siberian Traps are landforms the player should be able to recognise from orbit and core through later.',k:'EYE',e:'M',i:2},
+{c:'volc',t:'Dikes, sills and plutons',n:['magma'],d:'Most magma never erupts. It freezes in the crust as intrusions, which are what later erosion exposes as granite batholiths — half the mountain ranges on the planet.',k:'SIM',e:'M',i:2},
+{c:'volc',t:'Arcs as chains, not scattered points',n:['subduct'],d:'`generateTectonics` seeds volcanoes with `rng() < eruptChance` at convergent cells. Real arcs are a line of vents at a consistent distance from the trench, set by the depth at which the slab dehydrates. The chain is the recognisable thing.',k:'EYE',e:'M',i:3},
+{c:'volc',t:'Precursor signals',n:['magma'],d:'Inflation, gas emission and swarms of small earthquakes before an eruption. It gives the player something to read and act on, and it is one of the few places in the model where a short-term forecast is genuinely possible.',k:'PLAY',e:'M',i:2},
+
+/* ---------------------------------------------------------- rockcycle -- */
+{c:'rockcycle',t:'Make rock a column, not a scalar',g:'column',d:'`rock` is one `Uint8Array` — a single label per cell that gets overwritten by whatever happened last. A stack of layers, each with a lithology, a thickness and an age, is the change that unlocks stratigraphy, the core sampler, exhumation and metamorphic grade all at once. This is the highest-leverage item in the document after the mantle.',k:'SIM',e:'L',i:3},
+{c:'rockcycle',t:'Lithify sediment into sedimentary rock',n:['column'],d:'`sediment[c]` accumulates and saturates at 1. Burial, compaction and cementation turn loose sediment into rock over millions of years, and until that happens the sedimentary half of the rock cycle has no supply.',k:'SIM',e:'M',i:3},
+{c:'rockcycle',t:'Metamorphic grade from pressure and temperature',n:['column'],d:'`rock[c] = 2` is a flag set at orogeny. Grade runs from slate through schist to gneiss to migmatite as burial depth and temperature increase, and the grade you find at the surface tells you how deep that rock used to be.',k:'SIM',e:'M',i:3},
+{c:'rockcycle',t:'P–T–t paths',n:['column'],d:'A rock’s history is a trajectory through pressure–temperature space over time, and the shape of the loop distinguishes a collision from a subduction zone from a contact aureole. It is how metamorphic petrology actually reads tectonics.',k:'SIM',e:'M',i:1},
+{c:'rockcycle',t:'Blueschist and the cold subduction signature',n:['subduct'],d:'High pressure at low temperature only happens where a slab descends fast enough to stay cold, so blueschist is diagnostic of subduction — and its absence before about 800 Ma is one of the arguments about when modern plate tectonics began.',k:'SIM',e:'S',i:1},
+{c:'rockcycle',t:'Partial melting and anatexis',n:['column'],d:'Push crust deep enough and it starts to melt, producing granite and dramatically weakening the orogen. It is what limits how high a mountain belt can grow and why plateaus flow sideways.',k:'SIM',e:'M',i:2},
+{c:'rockcycle',t:'Exhumation',n:['column'],d:'Rock that formed at 20 km depth is at the surface because 20 km of overburden was removed. Tracking how much has been stripped is what connects the erosion model to the metamorphic one, and it is the reason mountain cores are gneiss.',k:'SIM',e:'M',i:3},
+{c:'rockcycle',t:'Close the loop',n:['column'],d:'Igneous erodes to sediment, sediment lithifies and is buried to metamorphic, metamorphic melts to igneous. `rock` currently has three states and no transitions between them. Making the cycle actually cycle is the point of the category.',k:'SIM',e:'M',i:3},
+{c:'rockcycle',t:'Provenance',n:['column'],d:'Sediment carries the signature of the rock it came from, so a sandstone can be traced to the mountain that shed it — even after that mountain is gone. It is one of the few ways to detect a landform that no longer exists.',k:'PLAY',e:'M',i:2},
+{c:'rockcycle',t:'Chemical versus physical weathering',d:'`erosionTick` has one erosion term. Cold and steep gives physical breakdown and coarse sediment; hot and wet gives chemical dissolution, clay, and the CO₂ drawdown that `carbon.js` depends on. The split matters to both the landscape and the climate.',k:'SIM',e:'M',i:3},
+{c:'rockcycle',t:'Rock type controls erodibility',n:['column'],d:'Granite holds up ridges, shale forms valleys, limestone dissolves. Differential erosion following the geology is what gives real landscapes their grain, and it is why an escarpment exists at all.',k:'EYE',e:'M',i:3},
+{c:'rockcycle',t:'Evaporites',d:'Restricted basins under high evaporation lay down salt and gypsum. They are a distinctive rock, a climate proxy, an economic resource, and — because salt flows — the driver of a whole class of structures.',k:'SIM',e:'M',i:2},
+{c:'rockcycle',t:'Carbonate platforms',d:'Warm shallow water builds limestone at a rate that keeps pace with subsidence, producing enormous flat-topped platforms with steep margins. It is where the biosphere becomes a rock-forming process, and `reef` and the carbonate chemistry in `carbon.js` are already there to drive it.',k:'SIM',e:'M',i:3},
+
+/* -------------------------------------------------------------- strata -- */
+{c:'strata',t:'Deposit layers in order and keep them',g:'strat',n:['column'],d:'`coreSample` reconstructs a plausible column from present-day field values. A real column was deposited over time and each layer is a record of the conditions when it formed. The difference is that the real one can surprise you.',k:'SIM',e:'M',i:3},
+{c:'strata',t:'Hiatus and unconformity',n:['strat'],d:'Most of geological time is not represented by rock anywhere. An unconformity is a gap — a surface where deposition stopped, erosion happened, and deposition resumed millions of years later. Hutton’s angular unconformity at Siccar Point is where deep time was discovered.',k:'SIM',e:'M',i:3},
+{c:'strata',t:'The three unconformity types',n:['strat'],d:'Angular, where the beds below were tilted first; disconformity, where they were not; nonconformity, where sediment sits on basement. Each records a different history and the geometry alone tells you which.',k:'EYE',e:'M',i:2},
+{c:'strata',t:'Facies — the same time, different rock',n:['strat'],d:'A single moment lays down beach sand, offshore mud and reef limestone at different distances from the shore. Walther’s law says that vertical succession records lateral migration, which is how a sea-level curve is read out of a cliff.',k:'SIM',e:'M',i:3},
+{c:'strata',t:'Sequence stratigraphy',n:['strat'],d:'Packages bounded by sea-level falls, which is how the entire oil industry reads the subsurface. Once the model has both eustatic sea level and subsidence, the sequences fall out and they encode the tectonic and climatic history together.',k:'SIM',e:'M',i:2},
+{c:'strata',t:'Marker beds',n:['strat'],d:'An ash fall, an ejecta layer, an anoxic black shale — a thin, distinctive, globally synchronous horizon. The iridium layer at the K–Pg is the reason we know what happened. `extinction.js` already writes `rock[c] = 5`; a real marker bed is correlatable between cells.',k:'PLAY',e:'M',i:3},
+{c:'strata',t:'Correlate between two cores',n:['strat'],d:'Take two samples in different places and line up the layers. Correlation is the fundamental operation of stratigraphy and it turns the core sampler from a readout into an investigative tool.',k:'PLAY',e:'M',i:3},
+{c:'strata',t:'Biostratigraphy',n:['strat'],d:'Fossils date rock. `meta.js` already records fossils when lineages die in depositing cells, and `evolve.js` has the phylogeny to say which species lived when — so index fossils and zone boundaries are nearly free, and they are how the timescale was built before radiometry existed.',k:'PLAY',e:'M',i:3},
+{c:'strata',t:'Radiometric dating with real error bars',n:['strat'],d:'Different systems for different ranges — carbon-14 for tens of thousands of years, potassium–argon and uranium–lead for billions — each with its own uncertainty. Handing the player a date with a ± is more honest and more interesting than a number.',k:'PLAY',e:'M',i:3},
+{c:'strata',t:'Make the record honestly incomplete',n:['strat'],d:'Only some environments preserve, and erosion destroys what was preserved. If the instruments read the preserved record rather than the true state, the player inherits the actual epistemological problem of geology — which is a better lesson than a perfect readout.',k:'PLAY',e:'M',i:3},
+{c:'strata',t:'A geological map',n:['strat'],d:'Surface outcrop coloured by unit and age, with structure symbols. It is the primary document of the entire science, it is beautiful, and the model would be generating a real one rather than a decoration.',k:'EYE',e:'M',i:3},
+{c:'strata',t:'Cross-sections',n:['strat','fault'],d:'A vertical slice through the crust showing folds, faults, unconformities and the Moho. `viz.js` already renders SVG instruments; this is the one that makes three-dimensional structure comprehensible.',k:'PLAY',e:'M',i:3},
+{c:'strata',t:'Name your own type sections',n:['strat'],d:'Real formations are named after the place they were first described. Letting the player name a unit they found, and having it persist into the chronicle and the exported paper, is a small thing that makes the geology theirs.',k:'PLAY',e:'S',i:2},
+
+/* ------------------------------------------------------------ surface -- */
+{c:'surface',t:'Hillslope diffusion',g:'hillslope',d:'`erosionTick` only moves material where there is `flow`. Soil creep, rain splash and tree throw diffuse material downslope everywhere, and that diffusion is what makes hilltops convex rather than sharp. Adding it is a Laplacian and it changes the character of every landscape in the model.',k:'SIM',e:'S',i:3},
+{c:'surface',t:'Landslides at a threshold slope',n:['hillslope'],d:'Above the angle of repose, material fails catastrophically rather than creeping. It is what limits how steep terrain can get, and it removes the unphysically sharp ridges that stream power alone produces.',k:'SIM',e:'M',i:3},
+{c:'surface',t:'Glacial erosion',g:'glacial',d:'Ice carves U-shaped valleys, cirques, arêtes and fjords, and it erodes fastest near the equilibrium line rather than at the head. It is a completely different signature from fluvial incision and it has shaped every high or high-latitude landscape on the planet.',k:'SIM',e:'M',i:3},
+{c:'surface',t:'The glacial buzzsaw',n:['glacial'],d:'Glaciers erode so efficiently near the snowline that they cap how high mountain ranges can grow, almost regardless of how fast they are rising. It is a climate control on topography, which is a genuinely surprising coupling.',k:'SIM',e:'M',i:2},
+{c:'surface',t:'Fjords',n:['glacial'],d:'Glacial valleys overdeepened below sea level and then drowned. They are among the most recognisable coastlines there are and they only form under a specific combination of ice, relief and sea-level history.',k:'EYE',e:'M',i:2},
+{c:'surface',t:'Karst',d:'Limestone dissolves, so drainage goes underground and the surface collapses into sinkholes, caves and towers. It is the one landscape where the river is not on the map, and it needs the rock column to know where the limestone is.',k:'EYE',e:'M',i:2},
+{c:'surface',t:'Aeolian erosion and deposition',d:'Deflation hollows, yardangs, dune fields with orientations set by the wind. `wind.js` now exists; connecting it to the surface makes dry worlds geologically distinct rather than just brown.',k:'EYE',e:'M',i:2},
+{c:'surface',t:'A soil production function',d:'`paintSoil` sets a value and `bio.js` accumulates it from life. Soil forms fastest under a thin cover and slows as it thickens, which produces a characteristic equilibrium depth and explains why steep slopes are bare.',k:'SIM',e:'M',i:2},
+{c:'surface',t:'Knickpoints that migrate upstream',d:'A drop in base level sends a steepened reach retreating up the river network, and its position records when the drop happened. It is the mechanism that transmits tectonic and sea-level signals into the landscape.',k:'SIM',e:'M',i:2},
+{c:'surface',t:'River capture',d:'One catchment erodes headward into another and steals it. Drainage patterns are one of the most legible records of a landscape’s history and capture events are abrupt, permanent and visible.',k:'SIM',e:'M',i:2},
+{c:'surface',t:'Alluvial fans and bajadas',d:'Where a steep channel hits a flat basin, it drops its load in a cone. It is the characteristic depositional landform of every arid mountain front and it is where the sediment budget actually balances.',k:'EYE',e:'M',i:2},
+{c:'surface',t:'Deltas with real morphology',d:'`erosionTick` deposits into the first sub-sea-level neighbour and calls it a delta. Whether a delta is bird’s-foot, cuspate or wave-dominated depends on the balance between river supply, waves and tides — all three of which the model now has.',k:'EYE',e:'M',i:3},
+{c:'surface',t:'Multiple-flow-direction routing',d:'`erosionTick` sends everything to the single steepest neighbour, which produces artificially linear channels on a coarse grid. Distributing flow among all downhill neighbours gives dendritic networks that look like real ones.',k:'SIM',e:'M',i:3},
+{c:'surface',t:'Route sediment all the way to the deep sea',d:'Sediment currently saturates at 1 in whichever cell receives it. The real system carries it across the shelf, down submarine canyons, and out onto abyssal fans — and closing that path is what makes the sediment budget global.',k:'SIM',e:'M',i:2},
+
+/* ------------------------------------------------------------- basins -- */
+{c:'basins',t:'Sedimentary basins as objects',g:'basin',n:['column'],d:'A basin has a subsidence history, an accommodation space, a fill and a type. Without one, sediment has nowhere to go and no reason to stay, which is why `sediment[c]` just saturates.',k:'SIM',e:'M',i:3},
+{c:'basins',t:'Thermal subsidence after rifting',n:['basin'],d:'Stretched lithosphere cools and sinks for a hundred million years following an exponential decay. It is the mechanism that creates every passive margin and it is one equation.',k:'SIM',e:'M',i:3},
+{c:'basins',t:'Foreland basins from flexure',n:['basin','flexure'],d:'The weight of a mountain belt bends the plate in front of it into a trough that fills with the debris coming off the mountains. The Ganges Basin, the Po Basin, the Alberta Basin — every major orogen has one and it is where its erosional history is stored.',k:'SIM',e:'M',i:3},
+{c:'basins',t:'The forebulge',n:['flexure'],d:'Beyond the foreland trough the plate flexes back up into a low ridge. It is a subtle, counter-intuitive, entirely predicted feature, and its presence in the model would be a good sign the flexure is real.',k:'SIM',e:'S',i:1},
+{c:'basins',t:'Rift basins with half-graben geometry',n:['basin'],d:'Extension produces asymmetric basins bounded by a single major normal fault, tilting the fill. The East African Rift is a live example and the geometry is instantly recognisable in cross-section.',k:'SIM',e:'M',i:2},
+{c:'basins',t:'Pull-apart basins at transform step-overs',n:['fault'],d:'Where a strike-slip fault jogs, the ground between the strands is pulled open — the Dead Sea and the Salton Trough. A deep basin produced by sideways motion is a nicely non-obvious consequence.',k:'SIM',e:'M',i:1},
+{c:'basins',t:'A real continental shelf, slope and rise',n:['basin'],d:'`elev -= 0.015 * sqrt(age)` is applied once at generation and gives smooth ocean floor. The shelf–slope break is the most important bathymetric line on any planet: it is where the light stops, where the fossils are, and where the sediment goes over the edge.',k:'EYE',e:'M',i:3},
+{c:'basins',t:'Submarine canyons',n:['basin'],d:'Cut into the slope by turbidity currents, often aligned with a major river. They are the conduit between the shelf and the deep sea and they are as large as anything on land.',k:'EYE',e:'M',i:2},
+{c:'basins',t:'Turbidites',n:['basin'],d:'Density currents that run down the slope and deposit graded beds on the fan. Each one is a single event preserved as a layer, so a turbidite sequence is a record of every earthquake and storm that triggered one.',k:'SIM',e:'M',i:2},
+{c:'basins',t:'Salt tectonics',d:'Buried salt is less dense than its overburden and flows upward into diapirs, walls and canopies, deforming everything above it. It is a whole class of structure driven by density rather than by plate motion.',k:'SIM',e:'M',i:1},
+{c:'basins',t:'Accommodation space as the master variable',n:['basin'],d:'How much room there is for sediment, set by subsidence plus sea-level change. Whether a basin fills, starves or overfills determines its entire character, and it is the single number that ties tectonics to stratigraphy.',k:'SIM',e:'M',i:3},
+{c:'basins',t:'Hydrocarbons where the model actually puts them',n:['basin'],d:'`carbon.js` already buries organic carbon. A source rock, a reservoir, a seal and a trap — four conditions that must coincide — is a much better story than an ore-style sprinkle, and it gives the civilisation layer a reason to care about a basin from 150 Myr ago.',k:'PLAY',e:'M',i:3},
+
+/* --------------------------------------------------------------- mech -- */
+{c:'mech',t:'Flexural isostasy with an elastic thickness',g:'flexure',d:'`freeboard = thick * (1 - dens / mantle) * (oceanic ? 1.6 : 3.4)` is local Airy compensation — each column floats independently. Real lithosphere has elastic strength, so a load is supported over hundreds of kilometres. This one change produces foreland basins, forebulges and correct mountain-front topography.',k:'SIM',e:'M',i:3},
+{c:'mech',t:'Elastic thickness varying with age and temperature',n:['flexure'],d:'Old cold oceanic lithosphere is stiff; young hot lithosphere and thickened orogens are weak. It is a field derived from things already tracked, and it explains why the same load produces very different topography in different places.',k:'SIM',e:'M',i:2},
+{c:'mech',t:'Isostasy as an ongoing relaxation',n:['flexure'],d:'Elevation is computed once in `generateTectonics` and thereafter only `resistTick` pushes back on the player. Isostatic adjustment should run every tick with a mantle viscosity timescale, so every load and unload has a delayed response.',k:'SIM',e:'M',i:3},
+{c:'mech',t:'Glacial isostatic adjustment with its real lag',n:['flexure'],d:'Ice sheets depress the crust by up to a third of their thickness and it rebounds for ten thousand years after they melt. Scandinavia is still rising nearly a centimetre a year. The original backlog has listed this as Partial from the start and the flexure work is what unblocks it.',k:'SIM',e:'M',i:3},
+{c:'mech',t:'A lithospheric strength profile',d:'Brittle in the upper crust, ductile below, with a second brittle layer in the mantle — the jelly-sandwich argument. It is what sets the depth limit on earthquakes and how deformation partitions with depth.',k:'SIM',e:'M',i:1},
+{c:'mech',t:'The brittle–ductile transition as a real depth',n:['fault'],d:'Around 15 km in continental crust, and it is the lower limit of the seismogenic zone. It is the number that decides how large a crustal earthquake can be.',k:'SIM',e:'S',i:2},
+{c:'mech',t:'A stress field',d:'Deformation is currently local: `strain[c]` accumulates where the boundary type says it should. Stress transmits through plates for thousands of kilometres, which is why there are earthquakes in the middle of continents.',k:'SIM',e:'M',i:2},
+{c:'mech',t:'Balance the forces on each plate',n:['convection'],d:'Slab pull, ridge push, basal drag, collisional resistance and transform friction must sum to zero for a plate moving at constant velocity. Solving that balance is what turns `omega` from a random number into an answer.',k:'SIM',e:'M',i:3},
+{c:'mech',t:'Gravity anomalies',n:['flexure'],d:'Free-air and Bouguer anomalies are how compensation is actually measured — a mountain with a root has a different signature from one held up by flexure. It is an instrument that would let the player test the model’s own isostasy.',k:'PLAY',e:'M',i:2},
+{c:'mech',t:'The geoid',n:['dyntopo'],d:'Sea level is not a sphere; it follows an equipotential surface that undulates by up to a hundred metres because of density variations. It is the surface `seaLevel` should really be defined against, and it is a striking thing to render.',k:'SIM',e:'M',i:1},
+{c:'mech',t:'Erosion drives uplift',n:['flexure'],d:'Unloading a mountain belt by erosion causes isostatic rebound that lifts the remaining peaks, so removing rock can make summits higher. It is the most counter-intuitive true thing in geomorphology and the model is one flexure term away from producing it.',k:'SIM',e:'M',i:3},
+{c:'mech',t:'A limit on relief from rock strength and gravity',d:'Mountains cannot exceed a height set by the strength of the rock beneath them, which scales inversely with gravity — Olympus Mons is 22 km tall partly because Mars pulls a third as hard. `rule.relief` is a per-ruleset constant clamped between 0.005 and 0.15; this makes it a derived quantity.',k:'SIM',e:'M',i:3},
+
+/* -------------------------------------------------------------- world -- */
+{c:'world',t:'Make stagnant-lid worlds look stagnant',n:['convection'],d:'`lidMode: "stagnant"` scales `omegaScale` to 0.08 and caps plates at eight. A real stagnant lid has no plate boundaries at all — heat escapes through volcanism and the surface is ancient, cratered and undeformed everywhere. It should not be a slow version of Earth.',k:'SIM',e:'M',i:3},
+{c:'world',t:'Venus-style catastrophic resurfacing',n:['convection'],d:'Venus has a crater population consistent with the entire surface being renewed around 500 Ma, with almost nothing older. Whether that was one event or a rolling process is genuinely open, and both are playable.',k:'SIM',e:'M',i:3},
+{c:'world',t:'Io: tidal volcanism as the dominant process',n:['magma'],d:'`tides.js` now exists. On Io tidal heating drives four hundred active volcanoes and resurfaces the moon fast enough that there are no impact craters at all. It is the clearest case anywhere of geology driven by orbits rather than by internal heat.',k:'SIM',e:'M',i:3},
+{c:'world',t:'Ice tectonics',n:['convection'],d:'`iceshell.js` paints a lid, an ocean and a mantle heat field. Europa’s surface has spreading bands, strike-slip offsets and chaos terrain — plate tectonics in water ice, at a completely different viscosity and timescale.',k:'SIM',e:'M',i:3},
+{c:'world',t:'Cryovolcanism',n:['magma'],d:'Water and ammonia as the melt, ice as the rock. Enceladus vents it into space. It is the same machinery as `volc` with different material constants and it makes the ice moons geologically active rather than inert.',k:'SIM',e:'M',i:2},
+{c:'world',t:'Relief limits from gravity',d:'`rule.relief` is authored per ruleset. On low-gravity worlds the same crustal support holds up far higher mountains and far steeper slopes, and on high-gravity worlds everything flattens. It is one of the most immediately visible differences between bodies.',k:'EYE',e:'S',i:3},
+{c:'world',t:'Impact-dominated surfaces',d:'`generateTectonics` adds a ridged-noise crater term when `rule.airless`. On a genuinely dead world the crater population *is* the geology: size–frequency distribution, saturation, basins with rings, ejecta blankets, and a surface age you can read from crater counts.',k:'SIM',e:'M',i:3},
+{c:'world',t:'Crater counting as a dating method',d:'The only way anybody dates a surface they have not sampled. Letting the player age a terrain by counting craters is a real technique, a good instrument, and the honest way to date a world with no stratigraphy.',k:'PLAY',e:'M',i:2},
+{c:'world',t:'Mars: a dichotomy and a Tharsis',d:'A hemispheric crustal thickness contrast that has never been explained, and a volcanic province so massive it reoriented the whole planet. Two features that define a world, neither of which arises from a plate model.',k:'SIM',e:'M',i:2},
+{c:'world',t:'Mega-landslides in low gravity',n:['hillslope'],d:'Valles Marineris has landslides that ran a hundred kilometres. The angle of repose and the runout distance both scale with gravity, so low-gravity worlds have collapse features with no terrestrial equivalent.',k:'EYE',e:'M',i:1},
+{c:'world',t:'Where the heightfield breaks',d:'Gas and ice giants have no surface, and the catalogue’s own entries say so. `h[c]` is load-bearing everywhere in the geology code. Either exclude those worlds honestly or build the pressure-level substrate the worlds backlog specifies.',k:'SIM',e:'L',i:2},
+{c:'world',t:'A tectonic regime verdict per catalogue world',n:['convection'],d:'For each of the 120: mobile lid, stagnant lid, ice tectonics, or dead — with the reasoning. It is a derived column that would reorganise how the whole catalogue reads, in the same way the biosignature ranking does.',k:'PLAY',e:'M',i:3},
+
+/* --------------------------------------------------------------- time -- */
+{c:'time',t:'Run the plates backwards',g:'recon',n:['platelife'],d:'The single most compelling thing a tectonics model can offer: the same planet, two hundred million years ago, reconstructed from its own recorded motions. Nothing in the build can currently produce one, and it would be the image people share.',k:'PLAY',e:'L',i:3},
+{c:'time',t:'A paleogeographic globe you can scrub',n:['recon'],d:'Drag a slider and watch the continents assemble and disperse. The charts in `viz.js` are already being made scrubbable; this is the same interaction applied to the most dramatic data the model has.',k:'PLAY',e:'M',i:3},
+{c:'time',t:'An age-of-seafloor map',d:'`age[c]` is tracked in Myr and rendered nowhere. The real map — bright young ribbons at the ridges grading to old dark abyssal plains — is one of the most famous images in earth science and it is a direct readout of a field that already exists.',k:'EYE',e:'S',i:3},
+{c:'time',t:'Apparent polar wander paths',n:['recon'],d:'Rocks record the magnetic pole position when they formed, so each continent has a path that only makes sense once you move the continents. It is the evidence that convinced everybody, and it is a beautiful instrument.',k:'PLAY',e:'M',i:2},
+{c:'time',t:'Magnetic stripes on the seafloor',d:'Symmetric bands of alternating polarity either side of a ridge, recording reversals as the floor spreads. `core.js` has a dynamo; adding reversals writes a barcode into the ocean floor that dates every square metre of it.',k:'EYE',e:'M',i:3},
+{c:'time',t:'"Why is this mountain here?"',n:['recon'],d:'Point at a range and get the causal history — these two plates converged from this date to that one, this much crust thickened, this much has eroded since. `whatHappenedHere` returns raw events; this is the geological version and it is the best teaching instrument available.',k:'PLAY',e:'M',i:3},
+{c:'time',t:'A mountain range’s life story',n:['recon'],d:'Born, grown, plateaued, eroded, exhumed, reduced to a shield. Watching one range through its whole cycle is how a player learns that topography is a process, and the timescale is one the deep-time clock handles well.',k:'PLAY',e:'M',i:3},
+{c:'time',t:'Exhumation and thermochronology',n:['column'],d:'Low-temperature dating tells you when a rock passed through a given depth, which reconstructs the erosion history of a range. It is the technique that turned mountain building into a quantitative subject.',k:'PLAY',e:'M',i:2},
+{c:'time',t:'Report erosion and uplift rates',d:'Millimetres per year, side by side, at any cell — because whether a range is growing or shrinking is the difference between the two. It is a small readout that makes the competition between tectonics and climate explicit.',k:'PLAY',e:'S',i:3},
+{c:'time',t:'A geological cross-section on demand',n:['strat','fault'],d:'Draw a line on the globe, get a section through it. It is how structure is actually communicated and it would make the whole subsurface — Moho, basins, faults, folds — visible for the first time.',k:'PLAY',e:'M',i:3},
+{c:'time',t:'A tectonic events timeline',n:['recon'],d:'Rifts, collisions, orogenies, LIPs, reorganisations, plotted against the ICS ribbon alongside the biological events. Seeing the extinction line up with the flood basalt is the argument the whole simulation exists to make.',k:'PLAY',e:'M',i:3},
+{c:'time',t:'A plate motion field on the globe',d:'Arrows, or streamlines, showing where everything is going and how fast. It is the one visualisation that makes the entire tectonic system legible at a glance, and every input for it already exists.',k:'EYE',e:'S',i:3},
+{c:'time',t:'Overlay the real Earth’s reconstruction',n:['recon'],d:'`earthRecord.js` already carries comparison curves for oxygen and diversity. Adding a real paleogeographic sequence lets the player see how their planet’s tectonic history diverged from this one.',k:'PLAY',e:'M',i:2},
+
+/* ---------------------------------------------------------------- god -- */
+{c:'god',t:'Grab a plate and drag it',n:['boundcurve'],d:'`setPlatePole` picks a cell, derives a pole and calls `reclassifyBoundaries`, which is the right mechanism behind a poor gesture. Taking hold of a plate and moving it, with the boundaries reclassifying live as you do, is the most god-like act available in a tectonics model.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Draw a plate boundary by hand',n:['boundcurve'],d:'Trace a line and declare it a new margin. Once boundaries are curves rather than tagged cells, this becomes possible, and it is the most direct way to author a tectonic configuration.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Split a plate',n:['platelife'],d:'`drawRift` thins crust along a corridor. The intended act is to cut a plate in two and let the halves diverge, which needs plate birth and gives the player the single most consequential edit in the geosphere.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Force a collision and get a real orogeny',n:['wilsoncycle'],d:'`forceOrogeny` thickens crust in a brush radius. Driving two continents together and watching the ocean between them close, the arc form, the suture weld and the range rise over fifty million years is the same act done properly.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Drive the Wilson cycle directly',n:['wilsoncycle'],d:'Accelerate assembly, hold a supercontinent together, or force an early breakup. A lever on the largest rhythm in the model, with a settling time measured in hundreds of millions of years.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Place a craton',n:['craton'],d:'Drop an ancient, immovable, unerodable block and let everything else deform around it. It is a way of authoring the long-term structure of a continent in one gesture rather than sculpting it cell by cell.',k:'PLAY',e:'M',i:2},
+{c:'god',t:'Accrete a terrane',n:['terrane'],d:'Bring an island arc or a microcontinent to a margin and weld it on. It is how continents actually grow, and it is a satisfying, discrete, visible act with a permanent record in the province map.',k:'PLAY',e:'M',i:2},
+{c:'god',t:'Set the elastic thickness',n:['flexure'],d:'Make a region stiff or weak and watch how differently it responds to the same load. It is a lever on a parameter most people have never heard of that visibly changes the shape of the resulting topography.',k:'PLAY',e:'S',i:2},
+{c:'god',t:'Trigger a specific earthquake on a specific fault',n:['fault'],d:'`case "quake"` sets `strain[cell] = 0`, drops `h` by 0.03 and starts a tsunami. Choosing a fault, a segment and a rupture length is a precise instrument instead of a blunt one — and the magnitude then follows from physics rather than being asserted.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Build a volcano with a composition',n:['magma'],d:'`case "volcano"` pushes `{ cell, magma: 1.5, next: 0 }`. Choosing basalt or rhyolite is choosing between a shield that oozes for a million years and a caldera that ruins a decade, and the choice should be the player’s.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Turn the mantle up',n:['convection'],d:'`platesPanel.js` already exposes heat flow and vigor sliders. Once convection is real, the same lever changes plate speed, volcanic flux, crustal growth rate and the whole tempo of the planet — which is a genuinely different kind of god power.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Preview the orogeny before committing',n:['flexure'],d:'`isostaticPreview` already ghosts the settled elevation for a crustal edit. The same idea for a collision — showing the range that will exist in fifty million years — is what makes a geological act a decision rather than a gamble.',k:'PLAY',e:'M',i:3},
+{c:'god',t:'Sculpt the Moho',n:['flexure'],d:'Edit crustal thickness directly as a surface, in kilometres, with the topography following isostatically. It is the honest version of "raise land" and it is what `thickenCrust` is already reaching for.',k:'PLAY',e:'M',i:2},
+{c:'god',t:'Undo across geological time',n:['recon'],d:'`beginStroke` snapshots fields for undo-the-act. Geological acts have consequences that arrive over a hundred million years, so the geological undo is a reconstruction — put it back the way it was and let it run forward differently.',k:'PLAY',e:'M',i:2},
+];
+
+/* ------------------------------------------------------------- derive -- */
+D.forEach((x, i) => { x.id = i + 1; });
+
+const byCat = (id) => D.filter((x) => x.c === id);
+const count = (f) => D.filter(f).length;
+const KIND = { SIM: 'Sim', EYE: 'Eye', PLAY: 'Play' };
+/** Literal pipes inside inline code would split a markdown table cell. */
+const md = (t) => String(t).replace(/\|/g, '\\|');
+
+const provides = new Map();
+for (const x of D) if (x.g) provides.set(x.g, x);
+const dependents = (tok) => D.filter((y) => (y.n || []).includes(tok)).length;
+const CRITICAL = [...provides.keys()]
+  .map((k) => ({ k, x: provides.get(k), n: dependents(k) }))
+  .filter((r) => r.n > 0)
+  .sort((a, b) => b.n - a.n);
+
+const NOW = [
+  ['The foundation is genuinely good', '`generateTectonics` does real work: Voronoi plates with Euler poles, boundary classification from relative velocity, subduction producing a trench and an arc, orogeny thickening crust, ridges resetting age to zero, hotspots fixed in the mantle frame with an age gradient, Airy isostasy from thickness and density, age–depth ocean subsidence, and ore placed at arcs, rifts and shields. `platesPanel.js` is 444 lines of decent instrumentation on top. Almost nothing in this document is a rewrite; it is all a next layer.'],
+  ['Plates move because they were told to, not because anything pushes', '`omega: (rng() - 0.5) * 0.08 * omegaScale * vigor`. Every plate’s velocity is a random draw. `core.js` reduces the interior to `coreMassFrac`, `heatFlow`, `conductivity`, `vigor` and a `lidMode` string, and none of it produces a force. The original backlog’s one deferred geosphere item — mantle convection — is still the root of everything.'],
+  ['The plate count never changes', '`plates` is built once and `reassignPlatesVoronoi` only moves cell ownership between the existing seeds. No plate is born, split, merged or consumed. The Farallon cannot disappear, an ocean basin cannot close, and therefore the Wilson cycle cannot run — which is why it has been listed as Partial since the first backlog.'],
+  ['Every boundary is a Voronoi edge', 'Cells are assigned to their nearest plate centre, so every plate is convex and every boundary is a perpendicular bisector. Real plate boundaries are irregular and inherited from older structures. This single assumption is most of why the plate map reads as a diagram rather than as a planet.'],
+  ['Crust is created and never destroyed', 'At a ridge, `crust[c] = min(crust[c], 0.28); age[c] = 0`. At a collision, `crust[c] = min(1.6, crust[c] + 0.35)`. Mass appears and disappears; nothing balances. `assert.js` already checks water and carbon budgets, and crustal area is the obvious third.'],
+  ['A continent is one number plus noise', '`crust[c] = pl.baseThick * (0.85 + 0.3 * fbm(...))` with `age[c] = 200 + rng() * 800`. Real continents are collages of Archean cratons stitched by younger mobile belts, and that internal structure controls where mountains can form, where deformation goes, and what the map looks like.'],
+  ['Rock is one byte and it gets overwritten', '`rock` is a `Uint8Array` — 0 igneous, 1 sedimentary, 2 metamorphic, plus 4 for banded iron from `redox.js` and 5 for the K–Pg ejecta from `extinction.js`. Nothing lithifies, nothing is buried, nothing is metamorphosed, nothing is exhumed. The rock cycle has three states and no transitions between them.'],
+  ['The core sampler is reading a planet with no layers', '`coreSample` reconstructs a plausible column from present-day field values. It is one of the best instruments in the build and there is no stratigraphy underneath it — no deposition order, no hiatus, no unconformity. The gaps are where most of the information in a real record lives.'],
+  ['Isostasy is computed once, and it is local', '`freeboard = thick * (1 - dens / mantle) * (oceanic ? 1.6 : 3.4)`, evaluated in `generateTectonics` and never again except where `resistTick` pushes back on the player. That is Airy compensation — each column floating independently. Flexure is what produces foreland basins, forebulges, and the rebound still lifting Scandinavia.'],
+  ['Erosion is one process', '`erosionTick` is a clean stream-power law — `discharge * slope² * 0.15`, capped, deposited into the single steepest downhill neighbour. It is the right first process and the only one. No hillslope diffusion, no landslides, no ice, no wind, no dissolution — so terrain reads as fluvially incised even where no river has ever run.'],
+  ['Earthquakes are a counter, not a fault', '`strain[c]` accumulates and releases above 1.1, logging a magnitude of `4 + mag * 3`. There is no fault object, no rupture that propagates, no segment, no aftershock, and no reason for the magnitudes to follow Gutenberg–Richter — which they would for free if ruptures had lengths.'],
+  ['A volcano has no composition', '`{ cell, magma, next }`. Silica content is the master variable of volcanology: it sets viscosity, which decides between a shield that oozes and a caldera that empties a continent. Without it, `gases.sulphate += power * 0.015` is the same for Hawaii and Toba.'],
+  ['Nothing can show you the past', '`platesPanel.js` reports the present state well. The most compelling thing a tectonics model can offer is a reconstruction — this planet, 200 million years ago, from its own recorded motions — and there is no path to one, because nothing records the motions.'],
+];
+
+const SEQ = [
+  ['Two roots, in parallel', '`convection` and `column`. The first makes plates move for a reason and unblocks 12 items; the second makes rock a stack instead of a byte and unblocks 11, including the entire stratigraphy category and the core sampler’s honesty. They touch different files and can be built by different people.'],
+  ['Then plates as objects', '`platelife` and `boundcurve`. Plate birth, death and consumption; boundaries as curves with lengths and rates. Between them these two unblock 15 items and they are the precondition for the Wilson cycle, which has been listed as Partial since the first backlog.'],
+  ['Then the Wilson cycle itself', '`wilsoncycle`. Assembly, dispersal, a 400–600 Myr beat, sea level from ridge volume, epicontinental seas, and vicariance arriving on a schedule the phylogeny can inherit. This is the payoff item — the largest missing rhythm in deep time and the one that connects tectonics to climate and to the tree of life at once.'],
+  ['Then flexure, and the surface catches up', '`flexure` fixes isostasy from a one-shot local formula into an ongoing regional response, which finally delivers glacial rebound, foreland basins, and the fact that eroding a mountain range makes its peaks higher. Alongside it, `hillslope` and `glacial` are both small and both change the character of every landscape in the model.'],
+  ['Then make it legible', '`recon`, `strat`, `fault`, `magma`. Run the plates backwards, draw a cross-section, put a fault under an earthquake and a composition inside a volcano. The geological instruments are the payoff for all of the above, and the reconstruction globe is the single image most likely to be shared.'],
+];
+
+/* ------------------------------------------------------------ markdown -- */
+function markdown() {
+  const L = [];
+  L.push('# ORRERY — geology');
+  L.push('');
+  L.push(`**${D.length} items.** Generated from \`scripts/geology.mjs\` — edit that file, not this one, then run \`node scripts/geology.mjs\`.`);
+  L.push('');
+  L.push('A deep dive on the geosphere: the mantle beneath it, plates as objects with a life, what happens where they meet, continents as things with a history, the supercontinent cycle, and the rock record that remembers all of it.');
+  L.push('');
+  L.push(`Kind: **${count((x) => x.k === 'SIM')}** rock physics, **${count((x) => x.k === 'EYE')}** picture, **${count((x) => x.k === 'PLAY')}** instrument or lever. Effort is S/M/L. Impact is 1–3.`);
+  L.push('');
+
+  L.push('## Where the geology actually is');
+  L.push('');
+  for (const [a, b] of NOW) L.push(`- **${a}.** ${b}`);
+  L.push('');
+
+  L.push('## The critical path');
+  L.push('');
+  L.push('The capabilities the largest number of other items are waiting on.');
+  L.push('');
+  L.push('| Capability | Item | Unblocks |');
+  L.push('|---|---|---|');
+  for (const r of CRITICAL.slice(0, 14)) {
+    L.push(`| \`${r.k}\` | ${r.x.id}. ${md(r.x.t)} | ${r.n} items |`);
+  }
+  L.push('');
+
+  for (const [id, name, blurb] of CATS) {
+    const items = byCat(id);
+    L.push(`## ${name} — ${items.length}`);
+    L.push('');
+    L.push(`_${blurb}_`);
+    L.push('');
+    L.push('| # | Item | Detail | Kind | Effort | Impact |');
+    L.push('|---|---|---|---|---|---|');
+    for (const x of items) {
+      const gives = x.g ? ` <br>gives \`${x.g}\`` : '';
+      const needs = x.n?.length ? ` <br>needs ${x.n.map((t) => '`' + t + '`').join(' ')}` : '';
+      L.push(`| ${x.id} | **${md(x.t)}**${gives}${needs} | ${md(x.d)} | ${KIND[x.k]} | ${x.e} | ${x.i} |`);
+    }
+    L.push('');
+  }
+
+  L.push('## Sequencing');
+  L.push('');
+  SEQ.forEach(([a, b], i) => L.push(`${i + 1}. **${a}.** ${b}`));
+  L.push('');
+  L.push('The through-line: the geosphere is the oldest and best-built system in the codebase, and it is the one that has been extended least since. Almost every item here is a next layer on something that already works, not a rewrite — and the two roots, mantle convection and the rock column, are both things the original backlog identified and deferred.');
+  L.push('');
+
+  return L.join('\n');
+}
+
+/* ----------------------------------------------------------------- html -- */
+function html() {
+  const data = JSON.stringify(D.map((x) => ({
+    id: x.id, c: x.c, t: x.t, d: x.d, k: x.k, e: x.e, i: x.i, g: x.g || '', n: x.n || [],
+  })));
+  const cats = JSON.stringify(CATS.map(([id, name, blurb]) => ({ id, name, blurb })));
+  const crit = JSON.stringify(CRITICAL.slice(0, 14).map((r) => ({ k: r.k, id: r.x.id, t: r.x.t, n: r.n })));
+  return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ORRERY — geology</title>
+<style>
+:root{
+  --ground:#0c0f16; --panel:#151a24; --panel2:#1b2231; --rule:#252d3d;
+  --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688;
+  --accent:#d08a5a; --accent-soft:rgba(208,138,90,.13); --accent-line:rgba(208,138,90,.34);
+  --sim:#8fce7a; --sim-soft:rgba(143,206,122,.14);
+  --eye:#7fb0e0; --eye-soft:rgba(127,176,224,.14);
+  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+}
+@media (prefers-color-scheme: light){
+  :root{ --ground:#eef0f3; --panel:#fff; --panel2:#f5f6f9; --rule:#d9dde5;
+    --text:#12151c; --dim:#4e5768; --faint:#727d90;
+    --accent:#8a4a1c; --accent-soft:rgba(138,74,28,.09); --accent-line:rgba(138,74,28,.3);
+    --sim:#3d7a2c; --sim-soft:rgba(61,122,44,.09); --eye:#215e93; --eye-soft:rgba(33,94,147,.09); }
+}
+:root[data-theme="dark"]{ --ground:#0c0f16; --panel:#151a24; --panel2:#1b2231; --rule:#252d3d;
+  --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688;
+  --accent:#d08a5a; --accent-soft:rgba(208,138,90,.13); --accent-line:rgba(208,138,90,.34);
+  --sim:#8fce7a; --sim-soft:rgba(143,206,122,.14); --eye:#7fb0e0; --eye-soft:rgba(127,176,224,.14); }
+:root[data-theme="light"]{ --ground:#eef0f3; --panel:#fff; --panel2:#f5f6f9; --rule:#d9dde5;
+  --text:#12151c; --dim:#4e5768; --faint:#727d90;
+  --accent:#8a4a1c; --accent-soft:rgba(138,74,28,.09); --accent-line:rgba(138,74,28,.3);
+  --sim:#3d7a2c; --sim-soft:rgba(61,122,44,.09); --eye:#215e93; --eye-soft:rgba(33,94,147,.09); }
+
+*{box-sizing:border-box;}
+body{margin:0; background:var(--ground); color:var(--text);
+     font:400 16px/1.6 var(--sans); -webkit-font-smoothing:antialiased;}
+.wrap{max-width:1080px; margin:0 auto; padding:40px 26px 110px;}
+
+header{border-bottom:1px solid var(--rule); padding-bottom:28px;}
+.eyebrow{font:500 10.5px/1 var(--mono); letter-spacing:.24em; text-transform:uppercase; color:var(--accent);}
+h1{font:700 clamp(34px,5.4vw,54px)/1.03 var(--sans); letter-spacing:-.035em; margin:15px 0 0; text-wrap:balance;}
+.sub{font:italic 400 clamp(17px,2.2vw,21px)/1.45 var(--serif); color:var(--dim);
+     margin:18px 0 0; max-width:50ch;}
+.nav{margin-top:20px; font:400 12.5px/1.7 var(--mono); color:var(--faint);}
+.nav a{color:var(--dim); text-decoration:none; border-bottom:1px solid var(--rule);}
+.nav a:hover{color:var(--accent); border-color:var(--accent-line);}
+
+.tally{display:grid; grid-template-columns:repeat(auto-fit,minmax(126px,1fr)); gap:1px;
+       background:var(--rule); border:1px solid var(--rule); border-radius:8px;
+       overflow:hidden; margin-top:26px;}
+.tally > div{background:var(--panel); padding:13px 15px;}
+.tally dt{font:500 9.5px/1 var(--mono); letter-spacing:.15em; text-transform:uppercase; color:var(--faint);}
+.tally dd{margin:9px 0 0; font:600 26px/1 var(--sans); letter-spacing:-.02em;
+          font-variant-numeric:tabular-nums;}
+.tally dd small{display:block; font:400 11px/1.5 var(--mono); color:var(--faint); margin-top:6px; letter-spacing:0;}
+
+.prose{margin-top:40px;}
+.prose h2{font:650 21px/1.2 var(--sans); letter-spacing:-.022em; margin:0 0 12px;
+          border-bottom:1px solid var(--rule); padding-bottom:10px;}
+.prose p{color:var(--dim); max-width:74ch; font-size:14.5px;}
+.state{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:1px;
+       background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden;}
+.state li{background:var(--panel); padding:13px 16px; color:var(--dim); font-size:13.5px; line-height:1.6;}
+.state b{color:var(--text); font-weight:600;}
+.crit{width:100%; border-collapse:collapse; margin-top:14px; font-size:13.5px;}
+.crit td{border-top:1px solid var(--rule); padding:9px 12px; color:var(--dim);}
+.crit td:first-child{font:500 11.5px/1.6 var(--mono); color:var(--accent); width:1%; white-space:nowrap;}
+.crit td:last-child{text-align:right; font:500 11.5px/1.6 var(--mono); color:var(--faint); white-space:nowrap;}
+.seq{margin:14px 0 0; padding-left:20px; color:var(--dim); font-size:14px;}
+.seq li{margin-bottom:9px; max-width:74ch;}
+.seq b{color:var(--text);}
+code{font:500 12.5px/1 var(--mono); background:var(--panel2); border:1px solid var(--rule);
+     padding:2px 5px; border-radius:4px; color:var(--accent);}
+
+.controls{position:sticky; top:0; z-index:5; background:var(--ground);
+          padding:18px 0 14px; border-bottom:1px solid var(--rule); margin:44px 0 6px;}
+.filters{display:flex; flex-wrap:wrap; gap:7px; align-items:center;}
+.flabel{font:500 9.5px/1 var(--mono); letter-spacing:.17em; text-transform:uppercase;
+        color:var(--faint); margin-right:3px;}
+button.f{font:500 11.5px/1 var(--mono); color:var(--dim); cursor:pointer; background:transparent;
+         border:1px solid var(--rule); border-radius:5px; padding:7px 10px;}
+button.f:hover{border-color:var(--accent-line); color:var(--text);}
+button.f[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent);}
+button.f.sim[aria-pressed="true"]{background:var(--sim-soft); border-color:var(--sim); color:var(--sim);}
+button.f.eye[aria-pressed="true"]{background:var(--eye-soft); border-color:var(--eye); color:var(--eye);}
+#q{flex:1; min-width:170px; font:400 13px/1 var(--sans); color:var(--text);
+   background:var(--panel); border:1px solid var(--rule); border-radius:5px; padding:8px 11px;}
+#q::placeholder{color:var(--faint);}
+.tally2{margin-top:11px; font:500 11px/1 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums;}
+
+section{padding-top:38px; scroll-margin-top:120px;}
+.sechead{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+         border-bottom:1px solid var(--rule); padding-bottom:10px;}
+.sechead h2{font:650 21px/1.2 var(--sans); letter-spacing:-.022em; margin:0;}
+.sechead .n{font:500 10.5px/1 var(--mono); color:var(--accent); background:var(--accent-soft);
+            border:1px solid var(--accent-line); padding:4px 7px; border-radius:4px;}
+.blurb{margin:13px 0 0; color:var(--dim); max-width:74ch; font-size:14.5px;}
+
+ol{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:1px;
+   background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden;}
+li.item{background:var(--panel); padding:13px 16px; display:grid;
+   grid-template-columns:38px minmax(0,1fr) auto; gap:4px 14px; align-items:baseline;}
+li .id{font:500 11px/1.5 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums;}
+li .t{font:600 14.5px/1.4 var(--sans); letter-spacing:-.008em;}
+li .d{grid-column:2; color:var(--dim); font-size:13.5px; line-height:1.55; max-width:76ch;}
+li .dep{grid-column:2; font:400 11px/1.6 var(--mono); color:var(--faint); margin-top:4px;}
+li .dep .gives{color:var(--accent);}
+li .tags{display:flex; gap:5px; align-items:center; grid-row:1; grid-column:3;}
+.tag{font:600 9px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase;
+     padding:4px 6px; border-radius:3px; white-space:nowrap; border:1px solid transparent;}
+.tag.sim{background:var(--sim-soft); color:var(--sim); border-color:var(--sim);}
+.tag.eye{background:var(--eye-soft); color:var(--eye); border-color:var(--eye);}
+.tag.play{background:transparent; color:var(--dim); border-color:var(--rule);}
+.tag.e{background:transparent; color:var(--faint); border-color:var(--rule);}
+.dots{display:inline-flex; gap:2px;}
+.dots i{width:5px; height:5px; border-radius:50%; background:var(--rule); display:block;}
+.dots i.on{background:var(--accent);}
+.empty{padding:44px 16px; text-align:center; color:var(--faint); font:400 13.5px/1.6 var(--mono);}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
+footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
+       font:400 12px/1.7 var(--mono); color:var(--faint);}
+@media (max-width:640px){
+  li.item{grid-template-columns:30px minmax(0,1fr);}
+  li .tags{grid-row:auto; grid-column:2; margin-top:7px;}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Deep dive · the geosphere</div>
+  <h1>Geology</h1>
+  <p class="sub">The oldest and best-built system in the codebase, and the one extended least
+  since. Plates move because they were assigned a random Euler pole, their number never changes,
+  and rock is one byte that gets overwritten. Almost everything here is a next layer, not a rewrite.</p>
+  <p class="nav"><a href="./">Pitch</a> · <a href="backlog.html">Systems</a> ·
+  <a href="worlds.html">Worlds</a> · <a href="evolution.html">Evolution</a> ·
+  <a href="godgame.html">God layer</a> · <a href="next.html">Next 200</a> ·
+  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="exoparams.html">Real parameters</a> · <a href="../vr/">Prototype</a></p>
+  <dl class="tally">
+    <div><dt>Items</dt><dd>200<small>15 categories</small></dd></div>
+    <div><dt>Kind</dt><dd>${count((x) => x.k === 'SIM')}/${count((x) => x.k === 'EYE')}/${count((x) => x.k === 'PLAY')}<small>sim · eye · play</small></dd></div>
+    <div><dt>Impact 3</dt><dd>${count((x) => x.i === 3)}<small>of 200</small></dd></div>
+    <div><dt>Effort</dt><dd>${count((x) => x.e === 'S')}/${count((x) => x.e === 'M')}/${count((x) => x.e === 'L')}<small>S / M / L</small></dd></div>
+  </dl>
+</header>
+
+<div class="prose">
+  <h2>Where the geology actually is</h2>
+  <ul class="state" id="now"></ul>
+
+  <h2 style="margin-top:40px">The critical path</h2>
+  <p>The capabilities the largest number of other items wait on.</p>
+  <table class="crit"><tbody id="crit"></tbody></table>
+</div>
+
+<div class="controls">
+  <div class="filters">
+    <span class="flabel">Kind</span>
+    <button class="f sim" data-k="k" data-v="SIM" aria-pressed="false">Sim</button>
+    <button class="f eye" data-k="k" data-v="EYE" aria-pressed="false">Eye</button>
+    <button class="f" data-k="k" data-v="PLAY" aria-pressed="false">Play</button>
+    <span class="flabel" style="margin-left:9px">Effort</span>
+    <button class="f" data-k="e" data-v="S" aria-pressed="false">S</button>
+    <button class="f" data-k="e" data-v="M" aria-pressed="false">M</button>
+    <button class="f" data-k="e" data-v="L" aria-pressed="false">L</button>
+    <span class="flabel" style="margin-left:9px">Impact</span>
+    <button class="f" data-k="i" data-v="3" aria-pressed="false">3</button>
+    <button class="f" data-k="i" data-v="2" aria-pressed="false">2</button>
+    <button class="f" data-k="i" data-v="1" aria-pressed="false">1</button>
+    <input id="q" type="search" placeholder="Search 200 items…" aria-label="Search items">
+  </div>
+  <div class="tally2" id="shown"></div>
+</div>
+
+<div id="list"></div>
+
+<div class="prose" style="margin-top:56px">
+  <h2>Sequencing</h2>
+  <ol class="seq" id="seq"></ol>
+  <p style="margin-top:16px">The through-line: the geosphere is the oldest and best-built system
+  in the codebase, and the one that has been extended least since. Almost every item here is a next
+  layer on something that already works — and the two roots, mantle convection and the rock column,
+  are both things the original backlog identified and deferred.</p>
+</div>
+
+<footer>
+  Generated from <code>scripts/geology.mjs</code> — edit the source and re-run, do not edit the output.
+</footer>
+</div>
+
+<script>
+"use strict";
+var DATA = ${data};
+var CATS = ${cats};
+var CRIT = ${crit};
+var NOW = ${JSON.stringify(NOW)};
+var SEQ = ${JSON.stringify(SEQ)};
+var KLABEL = {SIM:'Sim', EYE:'Eye', PLAY:'Play'};
+var active = {k:new Set(), e:new Set(), i:new Set()};
+var query = '';
+var listEl = document.getElementById('list');
+var shownEl = document.getElementById('shown');
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+document.getElementById('now').innerHTML = NOW.map(function(r){
+  return '<li><b>' + esc(r[0]) + '.</b> ' + esc(r[1]) + '</li>'; }).join('');
+document.getElementById('crit').innerHTML = CRIT.map(function(r){
+  return '<tr><td>' + esc(r.k) + '</td><td>' + r.id + '. ' + esc(r.t) +
+         '</td><td>' + r.n + ' items</td></tr>'; }).join('');
+document.getElementById('seq').innerHTML = SEQ.map(function(r){
+  return '<li><b>' + esc(r[0]) + '.</b> ' + esc(r[1]) + '</li>'; }).join('');
+
+function match(o){
+  if (active.k.size && !active.k.has(o.k)) return false;
+  if (active.e.size && !active.e.has(o.e)) return false;
+  if (active.i.size && !active.i.has(String(o.i))) return false;
+  if (query){
+    var hay = (o.t + ' ' + o.d + ' ' + o.g + ' ' + o.n.join(' ')).toLowerCase();
+    if (hay.indexOf(query) === -1) return false;
+  }
+  return true;
+}
+
+function dots(n){
+  var out = '<span class="dots" title="Impact ' + n + ' of 3">';
+  for (var k = 1; k <= 3; k++) out += '<i class="' + (k <= n ? 'on' : '') + '"></i>';
+  return out + '</span>';
+}
+
+function render(){
+  var html = '', total = 0;
+  for (var ci = 0; ci < CATS.length; ci++){
+    var cat = CATS[ci];
+    var items = DATA.filter(function(o){ return o.c === cat.id && match(o); });
+    if (!items.length) continue;
+    total += items.length;
+    html += '<section id="' + cat.id + '"><div class="sechead"><h2>' + esc(cat.name) +
+            '</h2><span class="n">' + items.length + '</span></div>' +
+            '<p class="blurb">' + esc(cat.blurb) + '</p><ol>';
+    for (var k = 0; k < items.length; k++){
+      var o = items[k];
+      var cls = o.k === 'SIM' ? 'sim' : o.k === 'EYE' ? 'eye' : 'play';
+      var dep = '';
+      if (o.g) dep += '<span class="gives">gives ' + esc(o.g) + '</span>';
+      if (o.n.length) dep += (dep ? ' · ' : '') + 'needs ' + o.n.map(esc).join(' ');
+      html += '<li class="item"><span class="id">' + o.id + '</span>' +
+              '<span class="t">' + esc(o.t) + '</span>' +
+              '<span class="tags"><span class="tag ' + cls + '">' + KLABEL[o.k] + '</span>' +
+              '<span class="tag e">' + o.e + '</span>' + dots(o.i) + '</span>' +
+              '<span class="d">' + esc(o.d) + '</span>' +
+              (dep ? '<span class="dep">' + dep + '</span>' : '') + '</li>';
+    }
+    html += '</ol></section>';
+  }
+  if (!total) html = '<p class="empty">Nothing matches those filters.</p>';
+  listEl.innerHTML = html;
+  shownEl.textContent = 'Showing ' + total + ' of ' + DATA.length;
+}
+
+var btns = document.querySelectorAll('button.f');
+for (var b = 0; b < btns.length; b++){
+  btns[b].addEventListener('click', function(){
+    var k = this.dataset.k, v = this.dataset.v;
+    if (active[k].has(v)) { active[k].delete(v); this.setAttribute('aria-pressed','false'); }
+    else { active[k].add(v); this.setAttribute('aria-pressed','true'); }
+    render();
+  });
+}
+document.getElementById('q').addEventListener('input', function(){
+  query = this.value.trim().toLowerCase(); render();
+});
+render();
+</script>
+`;
+}
+
+/* ----------------------------------------------------------------- emit -- */
+await mkdir(join(ROOT, 'briefs'), { recursive: true });
+await mkdir(join(ROOT, 'site'), { recursive: true });
+await writeFile(join(ROOT, 'briefs', 'geology-backlog.md'), markdown() + '\n');
+await writeFile(join(ROOT, 'site', 'geology.html'), html());
+
+console.log(`geology: ${D.length} items across ${CATS.length} categories`);
+for (const [id, name] of CATS) console.log(`  ${String(byCat(id).length).padStart(3)}  ${name}`);
+console.log(`\nkind     sim ${count((x) => x.k === 'SIM')} · eye ${count((x) => x.k === 'EYE')} · play ${count((x) => x.k === 'PLAY')}`);
+console.log(`effort   S ${count((x) => x.e === 'S')} · M ${count((x) => x.e === 'M')} · L ${count((x) => x.e === 'L')}`);
+console.log(`impact   3 ${count((x) => x.i === 3)} · 2 ${count((x) => x.i === 2)} · 1 ${count((x) => x.i === 1)}`);
+console.log('\ncritical path:');
+for (const r of CRITICAL.slice(0, 14)) {
+  console.log(`  ${String(r.n).padStart(3)}  ${r.k.padEnd(12)} ${r.x.t}`);
+}
+const unmet = new Set();
+for (const x of D) for (const t of x.n || []) if (!provides.has(t)) unmet.add(t);
+if (unmet.size) console.log(`\nWARNING unmet tokens: ${[...unmet].join(', ')}`);
+console.log('\nwrote briefs/geology-backlog.md and site/geology.html');
