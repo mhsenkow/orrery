@@ -1,15 +1,17 @@
 /** ORRERY main — UI, input, XR, sim loop. */
 
-import { clamp, qAxis, qmul, qnorm, qFromTo, m4, m4persp, m4lookAt, showErr } from './math.js';
-import { NC, AREA, N_ALLOWED, N, cellKm, DIR } from './sphere.js';
+import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, showErr } from './math.js';
+import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
+import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
+import { timePanelState, ruleForEra } from './sim/timePanel.js';
 import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta } from './world.js';
 import { freshSeed } from './sim/rng.js';
 import { noteDroppedTicks } from './sim/meta.js';
 import { detectEnding, finaleArtefact, formatFinaleMarkdown } from './sim/finale.js';
 import { currentReveal, advanceReveal, skipReveal, loadRevealProgress, campaignBlurb } from './sim/teach.js';
 import { cityLights } from './sim/city.js';
-import { ENT, respawnEntities, agentsTick } from './agents.js';
-import { initGL, gl, canvas, rebuildGeometry, refreshColours, uploadEntities, drawScene, vIdx, updateLocalHighlight, setGuildHighlight, setOverlayMode, remeshPlanet, rebuildScatterLUTs } from './render.js';
+import { ENT, respawnEntities, agentsTick, followTarget, presentAgents } from './agents.js';
+import { initGL, gl, canvas, rebuildGeometry, refreshColours, uploadEntities, drawScene, vIdx, updateLocalHighlight, setGuildHighlight, setLocalHover, setOverlayMode, remeshPlanet, rebuildScatterLUTs, setGlobeSubd, GLOBE_SUBD, GLOBE_SUBD_ALLOWED, globeN, globeVertexCount, recommendGlobeSubd, effectiveGlobeSubd } from './render.js';
 import {
   climatePanelChrome, refreshClimatePanel, bindClimatePanel,
 } from './sim/climatePanel.js';
@@ -21,7 +23,7 @@ import { TOOLS, setTool, activeTool, useToolAt, pickCell, fingerOfGod,
   pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild,
   BRUSH, brushKm, brushForTier, previewBrush,
 } from './tools.js';
-import { GUILDS } from './sim/redox.js';
+import { GUILDS, speciesMemoryReadout } from './sim/redox.js';
 import {
   SCENARIOS, startScenario, evaluateScenario, CAMPAIGN, dailySeed,
 } from './sim/god/scenario.js';
@@ -34,10 +36,10 @@ import {
   cycleTimeRate, timeClockInfo,
 } from './sim/god/observe.js';
 import { addToShelf, loadShelf, rankByBiosignature } from './sim/god/shelf.js';
-import { tipForTool, tipForId } from './sim/god/tips.js';
+import { tipForTool, tipForId, SUITE_TIPS, RIBBON_TIPS } from './sim/god/tips.js';
 import { decorateButton, iconSVG, DOCK_TAB_ICONS } from './sim/god/icons.js';
 import { exportChronicle, currentEraName, whatHappenedHere } from './chronicle.js';
-import { audioInit, audioUpdate, playEvent } from './audio.js';
+import { audioInit, audioUpdate, playEvent, audioMute, audioMuted } from './audio.js';
 import { LIFE_CLASSES } from './sim/bio.js';
 import { BIOMES } from './sim/ecology.js';
 import {
@@ -51,16 +53,20 @@ import {
 import { windBandAt } from './sim/wind.js';
 import { momentRGB, legendEntries, legendKeyAt } from './sim/lifeColour.js';
 import {
-  drawLocalView, layoutLocalPanel, stepFocus, hoverCellAt,
+  drawLocalView, layoutLocalPanel, stepFocus, hoverCellAt, beingAtLocalPixel,
   LOCAL_SIZES, LOCAL_SIZE_LABELS, LOCAL_SNAPS, LOCAL_GLOBE, LOCAL_RADII, LOCAL_RADIUS_LABELS,
+  LOCAL_SEEK, LOCAL_SEEK_LABELS, resetFocusCache, huntGlance,
   localFrameIndex, localFrameLabel,
 } from './localview.js';
+import { presentAdvance, placeSentence, cellSun } from './sim/present.js';
+import { currentsAtCell } from './sim/ocean.js';
+import { stepFlow, resetFlow } from './sim/flowviz.js';
 import { CATALOGUE, CATALOGUE_CATS, CATALOGUE_KIND } from './catalogue.js';
 import { rulesetFromCatalogue, adjacentCatalogueWorld, CATALOGUE_WORLDS, validateCatalogueWorlds, recordForCatalogueItem } from './catalogue-rules.js';
 import { parseWorldCsv } from './sim/exophysics.js';
 import { makeWorldRecord, applyRecordToRule } from './sim/worldRecord.js';
 import { explainDrama, defineTerm, READING_LIST, toolsUnlocked } from './sim/glossary.js';
-import { OVERLAYS, markTouch } from './sim/overlay.js';
+import { OVERLAYS, overlaysForPicker, overlayById, markTouch } from './sim/overlay.js';
 import { downloadInstrumentPng } from './sim/exportPng.js';
 import { EARTH_DIVERSITY, earthOverlaySVG } from './sim/earthRecord.js';
 import { tideBudget } from './sim/tides.js';
@@ -76,6 +82,8 @@ const S = {
   table: TABLE,
   spin: 0.035,
   camDist: 3.1,
+  camPanX: 0,
+  camPanY: 0,
   scaleXR: 0.22,
   posXR: [0, 1.18, -0.52],
   paused: false,
@@ -101,9 +109,13 @@ const S = {
   grid: 0,
   localSize: 200,
   localSnap: 'br',
-  localGlobe: 'rim',
+  localGlobe: 'both',
   localRadius: 8,
   localPin: -1,       // >=0 pins the local window; -1 = auto-track
+  localSeek: 'life',  // stay = hold densest; life = jump to recent growth
+  dayWatch: false,
+  faceCell: -1,
+  faceUntil: 0,
   localExpanded: false,
   localHoverKey: null,   // legend id from map or key hover
   localHoverCell: -1,
@@ -119,7 +131,7 @@ const S = {
   catalogueId: null,
   catFilter: 'all',
   labDesk: 'all',
-  catKind: 'BODY', // Worlds first
+  catKind: 'TYPE',
   catQuery: '',
 };
 
@@ -127,25 +139,121 @@ const S = {
 let syncLocalChrome = () => {};
 
 const tmpQ = new Float32Array(4);
+const _faceDir = [0, 0, 0];
+const _faceWant = [0, 0.16, 0.987];
+const _faceDq = new Float32Array(4);
+const _faceTgt = new Float32Array(4);
+
+function requestFace(cell, ms = 1800) {
+  if (cell == null || cell < 0) return;
+  S.faceCell = cell | 0;
+  S.faceUntil = (S._t || 0) + ms;
+}
+
+function faceToward(cell, dt) {
+  if (cell == null || cell < 0 || grabbing || dragging || panning || S.toolDrag) return;
+  qrot(S.q, DIR[cell * 3], DIR[cell * 3 + 1], DIR[cell * 3 + 2], _faceDir);
+  const d = Math.max(-1, Math.min(1, _faceDir[0] * _faceWant[0] + _faceDir[1] * _faceWant[1] + _faceDir[2] * _faceWant[2]));
+  const ang = Math.acos(d);
+  qFromTo(_faceDq, _faceDir, _faceWant);
+  qmul(_faceTgt, _faceDq, S.q);
+  const k = ang > 1.05 ? 0.58 : ang > 0.5 ? 0.82 : 1.25;
+  qnlerp(S.q, S.q, _faceTgt, 1 - Math.exp(-k * Math.max(0.001, dt)));
+}
+
+function cellFacingZ(cell) {
+  if (cell == null || cell < 0) return 1;
+  qrot(S.q, DIR[cell * 3], DIR[cell * 3 + 1], DIR[cell * 3 + 2], _faceDir);
+  return _faceDir[2];
+}
+
+function setDayWatch(on) {
+  const next = !!on;
+  if (next === S.dayWatch) return;
+  if (next) {
+    S._dayWatchWasPaused = S.paused;
+    S.paused = true;
+    const b = document.getElementById('pause');
+    if (b) {
+      b.setAttribute('aria-pressed', 'true');
+      b.textContent = 'Resume';
+    }
+    showMoment('A day', 'The rock holds. The light moves.', 'Shift+D leaves · Space too');
+  } else {
+    if (S._dayWatchWasPaused === false) {
+      S.paused = false;
+      const b = document.getElementById('pause');
+      if (b) {
+        b.setAttribute('aria-pressed', 'false');
+        b.textContent = 'Pause';
+      }
+    }
+    S._dayWatchWasPaused = undefined;
+  }
+  S.dayWatch = next;
+  document.getElementById('localpanel')?.classList.toggle('daywatch', S.dayWatch);
+}
+
+let _sunSign = 0;
+function maybeDayMoment(cell) {
+  if (cell < 0) return;
+  const sun = cellSun(cell);
+  const sign = sun > 0.04 ? 1 : sun < -0.04 ? -1 : _sunSign;
+  if (sign !== _sunSign && _sunSign !== 0) {
+    if (sign > 0) showMoment('Dawn', placeSentence(cell) || 'The light returns', S.dayWatch ? 'Watching a day' : '');
+    else showMoment('Dusk', 'The valley goes dark', S.dayWatch ? 'Watching a day' : '');
+  }
+  _sunSign = sign;
+}
 const VIEW = m4(), PROJ = m4();
 let lastT = 0, simAcc = 0, agentAcc = 0, geomDirty = false;
-let dragging = false, lastX = 0, lastY = 0, grabbing = false;
+let dragging = false, panning = false, lastX = 0, lastY = 0, grabbing = false;
+const CAM_FOV = 50 * Math.PI / 180;
 let xrSession = null, xrRefSpace = null, camWorld = null;
 const hands = [
   { active: false, pos: [0, 0, 0], grab: false, prev: null, vel: [0, 0, 0] },
   { active: false, pos: [0, 0, 0], grab: false, prev: null, vel: [0, 0, 0] },
 ];
 
+function planetPos() {
+  return [S.camPanX || 0, S.camPanY || 0, 0];
+}
+
+function resetCamPan() {
+  S.camPanX = 0;
+  S.camPanY = 0;
+}
+
+function panGlobe(dxPx, dyPx) {
+  const rect = canvas.getBoundingClientRect();
+  const worldH = 2 * S.camDist * Math.tan(CAM_FOV / 2);
+  const worldW = worldH * (rect.width / Math.max(1, rect.height));
+  const lim = S.camDist * 1.25;
+  S.camPanX = clamp(S.camPanX + (dxPx / Math.max(1, rect.width)) * worldW, -lim, lim);
+  S.camPanY = clamp(S.camPanY - (dyPx / Math.max(1, rect.height)) * worldH, -lim, lim);
+}
+
 function needGeom() { geomDirty = true; }
 
-function runGenerate(seed, rule) {
+function runGenerate(seed, ruleIn) {
+  const session = {
+    deepTime: W.rule?.deepTime,
+    startAgeGa: W.rule?.startAgeGa,
+    fixedDtYr: W.rule?.fixedDtYr,
+    tutorial: W.rule?.tutorial,
+  };
+  const rule = mergeRunRule(ruleIn, session);
   generate(seed, rule);
+  resetFlow();
   W._gpgpuDirty = true;
   rebuildGeometry();
+  refreshColours(1);
   respawnEntities();
   uploadEntities();
   try { rebuildScatterLUTs(); } catch { /* GL may not be ready */ }
-  document.getElementById('deeptime')?.setAttribute('aria-pressed', rule.deepTime ? 'true' : 'false');
+  resetFocusCache();
+  S.follow = null;
+  if (S.localSeek === 'life') S.localPin = -1;
   document.getElementById('bootload')?.classList.add('hidden');
   resetMomentAnnouncer();
   refreshToolGates();
@@ -201,10 +309,8 @@ function setRuleset(i) {
   const r = RULESETS[i];
   if (!r) return;
   S.catalogueId = null;
-  [...document.getElementById('rules').children].forEach((b, k) =>
-    b.setAttribute('aria-pressed', k === i ? 'true' : 'false'));
   clearCatalogueSelection();
-  runGenerate(W.seed, r);
+  runGenerate(W.seed, mergeRunRule(r, { deepTime: W.rule?.deepTime, startAgeGa: W.rule?.startAgeGa }));
 }
 
 function clearCatalogueSelection() {
@@ -214,30 +320,16 @@ function clearCatalogueSelection() {
 }
 
 function loadCatalogueItem(item) {
-  if (!item) return;
-  const detail = document.getElementById('catdetail');
-  if (item.k !== 'BODY') {
-    if (detail) {
-      detail.classList.add('show');
-      detail.innerHTML =
-        `<b>${CATALOGUE_KIND[item.k] || item.k}</b> · ${item.t}<br>` +
-        `${item.d}` +
-        (item.s ? `<br><span style="color:#9fc0ff">gives <code>${item.s}</code></span>` : '') +
-        (item.p?.length ? `<br><span style="color:#7f8ca6">needs ${item.p.map((p) => `<code>${p}</code>`).join(' ')}</span>` : '') +
-        `<br><span style="color:#6f7c93">Roadmap item — not a playable world.</span>`;
-    }
-    return;
-  }
+  if (!item || item.k !== 'BODY') return;
   const r = rulesetFromCatalogue(item);
   if (!r) return;
   S.catalogueId = item.id;
-  const rulesEl = document.getElementById('rules');
-  if (rulesEl) [...rulesEl.children].forEach((b) => b.setAttribute('aria-pressed', 'false'));
   const list = document.getElementById('catlist');
   if (list) {
     [...list.querySelectorAll('.cat-item')].forEach((b) =>
       b.setAttribute('aria-pressed', b.dataset.id === String(item.id) ? 'true' : 'false'));
   }
+  const detail = document.getElementById('catdetail');
   if (detail) {
     const wr = r.worldRecord;
     let params = '';
@@ -259,7 +351,10 @@ function loadCatalogueItem(item) {
       `<b>${item.b || item.t}</b> · playable now<br>${item.d}${params}` +
       (item.p?.length ? `<br><span style="color:#7f8ca6">deeper physics needs ${item.p.map((p) => `<code>${p}</code>`).join(' ')}</span>` : '');
   }
-  runGenerate(W.seed, r);
+  runGenerate(W.seed, mergeRunRule(r, {
+    deepTime: r.earthLike ? W.rule?.deepTime : false,
+    startAgeGa: r.earthLike ? W.rule?.startAgeGa : undefined,
+  }));
 }
 
 function stepCatalogueWorld(dir) {
@@ -273,50 +368,76 @@ function renderCatalogue() {
   if (!list) return;
   const q = (S.catQuery || '').trim().toLowerCase();
   const cat = S.catFilter || 'all';
-  const kind = S.catKind || 'BODY';
-  const items = CATALOGUE.filter((x) => {
-    if (kind !== 'all' && x.k !== kind) return false;
-    if (cat !== 'all' && x.c !== cat) return false;
-    if (!q) return true;
-    const hay = `${x.t} ${x.d} ${x.b} ${x.s} ${(x.p || []).join(' ')}`.toLowerCase();
-    return hay.includes(q);
-  });
-  const sort = S.catSort || 'id';
-  if (sort !== 'id') {
-    items.sort((a, b) => {
-      const ra = a.k === 'BODY' ? recordForCatalogueItem(a) : null;
-      const rb = b.k === 'BODY' ? recordForCatalogueItem(b) : null;
-      if (sort === 'dist') return (ra?.distPc?.v ?? 9e9) - (rb?.distPc?.v ?? 9e9);
-      if (sort === 'obs') return (rb?.observability?.v ?? 0) - (ra?.observability?.v ?? 0);
-      if (sort === 'known') {
-        const ka = ra ? (ra.gaps?.length || 0) + (ra.assumptions?.length || 0) : 99;
-        const kb = rb ? (rb.gaps?.length || 0) + (rb.assumptions?.length || 0) : 99;
-        return ka - kb;
-      }
-      return 0;
+  const kind = S.catKind || 'TYPE';
+  list.innerHTML = '';
+
+  const match = (hay) => !q || hay.toLowerCase().includes(q);
+
+  if (kind === 'TYPE') {
+    RULESETS.forEach((r, i) => {
+      if (!match(`${r.name} ${r.blurb} ${r.id}`)) return;
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cat-item BODY';
+      b.dataset.rule = r.id;
+      b.setAttribute('aria-pressed', !S.catalogueId && W.rule?.id === r.id ? 'true' : 'false');
+      b.innerHTML =
+        `<span class="cid">${r.id}</span>` +
+        `<span class="ct">${r.name}</span>` +
+        `<span class="cm">Type · synthetic · play</span>`;
+      b.title = r.blurb;
+      b.onclick = () => setRuleset(i);
+      list.appendChild(b);
     });
   }
-  list.innerHTML = '';
-  for (const x of items) {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.className = `cat-item ${x.k}`;
-    b.dataset.id = String(x.id);
-    b.setAttribute('aria-pressed', S.catalogueId === x.id ? 'true' : 'false');
-    const label = x.b || x.t;
-    b.innerHTML =
-      `<span class="cid">${x.id}</span>` +
-      `<span class="ct">${label}</span>` +
-      `<span class="cm">${CATALOGUE_KIND[x.k]} · ${x.e} · i${x.i}` +
-      (x.k === 'BODY' ? ' · play' : '') + `</span>`;
-    b.title = x.d;
-    b.onclick = () => loadCatalogueItem(x);
-    list.appendChild(b);
+
+  if (kind === 'BODY') {
+    const items = CATALOGUE.filter((x) => {
+      if (x.k !== 'BODY') return false;
+      if (cat !== 'all' && x.c !== cat) return false;
+      if (!q) return true;
+      const hay = `${x.t} ${x.d} ${x.b} ${x.s} ${(x.p || []).join(' ')}`.toLowerCase();
+      return hay.includes(q);
+    });
+    const sort = S.catSort || 'id';
+    if (sort !== 'id') {
+      items.sort((a, b) => {
+        const ra = a.k === 'BODY' ? recordForCatalogueItem(a) : null;
+        const rb = b.k === 'BODY' ? recordForCatalogueItem(b) : null;
+        if (sort === 'dist') return (ra?.distPc?.v ?? 9e9) - (rb?.distPc?.v ?? 9e9);
+        if (sort === 'obs') return (rb?.observability?.v ?? 0) - (ra?.observability?.v ?? 0);
+        if (sort === 'known') {
+          const ka = ra ? (ra.gaps?.length || 0) + (ra.assumptions?.length || 0) : 99;
+          const kb = rb ? (rb.gaps?.length || 0) + (rb.assumptions?.length || 0) : 99;
+          return ka - kb;
+        }
+        return 0;
+      });
+    }
+    for (const x of items) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `cat-item ${x.k}`;
+      b.dataset.id = String(x.id);
+      b.setAttribute('aria-pressed', S.catalogueId === x.id ? 'true' : 'false');
+      const label = x.b || x.t;
+      b.innerHTML =
+        `<span class="cid">${x.id}</span>` +
+        `<span class="ct">${label}</span>` +
+        `<span class="cm">${CATALOGUE_KIND[x.k]} · ${x.e} · i${x.i}` +
+        (x.k === 'BODY' ? ' · play' : '') + `</span>`;
+      b.title = x.d;
+      b.onclick = () => loadCatalogueItem(x);
+      list.appendChild(b);
+    }
+    if (meta) {
+      const worlds = items.length;
+      meta.textContent = `${list.children.length} shown · ${worlds} on this shelf · ${CATALOGUE_WORLDS.length} bodies`;
+    }
+    return;
   }
-  if (meta) {
-    const worlds = items.filter((x) => x.k === 'BODY').length;
-    meta.textContent = `${items.length} shown · ${worlds} playable · ${CATALOGUE_WORLDS.length} worlds total`;
-  }
+
+  if (meta) meta.textContent = `${list.children.length} planet types · Earth is the calibration world`;
 }
 
 function setupCatalogue() {
@@ -325,8 +446,13 @@ function setupCatalogue() {
   const close = document.getElementById('catclose');
   const cats = document.getElementById('catcats');
   const kinds = document.getElementById('catkinds');
+  const tools = document.getElementById('cattools');
   const q = document.getElementById('catq');
   if (!panel || !btn || !cats) return;
+  const showBodyFilters = (on) => {
+    cats.hidden = !on;
+    if (tools) tools.hidden = !on;
+  };
 
   const toggle = (open) => {
     const on = open ?? !panel.classList.contains('open');
@@ -334,13 +460,14 @@ function setupCatalogue() {
     btn.setAttribute('aria-pressed', on ? 'true' : 'false');
   };
   btn.onclick = () => toggle();
+  document.getElementById('worldchip')?.addEventListener('click', () => toggle(true));
   if (close) close.onclick = () => toggle(false);
   document.getElementById('catprev')?.addEventListener('click', () => stepCatalogueWorld(-1));
   document.getElementById('catnext')?.addEventListener('click', () => stepCatalogueWorld(1));
 
   if (kinds) {
     kinds.innerHTML = '';
-    for (const [id, label] of [['BODY', 'Worlds'], ['PHYS', 'Engine'], ['UX', 'Product'], ['all', 'All']]) {
+    for (const [id, label] of [['TYPE', 'Types'], ['BODY', 'Bodies']]) {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
@@ -350,11 +477,13 @@ function setupCatalogue() {
         S.catKind = id;
         [...kinds.children].forEach((x) =>
           x.setAttribute('aria-pressed', x.dataset.id === id ? 'true' : 'false'));
+        showBodyFilters(id === 'BODY');
         renderCatalogue();
       };
       kinds.appendChild(b);
     }
   }
+  showBodyFilters(S.catKind === 'BODY');
 
   const addCat = (id, label) => {
     const b = document.createElement('button');
@@ -371,15 +500,13 @@ function setupCatalogue() {
     cats.appendChild(b);
   };
   addCat('all', 'All shelves');
+  const BODY_CAT_LABEL = {
+    sol: 'Solar Sys', moons: 'Moons', temperate: 'Temperate', furnace: 'Furnace',
+    giant: 'Giants', arch: 'Systems', dark: 'Dark',
+  };
   for (const c of CATALOGUE_CATS) {
-    const n = CATALOGUE.filter((x) => x.c === c.id && (S.catKind === 'all' || x.k === 'BODY' || x.k === S.catKind)).length;
-    // Short labels only
-    const short = ({
-      star: 'Stars', spin: 'Spin', matter: 'Matter', sol: 'Solar Sys', moons: 'Moons',
-      temperate: 'Temperate', furnace: 'Furnace', giant: 'Giants', arch: 'Systems',
-      dark: 'Dark', instr: 'Instruments', pipe: 'Pipeline', play: 'Play',
-    })[c.id] || c.id;
-    addCat(c.id, `${short}`);
+    if (!CATALOGUE.some((x) => x.c === c.id && x.k === 'BODY')) continue;
+    addCat(c.id, BODY_CAT_LABEL[c.id] || c.id);
   }
   q?.addEventListener('input', () => {
     S.catQuery = q.value;
@@ -408,6 +535,7 @@ function setupCatalogue() {
 }
 
 function togglePause() {
+  if (S.dayWatch) { setDayWatch(false); return; }
   S.paused = !S.paused;
   const b = document.getElementById('pause');
   b.setAttribute('aria-pressed', S.paused ? 'true' : 'false');
@@ -421,12 +549,42 @@ function applyTimeRate(idOrDir) {
   const r = typeof idOrDir === 'number'
     ? cycleTimeRate(idOrDir)
     : setTimeRate(idOrDir);
-  const sel = document.getElementById('timerate');
-  if (sel) sel.value = r.id;
   const ribbon = document.getElementById('timeribbon');
   if (ribbon) delete ribbon.dataset.sig;
   updateHUD();
   return r;
+}
+
+function toggleFastForward() {
+  W.fastForward = !W.fastForward;
+  W.stopOnAnomaly = true;
+  const ribbon = document.getElementById('timeribbon');
+  if (ribbon) delete ribbon.dataset.sig;
+  updateHUD();
+}
+
+function applyEra(eraId) {
+  if (!eraId || !W.rule?.earthLike) return;
+  runGenerate(W.seed, ruleForEra(W.rule, eraId));
+}
+
+function bindRibbonTips(ribbon) {
+  const map = [
+    ['[data-era-select]', RIBBON_TIPS.era],
+    ['[data-rate-select]', RIBBON_TIPS.rate],
+    ['[data-time-pause]', RIBBON_TIPS.pause],
+    ['[data-time-ff]', RIBBON_TIPS.ff],
+    ['.rib-mode', RIBBON_TIPS.mode],
+    ['.rib-track', RIBBON_TIPS.track],
+  ];
+  for (const [sel, tip] of map) {
+    const el = ribbon.querySelector(sel);
+    if (el && tip) bindTip(el, tip.title, tip.body);
+  }
+  ribbon.querySelectorAll('[data-rate-step]').forEach((el) => {
+    const tip = el.dataset.rateStep === '-1' ? RIBBON_TIPS.slower : RIBBON_TIPS.faster;
+    bindTip(el, tip.title, tip.body);
+  });
 }
 
 function bindTimeRibbon() {
@@ -434,17 +592,30 @@ function bindTimeRibbon() {
   if (!ribbon || ribbon.dataset.bound) return;
   ribbon.dataset.bound = '1';
   ribbon.addEventListener('click', (e) => {
+    if (e.target.closest('[data-time-pause]')) {
+      e.preventDefault();
+      togglePause();
+      return;
+    }
+    if (e.target.closest('[data-time-ff]')) {
+      e.preventDefault();
+      toggleFastForward();
+      return;
+    }
     const step = e.target.closest('[data-rate-step]');
     if (step) {
       e.preventDefault();
       applyTimeRate(+step.dataset.rateStep);
+    }
+  });
+  ribbon.addEventListener('change', (e) => {
+    const eraSel = e.target.closest('[data-era-select]');
+    if (eraSel) {
+      applyEra(eraSel.value);
       return;
     }
-    const cycle = e.target.closest('[data-rate-cycle]');
-    if (cycle) {
-      e.preventDefault();
-      applyTimeRate(+cycle.dataset.rateCycle || 1);
-    }
+    const rateSel = e.target.closest('[data-rate-select]');
+    if (rateSel) applyTimeRate(rateSel.value);
   });
 }
 
@@ -585,10 +756,11 @@ function updateHUD() {
     const clock = { ...timeClockInfo(W), paused: S.paused };
     const needle = Math.min(100, Math.max(0, ((4567 - (W.ics?.maBP ?? 0)) / 4567) * 100)) | 0;
     const ageLabel = formatAge(W.ageYr || W.year);
-    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}`;
+    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${timePanelState(W, S).eraId}`;
     if (ribbon.dataset.sig !== sig) {
       ribbon.dataset.sig = sig;
-      ribbon.innerHTML = icsRibbonHTML(W.ics, ageLabel, W.ics?.maBP, clock);
+      ribbon.innerHTML = icsRibbonHTML(W.ics, ageLabel, W.ics?.maBP, clock, timePanelState(W, S));
+      bindRibbonTips(ribbon);
     }
   }
 
@@ -622,6 +794,8 @@ function updateHUD() {
     chip.innerHTML = S.catalogueId
       ? `<b>${R.name}</b> <small>#${S.catalogueId} · ${mode} · seed ${W.seed}${R.teqK != null ? ` · ${R.teqK | 0} K` : ''}${R.contested ? ' · contested' : ''}</small>`
       : `<b>${R.name}</b> <small>${mode} · seed ${W.seed}</small>`;
+    chip.title = 'Open Worlds';
+    chip.style.cursor = 'pointer';
   }
 
   const insp = document.getElementById('inspect');
@@ -632,9 +806,11 @@ function updateHUD() {
     const biome = W.biome ? BIOMES[W.biome[x.cell]] : '—';
     const guild = topGuild(x.cell);
     const tec = tectonicsAtCell(W, x.cell);
+    const here = placeSentence(x.cell);
     insp.innerHTML =
-      `<b>Cell ${x.cell}</b> · ${biome}<br>` +
-      `elev ${x.h.toFixed(3)} · T ${x.temp.toFixed(2)} · moist ${x.moist.toFixed(2)}<br>` +
+      `<b>${here || 'Cell ' + x.cell}</b><br>` +
+      `<span style="color:#8aa0bc">${biome} · cell ${x.cell}</span><br>` +
+      `elev ${x.h.toFixed(2)} · T ${x.temp.toFixed(2)} · moist ${x.moist.toFixed(2)}<br>` +
       `life ${x.life.toFixed(2)} (${LIFE_CLASSES[x.lifeClass]?.id || '—'}) · ice ${x.ice.toFixed(2)}<br>` +
       (guild ? `guild <b>${guild}</b><br>` : '') +
       `build ${(x.build || 0).toFixed(2)} · plate <b>${tec?.name || x.plate}</b>` +
@@ -655,6 +831,24 @@ function updateHUD() {
           (x.windU != null ? ` (u ${Number(x.windU).toFixed(2)} v ${Number(x.windV).toFixed(2)})` : '') +
           ` · ${windBandAt(DIR[x.cell * 3 + 1], W._itczLat || 0, W._windCells || 3)}<br>`
         : '') +
+      (() => {
+        const cur = currentsAtCell(W, x.cell);
+        if (!cur) return '';
+        return `current ${cur.spd.toFixed(2)} ${cur.dir}` +
+          (cur.upwell > 0.15 ? ` · upwell ${cur.upwell.toFixed(2)}` : '') +
+          ` · salt ${cur.salt.toFixed(2)}` +
+          (cur.wave > 0.12 ? ` · waves ${cur.wave.toFixed(2)}` : '') +
+          (cur.mix > 0.05 ? ` · mixed layer ${cur.mix.toFixed(2)}` : '') +
+          (W._mocSv != null ? ` · overturning ${W._mocSv.toFixed(0)} Sv` : '') +
+          `<br>`;
+      })() +
+      ((W._ensoPhase && W._ensoPhase !== 'neutral') || (W._monsoon || 0) > 0.55
+        ? `${W._ensoPhase || 'ENSO neutral'}` +
+          (W._ensoIndex != null ? ` (${W._ensoIndex >= 0 ? '+' : ''}${W._ensoIndex.toFixed(2)})` : '') +
+          ((W._monsoon || 0) > 0.5 ? ` · monsoon ${W._monsoon.toFixed(2)}` : '') +
+          (W._jetLat != null ? ` · jet lat ${W._jetLat.toFixed(2)}` : '') +
+          `<br>`
+        : '') +
       (x.press != null ? `P ${Number(x.press).toFixed(2)} · ` : '') +
       (x.tideRange != null
         ? `tide h ${Number(x.tideHeight || 0).toFixed(3)} · range ${Number(x.tideRange).toFixed(3)}` +
@@ -666,7 +860,7 @@ function updateHUD() {
         : '') +
       (x.seedOk === false ? `<span style="color:#e08060">seed refuses: ${(x.seedWhy || []).join('; ')}</span>` : '') +
       (x.biomeGap?.gaps?.length ? `<br><span style="color:#c4a060">biome gap: ${x.biomeGap.gaps.join('; ')}</span>` : '');
-    const hist = whatHappenedHere(W.chron, x.cell);
+    const hist = whatHappenedHere(W.chron, x.cell, 2);
     if (hist.length) {
       insp.innerHTML += '<br><span style="color:#9fc0ff">Here:</span> ' +
         hist.slice(0, 3).map((e) => e.label).join(' · ');
@@ -695,11 +889,21 @@ function update(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
   lastT = t;
   S._t = t;
-  S.sunAng += dt * 0.055;
+  S.sunAng += dt * (S.dayWatch ? 0.42 : 0.055);
   setSunDir(Math.cos(S.sunAng), 0.34, Math.sin(S.sunAng));
+  presentAdvance(dt * (S.dayWatch ? 2.2 : 1));
+  stepFlow(dt * (S.dayWatch ? 1.8 : 1));
+  presentAgents();
+  uploadEntities();
+  const hunting = S.localSeek === 'life' && S.localPin < 0 && !S.follow;
+  const glance = hunting ? huntGlance() : -1;
+  const face = S.follow?.cell >= 0 ? S.follow.cell
+    : glance >= 0 ? glance
+    : ((S.faceUntil > (S._t || 0)) ? S.faceCell : -1);
+  if (face >= 0) faceToward(face, dt);
 
   // Spin inertia — planet resists. Item 11.
-  if (!grabbing && !dragging && !S.toolDrag) {
+  if (!grabbing && !dragging && !panning && !S.toolDrag) {
     const av = S.angVel;
     if (Math.abs(av[0]) + Math.abs(av[1]) > 1e-4) {
       qAxis(tmpQ, 0, 1, 0, av[1] * dt * 2.2); qmul(S.q, tmpQ, S.q);
@@ -707,12 +911,12 @@ function update(t) {
       qnorm(S.q);
       av[0] *= Math.pow(0.15, dt); // damping
       av[1] *= Math.pow(0.15, dt);
-    } else if (!S.paused && !grabbing) {
+    } else if (!S.paused && !grabbing && face < 0) {
       qAxis(tmpQ, 0, 1, 0, S.spin * dt);
       qmul(S.q, S.q, tmpQ);
       qnorm(S.q);
     }
-  } else if (!S.paused && !grabbing && !dragging) {
+  } else if (!S.paused && !grabbing && !dragging && !panning && face < 0) {
     qAxis(tmpQ, 0, 1, 0, S.spin * dt);
     qmul(S.q, S.q, tmpQ);
     qnorm(S.q);
@@ -731,17 +935,18 @@ function update(t) {
       }
     }
     simAcc += dt * (W.fastForward ? 4 : 1);
+    let simRan = false;
     // Decoupled tick; skip if previous tick was heavy (budget ~8ms soft)
     while (simAcc > 0.09) {
       simAcc -= 0.09;
       const t0 = performance.now();
       simTick();
       agentsTick();
-      const elapsed = performance.now() - t0;
-      refreshColours(1);
+      simRan = true;
       uploadEntities();
       if (W._buildsDirty) { needGeom(); W._buildsDirty = false; }
       else if (W.year % 4000 < 200) needGeom(); // occasional elev rebuild for erosion/sculpt
+      const elapsed = performance.now() - t0;
       if (elapsed > 12) {
         noteDroppedTicks(W, Math.max(1, (simAcc / 0.09) | 0));
         simAcc = 0;
@@ -749,11 +954,12 @@ function update(t) {
       } // never block frames — but record the miss
       S.simAlpha = 0;
     }
+    if (simRan) refreshColours(1);
     S.simAlpha = Math.min(1, S.simAlpha + dt * 11);
-    if (S.simAlpha < 0.99) refreshColours(S.simAlpha);
+    if (!simRan && S.simAlpha < 0.99) refreshColours(S.simAlpha);
   }
 
-  if (geomDirty) { rebuildGeometry(); geomDirty = false; }
+  if (geomDirty) { rebuildGeometry(); refreshColours(1); geomDirty = false; }
 
   const alt = xrSession
     ? (camWorld ? (Math.hypot(camWorld[0] - S.posXR[0], camWorld[1] - S.posXR[1], camWorld[2] - S.posXR[2]) / S.scaleXR - 1) : 1.2)
@@ -777,7 +983,7 @@ function update(t) {
   // City lights boost night uniform via meanBuild
   if (W.cities?.length) W._cityLights = cityLights(W);
 
-  audioUpdate();
+  audioUpdate(S._localFocus);
 
   if (!xrSession) {
     const lv = document.getElementById('localview');
@@ -786,20 +992,35 @@ function update(t) {
       const patch = drawLocalView(lv, S.inspect, {
         radius: S.localRadius,
         pin: S.localPin,
+        seek: S.localSeek,
         highlightGuild: S.highlightGuild,
         hoverKey,
         hoverCell: S.localHoverCell,
+        simAlpha: S.simAlpha,
+        followId: S.follow?.id,
       });
       const prevFocus = S._localFocus;
       updateLocalHighlight(patch, S.localGlobe);
       S._localFocus = patch?.focus ?? -1;
       S._localPatch = patch;
+      if (S.follow) {
+        let live = null;
+        for (let i = 0; i < ENT.n; i++) {
+          if (ENT.meta[i]?.id === S.follow.id && !ENT.meta[i].dead) { live = ENT.meta[i]; break; }
+        }
+        S.follow = live || followTarget();
+        if (S.follow?.cell >= 0 && S.localPin !== S.follow.cell) S.localPin = S.follow.cell;
+      }
+      if (patch?.status) patch.status.behind = cellFacingZ(patch.focus) < 0.1;
       syncLocalChrome(patch, hoverKey);
       if ((S.localGlobe === 'wash' || S.localGlobe === 'both') && S._localFocus !== prevFocus) {
         refreshColours(1);
       }
+      maybeDayMoment(S._localFocus);
     }
   }
+
+  maybeTeachWindow(t);
 
   S._fa++;
   if (t - S._ft > 500) {
@@ -809,32 +1030,27 @@ function update(t) {
   }
 }
 
-function desktopPick(clientX, clientY) {
+function desktopRay(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   const x = ((clientX - rect.left) / rect.width) * 2 - 1;
   const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
   const eye = [0, 0.28, S.camDist];
-  const fov = 50 * Math.PI / 180;
   const asp = canvas.width / canvas.height;
-  const tan = Math.tan(fov / 2);
+  const tan = Math.tan(CAM_FOV / 2);
   const dir = [x * tan * asp, y * tan + 0.02, -1];
   const dl = Math.hypot(...dir) || 1;
   dir[0] /= dl; dir[1] /= dl; dir[2] /= dl;
-  return pickCell(eye, dir, [0, 0, 0], 1, S.q);
+  return { eye, dir };
+}
+
+function desktopPick(clientX, clientY) {
+  const { eye, dir } = desktopRay(clientX, clientY);
+  return pickCell(eye, dir, planetPos(), 1, S.q);
 }
 
 function desktopTablePick(clientX, clientY) {
   if (!TABLE.enabled) return null;
-  const rect = canvas.getBoundingClientRect();
-  const x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
-  const eye = [0, 0.28, S.camDist];
-  const fov = 50 * Math.PI / 180;
-  const asp = canvas.width / canvas.height;
-  const tan = Math.tan(fov / 2);
-  const dir = [x * tan * asp, y * tan + 0.02, -1];
-  const dl = Math.hypot(...dir) || 1;
-  dir[0] /= dl; dir[1] /= dl; dir[2] /= dl;
+  const { eye, dir } = desktopRay(clientX, clientY);
   return pickTableSlotRay(TABLE, eye, dir, [0, -1.15, 0], 0.38, 0.12);
 }
 
@@ -859,6 +1075,7 @@ function onToolResult(res) {
   if (res.cell != null && activeTool === 'inspect') {
     S.inspect = res;
     S.localPin = res.cell;
+    requestFace(res.cell);
   }
   if (res.sample) {
     S.lastSample = res.sample;
@@ -914,14 +1131,24 @@ function cancelCommitHold(done) {
 }
 
 function setupTips() {
-  // Play / World controls by id
+  // Play / World / chrome controls by id
   const ids = [
-    'guildsel', 'timerate', 'brushmask', 'brushsnap', 'brushhard',
-    'godundo', 'godff', 'godwatch', 'godbookmark', 'orbitguides',
+    'guildsel', 'brushmask', 'brushsnap', 'brushhard',
+    'godundo', 'godwatch', 'godbookmark',
     'scenariosel', 'scenariostart',
     'genesisname', 'genesisseed', 'genesispreset',
     'genesisrand', 'genesisgo', 'dailyseed', 'godshelf', 'godshare',
-    'budget', 'autopilot', 'deeptime',
+    'budget', 'autopilot',
+    'pause', 'newseed', 'catbtn', 'catprev', 'catnext', 'worldchip',
+    'docktoggle', 'vrbtn',
+    'opacity', 'grid', 'xray', 'xrayAmt', 'viewClear', 'viewGhost', 'viewOrbitGuides',
+    'simN', 'globeSubd', 'orreryTable', 'export',
+    'labRefresh', 'labPaper', 'labSave', 'labFinale', 'labPng', 'labDual',
+    'catsort', 'catcsv',
+    'climDay', 'climTilt', 'climSeason', 'climMoonOn', 'climMoonMass', 'climMoonDist',
+    'stormGenesis', 'stormStrict', 'stormSize', 'stormVigor',
+    'rockHeat', 'rockMag',
+    'localSeek',
   ];
   for (const id of ids) {
     const el = document.getElementById(id);
@@ -929,19 +1156,19 @@ function setupTips() {
     if (el && tip) bindTip(el, tip.title, tip.body);
   }
   // Labels that wrap controls
-  document.querySelectorAll('#pane-god label[for]').forEach((lab) => {
+  document.querySelectorAll('#pane-god label[for], #pane-view label[for], #pane-climate label[for], #pane-rock label[for], #pane-sandbox label[for]').forEach((lab) => {
     const tip = tipForId(lab.htmlFor);
     if (tip) bindTip(lab, tip.title, tip.body);
   });
   // Dock tabs — icon stacked above label (Sky metaphor for all)
   const tabTips = {
     tools: ['Tools', 'The verbs — raise land, seed life, strike, inspect. Select one, then right-click the planet.'],
-    god: ['Play', 'Aim your tools: which life to plant, brush limits, clock speed, challenges, and new-world authoring.'],
+    god: ['Play', 'Aim your tools: which life to plant, brush limits, challenges, and new-world authoring. Time lives on the ribbon.'],
     climate: ['Sky', 'Atmosphere desks: circulation & tides, storm track, coast flood risk, spin A/B compare.'],
     rock: ['Rock', 'Core, plates, boundaries, fire, crust age — interiors drive dynamos and lids.'],
-    view: ['View', 'Look, field layers, x-ray cut, and orbit guides. Does not change the simulation.'],
+    view: ['View', 'Look, field overlays, x-ray cut, and orbit guides. Overlays live here — Sky/Rock only jump to one.'],
     lab: ['Lab', 'Instruments: redox tower, Keeling curve, diversity, cores you have taken, transit sketch.'],
-    sandbox: ['World', 'Ruleset / planet type, energy mode, Gaia autopilot, deep time, chronicle export.'],
+    sandbox: ['World', 'Energy mode, Gaia, resolution, and the archive for this run.'],
   };
   const tabLabels = {
     tools: 'Tools', god: 'Play', climate: 'Sky', rock: 'Rock', view: 'View', lab: 'Lab', sandbox: 'World',
@@ -964,9 +1191,9 @@ function setupTips() {
       station: ['station', 'Station'],
     },
     god: {
-      aim: ['seedGuild', 'Aim'],
+      aim: ['seedGuild', 'Life'],
       brush: ['brush', 'Brush'],
-      challenge: ['challenge', 'Quest'],
+      challenge: ['challenge', 'Challenge'],
       genesis: ['genesis', 'Genesis'],
     },
     view: {
@@ -983,7 +1210,6 @@ function setupTips() {
       notes: ['notes', 'Notes'],
     },
     sandbox: {
-      planet: ['planet', 'Planet'],
       modes: ['modes', 'Modes'],
       archive: ['archive', 'Archive'],
     },
@@ -993,6 +1219,8 @@ function setupTips() {
     const desk = b.dataset.desk;
     const meta = suiteMeta[suite]?.[desk];
     if (meta) decorateButton(b, meta[0], meta[1]);
+    const tip = SUITE_TIPS[suite]?.[desk];
+    if (tip) bindTip(b, tip.title, tip.body);
     b.addEventListener('click', () => setSuiteDesk(suite, desk));
   });
 
@@ -1005,9 +1233,9 @@ function setupTips() {
 
   // Play / World action icons
   const iconIds = [
-    'godundo', 'godff', 'godwatch', 'godbookmark', 'orbitguides',
+    'godundo', 'godwatch', 'godbookmark',
     'scenariostart', 'genesisrand', 'genesisgo', 'dailyseed',
-    'godshelf', 'godshare', 'budget', 'autopilot', 'deeptime',
+    'godshelf', 'godshare', 'budget', 'autopilot',
   ];
   for (const id of iconIds) {
     const el = document.getElementById(id);
@@ -1030,6 +1258,26 @@ function setupTips() {
     if (!el || el.querySelector('.ico')) continue;
     decorateButton(el, icon, label);
   }
+
+  document.querySelectorAll('#catkinds button').forEach((b) => {
+    if (b.dataset.id === 'TYPE') {
+      bindTip(b, 'Types', 'The five invented rulesets — Earth, Vermis, Selene, Ares, Daisy. Calibration worlds, not archive rows.');
+    } else if (b.dataset.id === 'BODY') {
+      bindTip(b, 'Bodies', 'Real planets and moons from the catalogue. Physics they still need is listed on the detail card.');
+    }
+  });
+  const overlayJumps = [
+    ['rockOverlayPlates', 'plates'],
+    ['rockOverlayBounds', 'bounds'],
+    ['rockOverlayCrust', 'crust'],
+    ['stormOverlay', 'storm'],
+  ];
+  for (const [id, oid] of overlayJumps) {
+    const el = document.getElementById(id);
+    const o = overlayById(oid);
+    if (el && o?.tip) bindTip(el, o.label, o.tip);
+  }
+  bindOverlayTips();
 }
 
 /** Switch a suite sub-desk (Tools / Play / View / Lab / World). */
@@ -1058,13 +1306,26 @@ function applyLabFilter() {
   });
 }
 
+function bindOverlayTips() {
+  document.querySelectorAll('[data-overlay]').forEach((b) => {
+    const o = overlayById(b.dataset.overlay);
+    if (o?.tip) bindTip(b, o.label, o.tip);
+  });
+}
+
+function applyOverlayChoice(mode) {
+  setOverlayMode(mode || 'none');
+  refreshColours(1);
+  syncViewOverlayButtons(mode || 'none');
+}
+
 function syncViewOverlayButtons(mode) {
-  document.querySelectorAll('#viewOverlays button').forEach((b) => {
+  document.querySelectorAll('#viewOverlays button, #climOverlays button, #coastOverlays button, #rockAgeOverlays button').forEach((b) => {
     b.setAttribute('aria-pressed', b.dataset.overlay === mode ? 'true' : 'false');
   });
   const hint = document.getElementById('viewOverlayHint');
   if (hint) {
-    const o = OVERLAYS.find((x) => x.id === mode);
+    const o = overlayById(mode);
     hint.textContent = o ? `${o.label}${mode === 'none' ? '' : ' painted on the globe'}.` : '';
   }
 }
@@ -1075,17 +1336,19 @@ function refreshWorldModeStrip() {
   const I = W.interior;
   const scarcity = W.scarcityMode || (W.budgetMode ? 'budgeted' : 'free');
   strip.innerHTML = `
-    <div class="clim-chip"><span>Energy</span><b>${scarcity}</b></div>
-    <div class="clim-chip"><span>Gaia</span><b>${W.autopilot ? 'on' : 'off'}</b></div>
-    <div class="clim-chip"><span>N</span><b>${N}</b></div>
-    <div class="clim-chip"><span>Lid</span><b>${I?.lidMode || '—'}</b></div>
-    <div class="clim-chip"><span>B</span><b>${(W.magnetosphere ?? 0).toFixed(2)}</b></div>
-    <div class="clim-chip"><span>Heat</span><b>${I ? I.heatFlow.toFixed(2) : '—'}</b></div>
+    <div class="clim-chip" title="Energy: Free / Observe / Budget"><span>Energy</span><b>${scarcity}</b></div>
+    <div class="clim-chip" title="Gaia autopilot — nudges climate when it drifts"><span>Gaia</span><b>${W.autopilot ? 'on' : 'off'}</b></div>
+    <div class="clim-chip" title="Simulation grid size — climate and life run here"><span>Sim N</span><b>${N}</b></div>
+    <div class="clim-chip" title="Tectonic lid: mobile plates vs stagnant"><span>Lid</span><b>${I?.lidMode || '—'}</b></div>
+    <div class="clim-chip" title="Magnetosphere strength — aurora and atmosphere loss"><span>Field</span><b>${(W.magnetosphere ?? 0).toFixed(2)}</b></div>
+    <div class="clim-chip" title="Mantle heat flow — volcanoes and plate vigor"><span>Heat</span><b>${I ? I.heatFlow.toFixed(2) : '—'}</b></div>
   `;
 }
 
 let _tipTimer = 0;
 function bindTip(el, title, body, meta = '') {
+  if (!el || el.dataset.tipBound) return;
+  el.dataset.tipBound = '1';
   el.removeAttribute('title'); // avoid native double-tip
   el.addEventListener('pointerenter', (e) => {
     clearTimeout(_tipTimer);
@@ -1170,13 +1433,7 @@ function setupClimatePanel() {
   if (!pane) return;
   pane.innerHTML = climatePanelChrome();
   bindClimatePanel({
-    setOverlay: (mode) => {
-      setOverlayMode(mode);
-      refreshColours(1);
-      const sel = document.getElementById('overlayMode');
-      if (sel) sel.value = mode;
-      syncViewOverlayButtons(mode);
-    },
+    setOverlay: (mode) => applyOverlayChoice(mode),
     showMoment,
     getInspectCell: () => S.inspect?.cell ?? -1,
     onChange: () => {
@@ -1191,13 +1448,7 @@ function setupPlatesPanel() {
   if (!pane) return;
   pane.innerHTML = platesPanelChrome();
   bindPlatesPanel({
-    setOverlay: (mode) => {
-      setOverlayMode(mode);
-      refreshColours(1);
-      const sel = document.getElementById('overlayMode');
-      if (sel) sel.value = mode;
-      syncViewOverlayButtons(mode);
-    },
+    setOverlay: (mode) => applyOverlayChoice(mode),
     showMoment,
     getInspectCell: () => S.inspect?.cell ?? -1,
     onChange: () => { refreshColours(0.7); needGeom(); },
@@ -1254,7 +1505,10 @@ function setupGodPanel() {
     const id = document.getElementById('scenariosel')?.value;
     const s = SCENARIOS.find((x) => x.id === id);
     if (!s) return;
-    const rule = { ...(RULESETS.find((r) => r.id === s.ruleId) || W.rule), deepTime: !!s.deepTime, startAgeGa: s.startAgeGa };
+    const rule = mergeRunRule(RULESETS.find((r) => r.id === s.ruleId) || W.rule, {
+      deepTime: !!s.deepTime,
+      startAgeGa: s.startAgeGa,
+    });
     runGenerate(W.seed ^ 0x51, rule);
     startScenario(id);
     showMoment('Scenario', s.title, s.objective);
@@ -1269,23 +1523,12 @@ function setupGodPanel() {
     const b = addBookmark();
     showMoment('Bookmark', b.label, formatAge(b.ageYr));
   });
-  document.getElementById('godff')?.addEventListener('click', () => {
-    W.fastForward = !W.fastForward;
-    W.stopOnAnomaly = true;
-    document.getElementById('godff')?.setAttribute('aria-pressed', W.fastForward ? 'true' : 'false');
-  });
   bindTimeRibbon();
   document.getElementById('godwatch')?.addEventListener('click', () => {
     S.letItRun = !S.letItRun;
     setLetItRun(S.letItRun);
     document.body.classList.toggle('letitrun', S.letItRun);
     document.getElementById('godwatch')?.setAttribute('aria-pressed', S.letItRun ? 'true' : 'false');
-  });
-  document.getElementById('orbitguides')?.addEventListener('click', () => {
-    S.orbitGuides = !S.orbitGuides;
-    const pressed = S.orbitGuides ? 'true' : 'false';
-    document.getElementById('orbitguides')?.setAttribute('aria-pressed', pressed);
-    document.getElementById('viewOrbitGuides')?.setAttribute('aria-pressed', pressed);
   });
   document.getElementById('godshelf')?.addEventListener('click', () => {
     addToShelf(W, serializeRun);
@@ -1311,16 +1554,6 @@ function setupGodPanel() {
   document.getElementById('brushhard')?.addEventListener('input', (e) => {
     BRUSH.hardness = (+e.target.value) / 100;
   });
-  const timeSel = document.getElementById('timerate');
-  if (timeSel) {
-    timeSel.innerHTML = TIME_RATES.map((r) =>
-      `<option value="${r.id}">${r.label}${r.dtYr == null ? '' : ' / tick'}</option>`).join('');
-    if (!TIME_RATES.some((r) => r.id === (W.timeRateId || 'auto'))) setTimeRate('auto');
-    timeSel.value = W.timeRateId || 'auto';
-    timeSel.onchange = () => {
-      applyTimeRate(timeSel.value);
-    };
-  }
   const presetSel = document.getElementById('genesispreset');
   if (presetSel) {
     presetSel.innerHTML = '<option value="">— preset —</option>' +
@@ -1357,7 +1590,12 @@ function setDockTab(tab) {
   document.querySelectorAll('.dock-pane').forEach((p) => {
     p.classList.toggle('on', p.id === `pane-${tab}`);
   });
-  document.getElementById('dock')?.classList.toggle('lab-mode', tab === 'lab');
+  const dock = document.getElementById('dock');
+  dock?.classList.toggle('lab-mode', tab === 'lab');
+  if (typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches) {
+    dock?.classList.add('is-open');
+    document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'true');
+  }
   if (tab === 'lab') refreshLab();
   if (tab === 'climate') refreshClimatePanel({ forceChart: true });
   if (tab === 'rock') refreshPlatesPanel({ forceAll: true });
@@ -1371,6 +1609,7 @@ function refreshLab() {
   const el = document.getElementById('labstats');
   if (!el) return;
   const gauge = redoxGauge(W);
+  const chemMem = speciesMemoryReadout(W);
   const keeling = keelingCurve(W);
   const diver = diversityCurve(W);
   const whit = whitakerPoints(W, 280);
@@ -1401,7 +1640,12 @@ function refreshLab() {
     sampleCard +
     card('tower', 'o2', 'Redox tower',
       `${redoxTowerSVG(gauge, 300, S.highlightGuild)}
-      <div class="lab-meta">hover a guild to light it on the globe · high yield at top</div>`, true) +
+      <div class="lab-meta">hover a guild to light it on the globe · high yield at top` +
+      (chemMem.length
+        ? `<br>chemistry memory · ${chemMem.map((s) =>
+            `<b>${s.id}</b> ${s.mean.toFixed(3)}`).join(' · ')}`
+        : '') +
+      `</div>`, true) +
     card('curves', 'co2', 'Keeling curve',
       `${chartAreaSVG(co2s, { id: 'co2', color: '#e4b86a', label: ' ppm', digits: 0, h: 88, w: 280, axis: true })}
       <div class="lab-meta">atmospheric CO₂ · burial drives the long slope</div>`) +
@@ -1549,20 +1793,54 @@ function resetMomentAnnouncer() {
   _announcedDrama = new Set();
 }
 
+let _taughtAlive = false;
+let _teachT0 = 0;
+function maybeTeachWindow(t) {
+  if (_taughtAlive) return;
+  if (!_teachT0) _teachT0 = t || 0;
+  if ((t || 0) - _teachT0 < 1100) return;
+  _taughtAlive = true;
+  try {
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  } catch { /* ignore */ }
+  let best = -1, score = -1;
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] < W.seaLevel || (W.ice[c] || 0) > 0.4) continue;
+    let coast = false;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      if (n >= 0 && W.h[n] < W.seaLevel) { coast = true; break; }
+    }
+    if (!coast) continue;
+    const s = (W.life[c] || 0) * 2.2 + (W.moist[c] || 0) + (W.build[c] || 0) * 1.4;
+    if (s > score) { score = s; best = c; }
+  }
+  if (best < 0) return;
+  if (S.localSeek !== 'life') S.localPin = best;
+  else S.localPin = -1;
+  S.localGlobe = 'both';
+  if (S.localRadius < 8) S.localRadius = 8;
+  requestFace(best);
+  showMoment('The window', 'This patch is the rim on the globe.', 'Click a being to follow · Shift+D watches a day');
+  refreshColours(1);
+}
+
 /* ---------- boot UI ---------- */
 export function boot() {
   const cvs = document.getElementById('c');
+  const bootN = parseInt(document.getElementById('simN')?.value || '96', 10);
+  if (bootN !== N && N_ALLOWED.includes(bootN)) changeResolution(bootN);
+  const bootSubd = parseInt(document.getElementById('globeSubd')?.value || '2', 10);
+  const rec = recommendGlobeSubd(bootN);
+  const subdEl = document.getElementById('globeSubd');
+  if (rec < bootSubd && subdEl) {
+    subdEl.value = String(rec);
+    setGlobeSubd(rec);
+  } else if (GLOBE_SUBD_ALLOWED.includes(bootSubd) && bootSubd !== GLOBE_SUBD) {
+    setGlobeSubd(bootSubd);
+  }
+  remeshPlanet();
   initGL(cvs);
-
-  const rulesEl = document.getElementById('rules');
-  RULESETS.forEach((r, i) => {
-    const b = document.createElement('button');
-    b.textContent = r.name;
-    b.title = r.blurb;
-    b.setAttribute('aria-pressed', i === 0 ? 'true' : 'false');
-    b.onclick = () => setRuleset(i);
-    rulesEl.appendChild(b);
-  });
 
   setupCatalogue();
   setupGodPanel();
@@ -1601,44 +1879,18 @@ export function boot() {
     (PRIMARY_TOOLS.has(t.id) ? toolsEl : toolsMore)?.appendChild(b);
   });
 
-  const overlaySel = document.getElementById('overlayMode');
-  if (overlaySel) {
-    overlaySel.innerHTML = OVERLAYS.map((o) =>
-      `<option value="${o.id}">${o.label}</option>`).join('');
-    overlaySel.value = 'none';
-    overlaySel.onchange = () => {
-      setOverlayMode(overlaySel.value);
-      refreshColours(1);
-      syncViewOverlayButtons(overlaySel.value);
-    };
-  }
-
-  // View → Layers: same overlays as Lab, with icons
   const viewOverlays = document.getElementById('viewOverlays');
   if (viewOverlays) {
-    const prefer = ['none', 'temp', 'press', 'wind', 'plates', 'bounds', 'crust', 'crustAge', 'tide', 'storm', 'npp', 'guild'];
-    const icons = {
-      none: 'inspect', temp: 'solar', press: 'weather', wind: 'spin', plates: 'plate',
-      bounds: 'quake', crust: 'core', crustAge: 'deeptime', tide: 'moon', storm: 'stormdesk',
-      npp: 'seedGuild', guild: 'o2', intertidal: 'flats', upwell: 'river', vent: 'plume', lid: 'ice',
-    };
-    const ordered = [
-      ...prefer.map((id) => OVERLAYS.find((o) => o.id === id)).filter(Boolean),
-      ...OVERLAYS.filter((o) => !prefer.includes(o.id)),
-    ];
-    viewOverlays.innerHTML = ordered.map((o) =>
-      `<button type="button" data-overlay="${o.id}">${iconSVG(icons[o.id] || 'inspect')}<span class="btn-label">${o.label}</span></button>`
+    viewOverlays.innerHTML = overlaysForPicker().map((o) =>
+      `<button type="button" data-overlay="${o.id}">${iconSVG(o.icon || 'inspect')}<span class="btn-label">${o.label}</span></button>`
     ).join('');
     viewOverlays.addEventListener('click', (e) => {
       const btn = e.target.closest('[data-overlay]');
       if (!btn) return;
-      const mode = btn.dataset.overlay;
-      setOverlayMode(mode);
-      refreshColours(1);
-      if (overlaySel) overlaySel.value = mode;
-      syncViewOverlayButtons(mode);
+      applyOverlayChoice(btn.dataset.overlay);
     });
     syncViewOverlayButtons('none');
+    bindOverlayTips();
   }
 
   const viewGuides = document.getElementById('viewOrbitGuides');
@@ -1648,8 +1900,6 @@ export function boot() {
     viewGuides.addEventListener('click', () => {
       S.orbitGuides = !S.orbitGuides;
       viewGuides.setAttribute('aria-pressed', S.orbitGuides ? 'true' : 'false');
-      const b = document.getElementById('orbitguides');
-      b?.setAttribute('aria-pressed', S.orbitGuides ? 'true' : 'false');
     });
   }
 
@@ -1658,8 +1908,35 @@ export function boot() {
     b.onclick = () => setDockTab(b.dataset.tab);
   });
   document.getElementById('docktoggle')?.addEventListener('click', () => {
-    document.getElementById('dock')?.classList.toggle('collapsed');
+    const dock = document.getElementById('dock');
+    const btn = document.getElementById('docktoggle');
+    if (!dock) return;
+    const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
+    if (phone) dock.classList.toggle('is-open');
+    else dock.classList.toggle('collapsed');
+    const open = phone ? dock.classList.contains('is-open') : !dock.classList.contains('collapsed');
+    btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn?.setAttribute('aria-pressed', open ? 'true' : 'false');
   });
+  if (typeof matchMedia === 'function') {
+    const phoneQ = matchMedia('(max-width: 640px)');
+    const onPhone = (e) => {
+      const dock = document.getElementById('dock');
+      const btn = document.getElementById('docktoggle');
+      if (!dock) return;
+      if (e.matches) {
+        dock.classList.remove('collapsed', 'is-open');
+        btn?.setAttribute('aria-expanded', 'false');
+      } else {
+        dock.classList.remove('is-open');
+        btn?.setAttribute('aria-expanded', dock.classList.contains('collapsed') ? 'false' : 'true');
+      }
+    };
+    phoneQ.addEventListener('change', onPhone);
+    if (phoneQ.matches) {
+      document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'false');
+    }
+  }
 
   document.getElementById('pause').onclick = togglePause;
   document.getElementById('newseed').onclick = () => runGenerate(freshSeed(), W.rule);
@@ -1680,17 +1957,17 @@ export function boot() {
     chronLog(W.year, 'gaia', 0, 1, W.autopilot ? 'Gaia autopilot ON' : 'Autopilot OFF');
     refreshWorldModeStrip();
   };
-  document.getElementById('deeptime')?.addEventListener('click', () => {
-    const on = !W.rule.deepTime;
-    const rule = { ...W.rule, deepTime: on, startAgeGa: on ? 0 : undefined };
-    document.getElementById('deeptime').setAttribute('aria-pressed', on ? 'true' : 'false');
-    runGenerate(W.seed, rule);
-  });
   document.getElementById('simN')?.addEventListener('change', (e) => {
     const n = parseInt(e.target.value, 10);
     if (!N_ALLOWED.includes(n)) return;
     try {
       changeResolution(n);
+      const rec = recommendGlobeSubd(n);
+      const subdEl = document.getElementById('globeSubd');
+      if (rec < parseInt(subdEl?.value || '2', 10)) {
+        subdEl.value = String(rec);
+        setGlobeSubd(rec);
+      }
       remeshPlanet();
       const eng = getGpgpu();
       if (eng?.ok) {
@@ -1698,7 +1975,24 @@ export function boot() {
         eng.createSlot('primary', { N: n });
       }
       runGenerate(W.seed, W.rule);
-      showMoment('Resolution', `N=${n}`, `~${cellKm(n)} km/cell`);
+      const eff = effectiveGlobeSubd(n);
+      const quads = (6 * globeN() * globeN()).toLocaleString();
+      const cap = eff < parseInt(subdEl?.value || '2', 10) ? ` · mesh capped at ${eff}×` : '';
+      showMoment('Resolution', `N=${n}`, `~${cellKm(n)} km/cell · ${quads} quads${cap}`);
+    } catch (err) {
+      showErr(String(err.message || err));
+    }
+  });
+  document.getElementById('globeSubd')?.addEventListener('change', (e) => {
+    const s = parseInt(e.target.value, 10);
+    if (!GLOBE_SUBD_ALLOWED.includes(s)) return;
+    try {
+      setGlobeSubd(s);
+      remeshPlanet();
+      const eff = effectiveGlobeSubd();
+      const quads = (6 * globeN() * globeN()).toLocaleString();
+      const cap = eff < s ? ` (capped to ${eff}×)` : '';
+      showMoment('Globe mesh', `${s}×${cap}`, `${globeVertexCount().toLocaleString()} verts · ${quads} quads`);
     } catch (err) {
       showErr(String(err.message || err));
     }
@@ -1822,7 +2116,9 @@ export function boot() {
   });
   syncView();
 
-  S.localSize = LOCAL_SIZES[1]; // M — grid-first corner
+  const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
+  S.localSize = phone ? LOCAL_SIZES[0] : LOCAL_SIZES[1];
+  if (phone) S.localSnap = 'tr';
   const localPanel = document.getElementById('localpanel');
   const localCvs = document.getElementById('localview');
   const localLegend = document.getElementById('locallegend');
@@ -1957,7 +2253,8 @@ export function boot() {
       const el = document.createElement('span');
       el.className = 'leg';
       el.dataset.key = e.id;
-      el.title = LEGEND_TIP[e.id] || e.label;
+      el.dataset.tip = LEGEND_TIP[e.id] || e.label;
+      el.title = el.dataset.tip;
       const sw = document.createElement('i');
       sw.style.background = `rgb(${e.rgb[0]},${e.rgb[1]},${e.rgb[2]})`;
       el.appendChild(sw);
@@ -1974,11 +2271,17 @@ export function boot() {
   }
   syncLocalChrome = (patch, hoverKey) => {
     if (localLegend) {
+      const n = Math.max(1, patch?.status?.nCells || 1);
+      const shares = patch?.status?.shares || {};
       for (const el of localLegend.children) {
         const k = el.dataset.key;
         const on = hoverKey && k === hoverKey;
         el.classList.toggle('on', !!on);
         el.classList.toggle('dim', !!(hoverKey && !on));
+        const share = (shares[k] || 0) / n;
+        el.style.setProperty('--share', share.toFixed(3));
+        const tip = el.dataset.tip || el.title;
+        el.title = share > 0.03 ? `${tip} · ${Math.round(share * 100)}% of this window` : tip;
       }
     }
     if (localStatus && patch?.status) {
@@ -1986,20 +2289,42 @@ export function boot() {
       const bit = (k, v) =>
         `<span class="st" data-k="${k}"><em>${k}</em><b>${v}</b></span>`;
       localStatus.innerHTML = [
-        bit('focus', st.pinned ? 'pinned' : 'live'),
-        bit('cell', st.cell),
-        st.label ? bit('life', st.label) : '',
-        st.biome ? bit('biome', st.biome) : '',
-        bit('view', `${st.side}×${st.side}`),
+        bit('here', st.place || (st.pinned ? 'pinned' : 'live')),
+        !st.pinned && st.seek === 'life' ? bit('track', st.why || 'life') : '',
+        st.scaleKm ? bit('view', `~${st.scaleKm} km`) : bit('view', `${st.side}×${st.side}`),
+        st.water && st.water !== 'dry' && st.water !== 'ice' ? bit('flow', st.water) : (st.rivers ? bit('flow', 'rivers') : ''),
+        st.day ? bit('light', S.dayWatch ? 'a day' : (st.moonlit ? 'moonlit' : st.day)) : '',
+        st.behind ? bit('look', 'far side') : '',
+        st.whisper ? bit('then', st.whisper) : '',
+        S.follow?.name ? bit('who', S.follow.name + (S.follow.behav ? ' · ' + S.follow.behav : '')) : '',
       ].filter(Boolean).join('');
       localStatus.title = [
-        st.pinned ? 'Pinned focus' : 'Live focus (follows inspect)',
+        st.place,
+        st.pinned ? 'Pinned' : (st.seek === 'life' ? (st.why ? `Touring ${st.why}` : 'Hunting recent life') : 'Live focus'),
         `Cell ${st.cell}`,
         st.label ? `Life: ${st.label}` : '',
         st.biome ? `Biome: ${st.biome}` : '',
-        `Map ${st.side}×${st.side} cells`,
+        st.scaleNamed ? `Window ~${st.scaleKm} km · ${st.scaleNamed}` : '',
+        st.cellKm ? `Cell ~${st.cellKm} km` : '',
+        S.follow?.name ? `Following ${S.follow.name}` : '',
       ].filter(Boolean).join(' · ');
       localStatus.classList.toggle('pinned', !!st.pinned);
+      localPanel?.setAttribute('data-light', st.moonlit ? 'moonlit' : (st.day || ''));
+      localPanel?.classList.toggle('behind', !!st.behind);
+      localPanel?.classList.toggle('daywatch', !!S.dayWatch);
+    }
+    const card = document.getElementById('lifecard');
+    if (card) {
+      const f = S.follow;
+      if (f?.name) {
+        card.hidden = false;
+        card.querySelector('.lc-kicker').textContent = f.behav === 'flee' ? 'fleeing' : 'following';
+        card.querySelector('.lc-name').textContent = f.name;
+        const bits = [f.behav, f.kind === 5 ? 'settler' : null].filter(Boolean);
+        card.querySelector('.lc-meta').textContent = bits.join(' · ');
+      } else {
+        card.hidden = true;
+      }
     }
   };
   mkSeg('localSnap', LOCAL_SNAPS, ['TL', 'TR', 'BL', 'BR'],
@@ -2010,6 +2335,20 @@ export function boot() {
     (v) => {
       S.localGlobe = v;
       refreshColours(1);
+    });
+  mkSeg('localSeek', LOCAL_SEEK, LOCAL_SEEK_LABELS,
+    () => S.localSeek,
+    (v) => {
+      S.localSeek = v;
+      resetFocusCache();
+      if (v === 'life') {
+        S.follow = null;
+        clearLocalPin();
+      } else if (S._localFocus >= 0) {
+        pinLocal(S._localFocus);
+      }
+      const auto = document.querySelector('#localMove [data-auto]');
+      if (auto) auto.title = v === 'life' ? 'Hunt recent life — release pin' : 'Stay — densest life';
     });
   mkSeg('localRadius', LOCAL_RADII, LOCAL_RADIUS_LABELS,
     () => S.localRadius,
@@ -2046,10 +2385,13 @@ export function boot() {
   const pinLocal = (cell) => {
     if (cell == null || cell < 0) return;
     S.localPin = cell | 0;
+    requestFace(cell);
     if (S.localGlobe === 'wash' || S.localGlobe === 'both') refreshColours(1);
   };
   const clearLocalPin = () => {
     S.localPin = -1;
+    S.follow = null;
+    resetFocusCache();
     if (S.localGlobe === 'wash' || S.localGlobe === 'both') refreshColours(1);
   };
   const nudgeLocal = (dx, dy) => {
@@ -2082,7 +2424,7 @@ export function boot() {
     mk('↑', () => nudgeLocal(0, -1));
     mk('↗', () => nudgeLocal(1, -1));
     mk('←', () => nudgeLocal(-1, 0));
-    const auto = mk('·', clearLocalPin, 'Auto — release pin');
+    const auto = mk('·', clearLocalPin, S.localSeek === 'life' ? 'Hunt recent life — release pin' : 'Stay — densest life');
     auto.dataset.auto = '1';
     auto.textContent = 'A';
     mk('→', () => nudgeLocal(1, 0));
@@ -2103,14 +2445,22 @@ export function boot() {
   let localDrag = null;
   let localAccX = 0, localAccY = 0;
   localCvs.style.cursor = 'crosshair';
+  localCvs.addEventListener('contextmenu', (e) => e.preventDefault());
   localCvs.addEventListener('pointerdown', (e) => {
     e.preventDefault();
+    if (e.button === 2 || (e.altKey && activeTool !== 'inspect')) {
+      const rect = localCvs.getBoundingClientRect();
+      const c = hoverCellAt(S._localPatch, e.clientX - rect.left, e.clientY - rect.top);
+      if (c >= 0) {
+        onToolResult(useToolAt(c));
+        return;
+      }
+    }
     localCvs.setPointerCapture(e.pointerId);
     localCvs.style.cursor = 'grabbing';
     const base = S.localPin >= 0 ? S.localPin : S._localFocus;
     localDrag = { x: e.clientX, y: e.clientY, moved: false, startPin: base };
     localAccX = 0; localAccY = 0;
-    if (S.localPin < 0 && base >= 0) S.localPin = base;
   });
   localCvs.addEventListener('pointermove', (e) => {
     const rect = localCvs.getBoundingClientRect();
@@ -2119,9 +2469,11 @@ export function boot() {
     if (!localDrag) {
       const c = hoverCellAt(S._localPatch, cssX, cssY);
       S.localHoverCell = c;
+      setLocalHover(c);
       if (!S.localLegendLock) {
         S.localHoverKey = c >= 0 ? legendKeyAt(W, c) : null;
       }
+      localCvs.style.cursor = beingAtLocalPixel(S._localPatch, cssX, cssY) ? 'pointer' : 'crosshair';
       return;
     }
     const dx = e.clientX - localDrag.x;
@@ -2153,8 +2505,17 @@ export function boot() {
     localCvs.style.cursor = 'crosshair';
     if (!localDrag.moved) {
       const rect = localCvs.getBoundingClientRect();
-      const c = hoverCellAt(S._localPatch, e.clientX - rect.left, e.clientY - rect.top);
-      if (c >= 0) pinLocal(c);
+      const cssX = e.clientX - rect.left;
+      const cssY = e.clientY - rect.top;
+      const who = beingAtLocalPixel(S._localPatch, cssX, cssY);
+      if (who && !who.dead) {
+        S.follow = who;
+        pinLocal(who.cell);
+        showErr(who.name ? `Following ${who.name}` : 'Following');
+      } else {
+        const c = hoverCellAt(S._localPatch, cssX, cssY);
+        if (c >= 0) pinLocal(c);
+      }
     }
     localDrag = null;
   };
@@ -2187,6 +2548,18 @@ export function boot() {
         return;
       }
     }
+    // Shift-drag / middle-mouse: slide the globe aside so the map can breathe.
+    if (e.button === 1 || (e.shiftKey && !e.altKey && e.button === 0)) {
+      panning = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      S.angVel[0] = 0;
+      S.angVel[1] = 0;
+      canvas.style.cursor = 'grabbing';
+      canvas.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      return;
+    }
     if (e.button === 2 || e.altKey || (activeTool !== 'inspect' && !e.shiftKey)) {
       const cell = desktopPick(e.clientX, e.clientY);
       if (activeTool === 'buster') {
@@ -2216,17 +2589,48 @@ export function boot() {
     }
     dragging = true;
     lastX = e.clientX; lastY = e.clientY;
+    canvas._spinStartX = e.clientX;
+    canvas._spinStartY = e.clientY;
     canvas.setPointerCapture(e.pointerId);
   });
-  canvas.addEventListener('pointerup', () => {
+  canvas.addEventListener('pointerup', (e) => {
     if (S.toolDrag) { endToolDrag(); S.toolDrag = false; refreshColours(1); }
     if (S.commitHold) cancelCommitHold(false);
+    if (panning) {
+      panning = false;
+      canvas.style.cursor = '';
+    }
+    if (dragging && activeTool === 'inspect' && e) {
+      const dist = Math.hypot(e.clientX - (canvas._spinStartX || 0), e.clientY - (canvas._spinStartY || 0));
+      if (dist < 6) {
+        const cell = desktopPick(e.clientX, e.clientY);
+        if (cell != null && cell >= 0) {
+          if (S.localSeek === 'life') {
+            S.inspect = { cell };
+            requestFace(cell);
+          } else {
+            pinLocal(cell);
+          }
+        }
+      }
+    }
     dragging = false;
+  });
+  canvas.addEventListener('pointercancel', () => {
+    panning = false;
+    dragging = false;
+    canvas.style.cursor = '';
   });
   canvas.addEventListener('pointermove', (e) => {
     if (S.toolDrag) {
       const cell = desktopPick(e.clientX, e.clientY);
       if (cell >= 0) { moveToolDrag(cell); refreshColours(0.4); }
+      return;
+    }
+    if (panning) {
+      panGlobe(e.clientX - lastX, e.clientY - lastY);
+      lastX = e.clientX;
+      lastY = e.clientY;
       return;
     }
     if (!dragging) {
@@ -2247,6 +2651,14 @@ export function boot() {
     qAxis(tmpQ, 1, 0, 0, dy); qmul(S.q, tmpQ, S.q);
     qnorm(S.q);
   });
+  canvas.addEventListener('dblclick', (e) => {
+    if (Math.abs(S.camPanX) < 1e-4 && Math.abs(S.camPanY) < 1e-4) return;
+    const cell = desktopPick(e.clientX, e.clientY);
+    if (cell == null || cell < 0) resetCamPan();
+  });
+  canvas.addEventListener('auxclick', (e) => {
+    if (e.button === 1) e.preventDefault();
+  });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     S.camDist = clamp(S.camDist * (1 + Math.sign(e.deltaY) * 0.09), 1.06, 6.5);
@@ -2258,6 +2670,11 @@ export function boot() {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
     if (e.key === 'Escape' && S.localExpanded) {
       stepLocalFrame(-1);
+      return;
+    }
+    if (e.key === 'Home') {
+      e.preventDefault();
+      resetCamPan();
       return;
     }
     const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
@@ -2287,6 +2704,27 @@ export function boot() {
       const r = undoStroke();
       if (r) { showErr(r.note); refreshColours(1); needGeom(); }
     }
+    else if (e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+      e.preventDefault();
+      const on = audioMute();
+      showErr(on ? 'Sound off' : 'Sound on');
+    }
+    else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+      e.preventDefault();
+      if (S.follow) { S.follow = null; showErr('Released'); }
+      else {
+        const t = followTarget();
+        if (t) {
+          S.follow = t;
+          pinLocal(t.cell);
+          showErr(t.name ? `Following ${t.name}` : 'Following');
+        }
+      }
+    }
+    else if (e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+      e.preventDefault();
+      setDayWatch(!S.dayWatch);
+    }
     else if (e.key === '+' || e.key === '=') {
       setTool('solar');
       onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: 0.05 }));
@@ -2312,7 +2750,8 @@ export function boot() {
   else console.log(`[orrery] catalogue · ${CATALOGUE_WORLDS.length} worlds ready`);
   runGenerate(20260808, RULESETS[0]);
   requestAnimationFrame(desktopFrame);
-  console.log(`[orrery] foundations rebuild · ${NC.toLocaleString()} cells · ${(vIdx.length / 3).toLocaleString()} tris`);
+  const quads = (6 * globeN() * globeN()).toLocaleString();
+  console.log(`[orrery] foundations rebuild · ${NC.toLocaleString()} cells · ${quads} globe quads (${effectiveGlobeSubd()}× mesh) · ${(vIdx.length / 3).toLocaleString()} tris`);
 }
 
 function resize() {
@@ -2335,7 +2774,7 @@ function desktopFrame(t) {
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
   gl.enable(gl.DEPTH_TEST);
   const eye = [0, 0.28, S.camDist];
-  m4persp(PROJ, 50 * Math.PI / 180, canvas.width / canvas.height, 0.02, 900);
+  m4persp(PROJ, CAM_FOV, canvas.width / canvas.height, 0.02, 900);
   m4lookAt(VIEW, eye, [0, 0, 0], [0, 1, 0]);
   drawScene(PROJ, VIEW, eye, false, S, hands);
 }

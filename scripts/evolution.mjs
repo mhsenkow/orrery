@@ -277,6 +277,12 @@ const D = [
 {c:'craft',t:'A calibration harness mapping sim units to SI',d:'`temp` runs 0–1.6 and stands in for kelvin; `life` is dimensionless; `year` advances 200 per tick. Publish the conversion, and any number the player reads can be checked against a textbook.',x:'BOTH',e:'M',i:3},
 {c:'craft',t:'Annotate every constant with its provenance',d:'Measured, fitted, or invented for legibility — one of three, on every magic number in the sim directory. `bioTick` currently contains `photosynth += bio * 0.00000008` with no indication which of the three it is, and that ambiguity is the thing that will eventually make the model indefensible.',x:'SIM',e:'M',i:3},
 {c:'craft',t:'Publish the model’s limits with the model',d:'A short, plain document listing what this simulation deliberately does not do — no radiative transfer, no real ocean dynamics, a 6×N² cube-sphere at whatever resolution ships. Stating the boundary is what earns trust for everything inside it.',x:'BOTH',e:'S',i:3},
+
+/* Phase 0 biosphere rebuild — shipped ahead of the 200-item backlog */
+{c:'chem',t:'Chemistry memory via relaxing species fields',k:'species',d:'Dissolved donors and acceptors (`H2S`, `Fe²⁺`, `orgC`, …) now relax toward abiotic equilibrium each tick instead of resetting. Vent H₂ plumes diffuse a few cells; the Archean ocean remembers its redox state. The Lab readout shows the three slowest fields.',x:'SIM',e:'M',i:3},
+{c:'genome',t:'Lineage lookup by id, not array scan',n:['tree'],d:'`tree.byId` and `nodeOf()` replace `nodes.find` everywhere. Speciation, convergence detection, and agent assignment all key off stable lineage ids — the prerequisite for anything phylogenetic at scale.',x:'SIM',e:'S',i:2},
+{c:'genome',t:'Derived lifeClass as a compatibility shim',n:['tree'],d:'`lifeClass` and `unlockedClass` are written once per tick by `deriveLifeClass()` from guild density and the phylogeny, not by morphology gates. Existing colour and overlay code keeps working while the redox tower becomes the source of truth.',x:'SIM',e:'S',i:2},
+{c:'surface',t:'Fractal coastlines after plate isostasy',d:'Domain-warped fBm perturbs elevation strongest at sea level, with Laplacian coastal smoothing, so Voronoi plate cells read as natural continents rather than polygon facets. Applied in `terrainShape.js` for all worlds and refined again for Earth.',x:'EYE',e:'S',i:2},
 ];
 
 /* ------------------------------------------------------------- derive -- */
@@ -388,7 +394,7 @@ function html() {
   const cats = JSON.stringify(CATS.map(([id, name, blurb]) => ({ id, name, blurb })));
   const crit = JSON.stringify(CRITICAL.slice(0, 12).map((r) => ({ k: r.k, id: r.x.id, t: r.x.t, n: r.n })));
   return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY — 200 ways to make evolution legible</title>
 <style>
 :root{
@@ -514,6 +520,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
 }
 @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
+<link rel="stylesheet" href="doc-responsive.css">
 
 <div class="wrap">
 <header>
@@ -524,7 +531,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <p class="nav"><a href="./">Pitch</a> · <a href="backlog.html">Systems backlog</a> ·
   <a href="worlds.html">Worlds</a> · <a href="godgame.html">God layer</a> ·
   <a href="next.html">Next 200</a> ·
-  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="../vr/">Prototype</a></p>
+  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> · <a href="currents.html">Currents</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>200<small>15 categories</small></dd></div>
     <div><dt>Axis</dt><dd>${count((x) => x.x === 'SIM')} / ${count((x) => x.x === 'EYE')}<small>sim · eye (+${count((x) => x.x === 'BOTH')} both)</small></dd></div>

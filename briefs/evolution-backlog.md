@@ -1,10 +1,10 @@
 # ORRERY — evolution & fidelity backlog
 
-**200 items.** Generated from `scripts/evolution.mjs` — edit that file, not this one, then run `node scripts/evolution.mjs`.
+**204 items.** Generated from `scripts/evolution.mjs` — edit that file, not this one, then run `node scripts/evolution.mjs`.
 
 This is the third backlog. The first covers the systems SimEarth had; the second covers the 120 real worlds to put them on. This one covers the thing both of those exist to serve: **making the evolution of life on a planet something you can watch happen, over deep time, and believe.**
 
-Axis: **101** simulation truth, **36** what the player sees, **63** both. Effort is S/M/L. Impact is 1–3, where 3 means the thesis does not land without it.
+Axis: **104** simulation truth, **37** what the player sees, **63** both. Effort is S/M/L. Impact is 1–3, where 3 means the thesis does not land without it.
 
 ## Where the prototype actually is
 
@@ -37,14 +37,14 @@ The capabilities the largest number of other items are waiting on. Nothing below
 
 | Capability | Item | Unblocks |
 |---|---|---|
-| `tree` | 49. A live phylogenetic tree as a first-class object | 13 items |
+| `tree` | 49. A live phylogenetic tree as a first-class object | 15 items |
 | `ext` | 86. Separate background from mass extinction | 12 items |
 | `carbon` | 98. Split carbon into organic and inorganic reservoirs | 11 items |
 | `npp` | 59. Net primary productivity from a real model | 10 items |
 | `redox` | 13. Rebuild the biosphere on a redox tower | 9 items |
 | `traits` | 43. Give populations a heritable trait vector | 9 items |
 | `scatter` | 154. Precomputed physical atmospheric scattering | 9 items |
-| `species` | 14. Track the electron donors and acceptors as fields | 8 items |
+| `species` | 201. Chemistry memory via relaxing species fields | 8 items |
 | `spec` | 47. Allopatric speciation from actual barriers | 8 items |
 | `pbr` | 138. Physically based surface materials | 7 items |
 | `clock` | 1. Anchor the clock to the real timescale | 6 items |
@@ -113,7 +113,7 @@ _Maynard Smith and Szathmáry’s framing, updated: a handful of one-off changes
 | 41 | **Endothermy as its own axis** <br>needs `multi` | Roughly a tenfold increase in resting metabolic rate, bought for a wholly different set of temperature tolerances, activity budgets and food requirements. It is what lets a lineage survive a climate that kills its ectothermic competitors, and it should be a trait with a cost, not a rung labelled "mammal". | Sim | M | 2 |
 | 42 | **Language and the last transition** <br>needs `trans` | Unlimited heritable information transmitted outside the genome. This is the seam where the civilisation layer in the main backlog attaches, and it should require a specific set of prior traits rather than appearing when a year counter clears a threshold. | Sim | M | 2 |
 
-## Genomes, traits and open-ended evolution — 16
+## Genomes, traits and open-ended evolution — 18
 
 _`lifeClass` is a Uint8 index into a fixed array of eight. That is a taxonomy, not an evolutionary process. Give populations a heritable trait vector and the ladder becomes a tree that you did not author._
 
@@ -135,6 +135,8 @@ _`lifeClass` is a Uint8 index into a fixed array of eight. That is a taxonomy, n
 | 56 | **Horizontal gene transfer among microbes** <br>needs `tree` | For prokaryotes the tree is a poor model — genes move sideways, especially metabolic ones. Implement a trait market with a distance and abundance cost, and the early phylogeny becomes a web, which is both more accurate and visually a completely different object. | Sim | M | 2 |
 | 57 | **Developmental constraint and evolvability** <br>needs `traits` | Some traits become locked once a body plan is committed — no tetrapod has ever re-evolved a sixth limb. Model a hardening of certain trait axes with clade age, so that lineages accumulate history and cannot simply reconverge on any optimum. | Sim | M | 2 |
 | 58 | **A complexity ratchet with an energy price** <br>needs `euk` | Genome size, cell size and trait count can rise, but each increment costs maintenance energy that must be paid every tick. Complexity should be an investment that a poor environment cannot afford, which is the honest reason most of the biosphere is still single-celled. | Sim | M | 2 |
+| 202 | **Lineage lookup by id, not array scan** <br>needs `tree` | `tree.byId` and `nodeOf()` replace `nodes.find` everywhere. Speciation, convergence detection, and agent assignment all key off stable lineage ids — the prerequisite for anything phylogenetic at scale. | Sim | S | 2 |
+| 203 | **Derived lifeClass as a compatibility shim** <br>needs `tree` | `lifeClass` and `unlockedClass` are written once per tick by `deriveLifeClass()` from guild density and the phylogeny, not by morphology gates. Existing colour and overlay code keeps working while the redox tower becomes the source of truth. | Sim | S | 2 |
 
 ## Ecology: who eats whom — 14
 
@@ -196,7 +198,7 @@ _The prototype has one dieback event and a plague scalar. Mass extinctions are t
 | 96 | **Signor–Lipps: make the record imperfect on purpose** <br>needs `ext` | Because fossilisation is sporadic, a sudden extinction always looks gradual in the rock. If the player’s instruments read the preserved record rather than the true state, they inherit the actual epistemological problem of palaeontology — and that is a far better lesson than a perfect readout. | Both | M | 2 |
 | 97 | **Extinction debt and delayed collapse** <br>needs `ext` | A population below its minimum viable size is already gone, it just has not finished. Modelling the lag means the player’s intervention can be past the point of rescue while everything still looks alive, which is the most important thing this genre can teach. | Sim | M | 3 |
 
-## Biogeochemistry: life as a planetary process — 15
+## Biogeochemistry: life as a planetary process — 16
 
 _This is the actual thesis of SimEarth and the reason the game mattered. Life does not sit on the planet; it *is* one of the planet’s chemical cycles, and the atmosphere you breathe is a waste product buried in rock._
 
@@ -217,6 +219,7 @@ _This is the actual thesis of SimEarth and the reason the game mattered. Life do
 | 110 | **Ocean acidification as its own variable** <br>needs `carbon` | Track surface pH and carbonate saturation state separately from temperature. Warming and acidification are the same cause with different victims, and a model that conflates them cannot tell the End-Triassic story or the modern one. | Sim | M | 3 |
 | 111 | **Coal and oil as a one-time accident** <br>needs `carbon` | Most coal formed in a ~60 Myr Carboniferous window; most oil comes from two Cretaceous and Jurassic anoxic intervals. Deposit them where the model actually buries carbon, so a civilisation later finds fuel exactly where its own planet’s history put it, or does not find it at all. | Sim | M | 3 |
 | 112 | **Isotope proxies as the player-facing evidence** <br>gives `proxy` <br>needs `carbon` | δ¹³C for the organic carbon burial fraction, δ¹⁸O for ice volume and temperature, δ³⁴S for the sulfur cycle, ⁸⁷Sr/⁸⁶Sr for continental weathering. These are how the entire history above is actually known, and they turn every abstraction in this document into a line on a graph the player can read. | Both | M | 3 |
+| 201 | **Chemistry memory via relaxing species fields** <br>gives `species` | Dissolved donors and acceptors (`H2S`, `Fe²⁺`, `orgC`, …) now relax toward abiotic equilibrium each tick instead of resetting. Vent H₂ plumes diffuse a few cells; the Archean ocean remembers its redox state. The Lab readout shows the three slowest fields. | Sim | M | 3 |
 
 ## Gaia, updated and argued with — 10
 
@@ -257,7 +260,7 @@ _The catalogue holds 120 real bodies and every one of them currently runs Earth�
 | 136 | **Radiation-hardened biospheres** <br>needs `chemo` | Deinococcus survives doses thousands of times lethal to humans by repairing shattered chromosomes. Around a flare star or a pulsar, radiation tolerance becomes the dominant selective axis and the trait vector should reflect it. | Sim | M | 2 |
 | 137 | **Let the dead worlds stay dead, and make that legible** | Most of the 120-world catalogue should never produce life, and the instruments should be able to say *why* — no solvent, no gradient, no time, too much flux. A null result that the player can interrogate is worth more than a biosphere that appears everywhere. | Both | M | 3 |
 
-## Visual fidelity: the surface — 16
+## Visual fidelity: the surface — 17
 
 _Colour is presently a per-ruleset function of five scalars. Everything that makes a real planet photograph beautifully — glint, phenology, sediment, snow line, ice texture — is a consequence of fields you are already simulating and throwing away at draw time._
 
@@ -279,6 +282,7 @@ _Colour is presently a per-ruleset function of five scalars. Everything that mak
 | 151 | **Stratigraphy visible in canyon walls** <br>needs `proxy` | When a river cuts through the rock layers your own simulation deposited, the wall should show them — banded iron, the ejecta layer, the coal measures. This is the moment the geology stops being bookkeeping and becomes scenery with a story. | Both | M | 3 |
 | 152 | **Procedural detail driven by the fields, not tiled noise** <br>needs `pbr` | Sub-cell texture should be generated from the local slope, moisture, rock type and biome rather than a repeating pattern. It keeps the close view honest — what you see at one metre is a consequence of the same numbers that drove the view from orbit. | Eye | M | 2 |
 | 153 | **The night side, populated** | Lava glow, bioluminescent blooms, auroral curtains, lightning in storm cells, and eventually city lights. `uNight` currently brightens the dark hemisphere in proportion to `meanLife`, which is a placeholder for something that could be the most beautiful view in the product. | Eye | M | 3 |
+| 204 | **Fractal coastlines after plate isostasy** | Domain-warped fBm perturbs elevation strongest at sea level, with Laplacian coastal smoothing, so Voronoi plate cells read as natural continents rather than polygon facets. Applied in `terrainShape.js` for all worlds and refined again for Earth. | Eye | S | 2 |
 
 ## Visual fidelity: air, light and sky — 14
 

@@ -3,8 +3,9 @@
 
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
-import { TRAITS } from './evolve.js';
+import { TRAITS, nodeOf, removeLiving } from './evolve.js';
 import { recordFossil } from './meta.js';
+import { isDeepTimeEarth } from './ruleMode.js';
 
 export function extinctionTick(W, chronLog) {
   if (W.rule.daisyworld || !W.tree) return;
@@ -55,7 +56,7 @@ export function extinctionTick(W, chronLog) {
   // Disaster taxa — high-repro generalists bloom. Item 94.
   if (W._recoveryBoost > 0.5 && W.tree.living.length) {
     for (const id of W.tree.living) {
-      const n = W.tree.nodes.find((x) => x.id === id);
+      const n = nodeOf(W.tree, id);
       if (!n) continue;
       if (n.traits[6] > 0.55 && n.traits[4] < 0.35) { // high repro, small
         n._disaster = true;
@@ -67,20 +68,23 @@ export function extinctionTick(W, chronLog) {
   }
 
   // Extinction debt — populations below MVP doomed. Item 97.
-  for (const id of [...W.tree.living]) {
-    const n = W.tree.nodes.find((x) => x.id === id);
-    if (!n) continue;
-    if (n.pop > 0 && n.pop < 2) {
-      n._debt = (n._debt || 0) + dt;
-      if (n._debt > 2) {
-        n.death = W.ageYr;
-        n.extReason = 'extinction debt';
-        W.tree.living = W.tree.living.filter((x) => x !== id);
-        W.tree.extinctions.push({ id, name: n.name, t: W.ageYr, reason: 'debt' });
-        for (const c of n.cells || []) recordFossil(W, n, c, 'debt');
-        if (chronLog) chronLog(W.year, 'extinction', 0, 1, `Debt: ${n.name}`);
-      }
-    } else n._debt = 0;
+  // Deep-time Archean runs use guild biomass; MVP debt is not calibrated there yet.
+  if (!isDeepTimeEarth(W.rule)) {
+    for (const id of [...W.tree.living]) {
+      const n = nodeOf(W.tree, id);
+      if (!n) continue;
+      if (n.pop > 0 && n.pop < 2) {
+        n._debt = (n._debt || 0) + dt;
+        if (n._debt > 2) {
+          n.death = W.ageYr;
+          n.extReason = 'extinction debt';
+          removeLiving(W.tree, id);
+          W.tree.extinctions.push({ id, name: n.name, t: W.ageYr, reason: 'debt' });
+          for (const c of n.cells || []) recordFossil(W, n, c, 'debt');
+          if (chronLog) chronLog(W.year, 'extinction', 0, 1, `Debt: ${n.name}`);
+        }
+      } else n._debt = 0;
+    }
   }
 
   W._prevLiving = W.tree.living.length;
@@ -168,13 +172,13 @@ function pulseKill(W, frac, label, chronLog) {
   // Preferentially kill specialists / large / high trophic
   if (W.tree) {
     for (const id of [...W.tree.living]) {
-      const n = W.tree.nodes.find((x) => x.id === id);
+      const n = nodeOf(W.tree, id);
       if (!n) continue;
       const risk = n.traits[4] * 0.5 + n.traits[7] * 0.5;
       if (rng() < frac * risk) {
         n.death = W.ageYr;
         n.extReason = label;
-        W.tree.living = W.tree.living.filter((x) => x !== id);
+        removeLiving(W.tree, id);
         W.tree.extinctions.push({ id, name: n.name, t: W.ageYr, reason: label });
         for (const c of n.cells || []) recordFossil(W, n, c, label);
         // Eulogy for designed / protected lineages

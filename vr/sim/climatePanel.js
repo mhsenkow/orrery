@@ -13,9 +13,11 @@ import { iconSVG } from './god/icons.js';
 import { dynamoFromInterior } from './core.js';
 import {
   seedStorm, steerStorm, stormDeskSnapshot, tropicalFavor, midlatFavor,
+  stormControl, setStormControl,
 } from './storms.js';
 import { coastDeskSnapshot, coastAtCell } from './coast.js';
 
+let setOverlayFn = null;
 let activeDesk = 'sky';
 let selectedStormId = null;
 /** @type {{ day: number, svg: string, label: string, cells: number, regime: string } | null} */
@@ -203,7 +205,7 @@ function deskTab(id, icon, label, title) {
 export function climatePanelChrome() {
   return `
     <p class="god-lead">
-      <b>Sky suite</b> — atmosphere, storms, coasts, and spin experiments you can read from orbit.
+      Atmosphere you can read from orbit — spin, moon, storms, coasts.
     </p>
 
     <div class="clim-desks" role="tablist" aria-label="Sky desks">
@@ -219,7 +221,7 @@ export function climatePanelChrome() {
       <div class="god-block clim-chart">
         <div class="god-h">${iconSVG('weather')}<span>Synoptic</span></div>
         <div id="climChart"></div>
-        <p class="god-note" id="climChartNote">Pressure · wind barbs · ITCZ. Beyond ~2 weeks weather is not predictable in principle.</p>
+        <p class="god-note" id="climChartNote">Pressure, wind, ITCZ. Past about two weeks this is not a forecast.</p>
       </div>
 
       <div class="god-block">
@@ -239,7 +241,7 @@ export function climatePanelChrome() {
           <input type="range" id="climSeason" min="0" max="360" value="0" step="5">
           <span class="val" id="climSeasonVal">0°</span>
         </div>
-        <p class="god-note" id="climSpinNote">Spin changes how many wind bands form — not just wind speed.</p>
+        <p class="god-note" id="climSpinNote">Faster spin makes more, narrower wind bands.</p>
         <div id="climOrbit" class="clim-orbit"></div>
       </div>
 
@@ -260,7 +262,7 @@ export function climatePanelChrome() {
           <input type="range" id="climMoonDist" min="38" max="250" value="100" step="2">
           <span class="val" id="climMoonDistVal">1.00</span>
         </div>
-        <p class="god-note" id="climTideNote">Spring / neap from Moon–Sun alignment. Roche floor ~0.38.</p>
+        <p class="god-note" id="climTideNote">Springs add; neaps cancel. Roche floor is 0.38.</p>
       </div>
 
       <div class="god-block">
@@ -273,7 +275,7 @@ export function climatePanelChrome() {
           <button type="button" data-overlay="tide">${iconSVG('moon')}<span class="btn-label">Tide</span></button>
           <button type="button" data-overlay="intertidal">${iconSVG('flats')}<span class="btn-label">Intertidal</span></button>
         </div>
-        <p class="god-note">Overlays paint the globe. Inspect a cell for station readout.</p>
+        <p class="god-note">Pressure, wind, storms, tides — painted on the globe.</p>
       </div>
 
       <div class="clim-explain" id="climExplain"></div>
@@ -284,7 +286,7 @@ export function climatePanelChrome() {
       <div class="god-block">
         <div class="god-h">${iconSVG('stormdesk')}<span>Active track</span></div>
         <div id="stormList" class="clim-list"></div>
-        <p class="god-note" id="stormNote">Toy cyclones — tropical eyes need warm ocean; midlat commas ride convergence.</p>
+        <p class="god-note" id="stormNote">Teal basins can organise. Named storms leave a gold track.</p>
       </div>
       <div class="god-block">
         <div class="god-h">${iconSVG('seedstorm')}<span>Seed &amp; steer</span></div>
@@ -294,9 +296,33 @@ export function climatePanelChrome() {
           <button type="button" id="stormSteerW" title="Nudge westward">${iconSVG('spin')}<span class="btn-label">← W</span></button>
           <button type="button" id="stormSteerE" title="Nudge eastward">${iconSVG('spin')}<span class="btn-label">E →</span></button>
           <button type="button" id="stormSteerN" title="Nudge poleward">${iconSVG('tilt')}<span class="btn-label">Pole</span></button>
-          <button type="button" id="stormOverlay">${iconSVG('stormdesk')}<span class="btn-label">Storm overlay</span></button>
+          <button type="button" id="stormOverlay" title="Paint basins, tracks, surge">${iconSVG('stormdesk')}<span class="btn-label">Storm overlay</span></button>
         </div>
-        <p class="god-note">Most seeds fail — favour ≠ certainty. Surge is worst when intensity meets springs.</p>
+        <p class="god-note">Eyes want warm ocean. Commas ride midlatitude shear. Landfall kills intensity; springs raise surge.</p>
+      </div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('weather')}<span>Parameters</span></div>
+        <div class="view-row">
+          <label for="stormGenesis">Genesis</label>
+          <input type="range" id="stormGenesis" min="0" max="100" value="8" step="1">
+          <span class="val" id="stormGenesisVal">8%</span>
+        </div>
+        <div class="view-row">
+          <label for="stormStrict">Strict</label>
+          <input type="range" id="stormStrict" min="0" max="100" value="70" step="5">
+          <span class="val" id="stormStrictVal">honest</span>
+        </div>
+        <div class="view-row">
+          <label for="stormSize">Size</label>
+          <input type="range" id="stormSize" min="50" max="220" value="100" step="5">
+          <span class="val" id="stormSizeVal">1.00×</span>
+        </div>
+        <div class="view-row">
+          <label for="stormVigor">Vigor</label>
+          <input type="range" id="stormVigor" min="40" max="200" value="100" step="5">
+          <span class="val" id="stormVigorVal">1.00×</span>
+        </div>
+        <p class="god-note">Genesis is how often a basin tries on its own. Strict is how often a seed is allowed to fail.</p>
       </div>
       <div class="clim-callout" id="stormCallout"></div>
     </div>
@@ -323,7 +349,7 @@ export function climatePanelChrome() {
     </div>
 
     <div class="clim-desk" data-desk-panel="compare" role="tabpanel" hidden>
-      <p class="god-note" style="margin-top:0">Freeze a synoptic at one day length, change spin, capture B — see how banding reorganises.</p>
+      <p class="god-note" style="margin-top:0">Freeze the synoptic, change day length, capture B — banding should reorganise.</p>
       <div class="god-block">
         <div class="god-h">${iconSVG('compare')}<span>Spin experiment</span></div>
         <div class="view-row">
@@ -362,6 +388,7 @@ function setDesk(id) {
     p.classList.toggle('on', on);
     p.hidden = !on;
   });
+  if (id === 'storm') setOverlayFn?.('storm');
 }
 
 function snapFrame(label) {
@@ -418,16 +445,17 @@ function refreshStormDesk() {
   const strip = document.getElementById('stormStrip');
   if (strip) {
     strip.innerHTML = `
-      <div class="clim-chip"><span>Active</span><b>${snap.count}</b></div>
-      <div class="clim-chip"><span>Peak</span><b>${snap.max ? snap.max.toFixed(2) : '—'}</b></div>
-      <div class="clim-chip"><span>Tide</span><b>${snap.tidePhase}</b></div>
-      <div class="clim-chip"><span>Springs</span><b>${W.tidePhase === 'springs' ? 'yes' : 'no'}</b></div>
+      <div class="clim-chip" title="Named cyclones on the track"><span>Active</span><b>${snap.count}</b></div>
+      <div class="clim-chip" title="Peak intensity"><span>Peak</span><b>${snap.max ? snap.max.toFixed(2) : '—'}</b></div>
+      <div class="clim-chip" title="Best basin on the globe right now"><span>Basin</span><b>${snap.basin.toFixed(2)}</b></div>
+      <div class="clim-chip" title="Tide phase — springs raise surge"><span>Tide</span><b>${snap.tidePhase}</b></div>
     `;
   }
   const list = document.getElementById('stormList');
   if (list) {
     if (!snap.list.length) {
-      list.innerHTML = `<div class="clim-empty">No storms on the track — seed one or wait for genesis.</div>`;
+      list.innerHTML = `<div class="clim-empty">No named storms. Teal on the overlay is still a basin.</div>`;
+      selectedStormId = null;
     } else {
       list.innerHTML = snap.list.map((s) => {
         const sel = s.id === selectedStormId ? ' aria-pressed="true"' : '';
@@ -447,6 +475,7 @@ function refreshStormDesk() {
       }
     }
   }
+  W.stormFocusId = selectedStormId || null;
   const note = document.getElementById('stormNote');
   if (note) note.textContent = snap.note;
   const call = document.getElementById('stormCallout');
@@ -455,8 +484,8 @@ function refreshStormDesk() {
     call.innerHTML = risky
       ? `<b>${risky.name}</b> intense at springs — surge risk on the shelf.`
       : snap.count
-        ? 'Steer selected storm; landfall weakens intensity fast.'
-        : 'Inspect a warm basin or use Seed best basin.';
+        ? 'Steer the selected storm. Landfall cuts intensity fast.'
+        : 'Inspect a warm basin, or Seed best basin.';
   }
 }
 
@@ -607,6 +636,7 @@ function syncSlider(id, value, label, labelId) {
  */
 export function bindClimatePanel(opts = {}) {
   const { setOverlay, showMoment, onChange, getInspectCell } = opts;
+  setOverlayFn = setOverlay;
   let dragging = false;
 
   document.querySelectorAll('.clim-desk-tab').forEach((btn) => {
@@ -696,8 +726,6 @@ export function bindClimatePanel(opts = {}) {
       document.querySelectorAll(`#${rootId} button`).forEach((b) => {
         b.setAttribute('aria-pressed', b.dataset.overlay === mode ? 'true' : 'false');
       });
-      const sel = document.getElementById('overlayMode');
-      if (sel) { sel.value = mode; sel.dispatchEvent(new Event('change')); }
     });
   };
   wireOverlays('climOverlays');
@@ -708,6 +736,9 @@ export function bindClimatePanel(opts = {}) {
     const row = e.target.closest('[data-storm]');
     if (!row) return;
     selectedStormId = row.dataset.storm;
+    W.stormFocusId = selectedStormId;
+    setOverlay?.('storm');
+    onChange?.('storm');
     refreshStormDesk();
   });
 
@@ -752,9 +783,42 @@ export function bindClimatePanel(opts = {}) {
   document.getElementById('stormSteerN')?.addEventListener('click', () => steer(0, 0.25));
   document.getElementById('stormOverlay')?.addEventListener('click', () => {
     setOverlay?.('storm');
-    const sel = document.getElementById('overlayMode');
-    if (sel) { sel.value = 'storm'; sel.dispatchEvent(new Event('change')); }
   });
+
+  const stormLabel = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+  const applyStormCtl = () => {
+    const g = document.getElementById('stormGenesis');
+    const s = document.getElementById('stormStrict');
+    const z = document.getElementById('stormSize');
+    const v = document.getElementById('stormVigor');
+    if (!g || !s || !z || !v) return;
+    const genesis = (+g.value) / 100;
+    const strict = (+s.value) / 100;
+    const size = (+z.value) / 100;
+    const vigor = (+v.value) / 100;
+    setStormControl(W, { genesis, strict, size, vigor });
+    stormLabel('stormGenesisVal', `${(genesis * 100) | 0}%`);
+    stormLabel('stormStrictVal', strict < 0.35 ? 'easy' : strict > 0.8 ? 'harsh' : 'honest');
+    stormLabel('stormSizeVal', `${size.toFixed(2)}×`);
+    stormLabel('stormVigorVal', `${vigor.toFixed(2)}×`);
+  };
+  for (const id of ['stormGenesis', 'stormStrict', 'stormSize', 'stormVigor']) {
+    const el = document.getElementById(id);
+    el?.addEventListener('input', applyStormCtl);
+  }
+  const ctl = stormControl(W);
+  const setRange = (id, v) => {
+    const el = document.getElementById(id);
+    if (el) el.value = String(Math.round(v * 100));
+  };
+  setRange('stormGenesis', ctl.genesis);
+  setRange('stormStrict', ctl.strict);
+  setRange('stormSize', ctl.size);
+  setRange('stormVigor', ctl.vigor);
+  applyStormCtl();
 
   // Compare desk
   const cmpDay = document.getElementById('cmpDay');
@@ -794,6 +858,7 @@ export function climateAtCell(cell) {
   if (cell < 0) return null;
   const lat = DIR[cell * 3 + 1];
   const coast = coastAtCell(W, cell);
+  const u = W.oceanU?.[cell] || 0, v = W.oceanV?.[cell] || 0;
   return {
     band: windBandAt(lat, W._itczLat || 0, W._windCells || 3),
     press: W.press?.[cell],
@@ -802,6 +867,18 @@ export function climateAtCell(cell) {
     intertidal: W.intertidal?.[cell],
     storm: W.stormField?.[cell] || 0,
     surge: W.surgeField?.[cell] || 0,
+    current: Math.hypot(u, v),
+    currentU: u,
+    currentV: v,
+    upwell: W.upwell?.[cell] || 0,
+    conveyor: W.conveyor,
+    mocSv: W._mocSv,
+    enso: W._ensoIndex,
+    ensoPhase: W._ensoPhase,
+    monsoon: W._monsoon,
+    jetLat: W._jetLat,
+    wave: W.waveHt?.[cell] || 0,
+    mix: W.mixDepth?.[cell] || 0,
     coast,
   };
 }

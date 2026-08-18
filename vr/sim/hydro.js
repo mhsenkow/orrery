@@ -1,8 +1,10 @@
 /** Hydrosphere: conserved water, sea level, rivers, lakes, ice. */
 
 import { clamp } from '../math.js';
-import { NC, NBR, NBR8, DIR, AREA } from '../sphere.js';
+import { NC, NBR, NBR8, DIR, AREA, EAST, NORTH } from '../sphere.js';
 import { totalPressure } from '../rulesets.js';
+import { rejectBrine } from './ocean.js';
+import { neighbourMean } from './vecop.js';
 
 /** Recompute global sea level from land ice + thermal expansion. */
 export function updateSeaLevel(W) {
@@ -41,33 +43,78 @@ export function liquidWaterOk(W) {
 }
 
 /**
- * Flow accumulation (D8 steepest descent) + simple depression fill for lakes.
+ * Persistent D8/D∞ drainage tree + depression lakes + groundwater baseflow.
+ * Rebuilds the tree when terrain has moved; flow accumulates every tick.
  */
 export function computeRivers(W) {
   const { h, seaLevel, flow, lake } = W;
-  flow.fill(0);
-  lake.fill(0);
-  if (!liquidWaterOk(W)) return;
+  if (!liquidWaterOk(W)) {
+    flow.fill(0);
+    lake.fill(0);
+    return;
+  }
+  if (!W.drainTo || W.drainTo.length !== NC) W.drainTo = new Int32Array(NC);
+  if (!W.drainTo2 || W.drainTo2.length !== NC) W.drainTo2 = new Int32Array(NC);
+  if (!W.groundW || W.groundW.length !== NC) W.groundW = new Float32Array(NC);
 
-  // Each cell contributes its area, routed downhill
+  const tick = W._tickIndex || 0;
+  const rebuild = W._hydroDirty || W._drainTick == null || (tick - W._drainTick) > 7;
+  if (rebuild) {
+    W._drainTick = tick;
+    W._hydroDirty = false;
+    for (let c = 0; c < NC; c++) {
+      if (h[c] < seaLevel) {
+        W.drainTo[c] = -2;
+        W.drainTo2[c] = -2;
+        continue;
+      }
+      let b1 = -1, h1 = h[c], b2 = -1, h2 = h[c];
+      for (let k = 0; k < 8; k++) {
+        const n = NBR8[c * 8 + k];
+        if (h[n] < h1) { h2 = h1; b2 = b1; h1 = h[n]; b1 = n; }
+        else if (h[n] < h2) { h2 = h[n]; b2 = n; }
+      }
+      W.drainTo[c] = b1;
+      W.drainTo2[c] = (b2 >= 0 && h2 < h[c] - 0.002) ? b2 : -1;
+    }
+  }
+
+  flow.fill(0);
   const order = W._order;
   for (let c = 0; c < NC; c++) order[c] = c;
   order.sort((a, b) => h[b] - h[a]);
 
   for (let i = 0; i < NC; i++) {
     const c = order[i];
-    if (h[c] < seaLevel) continue;
-    flow[c] += AREA[c];
-    let best = -1, bestH = h[c];
-    for (let k = 0; k < 8; k++) {
-      const n = NBR8[c * 8 + k];
-      if (h[n] < bestH) { bestH = h[n]; best = n; }
-    }
-    if (best < 0) {
-      lake[c] = 1; // local sink → lake
+    if (h[c] < seaLevel) {
+      lake[c] *= 0.9;
       continue;
     }
-    if (h[best] >= seaLevel) flow[best] += flow[c];
+    const gw = W.groundW[c] || 0;
+    W.groundW[c] = clamp(gw * 0.97 + (W.precip[c] || 0) * 0.14 + (W.moist[c] || 0) * 0.02, 0, 1);
+    flow[c] += AREA[c] * (0.35 + (W.moist[c] || 0) * 0.45 + (W.precip[c] || 0) * 0.5) + gw * 0.14;
+
+    let d1 = W.drainTo[c];
+    if (d1 < 0) {
+      lake[c] = clamp((lake[c] || 0) * 0.92 + flow[c] * 0.05 + (W.precip[c] || 0) * 0.18, 0, 1);
+      if (lake[c] > 0.32) {
+        let rim = -1, rimH = 9;
+        for (let k = 0; k < 8; k++) {
+          const n = NBR8[c * 8 + k];
+          if (h[n] < rimH) { rimH = h[n]; rim = n; }
+        }
+        if (rim >= 0) {
+          W.drainTo[c] = rim;
+          d1 = rim;
+        }
+      } else continue;
+    } else {
+      lake[c] *= 0.88;
+    }
+    const d2 = W.drainTo2[c];
+    const share = d2 >= 0 ? 0.74 : 1;
+    if (d1 >= 0 && h[d1] >= seaLevel) flow[d1] += flow[c] * share;
+    if (d2 >= 0 && h[d2] >= seaLevel) flow[d2] += flow[c] * (1 - share);
   }
 }
 
@@ -90,7 +137,9 @@ export function iceTick(W) {
       iceLand[c] = 0;
       const seaFreeze = rule.freeze - seasonalCold * 0.03 - polar * 0.1;
       if (temp[c] < seaFreeze && liquidWaterOk(W)) {
-        iceSea[c] = clamp(iceSea[c] + 0.06 + polar * 0.04, 0, 1);
+        const grow = 0.06 + polar * 0.04;
+        iceSea[c] = clamp(iceSea[c] + grow, 0, 1);
+        rejectBrine(W, c, grow);
       } else {
         const melt = earth && polar > 0.4 ? 0.035 : 0.1;
         iceSea[c] = Math.max(0, iceSea[c] - melt * (1 - polar * 0.8));
@@ -158,17 +207,34 @@ export function hydroTick(W) {
   let precipTotal = 0;
   for (let c = 0; c < NC; c++) {
     const lat = DIR[c * 3 + 1];
-    // Base from vapour and latitude (ITC / midlat)
     let p = vapour * (0.4 + 0.6 * (1 - Math.abs(Math.abs(lat) - 0.3))) * 0.08;
-    // Orographic: upslope relative to wind
-    let maxUp = 0;
+    const wu = W.windU?.[c] || 0;
+    const wv = W.windV?.[c] || 0;
+    let upslope = 0, lee = 0;
     for (let k = 0; k < 4; k++) {
       const n = NBR[c * 4 + k];
+      const dx = DIR[n * 3] - DIR[c * 3];
+      const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
+      const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
+      const e = dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2];
+      const nn = dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2];
+      const along = wu * e + wv * nn;
       const slope = h[c] - h[n];
-      if (slope > maxUp) maxUp = slope;
+      if (along < 0 && slope > 0) upslope = Math.max(upslope, slope * (-along));
+      if (along < 0 && slope < 0) lee = Math.max(lee, -slope * (-along));
     }
-    p += maxUp * vapour * 0.5;
-    // Rain shadow: leeward drying approximated by lowering moist diffusion later
+    p += upslope * vapour * 2.4;
+    p *= 1 / (1 + lee * 10);
+    if (W._monsoon > 0.45 && Math.abs(lat) < 0.48 && h[c] >= seaLevel) {
+      const summer = Math.sin(W.season || 0) * lat;
+      if (summer > 0.08) p += W._monsoon * vapour * 0.22;
+    }
+    const enso = W._ensoIndex || 0;
+    if (Math.abs(enso) > 0.15 && Math.abs(lat) < 0.32) {
+      const x = DIR[c * 3];
+      if (enso > 0) p *= x > 0.1 ? 1.22 : x < -0.1 ? 0.78 : 1;
+      else p *= x < -0.1 ? 1.12 : x > 0.1 ? 0.88 : 1;
+    }
     if (!canLiquid) p *= 0.15;
     precip[c] = clamp(p, 0, 1);
     precipTotal += precip[c] * AREA[c];
@@ -188,14 +254,22 @@ export function hydroTick(W) {
     if (h[c] < seaLevel) {
       _m[c] = canLiquid ? 1 : 0.05;
     } else {
-      const dM = (moist[NBR[c * 4]] + moist[NBR[c * 4 + 1]] + moist[NBR[c * 4 + 2]] + moist[NBR[c * 4 + 3]]) * 0.25;
-      // wind bias: pull from upwind neighbour (simplified via windU as lat band)
+      const dM = neighbourMean(moist, c);
       _m[c] = clamp(moist[c] * 0.92 + precip[c] * 0.55 + (dM - moist[c]) * 0.2 - rule.aridity * 0.08, 0, 1);
-      // Sticky horse-latitude deserts — keep barren rock for bloom contrast
-      const lat = Math.abs(DIR[c * 3 + 1]);
-      if (lat > 0.3 && lat < 0.5 && W.life[c] < 0.2) {
-        _m[c] = Math.min(_m[c], 0.14);
+      const wu = windU?.[c] || 0, wv = windV?.[c] || 0;
+      let lee = 0;
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[c * 4 + k];
+        const dx = DIR[n * 3] - DIR[c * 3];
+        const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
+        const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
+        const e = dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2];
+        const nn = dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2];
+        const along = wu * e + wv * nn;
+        const slope = h[c] - h[n];
+        if (along < 0 && slope < 0) lee = Math.max(lee, -slope * (-along));
       }
+      if (lee > 0.01) _m[c] *= 1 / (1 + lee * 6);
     }
   }
   moist.set(_m);

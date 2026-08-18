@@ -5,7 +5,7 @@ import { clamp } from '../../math.js';
 import { NC, DIR } from '../../sphere.js';
 import { W, chronLog } from '../../world.js';
 import { GUILDS } from '../redox.js';
-import { TRAITS, addLineage, blankTraits } from '../evolve.js';
+import { TRAITS, addLineage, blankTraits, nodeOf, removeLiving } from '../evolve.js';
 import { LIFE_CLASSES, seedLife } from '../bio.js';
 import { paintBrush, beginStroke } from './brush.js';
 import { issueReceipt, causalChain } from './receipt.js';
@@ -71,7 +71,6 @@ export function seedGuildAt(cell, guildId = selectedGuild, radiusRad = null) {
   const r = paintBrush(cell, (c, f) => {
     W.life[c] = Math.min(1, W.life[c] + 0.35 * f);
     W.guildDens[guildId][c] = Math.min(1, (W.guildDens[guildId][c] || 0) + 0.5 * f);
-    if (g.oxygenic) W.lifeClass[c] = Math.max(W.lifeClass[c], 0);
     touched.push(c);
   }, radiusRad != null ? { radiusRad } : {});
 
@@ -131,7 +130,7 @@ export function transplantClade(fromCell, toCell, invasive = false) {
   });
   if (invasive) {
     // Generalist boost
-    const node = W.tree.nodes.find((n) => n.id === cladeId);
+    const node = nodeOf(W.tree, cladeId);
     if (node) {
       node.traits[TRAITS.dispersal] = Math.min(1, node.traits[TRAITS.dispersal] + 0.2);
       node.traits[TRAITS.defence] = Math.min(1, node.traits[TRAITS.defence] + 0.15);
@@ -168,7 +167,7 @@ export function declareRefuge(cell) {
 /** Cull a clade by id. Item 50. */
 export function cullClade(cladeId) {
   if (!W.tree) return { ok: false };
-  const node = W.tree.nodes.find((n) => n.id === cladeId);
+  const node = nodeOf(W.tree, cladeId);
   if (!node) return { ok: false, note: 'Unknown clade' };
   let killed = 0;
   for (let c = 0; c < NC; c++) {
@@ -180,7 +179,7 @@ export function cullClade(cladeId) {
   }
   node.pop = 0;
   if (node.death == null) node.death = W.ageYr;
-  W.tree.living = W.tree.living.filter((id) => id !== cladeId);
+  removeLiving(W.tree, cladeId);
   W.extinctionDebt = (W.extinctionDebt || 0) + killed;
   issueReceipt({
     tool: 'cull',
@@ -205,9 +204,9 @@ export function forceTransition(key) {
   const ready = readiness[key] ?? 0.2;
   const priceMult = clamp(1.5 - ready, 0.3, 2.5);
   W.transitions[key] = true;
-  if (key === 'eukaryote') W.unlockedClass = Math.max(W.unlockedClass, 1);
-  if (key === 'multicellular') W.unlockedClass = Math.max(W.unlockedClass, 2);
-  if (key === 'landPlant') W.unlockedClass = Math.max(W.unlockedClass, 3);
+  W.modulePool?.add(key);
+  W.transitionAge = W.transitionAge || {};
+  W.transitionAge[key] = W.ageYr;
   issueReceipt({
     tool: 'transition',
     cell: 0,
@@ -221,7 +220,7 @@ export function forceTransition(key) {
 
 /** Directed selection on living clade. Item 48. */
 export function pushTrait(cladeId, traitIndex, delta) {
-  const node = W.tree?.nodes?.find((n) => n.id === cladeId);
+  const node = nodeOf(W.tree, cladeId);
   if (!node) return { ok: false };
   const before = node.traits[traitIndex];
   node.traits[traitIndex] = clamp(before + delta, 0, 1);
@@ -270,7 +269,6 @@ export function seedClassAt(cell) {
   beginStroke(['life']);
   const r = paintBrush(cell, (c, f) => {
     W.life[c] = Math.min(1, W.life[c] + 0.4 * f);
-    W.lifeClass[c] = Math.max(W.lifeClass[c] | 0, cls);
   });
   seedLife(W, cell, cls);
   issueReceipt({

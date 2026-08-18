@@ -1,4 +1,5 @@
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY — Program Briefs</title>
 <style>
 /* ---------------------------------------------------------------- tokens */
@@ -39,18 +40,45 @@
 
 *{box-sizing:border-box;}
 body{margin:0;background:var(--ground);color:var(--text);
-     font:400 16px/1.62 var(--sans); -webkit-font-smoothing:antialiased;}
+     font:400 16px/1.62 var(--sans); -webkit-font-smoothing:antialiased;
+     overflow-x:clip; -webkit-text-size-adjust:100%;}
 ::selection{background:var(--accent-soft);}
 
 /* ---------------------------------------------------------------- layout */
 .shell{display:grid; grid-template-columns:225px minmax(0,1fr); gap:0; max-width:1180px; margin:0 auto;}
 .rail{position:sticky; top:0; height:100vh; padding:38px 22px 38px 26px;
       border-right:1px solid var(--rule); display:flex; flex-direction:column; gap:26px; overflow-y:auto;}
+.railhead{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+.navtoggle{display:none;}
 .main{padding:38px 40px 120px; min-width:0;}
 @media (max-width:900px){
   .shell{grid-template-columns:minmax(0,1fr);}
-  .rail{position:static; height:auto; border-right:0; border-bottom:1px solid var(--rule); padding:24px 22px;}
-  .main{padding:28px 22px 80px;}
+  .rail{position:sticky; top:0; z-index:20; height:auto; max-height:none; overflow:visible;
+        border-right:0; border-bottom:1px solid var(--rule);
+        padding:14px max(16px, env(safe-area-inset-right)) 14px max(16px, env(safe-area-inset-left));
+        background:var(--ground);
+        background:color-mix(in srgb, var(--ground) 92%, transparent); backdrop-filter:blur(14px);}
+  .rail.is-open{max-height:min(78dvh, calc(100dvh - 12px)); overflow-y:auto;}
+  .navtoggle{display:inline-flex; align-items:center; justify-content:center;
+             font:500 11px/1 var(--mono); letter-spacing:.12em; text-transform:uppercase;
+             color:var(--accent); background:var(--accent-soft); border:1px solid var(--accent-line);
+             border-radius:6px; padding:8px 10px; min-height:36px; cursor:pointer;}
+  .nav, .nav-h, .railfoot{display:none;}
+  .rail.is-open .nav{display:flex;}
+  .rail.is-open .nav-h{display:block;}
+  .main{padding:22px max(16px, env(safe-area-inset-right)) 80px max(16px, env(safe-area-inset-left));}
+  .sechead{flex-wrap:wrap;}
+  h1{font-size:clamp(28px, 10vw, 48px);}
+  .thesis{max-width:none;}
+  .cta{padding:16px;}
+  .btn.ghost{margin-left:0; margin-top:8px;}
+  input[type=range]{width:min(180px, 46vw);}
+  .figbar{gap:10px;}
+  .readout{margin-left:0;}
+}
+@media (max-width:560px){
+  .metagrid{grid-template-columns:repeat(2, minmax(0,1fr));}
+  .kv{grid-template-columns:repeat(2, minmax(0,1fr));}
 }
 
 /* ------------------------------------------------------------------ rail */
@@ -150,7 +178,17 @@ input[type=range]{width:132px; accent-color:var(--accent); background:transparen
 .figcap b{color:var(--dim); font-weight:500;}
 .readout{margin-left:auto; font:500 11px/1 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums;}
 
-/* ------------------------------------------------------------------- cta */
+/* --------------------------------------------------------------- shots */
+.shots{display:grid; grid-template-columns:1.2fr .8fr; gap:10px; margin-top:26px;}
+.shots a, .shots figure{display:block; margin:0; min-width:0;}
+.shots img{display:block; width:100%; height:auto; aspect-ratio:16/9; object-fit:cover;
+           border:1px solid var(--rule); border-radius:9px; background:var(--panel); box-shadow:var(--shadow);}
+.shots .wide{grid-column:1 / -1;}
+.shotcap{margin:8px 0 0; font:400 12px/1.5 var(--mono); color:var(--faint);}
+@media (max-width:720px){
+  .shots{grid-template-columns:minmax(0,1fr);}
+  .shots .wide{grid-column:auto;}
+}
 .cta{margin-top:26px; border:1px solid var(--accent-line); border-radius:9px;
      background:linear-gradient(180deg,var(--accent-soft),transparent); padding:22px 24px;}
 .cta h3{margin:0; font-size:18px;}
@@ -181,7 +219,10 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
 
 <div class="shell">
 <nav class="rail">
-  <div class="mark">Orrery<small>Program briefs · v0.1</small></div>
+  <div class="railhead">
+    <div class="mark">Orrery<small>Program briefs · v0.1</small></div>
+    <button type="button" class="navtoggle" aria-expanded="false" aria-controls="nav">Sections</button>
+  </div>
   <div class="nav" id="nav">
     <a href="#substrate"><code>FIG 1</code><span>The cube sphere</span></a>
     <div class="nav-h">Product design</div>
@@ -212,6 +253,8 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
     <a href="tides-weather.html"><code>TW</code><span>Tides &amp; weather — 200 items</span></a>
     <a href="geology.html"><code>GE</code><span>Geology — 200 items</span></a>
     <a href="exoparams.html"><code>XP</code><span>Real parameters — 500 items</span></a>
+    <a href="living.html"><code>AL</code><span>Alive — 300 items</span></a>
+    <a href="currents.html"><code>CU</code><span>Currents — 200 items</span></a>
     <a href="https://claude.ai/code/artifact/220b7f00-e527-462b-88b7-989a16e022e9" target="_blank" rel="noopener"><code>BL*</code><span>Backlog (Claude artifact)</span></a>
   </div>
   <div class="railfoot">Draft for review<br>2026-08-08</div>
@@ -231,6 +274,12 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
     <div><dt>Peak team</dt><dd>4</dd></div>
   </dl>
   <p class="lede">Two companion briefs — product design and engineering — plus a working WebXR prototype of the substrate they both depend on. The second sentence of the thesis is the entire product; everything below is in service of making that descent feel inevitable rather than menu-driven.</p>
+  <div class="shots">
+    <a href="../vr/" class="wide"><img src="img/earth-hud.png" width="1600" height="900" alt="Orrery Earth sandbox: globe, tools dock, time ribbon, and a first-free-oxygen moment"></a>
+    <a href="../vr/"><img src="img/earth-currents.png" width="1600" height="900" alt="Surface currents painted on the globe and in the local patch"></a>
+    <a href="../vr/"><img src="img/worlds-picker.png" width="1600" height="900" alt="Worlds catalogue open beside the live planet"></a>
+  </div>
+  <p class="shotcap">From the live prototype — Earth, currents overlay, worlds drawer. <a href="../vr/">Open it</a>.</p>
 </header>
 
 <!-- ============================================================ FIGURE 1 -->
@@ -540,6 +589,11 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
 <section id="proto">
   <div class="sechead"><code>P 0</code><h2>What is already running</h2></div>
   <p>A single-file WebXR prototype, raw WebGL2, no dependencies. It is not the game — it is the substrate both briefs depend on, built so the load-bearing claims can be checked rather than asserted.</p>
+  <div class="shots">
+    <a href="../vr/"><img src="img/earth-hud.png" width="1600" height="900" alt="Tools dock, Holocene ribbon, and Earth"></a>
+    <a href="../vr/"><img src="img/earth-local.png" width="1600" height="900" alt="Expanded local map of a coastal patch beside the globe"></a>
+  </div>
+  <p class="shotcap">The two views at once: a planet you hold, and a pixel map of one patch of it.</p>
   <div class="tw"><table>
     <thead><tr><th>Claim</th><th>Status</th></tr></thead>
     <tbody>
@@ -579,6 +633,20 @@ adb reverse tcp:8777 tcp:8777        <b># with the headset connected over USB</b
 <script>
 (function(){
   "use strict";
+  const rail = document.querySelector('.rail');
+  const toggle = document.querySelector('.navtoggle');
+  toggle?.addEventListener('click', () => {
+    const on = rail.classList.toggle('is-open');
+    toggle.setAttribute('aria-expanded', String(on));
+  });
+  document.getElementById('nav')?.addEventListener('click', (e) => {
+    if (!e.target.closest('a')) return;
+    if (typeof matchMedia === 'function' && matchMedia('(max-width:900px)').matches) {
+      rail.classList.remove('is-open');
+      toggle?.setAttribute('aria-expanded', 'false');
+    }
+  });
+
   const cv = document.getElementById('cs');
   if (!cv) return;
   const ctx = cv.getContext('2d');

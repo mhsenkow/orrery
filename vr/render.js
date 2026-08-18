@@ -1,15 +1,19 @@
 /** WebGL2 rendering: planet, atmosphere, clouds, extruded entities. */
 
 import { m4, m4ident, m4mul, m4trs, m3fromM4rot, clamp, lerp } from './math.js';
-import { N, NF, NC, NV, VPF, warp, facePoint, dirToCell, DIR, NBR } from './sphere.js';
+import { N, NF, NC, VPF, warp, facePoint, dirToCell, sampleFaceField, DIR, NBR } from './sphere.js';
 import { W } from './world.js';
 import { ENT, MAX_ENT } from './agents.js';
 import { showErr } from './math.js';
 import { lifeRGB, oceanLifeRGB, GUILD_RGB, dominantGuildAt } from './sim/lifeColour.js';
 import { GUILDS } from './sim/redox.js';
+import { BIOMES } from './sim/ecology.js';
+import { GROUND, presentTime, tidePhase, waterStage } from './sim/present.js';
 import { getSpriteAtlas, ATLAS_COLS } from './sprites.js';
 import { buildTransmittanceLUT, uploadScatterLUT, buildMultipleScatterLUT, updateScatterLUT } from './sim/scatter.js';
 import { applyOverlay } from './sim/overlay.js';
+import { fillFlowStreaks } from './sim/flowviz.js';
+import { localSeaLevel, isSubmerged } from './sim/cellSurface.js';
 import { meshForEntity } from './sim/mesh.js';
 import { initGpgpu } from './sim/gpgpu/index.js';
 import { slotWorldPos, tickTable } from './sim/orreryTable.js';
@@ -47,14 +51,50 @@ function upload(b, arr, usage) {
   gl.bufferData(gl.ARRAY_BUFFER, arr, usage || gl.STATIC_DRAW);
 }
 
-/* ---------- geometry lattice ---------- */
-export let vDir = new Float32Array(NV * 3);
-export let vCell = new Int32Array(NV);
-export let vPos = new Float32Array(NV * 3);
-export let vNrm = new Float32Array(NV * 3);
-export let vDat = new Uint8Array(NV * 4);
+/* ---------- geometry lattice (globe mesh can be finer than sim N) ---------- */
+export const GLOBE_SUBD_ALLOWED = [1, 2, 3, 4];
+/** Cap globe lattice edge — keeps vertex count sane at N=192 × 4×. */
+export const MAX_GN = 384;
+export let GLOBE_SUBD = 2;
+let GN = N * GLOBE_SUBD;
+let GNV = 6 * (GN + 1) * (GN + 1);
+let GVPF = (GN + 1) * (GN + 1);
+let _cellDat = new Uint8Array(NC * 4);
+let vMix0, vMix1, vMix2, vMix3;
+let vMixC0, vMixC1, vMixC2, vMixC3;
+
+export function globeN() { return GN; }
+export function globeVertexCount() { return GNV; }
+export function effectiveGlobeSubd(n = N) {
+  return Math.max(1, Math.round(Math.min(n * GLOBE_SUBD, MAX_GN) / n));
+}
+
+/** Clamp globe mesh when sim N is very high. */
+export function recommendGlobeSubd(n = N) {
+  if (n >= 192) return 1;
+  if (n >= 128) return 2;
+  if (n >= 96) return 2;
+  return GLOBE_SUBD;
+}
+
+export function setGlobeSubd(subd) {
+  const s = GLOBE_SUBD_ALLOWED.includes(subd) ? subd : GLOBE_SUBD;
+  if (s === GLOBE_SUBD) return s;
+  GLOBE_SUBD = s;
+  buildLatticeArrays();
+  return s;
+}
+
+export let vDir = new Float32Array(GNV * 3);
+export let vCell = new Int32Array(GNV);
+export let vPos = new Float32Array(GNV * 3);
+export let vNrm = new Float32Array(GNV * 3);
+export let vDat = new Uint8Array(GNV * 4);
 /** Per-vertex atlas UV into field textures (6N × N). Next backlog gbuf. */
-export let vFieldUV = new Float32Array(NV * 2);
+export let vFieldUV = new Float32Array(GNV * 2);
+let vFace = new Uint8Array(GNV);
+let vGridI = new Uint16Array(GNV);
+let vGridJ = new Uint16Array(GNV);
 export let vIdx;
 
 const GUILD_INDEX = Object.fromEntries(GUILDS.map((g, i) => [g.id, i]));
@@ -69,38 +109,98 @@ let scatterLut = null;
 export let overlayMode = 'none';
 export function setOverlayMode(m) { overlayMode = m || 'none'; }
 
+let _flowBuf = null;
+let FLOW_COUNT = 0;
+
 let weldGroups = [];
 
+function bindVertexMix() {
+  vMix0 = new Float32Array(GNV);
+  vMix1 = new Float32Array(GNV);
+  vMix2 = new Float32Array(GNV);
+  vMix3 = new Float32Array(GNV);
+  vMixC0 = new Uint32Array(GNV);
+  vMixC1 = new Uint32Array(GNV);
+  vMixC2 = new Uint32Array(GNV);
+  vMixC3 = new Uint32Array(GNV);
+  for (let k = 0; k < GNV; k++) {
+    const f = vFace[k], gi = vGridI[k], gj = vGridJ[k];
+    const ci = (gi / GN) * N;
+    const cj = (gj / GN) * N;
+    const i0 = Math.floor(ci);
+    const j0 = Math.floor(cj);
+    const fu = ci - i0;
+    const fv = cj - j0;
+    const i1 = Math.min(i0 + 1, N - 1);
+    const j1 = Math.min(j0 + 1, N - 1);
+    const j0c = clamp(j0, 0, N - 1);
+    const j1c = clamp(j1, 0, N - 1);
+    const i0c = clamp(i0, 0, N - 1);
+    const i1c = clamp(i1, 0, N - 1);
+    vMixC0[k] = f * NF + j0c * N + i0c;
+    vMixC1[k] = f * NF + j0c * N + i1c;
+    vMixC2[k] = f * NF + j1c * N + i0c;
+    vMixC3[k] = f * NF + j1c * N + i1c;
+    vMix0[k] = (1 - fu) * (1 - fv);
+    vMix1[k] = fu * (1 - fv);
+    vMix2[k] = (1 - fu) * fv;
+    vMix3[k] = fu * fv;
+  }
+}
+
+function spreadVertexDat() {
+  for (let k = 0; k < GNV; k++) {
+    const o = k << 2;
+    const b0 = vMixC0[k] << 2;
+    const b1 = vMixC1[k] << 2;
+    const b2 = vMixC2[k] << 2;
+    const b3 = vMixC3[k] << 2;
+    const w0 = vMix0[k], w1 = vMix1[k], w2 = vMix2[k], w3 = vMix3[k];
+    vDat[o] = (w0 * _cellDat[b0] + w1 * _cellDat[b1] + w2 * _cellDat[b2] + w3 * _cellDat[b3]) | 0;
+    vDat[o + 1] = (w0 * _cellDat[b0 + 1] + w1 * _cellDat[b1 + 1] + w2 * _cellDat[b2 + 1] + w3 * _cellDat[b3 + 1]) | 0;
+    vDat[o + 2] = (w0 * _cellDat[b0 + 2] + w1 * _cellDat[b1 + 2] + w2 * _cellDat[b2 + 2] + w3 * _cellDat[b3 + 2]) | 0;
+    vDat[o + 3] = (w0 * _cellDat[b0 + 3] + w1 * _cellDat[b1 + 3] + w2 * _cellDat[b2 + 3] + w3 * _cellDat[b3 + 3]) | 0;
+  }
+}
+
 function buildLatticeArrays() {
-  vDir = new Float32Array(NV * 3);
-  vCell = new Int32Array(NV);
-  vPos = new Float32Array(NV * 3);
-  vNrm = new Float32Array(NV * 3);
-  vDat = new Uint8Array(NV * 4);
-  vFieldUV = new Float32Array(NV * 2);
+  GN = Math.min(N * GLOBE_SUBD, MAX_GN);
+  GNV = 6 * (GN + 1) * (GN + 1);
+  GVPF = (GN + 1) * (GN + 1);
+  _cellDat = new Uint8Array(NC * 4);
+  vDir = new Float32Array(GNV * 3);
+  vCell = new Int32Array(GNV);
+  vPos = new Float32Array(GNV * 3);
+  vNrm = new Float32Array(GNV * 3);
+  vDat = new Uint8Array(GNV * 4);
+  vFieldUV = new Float32Array(GNV * 2);
+  vFace = new Uint8Array(GNV);
+  vGridI = new Uint16Array(GNV);
+  vGridJ = new Uint16Array(GNV);
   FIELD_W = 6 * N;
   FIELD_H = N;
   const p = [0, 0, 0];
   let k = 0;
-  for (let f = 0; f < 6; f++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++, k++) {
-    const s = i / N * 2 - 1, t = j / N * 2 - 1;
+  for (let f = 0; f < 6; f++) for (let j = 0; j <= GN; j++) for (let i = 0; i <= GN; i++, k++) {
+    const s = i / GN * 2 - 1, t = j / GN * 2 - 1;
     facePoint(f, warp(s), warp(t), p);
     vDir[k * 3] = p[0]; vDir[k * 3 + 1] = p[1]; vDir[k * 3 + 2] = p[2];
+    vFace[k] = f;
+    vGridI[k] = i;
+    vGridJ[k] = j;
     const c = dirToCell(p[0], p[1], p[2]);
     vCell[k] = c;
-    const cf = (c / NF) | 0;
-    const rem = c - cf * NF;
-    const cj = (rem / N) | 0;
-    const ci = rem - cj * N;
-    vFieldUV[k * 2] = (cf * N + ci + 0.5) / FIELD_W;
+    const ci = (i / GN) * N;
+    const cj = (j / GN) * N;
+    vFieldUV[k * 2] = (f * N + ci + 0.5) / FIELD_W;
     vFieldUV[k * 2 + 1] = (cj + 0.5) / FIELD_H;
   }
-  const idx = new Uint32Array(6 * N * N * 6);
+  const idx = new Uint32Array(6 * GN * GN * 6);
   let m = 0;
   for (let f = 0; f < 6; f++) {
-    const o = f * VPF;
-    for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-      const a = o + j * (N + 1) + i, b = a + 1, c = a + (N + 1), d = c + 1;
+    const o = f * GVPF;
+    for (let j = 0; j < GN; j++) for (let i = 0; i < GN; i++) {
+      const a = o + j * (GN + 1) + i, b = a + 1, c = a + (GN + 1), d = c + 1;
       idx[m++] = a; idx[m++] = b; idx[m++] = c;
       idx[m++] = b; idx[m++] = d; idx[m++] = c;
     }
@@ -108,9 +208,9 @@ function buildLatticeArrays() {
   vIdx = idx;
   // Weld groups
   const map = new Map(), out = [];
-  for (let f = 0; f < 6; f++) for (let j = 0; j <= N; j++) for (let i = 0; i <= N; i++) {
-    if (i !== 0 && i !== N && j !== 0 && j !== N) continue;
-    const kk = f * VPF + j * (N + 1) + i;
+  for (let f = 0; f < 6; f++) for (let j = 0; j <= GN; j++) for (let i = 0; i <= GN; i++) {
+    if (i !== 0 && i !== GN && j !== 0 && j !== GN) continue;
+    const kk = f * GVPF + j * (GN + 1) + i;
     const key = Math.round(vDir[kk * 3] * 1e6) + ',' + Math.round(vDir[kk * 3 + 1] * 1e6) + ',' + Math.round(vDir[kk * 3 + 2] * 1e6);
     let a = map.get(key);
     if (!a) { a = []; map.set(key, a); }
@@ -118,6 +218,7 @@ function buildLatticeArrays() {
   }
   for (const a of map.values()) if (a.length > 1) out.push(a);
   weldGroups = out;
+  bindVertexMix();
 }
 
 buildLatticeArrays();
@@ -128,6 +229,8 @@ export function remeshPlanet() {
   if (!gl || !buf) return;
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, vIdx, gl.STATIC_DRAW);
+  upload(buf.pos, vPos);
+  upload(buf.nrm, vNrm);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
   gl.bufferData(gl.ARRAY_BUFFER, vDat.byteLength, gl.DYNAMIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.fieldUV);
@@ -141,6 +244,7 @@ export function remeshPlanet() {
   }
   rebuildScatterLUTs();
   rebuildGeometry();
+  refreshColours(1);
 }
 
 /** Rebuild transmittance / multi-scatter from current atmosphere knobs. */
@@ -173,6 +277,7 @@ let _localRim = null;
 let LOCAL_RIM_COUNT = 0;
 let _localSet = null;
 let _localFocus = -1;
+let _localHover = -1;
 let _localWash = false;
 let _localRimOn = false;
 let _localKey = '';
@@ -185,6 +290,10 @@ let _orbitOblKey = NaN;
 /** Highlight cells dominated by a redox guild (Lab tower hover). */
 export function setGuildHighlight(guildId) {
   _guildHL = guildId || null;
+}
+
+export function setLocalHover(cell) {
+  _localHover = cell | 0;
 }
 
 /** Build spin-axis + equator + ecliptic line overlays for a given obliquity. */
@@ -267,7 +376,7 @@ void main(){
 }`, F_HEAD + `
 in vec3 vN; in vec4 vD; in vec3 vW; in vec2 vFUV;
 uniform vec3 uSun, uCam, uAtmo; uniform float uDetail, uAtmoK, uNight, uDaisy, uOpacity, uXRay, uEarth;
-uniform float uOzone, uAerosol, uMag, uTime, uHaze, uExposure;
+uniform float uOzone, uAerosol, uMag, uTime, uHaze, uExposure, uMoon;
 uniform float uStorm, uCloudShadow, uMagTilt;
 uniform sampler2D uField0; uniform sampler2D uField1; uniform sampler2D uScatter; uniform sampler2D uScatterMs;
 out vec4 o;
@@ -308,10 +417,9 @@ void main(){
   interBand = max(interBand * (0.35 + moistF), interF * landMask * 1.2);
   vec3 biome=vD.rgb;
   float greenDom = biome.g - max(biome.r, biome.b);
-  float lifeGreen = max(
-    smoothstep(0.08, 0.35, greenDom) * smoothstep(0.35, 0.7, biome.g),
-    lifeF * landMask * smoothstep(0.06, 0.35, lifeF)
-  ) * (1.0 - uDaisy) * (1.0 - iceF * 0.85);
+  float vegFallback = smoothstep(0.08, 0.35, greenDom) * smoothstep(0.35, 0.7, biome.g);
+  float lifeGreen = mix(vegFallback, lifeF, smoothstep(0.02, 0.12, lifeF))
+    * landMask * (1.0 - uDaisy) * (1.0 - iceF * 0.85);
   // Phenology / green wave from NPP pulse
   lifeGreen *= 0.75 + 0.35 * nppF;
   float lum = (biome.r+biome.g+biome.b)/3.0;
@@ -366,6 +474,11 @@ void main(){
   col += vec3(0.05, 0.65, 0.42) * uNight * night * max(lifeGreen, lifeF * waterMask) * 0.7;
   col += vec3(1.0,0.72,0.35)*uNight*night*vD.b*0.14*(1.0-uDaisy);
   col += vec3(1.0,0.35,0.08)*uNight*night*smoothstep(0.7,1.0,vD.a)*0.08;
+  // Moonlight on the night side — same opposition as a full moon, same cool wash as the map
+  float ml = max(dot(N, -uSun), 0.0);
+  col += vec3(0.14, 0.19, 0.34) * uMoon * night * (0.22 + ml * 0.7);
+  vec3 Hm = normalize(-uSun + V);
+  col += vec3(0.55, 0.64, 0.9) * pow(max(dot(N, Hm), 0.0), gloss) * waterish * uMoon * night * 0.55;
   float termBand = exp(-pow(nl - 0.05, 2.0) * 40.0);
   // Lightning gated by local storm (cloud × precip) — flashes where storms are
   float stormLocal = cloudF * max(moistF, 0.35) * max(uStorm, 0.15);
@@ -575,6 +688,7 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
     sph: gl.createBuffer(), sphIdx: gl.createBuffer(), grid: gl.createBuffer(),
     cellGrid: gl.createBuffer(),
     localRim: gl.createBuffer(),
+    flowStreaks: gl.createBuffer(),
     cloud: gl.createBuffer(), cloudCov: gl.createBuffer(),
   };
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.idx);
@@ -594,8 +708,8 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
   for (const tex of [fieldTex0, fieldTex1]) {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FIELD_W, FIELD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   }
@@ -686,19 +800,24 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
 }
 
 export function rebuildGeometry() {
-  const sea = W.seaLevel;
   const earth = !!W.rule.earthLike;
-  // Earth: gentle continents. Build towers stay tiny — colour carries settlements.
-  const relief = earth ? Math.min(W.rule.relief || 0.05, 0.018) : (W.rule.relief || 0.05);
+  // Earth: visible relief without needle peaks. Build towers stay tiny.
+  const relief = earth ? Math.min(W.rule.relief || 0.05, 0.028) : (W.rule.relief || 0.05);
   const buildAmp = earth ? 0.0035 : 0.012;
-  for (let k = 0; k < NV; k++) {
+
+  function heightAtVertex(k) {
+    return sampleFaceField(W.h, vFace[k], vGridI[k], vGridJ[k], GN);
+  }
+
+  for (let k = 0; k < GNV; k++) {
     const c = vCell[k];
-    let e = Math.max(W.h[c], sea);
-    // Soften cell-to-cell cliffs so land reads as plates, not needles
+    const sea = localSeaLevel(W, c);
+    let e = Math.max(heightAtVertex(k), sea);
+    // Soften cell-to-cell cliffs so land reads as plates, not blocky quads
     if (earth) {
       let s = e;
-      for (let i = 0; i < 4; i++) s += Math.max(W.h[NBR[c * 4 + i]], sea);
-      e = e * 0.45 + (s / 5) * 0.55;
+      for (let i = 0; i < 4; i++) s += Math.max(W.h[NBR[c * 4 + i]], localSeaLevel(W, NBR[c * 4 + i]));
+      e = e * 0.4 + (s / 5) * 0.6;
     }
     const build = Math.min(1, W.build?.[c] || 0);
     const r = 1 + (e - sea) * relief + build * buildAmp;
@@ -721,13 +840,12 @@ export function rebuildGeometry() {
     for (const k of g) { nx += vNrm[k * 3]; ny += vNrm[k * 3 + 1]; nz += vNrm[k * 3 + 2]; }
     for (const k of g) { vNrm[k * 3] = nx; vNrm[k * 3 + 1] = ny; vNrm[k * 3 + 2] = nz; }
   }
-  for (let k = 0; k < NV; k++) {
+  for (let k = 0; k < GNV; k++) {
     const o = k * 3, l = Math.hypot(vNrm[o], vNrm[o + 1], vNrm[o + 2]) || 1;
     vNrm[o] /= l; vNrm[o + 1] /= l; vNrm[o + 2] /= l;
   }
   if (gl) { upload(buf.pos, vPos); upload(buf.nrm, vNrm); }
   uploadCellGrid();
-  refreshColours(1);
 }
 
 /** Cell-edge wireframe following terrain relief — for View → Grid. */
@@ -738,18 +856,25 @@ function uploadCellGrid() {
   const out = _cellGrid;
   let m = 0;
   const lift = 1.003; // sit slightly above the surface to avoid z-fighting
+  const step = GLOBE_SUBD;
   for (let f = 0; f < 6; f++) {
-    const o = f * VPF;
+    const o = f * GVPF;
     for (let j = 0; j <= N; j++) {
+      const gj = j * step;
       for (let i = 0; i < N; i++) {
-        const a = (o + j * (N + 1) + i) * 3, b = a + 3;
+        const gi = i * step;
+        const a = (o + gj * (GN + 1) + gi) * 3;
+        const b = a + step * 3;
         out[m++] = vPos[a] * lift; out[m++] = vPos[a + 1] * lift; out[m++] = vPos[a + 2] * lift;
         out[m++] = vPos[b] * lift; out[m++] = vPos[b + 1] * lift; out[m++] = vPos[b + 2] * lift;
       }
     }
     for (let j = 0; j < N; j++) {
+      const gj = j * step;
       for (let i = 0; i <= N; i++) {
-        const a = (o + j * (N + 1) + i) * 3, c = a + (N + 1) * 3;
+        const gi = i * step;
+        const a = (o + gj * (GN + 1) + gi) * 3;
+        const c = a + step * (GN + 1) * 3;
         out[m++] = vPos[a] * lift; out[m++] = vPos[a + 1] * lift; out[m++] = vPos[a + 2] * lift;
         out[m++] = vPos[c] * lift; out[m++] = vPos[c + 1] * lift; out[m++] = vPos[c + 2] * lift;
       }
@@ -762,9 +887,13 @@ function uploadCellGrid() {
   }
 }
 
+function buildLiftAmt(c) {
+  return (W.build[c] || 0) * (W.rule?.earthLike ? 0.0035 : 0.012);
+}
+
 function cellSurfPos(c, lift = 1.005) {
-  const buildLift = (W.build[c] || 0) * 0.12;
-  const rr = (1 + (Math.max(W.h[c], W.seaLevel) - W.seaLevel) * W.rule.relief + buildLift) * lift;
+  const rel = W.rule.earthLike ? Math.min(W.rule.relief || 0.028, 0.028) : (W.rule.relief || 0.05);
+  const rr = (1 + (Math.max(W.h[c], W.seaLevel) - W.seaLevel) * rel + buildLiftAmt(c)) * lift;
   return [DIR[c * 3] * rr, DIR[c * 3 + 1] * rr, DIR[c * 3 + 2] * rr];
 }
 
@@ -780,6 +909,7 @@ export function updateLocalHighlight(patch, mode = 'off') {
   _localRimOn = wantRim;
   _localSet = wantWash || wantRim ? (patch?.cellSet || null) : null;
   _localFocus = patch?.focus ?? -1;
+  if (patch?.hoverCell != null) _localHover = patch.hoverCell | 0;
 
   if (!wantRim || !patch?.cells) {
     LOCAL_RIM_COUNT = 0;
@@ -787,9 +917,9 @@ export function updateLocalHighlight(patch, mode = 'off') {
     return;
   }
 
-  const key = `${patch.focus}:${patch.radius}:${mode}`;
-  // Rebuild rim whenever focus/radius changes (relief drifts slowly — rebuild each call is fine for ~100 segs)
-  const { cells, side, radius, focus } = patch;
+  const key = `${patch.focus}:${patch.radius}:${mode}:${((W.build?.[patch.focus] || 0) * 20) | 0}`;
+  if (key === _localKey && LOCAL_RIM_COUNT > 0) return;
+  const { cells, side, focus } = patch;
   const maxSegs = side * 4 + 8; // perimeter + focus cross
   if (!_localRim || _localRim.length < maxSegs * 6) _localRim = new Float32Array(maxSegs * 6);
   const out = _localRim;
@@ -805,7 +935,7 @@ export function updateLocalHighlight(patch, mode = 'off') {
   for (let j = 1; j < side; j++) ring.push(cells[j * side + (side - 1)]);
   for (let i = side - 2; i >= 0; i--) ring.push(cells[(side - 1) * side + i]);
   for (let j = side - 2; j >= 1; j--) ring.push(cells[j * side + 0]);
-  const pts = ring.filter((c) => c >= 0).map((c) => cellSurfPos(c));
+  const pts = ring.filter((c) => c >= 0).map((c) => cellSurfPos(c, 1.008));
   for (let i = 0; i < pts.length; i++) {
     emit(pts[i], pts[(i + 1) % pts.length]);
   }
@@ -831,18 +961,16 @@ export function updateLocalHighlight(patch, mode = 'off') {
 
 export function refreshColours(alpha = 1) {
   const R = W.rule;
-  const seaBase = W._seaBase ?? W.seaLevel;
   const pigment = W.dominantPigment;
   const season = W.season || 0;
-  for (let k = 0; k < NV; k++) {
-    const c = vCell[k];
+  for (let c = 0; c < NC; c++) {
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
     const ice = lerp(W.prevIce[c], W.ice[c], alpha);
-    const sea = seaBase + (W.tideHeight?.[c] || 0) * 0.85;
+    const sea = localSeaLevel(W, c);
     const inter = W.intertidal?.[c] || 0;
     let col;
-    if (W.h[c] < sea) {
+    if (isSubmerged(W, c)) {
       const d = clamp((sea - W.h[c]) * 1.9, 0, 1);
       const deep = [
         lerp(48, 22, d),
@@ -868,9 +996,19 @@ export function refreshColours(alpha = 1) {
       }
       // Whitecaps / wind roughness — storm brightens the sea
       const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
-      if (wind > 0.28 && ice < 0.3) {
-        const foam = clamp(Math.pow(wind, 3) * 0.55, 0, 0.45);
+      const seaState = Math.max(wind, W.waveHt?.[c] || 0);
+      if (seaState > 0.28 && ice < 0.3) {
+        const foam = clamp(Math.pow(seaState, 3) * 0.55, 0, 0.45);
         col = [lerp(col[0], 235, foam), lerp(col[1], 238, foam), lerp(col[2], 245, foam)];
+      }
+      const sst = W.oceanSurf?.[c];
+      if (sst != null && ice < 0.25) {
+        const warm = clamp((sst - 0.45) * 1.4, -0.35, 0.45);
+        col = [
+          col[0] + warm * 28,
+          col[1] + warm * 8,
+          col[2] - warm * 22,
+        ];
       }
       // Rain darkening under storm cells
       if ((W.precip?.[c] || 0) > 0.25 && ice < 0.2) {
@@ -916,18 +1054,23 @@ export function refreshColours(alpha = 1) {
       // Storm field / surge — named cyclones read as bright rain + muddy surge
       const storm = W.stormField?.[c] || 0;
       const surge = W.surgeField?.[c] || 0;
-      if (storm > 0.12 && ice < 0.35) {
+      const trail = W.stormTrail?.[c] || 0;
+      if (trail > 0.12 && ice < 0.4) {
+        const tk = clamp(trail, 0, 1) * 0.35;
+        col = [lerp(col[0], 255, tk), lerp(col[1], 190, tk * 0.8), lerp(col[2], 70, tk * 0.5)];
+      }
+      if (storm > 0.08 && ice < 0.35) {
         const sk = clamp(storm, 0, 1);
         col = [
-          lerp(col[0], 48, sk * 0.55),
-          lerp(col[1], 58, sk * 0.45),
-          lerp(col[2], 72, sk * 0.35),
+          lerp(col[0], 36, sk * 0.62),
+          lerp(col[1], 52, sk * 0.5),
+          lerp(col[2], 78, sk * 0.4),
         ];
         if (W.h[c] < sea) {
           col = [
-            lerp(col[0], 210, sk * 0.25),
-            lerp(col[1], 215, sk * 0.28),
-            lerp(col[2], 225, sk * 0.3),
+            lerp(col[0], 230, sk * 0.38),
+            lerp(col[1], 235, sk * 0.4),
+            lerp(col[2], 245, sk * 0.42),
           ];
         }
       }
@@ -950,12 +1093,80 @@ export function refreshColours(alpha = 1) {
       const e = (W.h[c] - sea) / (1 - sea + 1e-6);
       const extra = R.daisyworld ? { black: W.blackDaisy[c], white: W.whiteDaisy[c] } : null;
       col = R.land(temp, W.moist[c], life, e, ice, extra);
-      // Intertidal ochre — coast that breathes
+      // Intertidal ochre — coast that breathes with the presentation tide
       if (inter > 0.08) {
-        const wet = W.tideWet?.[c] || 0;
+        const wet = (W.tideWet?.[c] || 0) * 0.35 + tidePhase(c) * 0.65;
         const mud = [150 + wet * 40, 118 + wet * 22, 68];
         const ik = clamp(inter, 0, 1) * (0.55 + wet * 0.35);
         col = [lerp(col[0], mud[0], ik), lerp(col[1], mud[1], ik), lerp(col[2], mud[2], ik)];
+      }
+      const biome = W.biome ? BIOMES[W.biome[c]] : '';
+      const gnd = biome && GROUND[biome];
+      if (gnd && ice < 0.45) {
+        const k = life > 0.12 ? 0.16 : 0.34;
+        col = [lerp(col[0], gnd[0], k), lerp(col[1], gnd[1], k), lerp(col[2], gnd[2], k)];
+      }
+      const autumn = Math.max(0, -Math.sin(season) * DIR[c * 3 + 1]);
+      if (autumn > 0.3 && life > 0.1 && ice < 0.45
+        && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest')) {
+        const k = Math.min(0.4, autumn * 0.45) * Math.min(1, life * 2);
+        col = [lerp(col[0], 196, k), lerp(col[1], 108, k), lerp(col[2], 40, k)];
+      }
+      // Water on land — drip/sheet/stream/river/lake, same ladder as the map
+      const wet = waterStage(c);
+      if (wet.stage === 'lake' && ice < 0.55) {
+        const lk = 0.45 + wet.amount * 0.4;
+        col = [lerp(col[0], 12, lk), lerp(col[1], 44, lk), lerp(col[2], 70, lk)];
+      } else if ((wet.stage === 'river' || wet.stage === 'stream') && ice < 0.55) {
+        const fk = wet.stage === 'river'
+          ? Math.min(0.55, wet.amount * 0.95)
+          : Math.min(0.28, wet.amount * 0.7);
+        col = [lerp(col[0], 16, fk), lerp(col[1], 48, fk), lerp(col[2], 72, fk)];
+      } else if (wet.stage === 'pond' && ice < 0.5) {
+        const pk = wet.amount * 0.55;
+        col = [lerp(col[0], 22, pk), lerp(col[1], 58, pk), lerp(col[2], 78, pk)];
+      } else if ((wet.stage === 'sheet' || wet.stage === 'drip') && ice < 0.45) {
+        const sk = wet.stage === 'drip' ? wet.amount * 0.12 : wet.amount * 0.32;
+        col = [col[0] * (1 - sk), col[1] * (1 - sk * 0.88), col[2] * (1 - sk * 0.55)];
+      }
+      // Convergent boundaries sit in a slight shadow — plates made this relief
+      if (W.bound?.[c] === 1 && ice < 0.4) {
+        col = [col[0] * 0.9, col[1] * 0.88, col[2] * 0.86];
+      } else if (W.bound?.[c] === 0 && ice < 0.5) {
+        // Divergent — young crust, a warm rift
+        col = [lerp(col[0], 168, 0.12), lerp(col[1], 78, 0.1), lerp(col[2], 52, 0.08)];
+      } else if (W.bound?.[c] === 2 && ice < 0.4) {
+        // Transform — gold strain
+        col = [lerp(col[0], 210, 0.08), lerp(col[1], 170, 0.06), lerp(col[2], 70, 0.05)];
+      }
+      const lava = W.lava?.[c] || 0;
+      if (lava > 0.04) {
+        const k = clamp(lava, 0, 1);
+        col = [
+          lerp(col[0], 255, k),
+          lerp(col[1], 70 + (1 - k) * 40, k),
+          lerp(col[2], 18, k * 0.9),
+        ];
+      }
+      const precipL = W.precip?.[c] || 0;
+      if (precipL > 0.28 && ice < 0.35) {
+        const rk = clamp(precipL, 0, 1) * 0.2;
+        col = [col[0] * (1 - rk), col[1] * (1 - rk * 0.9), col[2] * (1 - rk * 0.72)];
+      }
+      const stormL = W.stormField?.[c] || 0;
+      const trailL = W.stormTrail?.[c] || 0;
+      const surgeL = W.surgeField?.[c] || 0;
+      if (trailL > 0.12 && ice < 0.4) {
+        const tk = clamp(trailL, 0, 1) * 0.28;
+        col = [lerp(col[0], 255, tk), lerp(col[1], 190, tk * 0.8), lerp(col[2], 70, tk * 0.5)];
+      }
+      if (stormL > 0.12 && ice < 0.4) {
+        const sk = clamp(stormL, 0, 1) * 0.42;
+        col = [lerp(col[0], 36, sk), lerp(col[1], 48, sk), lerp(col[2], 72, sk)];
+      }
+      if (surgeL > 0.01) {
+        const gk = clamp(surgeL * 12, 0, 1);
+        col = [lerp(col[0], 210, gk * 0.28), lerp(col[1], 110, gk * 0.22), lerp(col[2], 48, gk * 0.18)];
       }
       // Seasonal phenology green wave. Item 140.
       const lat = DIR[c * 3 + 1];
@@ -1024,12 +1235,28 @@ export function refreshColours(alpha = 1) {
       const d = W.dust[c];
       col = [lerp(col[0], 180, d), lerp(col[1], 140, d), lerp(col[2], 90, d)];
     }
-    if (_localWash && _localSet && _localSet.has(c)) {
-      const k = c === _localFocus ? 0.55 : 0.28;
+    if (_localWash && _localSet) {
+      if (_localSet.has(c)) {
+        const k = c === _localFocus ? 0.14 : 0.07;
+        col = [
+          lerp(col[0], 255, k),
+          lerp(col[1], 248, k),
+          lerp(col[2], 236, k * 0.8),
+        ];
+      } else {
+        const g = (col[0] + col[1] + col[2]) / 3;
+        col = [
+          lerp(col[0], g * 0.7, 0.46),
+          lerp(col[1], g * 0.7, 0.46),
+          lerp(col[2], g * 0.78, 0.46),
+        ];
+      }
+    }
+    if (_localHover >= 0 && c === _localHover) {
       col = [
-        lerp(col[0], 255, k),
-        lerp(col[1], 210, k * 0.75),
-        lerp(col[2], 90, k * 0.4),
+        lerp(col[0], 255, 0.38),
+        lerp(col[1], 236, 0.28),
+        lerp(col[2], 160, 0.16),
       ];
     }
     // Lab redox-tower hover — light up matching guild cells
@@ -1051,13 +1278,14 @@ export function refreshColours(alpha = 1) {
         ];
       }
     }
-    const o = k * 4;
-    vDat[o] = col[0] | 0; vDat[o + 1] = col[1] | 0; vDat[o + 2] = col[2] | 0;
-    vDat[o + 3] = clamp(temp, 0, 1) * 255 | 0;
+    const o = c << 2;
+    _cellDat[o] = col[0] | 0; _cellDat[o + 1] = col[1] | 0; _cellDat[o + 2] = col[2] | 0;
+    _cellDat[o + 3] = clamp(temp, 0, 1) * 255 | 0;
   }
+  spreadVertexDat();
   if (gl) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
-    if (overlayMode && overlayMode !== 'none') applyOverlay(W, vDat, vCell, NV, overlayMode);
+    if (overlayMode && overlayMode !== 'none') applyOverlay(W, vDat, vCell, GNV, overlayMode);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, vDat);
     uploadFieldTextures(alpha);
   }
@@ -1166,7 +1394,6 @@ function bindPlanetAttribs(p) {
 /** Pack sim fields into GPU atlases. Next backlog item 1 (gbuf). */
 export function uploadFieldTextures(alpha = 1) {
   if (!gl || !fieldTex0 || !fieldPix0) return;
-  const seaBase = W._seaBase ?? W.seaLevel;
   for (let c = 0; c < NC; c++) {
     const f = (c / NF) | 0;
     const rem = c - f * NF;
@@ -1186,13 +1413,14 @@ export function uploadFieldTextures(alpha = 1) {
 
     const guild = dominantGuildAt(W, c);
     const gi = guild != null ? (GUILD_INDEX[guild] ?? 0) : 0;
-    const localSea = seaBase + (W.tideHeight?.[c] || 0) * 0.85;
+    const localSea = localSeaLevel(W, c);
     const hs = clamp(0.5 + (W.h[c] - localSea) * 2.2, 0, 1);
     const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
+    const seaState = Math.max(wind, W.waveHt?.[c] || 0);
     fieldPix1[px] = clamp(W.npp?.[c] || 0, 0, 1) * 255;
     fieldPix1[px + 1] = (gi / Math.max(1, GUILDS.length - 1)) * 255;
     fieldPix1[px + 2] = hs * 255;
-    fieldPix1[px + 3] = clamp(wind, 0, 1) * 255;
+    fieldPix1[px + 3] = clamp(seaState, 0, 1) * 255;
   }
   gl.bindTexture(gl.TEXTURE_2D, fieldTex0);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix0);
@@ -1208,7 +1436,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   const sl = Math.hypot(...sun) || 1; sun[0] /= sl; sun[1] /= sl; sun[2] /= sl;
 
   const scale = inXR ? S.scaleXR : 1;
-  const px = inXR ? S.posXR[0] : 0, py = inXR ? S.posXR[1] : 0, pz = inXR ? S.posXR[2] : 0;
+  const px = inXR ? S.posXR[0] : (S.camPanX || 0);
+  const py = inXR ? S.posXR[1] : (S.camPanY || 0);
+  const pz = inXR ? S.posXR[2] : 0;
   m4trs(MODEL, S.q, px, py, pz, scale);
   m3fromM4rot(NRM, MODEL, 1 / scale);
   m4mul(TMP, view, MODEL); m4mul(MVP, proj, TMP);
@@ -1307,6 +1537,10 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     (W.build && W.meanLife > 0.05) ? 0.15 : 0,
     (W._cityLights || 0) * 1.2
   ));
+  if (planetProg.u.uMoon) {
+    const moon = (W.moon && W.moon.mass > 0.05) ? clamp(W.moonIllum ?? 0.5, 0, 1) : 0;
+    gl.uniform1f(planetProg.u.uMoon, moon);
+  }
   gl.uniform1f(planetProg.u.uDaisy, R.daisyworld ? 1 : 0);
   gl.uniform1f(planetProg.u.uEarth, R.earthLike ? 1 : 0);
   gl.uniform1f(planetProg.u.uOpacity, opacity);
@@ -1397,7 +1631,10 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   if (_localRimOn && LOCAL_RIM_COUNT > 0) {
     gl.useProgram(flatProg);
     gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
-    gl.uniform4f(flatProg.u.uCol, 1.0, 0.82, 0.35, 0.92);
+    const act = Math.min(1,
+      (W.life[_localFocus] || 0) + (W.ash?.[_localFocus] || 0) + (W.build?.[_localFocus] || 0));
+    const pulse = 0.82 + Math.sin(presentTime() * 2.15) * 0.16 * (0.35 + act);
+    gl.uniform4f(flatProg.u.uCol, 1.0, 0.82 + pulse * 0.08, 0.32 + pulse * 0.08, 0.62 + pulse * 0.32);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.localRim);
     l = gl.getAttribLocation(flatProg, 'aPos');
     gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
@@ -1407,6 +1644,48 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.drawArrays(gl.LINES, 0, LOCAL_RIM_COUNT);
     gl.depthMask(true); gl.disable(gl.BLEND);
     disableAll();
+  }
+
+  /* current and wind streaks — the fluids as motion */
+  {
+    if (!_flowBuf) _flowBuf = new Float32Array(1600 * 6);
+    const want = overlayMode === 'wind' ? 'wind'
+      : overlayMode === 'current' || overlayMode === 'upwell' ? 'ocean'
+      : 'all';
+    FLOW_COUNT = fillFlowStreaks(_flowBuf, want === 'all' ? 'ocean' : want);
+    if (FLOW_COUNT > 0) {
+      gl.useProgram(flatProg);
+      gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+      const oceanish = want !== 'wind';
+      if (oceanish) gl.uniform4f(flatProg.u.uCol, 0.45, 0.88, 0.95, overlayMode === 'current' ? 0.72 : 0.28);
+      else gl.uniform4f(flatProg.u.uCol, 0.92, 0.96, 1.0, 0.38);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
+      gl.bufferData(gl.ARRAY_BUFFER, _flowBuf.subarray(0, FLOW_COUNT * 3), gl.DYNAMIC_DRAW);
+      l = gl.getAttribLocation(flatProg, 'aPos');
+      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      gl.drawArrays(gl.LINES, 0, FLOW_COUNT);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+      disableAll();
+    }
+    if (want === 'all' || want === 'wind') {
+      const nW = fillFlowStreaks(_flowBuf, 'wind');
+      if (nW > 0 && overlayMode === 'wind') {
+        gl.useProgram(flatProg);
+        gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+        gl.uniform4f(flatProg.u.uCol, 0.95, 0.97, 1.0, 0.42);
+        gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
+        gl.bufferData(gl.ARRAY_BUFFER, _flowBuf.subarray(0, nW * 3), gl.DYNAMIC_DRAW);
+        l = gl.getAttribLocation(flatProg, 'aPos');
+        gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+        gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+        gl.depthMask(false);
+        gl.drawArrays(gl.LINES, 0, nW);
+        gl.depthMask(true); gl.disable(gl.BLEND);
+        disableAll();
+      }
+    }
   }
 
   /* clouds */

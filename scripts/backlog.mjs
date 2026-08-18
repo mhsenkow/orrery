@@ -329,6 +329,7 @@ function html(){
   const data = JSON.stringify(D.map(x => ({id:x.id,c:x.c,t:x.t,d:x.d,s:x.src,e:x.e,i:x.i,r:x.ref||'',st:x.st})));
   const cats = JSON.stringify(CATS.map(([id,name,blurb]) => ({id,name,blurb})));
   return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY — 200 ways this could be better</title>
 <style>
 :root{
@@ -433,6 +434,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
 }
 @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
+<link rel="stylesheet" href="doc-responsive.css">
 
 <div class="wrap">
 <header>

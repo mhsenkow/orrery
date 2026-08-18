@@ -2,6 +2,7 @@
  *  Items 4, 11, 95, 181, 192. */
 
 import { formatAge, icsAt, eraFromState } from './sim/time.js';
+import { DIR, NC } from './sphere.js';
 
 const MAX_EVENTS = 4000;
 
@@ -72,11 +73,19 @@ export function maybeNameEra(chron, W) {
   return name;
 }
 
+/** Geographic neighbourhood — DIR cosine, not index arithmetic. */
 export function whatHappenedHere(chron, cell, radiusCells = 0) {
   const out = [];
+  const c = cell | 0;
+  const ring = Math.max(0, radiusCells | 0);
+  const minDot = ring <= 0 ? 2 : Math.cos(Math.min(1.2, ring * Math.sqrt(4 * Math.PI / NC) * 1.15));
+  const cx = DIR[c * 3], cy = DIR[c * 3 + 1], cz = DIR[c * 3 + 2];
   for (let i = chron.events.length - 1; i >= 0 && out.length < 12; i--) {
     const e = chron.events[i];
-    if (e.cell === cell || (radiusCells && Math.abs(e.cell - cell) < radiusCells * 10)) out.push(e);
+    if (e.cell === c) { out.push(e); continue; }
+    if (ring <= 0 || e.cell < 0) continue;
+    const d = cx * DIR[e.cell * 3] + cy * DIR[e.cell * 3 + 1] + cz * DIR[e.cell * 3 + 2];
+    if (d >= minDot) out.push(e);
   }
   return out;
 }

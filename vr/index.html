@@ -17,10 +17,16 @@
     --amber: #e4b86a;
     --copper: #c4784a;
     --ease: cubic-bezier(0.4, 0, 0.2, 1);
+    --safe-t: env(safe-area-inset-top, 0px);
+    --safe-r: env(safe-area-inset-right, 0px);
+    --safe-b: env(safe-area-inset-bottom, 0px);
+    --safe-l: env(safe-area-inset-left, 0px);
+    --gutter: 12px;
   }
   * { box-sizing: border-box; }
-  html,body { margin:0; height:100%; background:var(--bg); overflow:hidden;
-    font: 12.5px/1.45 "IBM Plex Mono", ui-monospace, Menlo, monospace; color:var(--text); }
+  html,body { margin:0; height:100%; height:100dvh; background:var(--bg); overflow:hidden;
+    font: 12.5px/1.45 "IBM Plex Mono", ui-monospace, Menlo, monospace; color:var(--text);
+    -webkit-text-size-adjust: 100%; }
   body::before {
     content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
     background:
@@ -33,7 +39,7 @@
   #ui.hidden { display:none; }
   button { pointer-events:auto; font:inherit; font-size:11.5px; color:var(--text); cursor:pointer;
     background:rgba(255,255,255,.04); border:1px solid var(--line);
-    border-radius:8px; padding:6px 9px;
+    border-radius:8px; padding:6px 9px; touch-action: manipulation;
     transition: background .35s var(--ease), border-color .35s var(--ease), transform .25s var(--ease); }
   button:hover { background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4); }
   button:active { transform: scale(0.97); }
@@ -66,7 +72,10 @@
   @keyframes bootSpin { to { transform: rotate(360deg); } }
 
   #topbar {
-    pointer-events:auto; position:absolute; top:12px; left:12px; right:12px; z-index:5;
+    pointer-events:auto; position:absolute; z-index:5;
+    top: calc(var(--gutter) + var(--safe-t));
+    left: calc(var(--gutter) + var(--safe-l));
+    right: calc(var(--gutter) + var(--safe-r));
     display:flex; align-items:center; gap:10px; padding:8px 12px;
     background:var(--panel); backdrop-filter:blur(18px) saturate(1.2);
     border:1px solid var(--line); border-radius:14px;
@@ -77,7 +86,7 @@
     color:#b8d0ff; font-weight:800;
   }
   #worldchip { flex:1; min-width:0; font-size:12px; color:#d0e0ff;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; cursor:pointer; }
   #worldchip b { font-family: Syne, sans-serif; font-weight:700; letter-spacing:.02em; }
   #worldchip small { color:var(--dim); font-weight:400; }
   #topbar .actions { display:flex; gap:5px; flex-wrap:wrap; justify-content:flex-end; }
@@ -86,8 +95,11 @@
   #vrbtn:disabled { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.1); color:#5a6478; }
 
   #dock {
-    pointer-events:auto; position:absolute; top:62px; left:12px; z-index:4;
-    width:min(318px, calc(100vw - 24px)); max-height:calc(100vh - 100px);
+    pointer-events:auto; position:absolute; z-index:4;
+    top: calc(62px + var(--safe-t));
+    left: calc(var(--gutter) + var(--safe-l));
+    width: min(318px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
+    max-height: calc(100dvh - 100px - var(--safe-t) - var(--safe-b));
     background:var(--panel); backdrop-filter:blur(18px) saturate(1.15);
     border:1px solid var(--line); border-radius:14px; padding:9px;
     display:flex; flex-direction:column; gap:7px; overflow:hidden;
@@ -95,6 +107,7 @@
     animation: dockIn .5s var(--ease) both;
   }
   @keyframes dockIn { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:none; } }
+  #dock.collapsed { display: none; }
   #dock.collapsed .dock-body, #dock.collapsed .dock-tabs { display:none; }
   .dock-tabs { display:flex; gap:3px; }
   .dock-tabs button {
@@ -282,9 +295,9 @@
 
   /* Lab uses the full dock column — instruments scroll inside */
   #dock.lab-mode {
-    height: calc(100vh - 88px);
-    max-height: calc(100vh - 88px);
-    width: min(340px, calc(100vw - 24px));
+    height: calc(100dvh - 88px - var(--safe-t) - var(--safe-b));
+    max-height: calc(100dvh - 88px - var(--safe-t) - var(--safe-b));
+    width: min(340px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
   }
   #dock.lab-mode .dock-body {
     overflow: hidden;
@@ -316,27 +329,35 @@
   }
   .guild-row.on rect.gbar { stroke: rgba(255,255,255,.9) !important; stroke-width: 1.5; }
 
-  /* ICS ribbon — deep-time corner instrument */
+  /* ICS ribbon — unified time panel (era + clock + pause) */
   #timeribbon {
-    pointer-events:none; position:absolute; left:12px; bottom:12px;
-    width:min(300px, calc(100vw - 24px)); z-index:4;
+    pointer-events:none; position:absolute; z-index:4;
+    left: calc(var(--gutter) + var(--safe-l));
+    bottom: calc(var(--gutter) + var(--safe-b));
+    width: min(320px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
   }
-  #timeribbon .rib-clock { pointer-events:auto; }
+  #timeribbon .rib-head, #timeribbon .rib-clock { pointer-events:auto; }
   .ics-ribbon {
     padding:8px 10px 7px; border-radius:12px;
     background:var(--panel); backdrop-filter:blur(16px) saturate(1.1);
     border:1px solid var(--line);
     box-shadow: 0 8px 28px rgba(0,0,0,.4);
   }
-  .rib-kicker {
-    display:flex; justify-content:space-between; align-items:baseline;
-    margin:0 0 6px; font-size:8.5px; letter-spacing:.14em; text-transform:uppercase;
-    color:#6a7a94;
+  .rib-head {
+    display:flex; justify-content:space-between; align-items:center; gap:8px;
+    margin:0 0 6px;
   }
-  .rib-kicker b {
-    font-family: Syne, sans-serif; font-weight:700; letter-spacing:.1em;
-    color:#9fc0ff;
+  .rib-mode {
+    font-family: Syne, sans-serif; font-weight:700; font-size:10px;
+    letter-spacing:.06em; color:#9fc0ff; text-transform:uppercase;
+    min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
+  .rib-era {
+    flex:0 1 auto; max-width:52%; font:inherit; font-size:9.5px;
+    background:rgba(255,255,255,.04); border:1px solid var(--line);
+    color:#e8eef8; border-radius:6px; padding:2px 6px; cursor:pointer;
+  }
+  .rib-era:focus-visible { outline:none; border-color:rgba(110,160,255,.65); box-shadow:0 0 0 2px rgba(110,160,255,.25); }
   .rib-track {
     position:relative; height:6px; border-radius:3px;
     background:rgba(255,255,255,.05); overflow:visible;
@@ -378,7 +399,7 @@
     font-family: Syne, sans-serif; font-weight:700; font-size:12px;
     color:#e8eef8; letter-spacing:.03em;
   }
-  .rib-era {
+  .rib-era-line {
     color:var(--amber); font-size:9.5px; letter-spacing:.02em;
     text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
@@ -386,25 +407,32 @@
     display:flex; align-items:center; gap:4px; margin-top:7px; padding-top:6px;
     border-top:1px solid rgba(120,160,220,.1);
   }
-  .rib-step, .rib-rate {
+  .rib-step, .rib-pause, .rib-ff {
     pointer-events:auto; font:inherit; cursor:pointer;
     background:rgba(255,255,255,.04); border:1px solid var(--line);
     color:var(--text); border-radius:6px;
     transition: background .25s var(--ease), border-color .25s var(--ease);
   }
+  .rib-rate {
+    flex:1 1 auto; min-width:0; max-width:46%;
+    font:inherit; font-size:9.5px; padding:2px 4px;
+    background:rgba(255,255,255,.04); border:1px solid var(--line);
+    color:#e8eef8; border-radius:6px; cursor:pointer;
+  }
+  .rib-rate:focus-visible { outline:none; border-color:rgba(110,160,255,.65); }
+  .rib-pause, .rib-ff {
+    flex:0 0 auto; width:24px; height:22px; padding:0;
+    font-size:11px; line-height:1; color:#c5d4ec;
+  }
+  .rib-ff.on { background:rgba(110,160,255,.18); border-color:rgba(110,160,255,.45); color:#fff; }
   .rib-step {
     flex:0 0 auto; width:22px; height:22px; padding:0;
     font-size:14px; line-height:1; color:#c5d4ec;
   }
-  .rib-rate {
-    flex:0 1 auto; min-width:0; padding:3px 7px;
-    font-family: Syne, sans-serif; font-weight:700; font-size:10px;
-    letter-spacing:.04em; color:#e8eef8;
-  }
-  .rib-step:hover, .rib-rate:hover {
+  .rib-step:hover, .rib-pause:hover, .rib-ff:hover, .rib-era:hover, .rib-rate:hover {
     background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4);
   }
-  .rib-step:focus-visible, .rib-rate:focus-visible {
+  .rib-step:focus-visible, .rib-pause:focus-visible, .rib-ff:focus-visible {
     outline: none; border-color:rgba(110,160,255,.65);
     box-shadow: 0 0 0 2px rgba(110,160,255,.25);
   }
@@ -550,8 +578,11 @@
   #pane-god .view-row select { margin-bottom:0; width:auto; }
 
   #catpanel {
-    display:none; position:absolute; z-index:6; top:62px; right:12px;
-    width:min(380px, calc(100vw - 24px)); max-height:calc(100vh - 90px);
+    display:none; position:absolute; z-index:6;
+    top: calc(62px + var(--safe-t));
+    right: calc(var(--gutter) + var(--safe-r));
+    width: min(380px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
+    max-height: calc(100dvh - 90px - var(--safe-t) - var(--safe-b));
     background:var(--panel); backdrop-filter:blur(18px); border:1px solid var(--line);
     border-radius:14px; padding:10px; pointer-events:auto; overflow:hidden;
     flex-direction:column; gap:6px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
@@ -575,7 +606,6 @@
   .cat-item .cd { display:none; }
   .cat-item.BODY { border-color:rgba(111,214,164,.25); }
   .cat-item.BODY:hover { background:rgba(111,214,164,.1); }
-  .cat-item.PHYS, .cat-item.UX { opacity:.7; }
   .cat-item[aria-pressed="true"] { background:rgba(42,85,200,.4); border-color:var(--accent); }
   #catmeta { font-size:10.5px; color:var(--dim); }
   #catdetail { font-size:11px; color:#b8c8e0; line-height:1.4; max-height:90px; overflow:auto;
@@ -592,15 +622,16 @@
       width .28s var(--ease), max-height .28s var(--ease), padding .28s var(--ease), transform .28s var(--ease),
       box-shadow .28s var(--ease);
   }
-  #localpanel.snap-tl { top:62px; left:12px; right:auto; bottom:auto; }
-  #localpanel.snap-tr { top:62px; right:12px; left:auto; bottom:auto; }
-  #localpanel.snap-bl { bottom:108px; left:12px; right:auto; top:auto; }
-  #localpanel.snap-br { bottom:12px; right:12px; left:auto; top:auto; }
+  #localpanel.snap-tl { top: calc(62px + var(--safe-t)); left: calc(var(--gutter) + var(--safe-l)); right:auto; bottom:auto; }
+  #localpanel.snap-tr { top: calc(62px + var(--safe-t)); right: calc(var(--gutter) + var(--safe-r)); left:auto; bottom:auto; }
+  #localpanel.snap-bl { bottom: calc(108px + var(--safe-b)); left: calc(var(--gutter) + var(--safe-l)); right:auto; top:auto; }
+  #localpanel.snap-br { bottom: calc(var(--gutter) + var(--safe-b)); right: calc(var(--gutter) + var(--safe-r)); left:auto; top:auto; }
   #localpanel.expanded {
-    top:56px; left:50%; right:auto; bottom:108px;
+    top: calc(56px + var(--safe-t)); left:50%; right:auto;
+    bottom: calc(108px + var(--safe-b));
     transform:translateX(-50%);
-    width:min(960px, calc(100vw - 24px));
-    max-height:calc(100vh - 110px);
+    width:min(960px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
+    max-height:calc(100dvh - 110px - var(--safe-t) - var(--safe-b));
     padding:10px 12px;
     z-index:6;
     box-shadow: 0 16px 60px rgba(0,0,0,.55);
@@ -724,13 +755,13 @@
   #localview {
     display:block; width:280px; height:280px; border-radius:6px;
     background:#07090f; border:1px solid rgba(140,170,255,.18);
-    image-rendering:pixelated; image-rendering:crisp-edges; cursor:crosshair;
+    image-rendering:auto; cursor:crosshair;
     transition: width .28s var(--ease), height .28s var(--ease);
   }
   #localpanel.expanded #localview {
     width:min(80vh, calc(100vw - 64px), 860px) !important;
     height:min(80vh, calc(100vw - 64px), 860px) !important;
-    max-width:100%; max-height:calc(100vh - 160px);
+    max-width:100%; max-height:calc(100dvh - 160px - var(--safe-t) - var(--safe-b));
     border-radius:8px;
   }
   #locallegend {
@@ -739,8 +770,14 @@
   }
   #locallegend .leg {
     display:inline-flex; align-items:center; gap:3px; font-size:8px; color:#8fa0bd;
-    padding:1px 4px; border-radius:4px; border:1px solid transparent; cursor:pointer;
+    padding:1px 4px 3px; border-radius:4px; border:1px solid transparent; cursor:pointer;
+    position:relative;
     transition: background .15s, border-color .15s, color .15s, opacity .15s;
+  }
+  #locallegend .leg::after {
+    content:''; position:absolute; left:4px; right:4px; bottom:1px; height:2px;
+    background: currentColor; border-radius:1px; opacity:0.45;
+    transform: scaleX(var(--share, 0)); transform-origin:left center;
   }
   #locallegend .leg i {
     width:7px; height:7px; border-radius:1.5px; display:block; flex:0 0 auto;
@@ -772,7 +809,42 @@
     color:#6a7a94; flex:0 0 auto;
   }
   #localstatus .st b { font-weight:500; color:#d4e0f4; }
-  #localstatus.pinned .st[data-k="focus"] b { color:#ffd080; }
+  #localstatus .st[data-k="here"] b { color:#e8eef8; font-weight:600; }
+  #localstatus .st[data-k="light"] b { color:#ffd080; }
+  #localstatus.pinned .st[data-k="here"] b { color:#ffd080; }
+  #localpanel[data-light="night"] { border-color: rgba(90,120,200,.28); }
+  #localpanel[data-light="moonlit"] { border-color: rgba(150,176,230,.42); }
+  #localpanel[data-light="moonlit"] #localstatus .st[data-k="light"] b { color:#c8d8f0; }
+  #localpanel[data-light="twilight"] { border-color: rgba(224,160,80,.32); }
+  #localpanel.behind { box-shadow: 0 8px 28px rgba(0,0,0,.35), 0 0 0 1px rgba(224,160,80,.35); }
+  #localpanel.daywatch { box-shadow: 0 8px 28px rgba(0,0,0,.35), 0 0 24px rgba(255,180,80,.18); }
+  #localstatus .st[data-k="flow"] b { color:#9fd4e4; }
+  #localstatus .st[data-k="track"] b { color:#8ee08a; }
+  #localstatus .st[data-k="look"] b { color:#e4b86a; }
+  #localstatus .st[data-k="then"] b { color:#9fc0ff; font-weight:400; }
+
+  #lifecard {
+    position:absolute; z-index:2; left:10px; bottom:10px;
+    min-width:112px; max-width:168px; pointer-events:none;
+    padding:8px 10px 9px; border-radius:9px;
+    background:rgba(8,14,12,.84); border:1px solid rgba(160,220,140,.3);
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    backdrop-filter: blur(10px); color:#e6f0dc;
+  }
+  #lifecard[hidden] { display:none !important; }
+  #lifecard .lc-kicker {
+    font-size:7.5px; letter-spacing:.14em; text-transform:uppercase; color:#7ea878;
+  }
+  #lifecard .lc-name {
+    font-family: Syne, sans-serif; font-weight:700; font-size:13px;
+    letter-spacing:.02em; margin:2px 0 1px; color:#f2f8ea;
+  }
+  #lifecard .lc-meta { font-size:9px; color:#b4c8a8; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #localview { transition: none; }
+    #localpanel { transition: none; }
+  }
 
   #tip {
     position:fixed; z-index:30; max-width:min(280px, calc(100vw - 24px));
@@ -791,11 +863,112 @@
   #tip .tip-meta { margin:6px 0 0; font-size:10px; color:#6a7a94; }
 
   @media (max-width:820px) {
-    #dock { width:min(270px, calc(100vw - 24px)); }
-    #catpanel { left:12px; right:12px; width:auto; }
-    #timeribbon { left:10px; bottom:10px; width:min(280px, calc(100vw - 20px)); }
-    #localpanel.snap-bl { bottom:100px; }
-    #localpanel.expanded { bottom:100px; }
+    #topbar { gap:6px; padding:6px 8px; }
+    #topbar .brand { letter-spacing:.18em; font-size:12px; }
+    #dock { width:min(280px, calc(100vw - 24px - var(--safe-l) - var(--safe-r))); }
+    #catpanel {
+      left: calc(var(--gutter) + var(--safe-l));
+      right: calc(var(--gutter) + var(--safe-r));
+      width:auto;
+    }
+    #timeribbon { width:min(300px, calc(100vw - 20px - var(--safe-l) - var(--safe-r))); }
+    #localpanel.snap-bl { bottom: calc(100px + var(--safe-b)); }
+    #localpanel.expanded { bottom: calc(100px + var(--safe-b)); }
+  }
+
+  @media (max-width:640px) {
+    :root { --gutter: 8px; }
+    #topbar {
+      flex-wrap: nowrap;
+      min-height: 44px;
+    }
+    #topbar .brand,
+    .wide-only { display: none !important; }
+    #topbar .actions { flex-wrap: nowrap; flex-shrink: 0; gap: 4px; }
+    #topbar .actions button { padding: 6px 8px; min-height: 36px; }
+    #worldchip { font-size: 11px; }
+
+    #dock {
+      display: none;
+      top: auto;
+      left: calc(var(--gutter) + var(--safe-l));
+      right: calc(var(--gutter) + var(--safe-r));
+      bottom: calc(118px + var(--safe-b));
+      width: auto;
+      max-height: min(52dvh, calc(100dvh - 168px - var(--safe-t) - var(--safe-b)));
+    }
+    #dock.is-open { display: flex; }
+    #dock.lab-mode {
+      height: auto;
+      width: auto;
+      max-height: min(58dvh, calc(100dvh - 160px - var(--safe-t) - var(--safe-b)));
+    }
+    .dock-tabs {
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      scrollbar-width: none;
+    }
+    .dock-tabs::-webkit-scrollbar { display: none; }
+    .dock-tabs button {
+      flex: 1 0 auto;
+      min-width: 44px;
+      min-height: 44px;
+      padding: 6px 4px;
+    }
+    .dock-tabs .btn-label { display: none; }
+    .clim-strip { grid-template-columns: 1fr 1fr; }
+    .clim-compare { grid-template-columns: 1fr; }
+
+    #timeribbon {
+      left: calc(var(--gutter) + var(--safe-l));
+      right: calc(var(--gutter) + var(--safe-r));
+      width: auto;
+    }
+
+    #localpanel.snap-br,
+    #localpanel.snap-bl {
+      top: calc(56px + var(--safe-t));
+      right: calc(var(--gutter) + var(--safe-r));
+      left: auto;
+      bottom: auto;
+    }
+    #localpanel.expanded {
+      top: calc(52px + var(--safe-t));
+      bottom: calc(12px + var(--safe-b));
+      width: calc(100vw - 16px - var(--safe-l) - var(--safe-r));
+      max-height: calc(100dvh - 64px - var(--safe-t) - var(--safe-b));
+    }
+
+    #catpanel {
+      top: calc(52px + var(--safe-t));
+      left: calc(var(--gutter) + var(--safe-l));
+      right: calc(var(--gutter) + var(--safe-r));
+      bottom: calc(var(--gutter) + var(--safe-b));
+      width: auto;
+      max-height: none;
+      height: auto;
+    }
+
+    #reveal {
+      left: 50%;
+      right: auto;
+      bottom: calc(18% + var(--safe-b));
+      width: min(420px, calc(100vw - 16px - var(--safe-l) - var(--safe-r)));
+    }
+    #moment { top: 18%; width: min(92vw, 28rem); padding: 0 8px; box-sizing: border-box; }
+  }
+
+  @media (max-width: 820px) and (max-height: 480px) {
+    #localpanel:not(.expanded) { display: none; }
+    #dock {
+      max-height: calc(100dvh - 64px - var(--safe-t) - var(--safe-b));
+    }
+  }
+
+  @media (pointer: coarse) {
+    #topbar button, .dock-tabs button, .rib-pause, .rib-ff, .rib-step {
+      min-height: 36px;
+    }
   }
 </style>
 <canvas id="c"></canvas>
@@ -814,40 +987,40 @@
     <div class="brand">Orrery</div>
     <div id="worldchip">Earth</div>
     <div class="actions">
-      <button type="button" id="catprev" title="Previous world [">‹</button>
-      <button type="button" id="catbtn" aria-pressed="false">Worlds</button>
-      <button type="button" id="catnext" title="Next world ]">›</button>
-      <button type="button" id="pause" aria-pressed="false">Pause</button>
-      <button type="button" id="newseed">Reseed</button>
-      <button type="button" id="docktoggle" title="Toggle dock">Dock</button>
-      <button type="button" id="vrbtn" disabled>VR…</button>
+      <button type="button" id="catprev" class="wide-only" title="Previous world [">‹</button>
+      <button type="button" id="catbtn" aria-pressed="false" title="Pick a planet">Worlds</button>
+      <button type="button" id="catnext" class="wide-only" title="Next world ]">›</button>
+      <button type="button" id="pause" class="wide-only" aria-pressed="false" title="Pause — same as the time ribbon (Space)">Pause</button>
+      <button type="button" id="newseed" title="New terrain, same planet type">Reseed</button>
+      <button type="button" id="docktoggle" aria-expanded="true" aria-controls="dock" title="Toggle dock">Dock</button>
+      <button type="button" id="vrbtn" class="wide-only" disabled>VR…</button>
     </div>
   </div>
 
   <div id="dock">
     <div class="dock-tabs">
-      <button type="button" data-tab="tools" aria-pressed="true">Tools</button>
-      <button type="button" data-tab="god" aria-pressed="false">Play</button>
+      <button type="button" data-tab="tools" aria-pressed="true" title="Verbs — raise, seed, strike, inspect">Tools</button>
+      <button type="button" data-tab="god" aria-pressed="false" title="Life, brush, challenges, new worlds">Play</button>
       <button type="button" data-tab="climate" aria-pressed="false" title="Atmosphere, storms & coasts">Sky</button>
       <button type="button" data-tab="rock" aria-pressed="false" title="Plates, boundaries & crust">Rock</button>
-      <button type="button" data-tab="view" aria-pressed="false">View</button>
-      <button type="button" data-tab="lab" aria-pressed="false">Lab</button>
-      <button type="button" data-tab="sandbox" aria-pressed="false">World</button>
+      <button type="button" data-tab="view" aria-pressed="false" title="Overlays, opacity, x-ray, guides">View</button>
+      <button type="button" data-tab="lab" aria-pressed="false" title="Instruments, cores, curves">Lab</button>
+      <button type="button" data-tab="sandbox" aria-pressed="false" title="This run: energy, Gaia, resolution">World</button>
     </div>
     <div class="dock-body">
       <div class="dock-pane on" id="pane-tools">
         <div class="suite-desks" role="tablist" aria-label="Tools desks">
-          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="verbs" aria-pressed="true" title="Primary verbs"></button>
-          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="more" aria-pressed="false" title="Extra tools"></button>
-          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="station" aria-pressed="false" title="World status & inspect"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="verbs" aria-pressed="true" title="Inspect, seed, raise, strike"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="more" aria-pressed="false" title="Disasters, chemistry, climate brushes"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="station" aria-pressed="false" title="Readouts — not tools"></button>
         </div>
         <div class="suite-desk on" data-suite-panel="tools" data-desk-panel="verbs">
-          <p class="god-note" style="margin:0 0 8px">Click a tool, then right-click (or Alt-click) the planet. Inspect left-drags to spin.</p>
+          <p class="god-note" style="margin:0 0 8px">Pick a tool, then right-click the planet. Inspect left-drags to spin. Shift-drag parks the globe.</p>
           <div class="tools" id="tools"></div>
           <div id="godprice" class="hint-mini" style="margin-top:6px"></div>
         </div>
         <div class="suite-desk" data-suite-panel="tools" data-desk-panel="more" hidden>
-          <p class="god-note" style="margin:0 0 8px">Secondary verbs — disasters, chemistry, climate brushes.</p>
+          <p class="god-note" style="margin:0 0 8px">Disasters, chemistry, climate brushes.</p>
           <div class="tools" id="toolsMore"></div>
         </div>
         <div class="suite-desk" data-suite-panel="tools" data-desk-panel="station" hidden>
@@ -858,13 +1031,13 @@
       </div>
       <div class="dock-pane" id="pane-god">
         <p class="god-lead">
-          <b>Tools</b> are the verbs. This tab aims them — life, brush, challenges, new worlds.
+          Life, brush, challenges, a named world of your own.
         </p>
         <div class="suite-desks" role="tablist" aria-label="Play desks">
-          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="aim" aria-pressed="true" title="Life, clock, play actions"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="aim" aria-pressed="true" title="Which life to plant, undo, watch"></button>
           <button type="button" class="suite-desk-tab" data-suite="god" data-desk="brush" aria-pressed="false" title="Brush mask and edge"></button>
-          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="challenge" aria-pressed="false" title="Scenarios"></button>
-          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="genesis" aria-pressed="false" title="Author a new world"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="challenge" aria-pressed="false" title="Optional goals"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="genesis" aria-pressed="false" title="Author a named Earth-variant"></button>
         </div>
 
         <div class="suite-desk on" data-suite-panel="god" data-desk-panel="aim">
@@ -877,15 +1050,10 @@
             <p class="god-note" id="guildhint">Pick Seed guild in Tools, then click the planet.</p>
             <div class="tools god-actions">
               <button type="button" id="godundo" title="Ctrl+Z — reverts the last stroke, not time">Undo stroke</button>
-              <button type="button" id="godff" aria-pressed="false" title="Run fast until something notable happens">Skip ahead</button>
               <button type="button" id="godwatch" aria-pressed="false" title="Hide UI and just watch">Watch mode</button>
               <button type="button" id="godbookmark" title="Mark this moment">Bookmark</button>
-              <button type="button" id="orbitguides" aria-pressed="true" title="Cyan axis · white equator · gold ecliptic">Axis guides</button>
             </div>
-            <div class="view-row">
-              <label for="timerate">Clock</label>
-              <select id="timerate"></select>
-            </div>
+            <p class="god-note">Undo takes back a stroke, not years. Watch hides the dock.</p>
           </div>
         </div>
 
@@ -942,7 +1110,7 @@
             <button type="button" id="godshelf">Save world</button>
             <button type="button" id="godshare">Copy link-seed</button>
           </div>
-          <p class="god-note" style="margin-top:10px">World tab → Free / Observe / Budget controls whether tools cost energy.</p>
+          <p class="god-note" style="margin-top:10px">Name, seed, and a what-if — a variant of this type, not a catalogue body.</p>
         </div>
       </div>
       <div class="dock-pane" id="pane-climate"></div>
@@ -970,11 +1138,11 @@
             <button type="button" id="viewClear" title="Full opacity, no grid">Clear view</button>
             <button type="button" id="viewGhost" title="Fade surface to read overlays">Ghost 40%</button>
           </div>
-          <p class="hint-mini">Opacity fades the surface so atmosphere and overlays read more clearly.</p>
+          <p class="hint-mini">Fade the crust so overlays and clouds read. Ghost 40% is a preset.</p>
         </div>
         <div class="suite-desk" data-suite-panel="view" data-desk-panel="layers" hidden>
           <div class="sec-h" data-sec-icon="survey">Layers</div>
-          <p class="god-note" style="margin-top:0">Paint a field on the globe. Same list as Lab — kept here so you needn’t leave View.</p>
+          <p class="god-note" style="margin-top:0">Temperature, plates, guilds, tides — one field at a time on the globe.</p>
           <div class="tools clim-overlays" id="viewOverlays"></div>
           <p class="hint-mini" id="viewOverlayHint">None selected.</p>
         </div>
@@ -990,7 +1158,7 @@
             <input type="range" id="xrayAmt" min="0" max="85" value="45" step="1">
             <span class="val" id="xrayVal">45%</span>
           </div>
-          <p class="hint-mini">Cut reveals interior shells — useful with Rock → Core and ice-shell worlds.</p>
+          <p class="hint-mini">A slice through core, mantle, ice shell.</p>
         </div>
         <div class="suite-desk" data-suite-panel="view" data-desk-panel="guides" hidden>
           <div class="sec-h" data-sec-icon="orbitguides">Guides</div>
@@ -998,7 +1166,7 @@
             <button type="button" id="viewOrbitGuides" aria-pressed="true" title="Cyan axis · white equator · gold ecliptic">Axis guides</button>
           </div>
           <div class="sec-h" data-sec-icon="keys">Keys</div>
-          <p class="hint-mini"><kbd>scroll</kbd> zoom · drag spin · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>,.</kbd> clock · <kbd>[ ]</kbd> worlds · <kbd>D</kbd> dock</p>
+          <p class="hint-mini"><kbd>scroll</kbd> zoom · drag spin · <kbd>shift-drag</kbd> park · <kbd>Home</kbd> recenter · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>,.</kbd> clock · ribbon = era + rate</p>
         </div>
       </div>
       <div class="dock-pane" id="pane-lab">
@@ -1010,42 +1178,50 @@
           <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="notes" aria-pressed="false" title="Limits & glossary"></button>
         </div>
         <div class="tools lab-toolbar">
-          <button type="button" id="labRefresh">Refresh</button>
-          <button type="button" id="labPaper">Paper</button>
-          <button type="button" id="labSave">Save</button>
-          <button type="button" id="labFinale" title="Write an ending artefact">Finale</button>
-          <button type="button" id="labPng" title="Export first instrument chart as PNG">PNG</button>
-          <button type="button" id="labDual" title="Headless dual-run check (worker)">Dual</button>
-          <select id="overlayMode" title="Field overlay" aria-label="Field overlay"></select>
+          <button type="button" id="labRefresh" title="Redraw Lab charts">Refresh</button>
+          <button type="button" id="labPaper" title="Export a paper-style markdown draft">Paper</button>
+          <button type="button" id="labSave" title="Download a JSON snapshot">Save</button>
+          <button type="button" id="labFinale" title="Write an ending artefact from how this world went">Finale</button>
+          <button type="button" id="labPng" title="Export the first Lab chart as PNG">PNG</button>
+          <button type="button" id="labDual" title="Dev: 24 ticks in a worker, compare hashes">Dual</button>
         </div>
         <div id="labstats"></div>
       </div>
       <div class="dock-pane" id="pane-sandbox">
         <div class="suite-desks" role="tablist" aria-label="World desks">
-          <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="planet" aria-pressed="true" title="Ruleset / planet type"></button>
-          <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="modes" aria-pressed="false" title="Energy, Gaia, resolution"></button>
+          <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="modes" aria-pressed="true" title="Energy, Gaia, resolution"></button>
           <button type="button" class="suite-desk-tab" data-suite="sandbox" data-desk="archive" aria-pressed="false" title="Table & chronicle"></button>
         </div>
-        <div class="suite-desk on" data-suite-panel="sandbox" data-desk-panel="planet">
-          <div class="sec-h" data-sec-icon="planet">Planet</div>
-          <div class="rules" id="rules"></div>
-          <p class="hint-mini">Daisyworld is the feedback tutorial. Deep time starts at the CAI age.</p>
-        </div>
-        <div class="suite-desk" data-suite-panel="sandbox" data-desk-panel="modes" hidden>
+        <div class="suite-desk on" data-suite-panel="sandbox" data-desk-panel="modes">
           <div class="sec-h" data-sec-icon="modes">Modes</div>
           <div class="clim-strip" id="worldModeStrip" aria-live="polite"></div>
           <div class="dock-foot">
             <button type="button" id="budget" aria-pressed="false">Free</button>
             <button type="button" id="autopilot" aria-pressed="false">Gaia</button>
-            <button type="button" id="deeptime" aria-pressed="false" title="Start at 4.567 Ga with adaptive ticks">Deep time</button>
-            <select id="simN" title="Cube-sphere resolution" aria-label="Resolution">
-              <option value="32">N=32 fast</option>
-              <option value="48">N=48</option>
-              <option value="64" selected>N=64</option>
-              <option value="96">N=96 heavy</option>
-            </select>
           </div>
-          <p class="hint-mini">Free / Observe / Budget controls whether tools cost energy. Core / ice-core tools feed the Lab. Interior details live under <b>Rock → Core</b>.</p>
+          <div class="dock-foot" style="margin-top:6px;flex-wrap:wrap;gap:8px">
+            <label class="hint-mini" style="display:flex;align-items:center;gap:6px;margin:0">
+              Sim cells
+              <select id="simN" title="Simulation grid — climate, life, map" aria-label="Sim resolution">
+                <option value="32">N=32 fast</option>
+                <option value="48">N=48</option>
+                <option value="64">N=64</option>
+                <option value="96" selected>N=96 detail</option>
+                <option value="128">N=128 heavy</option>
+                <option value="192">N=192 research</option>
+              </select>
+            </label>
+            <label class="hint-mini" style="display:flex;align-items:center;gap:6px;margin:0">
+              Globe quads
+              <select id="globeSubd" title="Globe mesh density — visual only, instant" aria-label="Globe mesh">
+                <option value="1">1×</option>
+                <option value="2" selected>2×</option>
+                <option value="3">3×</option>
+                <option value="4">4×</option>
+              </select>
+            </label>
+          </div>
+          <p class="hint-mini">Sim cells regenerate the world. Globe quads are visual only and apply instantly. At N≥128 the mesh auto-caps.</p>
         </div>
         <div class="suite-desk" data-suite-panel="sandbox" data-desk-panel="archive" hidden>
           <div class="sec-h" data-sec-icon="archive">Archive</div>
@@ -1083,14 +1259,14 @@
 
   <div id="catpanel">
     <div class="cat-head">
-      <h1>Catalogue</h1>
+      <h1>Worlds</h1>
       <div class="cat-nav">
         <button type="button" id="catclose">Close</button>
       </div>
     </div>
     <div id="catkinds"></div>
-    <input id="catq" type="search" placeholder="Search Europa, TRAPPIST, iron…" autocomplete="off">
-    <div class="cat-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0">
+    <input id="catq" type="search" placeholder="Search Earth, Europa, TRAPPIST…" autocomplete="off">
+    <div id="cattools" class="cat-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0">
       <label class="cm">Sort
         <select id="catsort">
           <option value="id">catalogue</option>
@@ -1130,12 +1306,18 @@
         <div class="local-opt" id="localMoveMoreWrap" hidden><span>Nudge</span></div>
         <div class="local-opt local-corner-only"><span>Snap</span><div class="seg" id="localSnap"></div></div>
         <div class="local-opt"><span>Globe</span><div class="seg" id="localGlobe"></div></div>
+        <div class="local-opt"><span>Track</span><div class="seg" id="localSeek"></div></div>
       </div>
       <canvas id="localview" width="280" height="280"></canvas>
+      <div id="lifecard" hidden>
+        <div class="lc-kicker">following</div>
+        <div class="lc-name"></div>
+        <div class="lc-meta"></div>
+      </div>
     </div>
     <div id="locallegend"></div>
     <div id="localstatus"></div>
   </div>
 </div>
 <div id="err"></div>
-<script type="module" src="./main.js?v=tides1"></script>
+<script type="module" src="./main.js?v=alive6"></script>

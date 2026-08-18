@@ -1,7 +1,7 @@
 /** Cube-sphere substrate: mapping, neighbours, area weights.
  *  N is runtime-settable via setResolution() — live ES bindings. */
 
-import { TAU4, clamp } from './math.js';
+import { TAU4, clamp, lerp } from './math.js';
 
 export let N = 64;
 export let NF = N * N;
@@ -9,7 +9,31 @@ export let NC = 6 * NF;
 export let NV = 6 * (N + 1) * (N + 1);
 export let VPF = (N + 1) * (N + 1);
 
-export const N_ALLOWED = [32, 48, 64, 96];
+export const N_ALLOWED = [32, 48, 64, 96, 128, 192];
+
+/** Bilinear sample of a per-cell field on cube face f at globe grid (gi, gj) / gn. */
+export function sampleFaceField(field, f, gi, gj, gn, n = N) {
+  const ci = (gi / gn) * n;
+  const cj = (gj / gn) * n;
+  const i0 = Math.floor(ci);
+  const j0 = Math.floor(cj);
+  const fu = ci - i0;
+  const fv = cj - j0;
+  const i1 = Math.min(i0 + 1, n - 1);
+  const j1 = Math.min(j0 + 1, n - 1);
+  const at = (i, j) => field[f * n * n + clamp(j, 0, n - 1) * n + clamp(i, 0, n - 1)];
+  const h00 = at(i0, j0);
+  const h10 = at(i1, j0);
+  const h01 = at(i0, j1);
+  const h11 = at(i1, j1);
+  return lerp(lerp(h00, h10, fu), lerp(h01, h11, fu), fv);
+}
+
+/** Cell index on cube face grid, or -1 if out of range. */
+export function cellAtFace(f, ci, cj, n = N) {
+  if (ci < 0 || ci >= n || cj < 0 || cj >= n) return -1;
+  return f * n * n + cj * n + ci;
+}
 
 export function warp(s) {
   return s >= 1 ? 1 : s <= -1 ? -1 : Math.tan(s * TAU4);
@@ -129,10 +153,38 @@ function buildNbr8() {
   return nbr;
 }
 
+function buildBasis() {
+  const east = new Float32Array(NC * 3);
+  const north = new Float32Array(NC * 3);
+  for (let c = 0; c < NC; c++) {
+    const ux = DIR[c * 3], uy = DIR[c * 3 + 1], uz = DIR[c * 3 + 2];
+    // east = normalize(up × Ŷ); near the poles Ŷ is parallel to up so fall back to X̂
+    let ex = -uz, ey = 0, ez = ux;
+    let el = Math.hypot(ex, ey, ez);
+    if (el < 1e-4) {
+      ex = 0; ey = uz; ez = -uy;
+      el = Math.hypot(ex, ey, ez) || 1;
+    }
+    ex /= el; ey /= el; ez /= el;
+    // north = up × east
+    let nx = uy * ez - uz * ey;
+    let ny = uz * ex - ux * ez;
+    let nz = ux * ey - uy * ex;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+    east[c * 3] = ex; east[c * 3 + 1] = ey; east[c * 3 + 2] = ez;
+    north[c * 3] = nx; north[c * 3 + 1] = ny; north[c * 3 + 2] = nz;
+  }
+  return { east, north };
+}
+
 export let NBR = buildNeighbours();
 export let AREA = buildAreas();
 export let DIR = buildDirections();
 export let NBR8 = buildNbr8();
+let _basis = buildBasis();
+export let EAST = _basis.east;
+export let NORTH = _basis.north;
 
 /** Rebuild topology for a new face resolution. Call before generate/remesh. */
 export function setResolution(n) {
@@ -147,6 +199,9 @@ export function setResolution(n) {
   AREA = buildAreas();
   DIR = buildDirections();
   NBR8 = buildNbr8();
+  _basis = buildBasis();
+  EAST = _basis.east;
+  NORTH = _basis.north;
   return { N, NC, NF, NV };
 }
 

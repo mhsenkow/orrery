@@ -13,7 +13,20 @@ export const GLOSSARY = {
   LUCA: 'Last universal common ancestor — the root of your live phylogeny.',
   GOE: 'Great Oxidation Event — free O₂ rises once sinks are overwhelmed; anaerobes die.',
   CCD: 'Carbonate compensation depth — below it, shells dissolve rather than bury.',
-  AMOC: 'Atlantic-style overturning — freshwater can shut the conveyor.',
+  AMOC: 'Atlantic-style overturning — dense water sinks at high latitudes and the return flow carries heat north. Freshwater can shut the conveyor.',
+  Ekman: 'Wind-driven transport ninety degrees off the wind — right in the north, left in the south. It is why eastern coasts upwell.',
+  Sverdrup: 'The interior of an ocean basin moves meridionally in proportion to the curl of the wind stress. Gyres fall out of this balance.',
+  'western boundary': 'The return flow of a gyre concentrates into a narrow jet on the western edge of the basin — Gulf Stream, Kuroshio, Agulhas.',
+  'rain shadow': 'Air forced up a windward slope rains out; the lee descends, warms and dries. Deserts sit in that shadow.',
+  isostasy: 'Crust floats on the mantle. Thicken it and the surface rises; unload it and the remaining peaks rise too.',
+  'Bjerknes': 'The coupling that makes El Niño: stronger trades deepen the east–west SST contrast, which strengthens the trades.',
+  Walker: 'The tropical east–west cell — rising over the warm pool, sinking over the cold tongue. ENSO is this cell breathing.',
+  ENSO: 'El Niño–Southern Oscillation. The thermocline tilts, trades slacken, the east Pacific warms, and rainfall swaps oceans.',
+  'mixed layer': 'The stirred top of the ocean. Wind and convection deepen it; summer warming shoals it. Maritime climates live here.',
+  fetch: 'How far the wind has blown over open water. Fetch, not wind speed alone, is why some coasts have surf and others do not.',
+  monsoon: 'A seasonal reversal driven by land heating faster than the sea. Summer continents inhale; winter they exhale.',
+  'magma chamber': 'A volume under a volcano with a roof that can fail. Empty it fast enough and the mountain becomes a hole.',
+  'dynamic topography': 'Mantle flow lifts the surface over upwellings and pulls it down over slabs — hundreds of metres, continent-wide.',
   Kleiber: 'Metabolic rate scales as mass^¾ — sets density and lifespan.',
   Whittaker: 'Biome diagram in temperature–precipitation space.',
   springs: 'Syzygy tides — Moon and Sun aligned; lunar and solar bulges add.',
@@ -29,8 +42,14 @@ export function defineTerm(term) {
 
 /** Short unprompted explanation when drama happens. */
 export function explainDrama(W) {
+  if (W._ensoPhase === 'El Niño') {
+    return { title: 'El Niño', body: 'Trades have slackened. The east tropical ocean is warm, the thermocline there is deep, and rain has followed the warmth across the basin.', settle: 'months–a few years' };
+  }
+  if (W._ensoPhase === 'La Niña') {
+    return { title: 'La Niña', body: 'Trades are piled high. The east is a cold tongue, upwelling is fierce, and the west is wetter than its mean.', settle: 'a year or two' };
+  }
   if (W._conveyorNote && W.conveyor < 0.4) {
-    return { title: 'Overturning weakening', body: 'Fresh surface water is capping the deep. The conveyor slows — high latitudes cool, tropics can warm.', settle: 'decades–centuries' };
+    return { title: 'Overturning weakening', body: 'Fresh, light surface water is capping the dense deep. The conveyor slows — high latitudes cool, and the heat that used to ride north stays in the tropics.', settle: 'decades–centuries' };
   }
   if (W.state === 'snowball') {
     return { title: 'Snowball', body: 'Ice–albedo feedback ran away. Volcanoes must rebuild CO₂ under the lid before melt.', settle: '10⁵–10⁶ yr' };

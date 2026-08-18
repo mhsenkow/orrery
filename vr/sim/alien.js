@@ -3,6 +3,7 @@
 
 import { clamp } from '../math.js';
 import { NC, DIR } from '../sphere.js';
+import { nodeOf } from './evolve.js';
 
 /**
  * Usable photon fraction for oxygenic photosynthesis.
@@ -114,7 +115,7 @@ export function alienTick(W, chronLog) {
   // Radiation-hardened selection. Item 136.
   if ((R.flareStar || (R.starTeff && R.starTeff < 3500)) && W.tree) {
     for (const id of W.tree.living) {
-      const n = W.tree.nodes.find((x) => x.id === id);
+      const n = nodeOf(W.tree, id);
       if (n) n.traits[10] = Math.min(1, n.traits[10] + 0.002); // radiation trait
     }
   }

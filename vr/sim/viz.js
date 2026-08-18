@@ -261,7 +261,7 @@ export function coreStrataSVG(layers, w = 280, h = 110) {
   return `<svg class="chart" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${blocks}</svg>`;
 }
 
-export function icsRibbonHTML(ics, ageLabel, maBP, clock) {
+export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
   const eons = [
     { name: 'Hadean', short: 'Had', start: 4567, end: 4000, col: '#c45c3a' },
     { name: 'Archean', short: 'Arch', start: 4000, end: 2500, col: '#d4a04a' },
@@ -284,20 +284,33 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock) {
   const needle = Math.min(100, Math.max(0, ((4567 - (maBP ?? 0)) / 4567) * 100));
   const period = ics?.period && ics.period !== '—' ? ics.period : '';
   const eraLine = [period, ics?.eon].filter(Boolean).join(' · ');
-  const title = [ics?.eon, ics?.era, ics?.period].filter((x) => x && x !== '—').join(' / ');
-  const rate = clock?.rate || 'Adaptive';
   const dt = clock?.paused ? 'paused' : (clock?.dt || '');
-  const rateId = clock?.id || 'auto';
-  const paused = clock?.paused ? ' is-paused' : '';
-  return `<div class="ics-ribbon${paused}" title="${title}">
-    <div class="rib-kicker"><b>Deep time</b><span>ICS</span></div>
+  const rateId = clock?.id || panel.rateId || 'auto';
+  const paused = clock?.paused || panel.paused;
+  const pausedCls = paused ? ' is-paused' : '';
+  const mode = panel.mode || 'Sandbox';
+  const eraId = panel.eraId || 'present';
+  const eras = panel.eras || [];
+  const rates = panel.rates || [];
+  const eraOpts = eras.map((e) =>
+    `<option value="${e.id}"${e.id === eraId ? ' selected' : ''}>${e.label}</option>`).join('');
+  const rateOpts = rates.map((r) =>
+    `<option value="${r.id}"${r.id === rateId ? ' selected' : ''}>${r.label}${r.dtYr == null ? '' : ' / tick'}</option>`).join('');
+  const ff = panel.ff ? ' aria-pressed="true"' : ' aria-pressed="false"';
+  return `<div class="ics-ribbon${pausedCls}">
+    <div class="rib-head">
+      <span class="rib-mode">${mode}</span>
+      ${eras.length ? `<select class="rib-era" data-era-select aria-label="History era">${eraOpts}</select>` : ''}
+    </div>
     <div class="rib-track">${segs}<div class="rib-needle" style="left:${needle}%"></div></div>
     <div class="rib-marks">${marks}</div>
-    <div class="rib-meta"><span class="rib-age">${ageLabel}</span><span class="rib-era">${eraLine}</span></div>
+    <div class="rib-meta"><span class="rib-age">${ageLabel}</span><span class="rib-era-line">${eraLine}</span></div>
     <div class="rib-clock">
-      <button type="button" class="rib-step" data-rate-step="-1" title="Slower clock (,)" aria-label="Slower clock">−</button>
-      <button type="button" class="rib-rate" data-rate-cycle="1" data-rate-id="${rateId}" title="Click to cycle rates">${rate}</button>
-      <button type="button" class="rib-step" data-rate-step="1" title="Faster clock (.)" aria-label="Faster clock">+</button>
+      <button type="button" class="rib-pause" data-time-pause aria-pressed="${paused ? 'true' : 'false'}" title="Pause (Space)">${paused ? '▶' : '⏸'}</button>
+      <button type="button" class="rib-step" data-rate-step="-1" title="Slower (,)" aria-label="Slower clock">−</button>
+      <select class="rib-rate" data-rate-select aria-label="Years per tick">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
+      <button type="button" class="rib-step" data-rate-step="1" title="Faster (.)" aria-label="Faster clock">+</button>
+      <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>
       <span class="rib-dt">${dt}</span>
     </div>
   </div>`;

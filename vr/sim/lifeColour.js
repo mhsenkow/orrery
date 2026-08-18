@@ -5,6 +5,16 @@ import { GUILDS } from './redox.js';
 import { LIFE_CLASSES } from './bio.js';
 import { BIOMES } from './ecology.js';
 
+/** Stable clade tint from lineage id (golden-ratio hash). */
+export function cladeRGB(id) {
+  const h = (id * 2654435761) >>> 0;
+  return [
+    (h >> 0) & 255,
+    (h >> 8) & 255,
+    (h >> 16) & 255,
+  ];
+}
+
 /** Morphology ladder colours (legacy lifeClass). */
 export const CLASS_RGB = [
   [40, 160, 90],    // prokaryote — deep teal-green

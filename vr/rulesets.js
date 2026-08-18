@@ -68,7 +68,7 @@ export const RULESETS = [
     // Volume mixing ratios; CO₂ ~420 ppm. Greenhouse bias stands in for H₂O/GHG column.
     gases: { N2: 0.7808, O2: 0.2095, CO2: 0.00042, CH4: 0.0000019, H2O: 0.01, dust: 0.0, sulphate: 0 },
     ghBias: 0.085, minCO2: 0.00038,
-    totalWater: 0.92, continentFrac: 0.40, nPlates: 8,
+    totalWater: 0.92, continentFrac: 0.38, nPlates: 12,
     targetLandFrac: 0.29, targetMeanTemp: 0.50,
     atmo: [0.28, 0.50, 0.92], atmoStrength: 0.92, sky: [0.012, 0.035, 0.08],
     signature: 'glacial',

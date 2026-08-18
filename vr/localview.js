@@ -1,22 +1,29 @@
-/** Flat local patch view — unwraps a neighborhood of cells into a square map. */
+/** Flat local patch view — unwraps a neighborhood of cells into a square map.
+ *  Presentation clock, cached topology, shared cell description, motion. */
 
-import { NC, NBR } from './sphere.js';
+import { NC, NBR, DIR } from './sphere.js';
 import { W } from './world.js';
 import { ENT } from './agents.js';
 import { BIOMES } from './sim/ecology.js';
-import { lifeRGB, oceanLifeRGB, lifeLabel, KIND_RGB, legendEntries, dominantGuildAt, GUILD_RGB, legendKeyAt } from './sim/lifeColour.js';
+import { lifeLabel, KIND_RGB, legendKeyAt, GUILD_RGB } from './sim/lifeColour.js';
 import { drawSprite } from './sprites.js';
+import { whatHappenedHere } from './chronicle.js';
+import {
+  hash2, presentTime, reducedMotion, stampPhase, windSway,
+  describeCell, mixGuild, applyLight, cellLight, cellSun,
+  placeSentence, patchScale, tidePhase, wearAt, isOutNow, seasonAt, waterStage,
+} from './sim/present.js';
+import { isLand, isSubmerged } from './sim/cellSurface.js';
 
 export const LOCAL_SIZES = [200, 280, 380, 500];
 export const LOCAL_SIZE_LABELS = ['S', 'M', 'L', 'XL'];
 export const LOCAL_SNAPS = ['tl', 'tr', 'bl', 'br'];
 export const LOCAL_GLOBE = ['off', 'rim', 'wash', 'both'];
-/** Patch radius — larger = more cells = finer / wider view on a big canvas. */
 export const LOCAL_RADII = [3, 5, 8, 12, 18, 28];
-/** Side length in cells (2r+1) — higher = wider / finer tiles on a large map. */
 export const LOCAL_RADIUS_LABELS = ['7', '11', '17', '25', '37', '57'];
+export const LOCAL_SEEK = ['stay', 'life'];
+export const LOCAL_SEEK_LABELS = ['Stay', 'Life'];
 
-/** Discrete frame steps: corner sizes then full. Grows from the snap corner. */
 export function localFrameIndex(size, expanded) {
   if (expanded) return LOCAL_SIZES.length;
   const i = LOCAL_SIZES.indexOf(size | 0);
@@ -29,20 +36,307 @@ export function localFrameLabel(size, expanded) {
   return LOCAL_SIZE_LABELS[i >= 0 ? i : 1] || 'M';
 }
 
-/** Resolve focus: explicit pin → inspect → densest life/builds. */
-export function pickFocusCell(inspect, pin = -1) {
-  if (pin != null && pin >= 0) return pin | 0;
-  if (inspect?.cell != null && inspect.cell >= 0) return inspect.cell | 0;
-  let best = -1, score = -1;
-  for (let c = 0; c < NC; c++) {
-    if (W.h[c] < W.seaLevel) continue;
-    const s = (W.build[c] || 0) * 3 + W.life[c];
-    if (s > score) { score = s; best = c; }
-  }
-  return best >= 0 ? best : (NC / 2) | 0;
+let _focusCache = { year: -1, grown: -1, cell: -1 };
+let _seek = {
+  show: -1, next: -1, tArrive: -99, tGo: -99,
+  phase: 'dwell', kind: '', why: '', step: 0, key: '',
+  recent: [], kinds: [],
+};
+
+export function resetFocusCache() {
+  _focusCache = { year: -1, grown: -1, cell: -1 };
+  _seek = {
+    show: -1, next: -1, tArrive: -99, tGo: -99,
+    phase: 'dwell', kind: '', why: '', step: 0, key: '',
+    recent: [], kinds: [],
+  };
 }
 
-/** Step focus along unwrap axes (+x right, +y down on the flat map). */
+export function huntGlance() {
+  return (_seek.phase === 'go' && _seek.next >= 0) ? _seek.next : _seek.show;
+}
+
+export function pickFocusCell(inspect, pin = -1, seek = 'stay') {
+  if (pin != null && pin >= 0) return pin | 0;
+  if (seek !== 'life' && inspect?.cell != null && inspect.cell >= 0) return inspect.cell | 0;
+  if (seek === 'life') return pickRecentLife();
+  return pickDenseLife();
+}
+
+function pickDenseLife() {
+  if (_focusCache.year === (W.year | 0) && _focusCache.grown === (W.lifeGrown | 0) && _focusCache.cell >= 0) {
+    return _focusCache.cell;
+  }
+  let best = -1, score = -1;
+  for (let c = 0; c < NC; c++) {
+    const life = W.life[c] || 0;
+    const reef = W.reef?.[c] || 0;
+    const s = (W.build[c] || 0) * 3 + life + reef * 0.8;
+    if (s > score) { score = s; best = c; }
+  }
+  const cell = best >= 0 ? best : (NC / 2) | 0;
+  _focusCache = { year: W.year | 0, grown: W.lifeGrown | 0, cell };
+  return cell;
+}
+
+const LIFE_EVENT = /origin|bloom|seed|evolution|speciation|abiogen|luca|photosynth|multicell|eukaryote|land plant/i;
+
+const TOUR = [
+  ['coast', 'a living coast'],
+  ['reef', 'a reef'],
+  ['frontier', 'life spreading'],
+  ['town', 'a settlement'],
+  ['river', 'a river'],
+  ['night', 'the night side'],
+  ['vent', 'a vent field'],
+  ['canopy', 'a green interior'],
+  ['ice', 'the ice edge'],
+  ['bloom', 'a bloom'],
+];
+
+function latestLifeEvent() {
+  const events = W.chron?.events;
+  if (!events?.length) return null;
+  for (let i = events.length - 1; i >= 0 && i >= events.length - 24; i--) {
+    const e = events[i];
+    if ((e.cell | 0) <= 0) continue;
+    if (LIFE_EVENT.test(`${e.kind} ${e.label || ''}`)) return e;
+  }
+  return null;
+}
+
+function cellDot(a, b) {
+  if (a < 0 || b < 0) return 1;
+  return DIR[a * 3] * DIR[b * 3] + DIR[a * 3 + 1] * DIR[b * 3 + 1] + DIR[a * 3 + 2] * DIR[b * 3 + 2];
+}
+
+function touchesSea(c) {
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[c * 4 + k];
+    if (n >= 0 && isSubmerged(W, n)) return true;
+  }
+  return false;
+}
+
+function kindScore(c, kind) {
+  const life = W.life[c] || 0;
+  const reef = W.reef?.[c] || 0;
+  const build = W.build?.[c] || 0;
+  const ice = W.ice[c] || 0;
+  const flow = W.flow?.[c] || 0;
+  const sea = isSubmerged(W, c);
+  const biome = W.biome ? (BIOMES[W.biome[c]] || '') : '';
+  const was = W.prevLife ? (W.prevLife[c] || 0) : 0;
+  const d = life - was;
+  let nl = 0;
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[c * 4 + k];
+    if (n >= 0) nl = Math.max(nl, W.life[n] || 0);
+  }
+  if (kind === 'coast') return (!sea && touchesSea(c) && life > 0.1 && ice < 0.45) ? 0.55 + life : 0;
+  if (kind === 'reef') return (sea && reef > 0.16) ? reef * 1.6 : 0;
+  if (kind === 'frontier') return (!sea && d > 0.012 && life < 0.45) ? 0.4 + d * 18 + (nl > life ? 0.25 : 0) : 0;
+  if (kind === 'town') return build > 0.14 ? build * 1.8 : 0;
+  if (kind === 'river') return (!sea && flow > 0.008 && life > 0.1) ? 0.45 + Math.min(0.6, flow * 8) : 0;
+  if (kind === 'night') return (cellSun(c) < -0.12 && (life > 0.14 || reef > 0.18)) ? 0.5 + life : 0;
+  if (kind === 'vent') return (biome === 'vent' && (life > 0.06 || sea)) ? 1.1 : 0;
+  if (kind === 'canopy') return (!sea && !touchesSea(c) && life > 0.38 && ice < 0.3) ? life : 0;
+  if (kind === 'ice') return (ice > 0.22 && ice < 0.78 && life > 0.08) ? 0.5 + (0.5 - Math.abs(ice - 0.45)) : 0;
+  if (kind === 'bloom') return (d > 0.018 && life > 0.05) ? 0.5 + d * 22 : 0;
+  return 0;
+}
+
+function rememberStop(cell, kind, why) {
+  _seek.show = cell;
+  _seek.kind = kind;
+  _seek.why = why;
+  _seek.recent.push(cell);
+  if (_seek.recent.length > 10) _seek.recent.shift();
+  if (kind) {
+    _seek.kinds.push(kind);
+    if (_seek.kinds.length > 6) _seek.kinds.shift();
+  }
+}
+
+function pickTourStop(from, preferKind) {
+  const recent = _seek.recent;
+  const usedKind = new Set(_seek.kinds.slice(-3));
+  const tryKind = (kind) => {
+    let best = -1, score = 0;
+    for (let c = 0; c < NC; c++) {
+      if (c === from) continue;
+      if (recent.includes(c)) continue;
+      const s = kindScore(c, kind);
+      if (s < 0.35) continue;
+      const far = from >= 0 ? (1 - cellDot(from, c)) : 1;
+      if (from >= 0 && far < 0.42) continue;
+      const jitter = (hash2(c, (_seek.step * 9973) ^ 0x51e) >>> 0) / 4294967296;
+      const v = s * (0.55 + far) * (0.72 + jitter * 0.4);
+      if (v > score) { score = v; best = c; }
+    }
+    return best;
+  };
+
+  const order = [];
+  if (preferKind) order.push(preferKind);
+  for (const [k] of TOUR) {
+    if (k !== preferKind && !usedKind.has(k)) order.push(k);
+  }
+  for (const [k] of TOUR) {
+    if (!order.includes(k)) order.push(k);
+  }
+  for (const kind of order) {
+    const cell = tryKind(kind);
+    if (cell >= 0) {
+      const why = (TOUR.find((x) => x[0] === kind) || [kind, kind])[1];
+      return { cell, kind, why };
+    }
+  }
+  let best = -1, score = 0;
+  for (let c = 0; c < NC; c++) {
+    if (c === from || recent.includes(c)) continue;
+    const life = (W.life[c] || 0) + (W.reef?.[c] || 0);
+    if (life < 0.12) continue;
+    const far = from >= 0 ? (1 - cellDot(from, c)) : 1;
+    if (from >= 0 && far < 0.22) continue;
+    const v = life * (0.4 + far);
+    if (v > score) { score = v; best = c; }
+  }
+  if (best >= 0) return { cell: best, kind: 'canopy', why: 'life' };
+  return null;
+}
+
+function commitGo(cell, kind, why, t) {
+  _seek.next = cell;
+  _seek.phase = 'go';
+  _seek.tGo = t;
+  _seek.kind = kind;
+  _seek.why = why;
+  _seek.step += 1;
+}
+
+function pickRecentLife() {
+  const t = presentTime();
+  const ev = latestLifeEvent();
+  const key = ev ? `${ev.t}:${ev.kind}:${ev.cell}` : '';
+  if (ev && key !== _seek.key && (ev.cell | 0) !== _seek.show) {
+    _seek.key = key;
+    if (_seek.show < 0 || cellDot(_seek.show, ev.cell) < 0.55) {
+      commitGo(ev.cell | 0, 'bloom', (ev.label || 'new life').slice(0, 28), t);
+    }
+  }
+
+  if (_seek.show < 0) {
+    if (_seek.next >= 0) {
+      rememberStop(_seek.next, _seek.kind, _seek.why);
+      _seek.next = -1;
+      _seek.phase = 'dwell';
+      _seek.tArrive = t;
+      return _seek.show;
+    }
+    const first = pickTourStop(-1, 'coast') || pickTourStop(-1, 'canopy');
+    if (first) {
+      rememberStop(first.cell, first.kind, first.why);
+      _seek.tArrive = t;
+      _seek.phase = 'dwell';
+    } else {
+      _seek.show = pickDenseLife();
+      _seek.tArrive = t;
+      _seek.why = 'life';
+    }
+    return _seek.show;
+  }
+
+  if (_seek.phase === 'go') {
+    const wait = reducedMotion() ? 0 : 0.95;
+    if (t - _seek.tGo >= wait && _seek.next >= 0) {
+      rememberStop(_seek.next, _seek.kind, _seek.why);
+      _seek.next = -1;
+      _seek.phase = 'dwell';
+      _seek.tArrive = t;
+    }
+    return _seek.show;
+  }
+
+  if (t - _seek.tArrive < 7.2) return _seek.show;
+
+  const want = TOUR[_seek.step % TOUR.length][0];
+  const stop = pickTourStop(_seek.show, want);
+  if (stop && stop.cell !== _seek.show) commitGo(stop.cell, stop.kind, stop.why, t);
+  else _seek.tArrive = t;
+  return _seek.show;
+}
+
+const _unwrap = new Map();
+export function unwrapPatch(focus, radius = 8) {
+  const key = (focus | 0) + ':' + (radius | 0);
+  const hit = _unwrap.get(key);
+  if (hit) {
+    _unwrap.delete(key);
+    _unwrap.set(key, hit);
+    return hit;
+  }
+  const patch = unwrapFresh(focus | 0, radius | 0);
+  _unwrap.set(key, patch);
+  if (_unwrap.size > 10) _unwrap.delete(_unwrap.keys().next().value);
+  return patch;
+}
+
+function unwrapFresh(focus, radius) {
+  const at = new Map();
+  const pos = new Map();
+  const q = [focus];
+  let qh = 0;
+  at.set(0, focus);
+  pos.set(focus, [0, 0]);
+  const pack = (x, y) => ((x + 64) << 8) | (y + 64);
+
+  while (qh < q.length) {
+    const c = q[qh++];
+    const [x, y] = pos.get(c);
+    if (Math.abs(x) >= radius && Math.abs(y) >= radius) continue;
+    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+    const used = new Set();
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      if (pos.has(n)) {
+        const [nx, ny] = pos.get(n);
+        used.add(((nx - x) + 4) * 8 + ((ny - y) + 4));
+        continue;
+      }
+      for (const [dx, dy] of dirs) {
+        const uk = (dx + 4) * 8 + (dy + 4);
+        if (used.has(uk)) continue;
+        const nx = x + dx, ny = y + dy;
+        if (Math.abs(nx) > radius || Math.abs(ny) > radius) continue;
+        const pk = pack(nx, ny);
+        if (at.has(pk)) continue;
+        at.set(pk, n);
+        pos.set(n, [nx, ny]);
+        used.add(uk);
+        q.push(n);
+        break;
+      }
+    }
+  }
+
+  const side = radius * 2 + 1;
+  const cells = new Int32Array(side * side);
+  cells.fill(-1);
+  const cellSet = new Set();
+  let missing = 0;
+  for (const [pk, c] of at) {
+    const x = (pk >> 8) - 64, y = (pk & 255) - 64;
+    const ix = x + radius, iy = y + radius;
+    if (ix >= 0 && iy >= 0 && ix < side && iy < side) {
+      cells[iy * side + ix] = c;
+      cellSet.add(c);
+    }
+  }
+  for (let i = 0; i < cells.length; i++) if (cells[i] < 0) missing++;
+  return { cells, side, focus, radius, cellSet, pos, missing };
+}
+
 export function stepFocus(focus, stepsX, stepsY) {
   let c = focus | 0;
   const sx = Math.sign(stepsX) | 0;
@@ -61,7 +355,6 @@ function neighborAt(focus, dx, dy) {
   return NBR[focus * 4] ?? focus;
 }
 
-/** Hit-test a pixel inside the local canvas against the last drawn patch. */
 export function cellAtLocalPixel(patch, layout, px, py) {
   if (!patch || !layout) return -1;
   const dpr = layout.dpr || 1;
@@ -71,126 +364,25 @@ export function cellAtLocalPixel(patch, layout, px, py) {
   return patch.cells[iy * patch.side + ix];
 }
 
-/**
- * BFS unwrap: assign integer (x,y) to cells around focus.
- */
-export function unwrapPatch(focus, radius = 8) {
-  const key = (x, y) => x + ',' + y;
-  const at = new Map();
-  const pos = new Map();
-  const q = [focus];
-  at.set('0,0', focus);
-  pos.set(focus, [0, 0]);
-
-  while (q.length) {
-    const c = q.shift();
-    const [x, y] = pos.get(c);
-    if (Math.abs(x) >= radius && Math.abs(y) >= radius) continue;
-    const dirs = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-    const used = new Set();
-    for (let k = 0; k < 4; k++) {
-      const n = NBR[c * 4 + k];
-      if (pos.has(n)) {
-        const [nx, ny] = pos.get(n);
-        used.add((nx - x) + ',' + (ny - y));
-        continue;
-      }
-      for (const [dx, dy] of dirs) {
-        const kk = dx + ',' + dy;
-        if (used.has(kk)) continue;
-        const nx = x + dx, ny = y + dy;
-        if (Math.abs(nx) > radius || Math.abs(ny) > radius) continue;
-        const pk = key(nx, ny);
-        if (at.has(pk)) continue;
-        at.set(pk, n);
-        pos.set(n, [nx, ny]);
-        used.add(kk);
-        q.push(n);
-        break;
-      }
-    }
-  }
-
-  const side = radius * 2 + 1;
-  const cells = new Int32Array(side * side);
-  cells.fill(-1);
-  const cellSet = new Set();
-  for (const [k, c] of at) {
-    const [x, y] = k.split(',').map(Number);
-    const ix = x + radius, iy = y + radius;
-    if (ix >= 0 && iy >= 0 && ix < side && iy < side) {
-      cells[iy * side + ix] = c;
-      cellSet.add(c);
-    }
-  }
-  return { cells, side, focus, radius, cellSet, pos };
+export function hoverCellAt(patch, cssX, cssY) {
+  return cellAtLocalPixel(patch, patch?.layout, cssX, cssY);
 }
 
-function cellColor(c, highlightGuild = null) {
-  if (c < 0) return '#0a0c12';
-  const isSea = W.h[c] < W.seaLevel;
-  let base;
-  if (isSea) {
-    const depth = W.seaLevel - W.h[c];
-    const bloom = Math.max(W.life[c], W.reef[c] || 0);
-    if (bloom > 0.12) {
-      const rgb = oceanLifeRGB(W, c, Math.min(1, bloom));
-      base = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
-    } else if (depth < 0.06) base = '#2a6a8a';
-    else if (depth < 0.15) base = '#1a4a6c';
-    else base = '#12283c';
-  } else {
-    const build = W.build[c] || 0;
-    const ice = W.ice[c];
-    if (ice > 0.45) base = '#d8e4f0';
-    else if (build > 0.15) {
-      const k = Math.min(1, build);
-      base = `rgb(${(168 - k * 70) | 0},${(148 - k * 55) | 0},${(120 - k * 40) | 0})`;
-    } else {
-      const life = W.life[c];
-      const live = lifeRGB(W, c, life);
-      if (live) base = `rgb(${live[0]},${live[1]},${live[2]})`;
-      else {
-        const moist = W.moist[c];
-        const biome = W.biome ? BIOMES[W.biome[c]] : null;
-        if (biome === 'desert' || moist < 0.18) base = '#b89460';
-        else if (biome === 'tundra') base = '#8a9088';
-        else if (moist < 0.28) base = '#9a8860';
-        else base = '#6a6458';
-      }
-    }
+export function beingAtLocalPixel(patch, cssX, cssY) {
+  const list = patch?.beings;
+  const lay = patch?.layout;
+  if (!list || !lay) return null;
+  const dpr = lay.dpr || 1;
+  const x = cssX * dpr, y = cssY * dpr;
+  let best = null, bestD = 22 * dpr;
+  for (const b of list) {
+    const d = Math.hypot(b.x - x, b.y - y);
+    const hit = Math.max(bestD, b.size * 0.65);
+    if (d < hit) { bestD = d; best = b.meta; }
   }
-
-  if (highlightGuild && W.guildDens?.[highlightGuild]) {
-    const dens = W.guildDens[highlightGuild][c] || 0;
-    if (dens > 0.06) {
-      const rgb = GUILD_RGB[highlightGuild];
-      if (rgb) {
-        const k = 0.45 + dens * 0.5;
-        return `rgb(${(parseRGB(base)[0] * (1 - k) + rgb[0] * k) | 0},${(parseRGB(base)[1] * (1 - k) + rgb[1] * k) | 0},${(parseRGB(base)[2] * (1 - k) + rgb[2] * k) | 0})`;
-      }
-    }
-    // Dim non-matching
-    const rgb = parseRGB(base);
-    return `rgb(${(rgb[0] * 0.35) | 0},${(rgb[1] * 0.35) | 0},${(rgb[2] * 0.38) | 0})`;
-  }
-  return base;
+  return best;
 }
 
-function parseRGB(s) {
-  if (s.startsWith('#')) {
-    const h = s.slice(1);
-    if (h.length === 3) {
-      return [parseInt(h[0] + h[0], 16), parseInt(h[1] + h[1], 16), parseInt(h[2] + h[2], 16)];
-    }
-    return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-  }
-  const m = s.match(/(\d+)/g);
-  return m ? [+m[0], +m[1], +m[2]] : [80, 80, 80];
-}
-
-/** Apply snap + size to the floating Local panel and canvas.
- * Corner snaps keep the docked corner fixed — the free corner grows/shrinks. */
 export function layoutLocalPanel(panel, cvs, opts) {
   if (!panel || !cvs) return;
   const expanded = !!opts.expanded;
@@ -202,14 +394,13 @@ export function layoutLocalPanel(panel, cvs, opts) {
 
   let size = opts.size | 0;
   if (expanded) {
-    const pad = 40;
-    const chrome = 56; // legend + status
-    const sideW = Math.min(innerWidth - pad * 2, innerHeight - 100 - chrome);
-    size = Math.max(360, Math.min(920, sideW | 0));
+    const pad = innerWidth < 640 ? 12 : 40;
+    const chrome = innerWidth < 640 ? 72 : 56;
+    const sideW = Math.min(innerWidth - pad * 2, innerHeight - 88 - chrome);
+    size = Math.max(innerWidth < 640 ? 220 : 360, Math.min(920, sideW | 0));
   }
   cvs.style.width = size + 'px';
   cvs.style.height = size + 'px';
-  // Hi-DPI backing store so fine zooms stay sharp
   const dpr = Math.min(devicePixelRatio || 1, 2);
   const px = Math.round(size * dpr);
   if (cvs.width !== px || cvs.height !== px) {
@@ -221,111 +412,149 @@ export function layoutLocalPanel(panel, cvs, opts) {
   return size;
 }
 
-/** Map pixel (css) → cell, or -1. */
-export function hoverCellAt(patch, cssX, cssY) {
-  if (!patch?.layout) return -1;
-  const { ox, oy, cellPx, dpr = 1 } = patch.layout;
-  const x = cssX * dpr;
-  const y = cssY * dpr;
-  const ix = Math.floor((x - ox) / cellPx);
-  const iy = Math.floor((y - oy) / cellPx);
-  if (ix < 0 || iy < 0 || ix >= patch.side || iy >= patch.side) return -1;
-  return patch.cells[iy * patch.side + ix];
+function fillRGB(ctx, r, g, b, a) {
+  if (a != null) ctx.fillStyle = `rgba(${r | 0},${g | 0},${b | 0},${a})`;
+  else ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
 }
 
-/** Draw the flat patch into a 2D canvas. Returns patch descriptor for globe highlight. */
+let _pan = { from: -1, to: -1, t0: 0, dx: 0, dy: 0, far: false };
+let _hold = null;
+
 export function drawLocalView(cvs, inspect, opts = {}) {
   if (!cvs) return null;
   const radius = opts.radius ?? 8;
   const pin = opts.pin ?? -1;
+  const seek = opts.seek === 'life' ? 'life' : 'stay';
   const hoverKey = opts.hoverKey || null;
   const hoverCell = opts.hoverCell ?? -1;
+  const alpha = opts.simAlpha ?? 1;
   const ctx = cvs.getContext('2d');
   const Wpx = cvs.width, Hpx = cvs.height;
   const dpr = cvs._dpr || 1;
-  ctx.fillStyle = '#07090f';
-  ctx.fillRect(0, 0, Wpx, Hpx);
 
-  const highlightGuild = opts.highlightGuild || null;
-  const focus = pickFocusCell(inspect, pin);
+  const focus = pickFocusCell(inspect, pin, seek);
   const patch = unwrapPatch(focus, radius);
   const { cells, side } = patch;
-  // Map uses full canvas — legend/status live in HTML
   const pad = Math.max(4, (4 * dpr) | 0);
   const cellPx = Math.max(1, Math.floor((Math.min(Wpx, Hpx) - pad * 2) / side));
   const ox = ((Wpx - side * cellPx) / 2) | 0;
   const oy = ((Hpx - side * cellPx) / 2) | 0;
   patch.layout = { cellPx, ox, oy, Wpx, Hpx, dpr, cssSize: cvs._cssSize || Wpx / dpr };
 
+  if (focus !== _pan.to) {
+    const prev = _pan.to;
+    const far = prev >= 0 && cellDot(prev, focus) < 0.78;
+    if (far && !reducedMotion() && cvs.width) {
+      if (!_hold) _hold = document.createElement('canvas');
+      if (_hold.width !== cvs.width || _hold.height !== cvs.height) {
+        _hold.width = cvs.width;
+        _hold.height = cvs.height;
+      }
+      _hold.getContext('2d').drawImage(cvs, 0, 0);
+    }
+    _pan.from = prev;
+    _pan.to = focus;
+    _pan.t0 = presentTime();
+    _pan.far = far;
+    if (!far && prev >= 0 && patch.pos) {
+      const a = unwrapPatch(prev, 2).pos.get(focus);
+      _pan.dx = a ? -a[0] : 0;
+      _pan.dy = a ? -a[1] : 0;
+    } else { _pan.dx = 0; _pan.dy = 0; }
+  }
+  const dur = _pan.far ? 0.78 : 0.55;
+  const panU = reducedMotion() ? 1 : Math.min(1, (presentTime() - _pan.t0) / dur);
+  const panE = 1 - (1 - panU) * (1 - panU);
+  const panX = (!_pan.far && _pan.dx) ? (1 - panE) * _pan.dx * cellPx : 0;
+  const panY = (!_pan.far && _pan.dy) ? (1 - panE) * _pan.dy * cellPx : 0;
+
+  ctx.fillStyle = '#07090f';
+  ctx.fillRect(0, 0, Wpx, Hpx);
+  ctx.save();
+  if (panX || panY) ctx.translate(panX, panY);
+
   const hiFi = cellPx >= 10;
-  ctx.imageSmoothingEnabled = !hiFi;
+  const highlightGuild = opts.highlightGuild || null;
+  const followId = opts.followId;
+  ctx.imageSmoothingEnabled = false;
+  const shares = Object.create(null);
 
   for (let iy = 0; iy < side; iy++) {
     for (let ix = 0; ix < side; ix++) {
       const c = cells[iy * side + ix];
-      const key = c >= 0 ? legendKeyAt(W, c) : null;
-      let col = cellColor(c, highlightGuild);
-      if (hoverKey && key && key !== hoverKey) {
-        const rgb = parseRGB(col);
-        col = `rgb(${(rgb[0] * 0.28) | 0},${(rgb[1] * 0.28) | 0},${(rgb[2] * 0.32) | 0})`;
-      }
       const x = ox + ix * cellPx;
       const y = oy + iy * cellPx;
-      ctx.fillStyle = col;
+      if (c < 0) {
+        fillRGB(ctx, 8, 10, 16);
+        ctx.fillRect(x, y, cellPx, cellPx);
+        // Honest cube-corner hole
+        ctx.strokeStyle = 'rgba(180,140,80,0.35)';
+        ctx.lineWidth = Math.max(1, dpr * 0.6);
+        ctx.strokeRect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
+        continue;
+      }
+      const desc = describeCell(c, alpha);
+      const light = cellLight(c);
+      let rgb = applyLight(mixGuild(desc.rgb, c, highlightGuild), light, c);
+      const key = legendKeyAt(W, c);
+      if (key) shares[key] = (shares[key] || 0) + 1;
+      if (hoverKey && key && key !== hoverKey) {
+        rgb = [rgb[0] * 0.28, rgb[1] * 0.28, rgb[2] * 0.32];
+      }
+      fillRGB(ctx, rgb[0], rgb[1], rgb[2]);
       ctx.fillRect(x, y, cellPx, cellPx);
 
-      if (c >= 0 && cellPx >= 6) {
-        paintCellDetail(ctx, x, y, cellPx, c, col);
+      if (c === focus && cellPx >= 3) {
+        ctx.strokeStyle = 'rgba(232,200,120,0.8)';
+        ctx.lineWidth = Math.max(1, dpr);
+        ctx.strokeRect(x + 1, y + 1, cellPx - 2, cellPx - 2);
       }
 
-      if (c >= 0 && cellPx >= 4) {
-        const living = (W.life[c] || 0) > 0.04
-          || (W.reef?.[c] || 0) > 0.12
+      if (cellPx >= 6) paintCellDetail(ctx, x, y, cellPx, c, desc, rgb, cells, side, ix, iy, light);
+
+      if (cellPx >= 4) {
+        const living = desc.life > 0.04 || desc.reef > 0.12
           || (W.stromatolite?.[c] || 0) > 0.15
           || (W.matCover?.[c] || 0) > 0.1
           || (W.blackDaisy?.[c] || 0) > 0.1
           || (W.whiteDaisy?.[c] || 0) > 0.1
-          || !!dominantGuildAt(W, c);
+          || !!desc.guild;
         if (living) {
-          if (hiFi) stampLife(ctx, x, y, cellPx, c);
-          else if (W.h[c] >= W.seaLevel && W.life[c] > 0.08 && W.ice[c] < 0.4 && (W.build[c] || 0) < 0.35) {
-            ditherCell(ctx, x, y, cellPx, c, W.life[c]);
+          if (hiFi) {
+            ctx.imageSmoothingEnabled = true;
+            stampLife(ctx, x, y, cellPx, c, desc, light);
+            ctx.imageSmoothingEnabled = false;
+          } else if (!desc.sea && desc.life > 0.08 && desc.ice < 0.4 && desc.build < 0.35) {
+            ditherCell(ctx, x, y, cellPx, c, desc.life);
           }
         }
       }
 
-      if (c >= 0 && W.build[c] > 0.12) {
-        if (hiFi) stampBuildings(ctx, x, y, cellPx, c, W.build[c]);
-        else {
-          const h = Math.max(2, (W.build[c] * cellPx * 0.85) | 0);
-          ctx.fillStyle = 'rgba(255,220,160,0.85)';
+      if (desc.build > 0.12) {
+        if (hiFi) {
+          ctx.imageSmoothingEnabled = true;
+          stampBuildings(ctx, x, y, cellPx, c, desc.build, cells, side, ix, iy, light);
+          ctx.imageSmoothingEnabled = false;
+        } else {
+          const h = Math.max(2, (desc.build * cellPx * 0.85) | 0);
+          ctx.fillStyle = light.lights > 0.2 ? 'rgba(255,210,140,0.95)' : 'rgba(255,220,160,0.85)';
           ctx.fillRect(x + cellPx * 0.25, y + cellPx - h - 1, cellPx * 0.5, h);
         }
       }
 
-      // Hover cell outline
-      if (c >= 0 && c === hoverCell && cellPx >= 2) {
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      if (c === hoverCell && cellPx >= 2) {
+        ctx.strokeStyle = 'rgba(255,220,140,0.95)';
         ctx.lineWidth = Math.max(1, dpr);
         ctx.strokeRect(x + 0.5, y + 0.5, cellPx - 1, cellPx - 1);
       }
     }
   }
 
-  // Soft grid only when cells are coarse; hi-fi pixels read better without lines
-  if (cellPx >= 4 && cellPx < 14) {
-    ctx.strokeStyle = 'rgba(140,180,255,0.10)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let i = 0; i <= side; i++) {
-      const p = i * cellPx;
-      ctx.moveTo(ox + p, oy);
-      ctx.lineTo(ox + p, oy + side * cellPx);
-      ctx.moveTo(ox, oy + p);
-      ctx.lineTo(ox + side * cellPx, oy + p);
-    }
-    ctx.stroke();
-  }
+  paintCellGrid(ctx, ox, oy, cellPx, cells, side, dpr);
+  const rivers = cellPx >= 6 ? paintRivers(ctx, ox, oy, cellPx, cells, side) : 0;
+
+  weatherOverlay(ctx, ox, oy, cellPx, cells, side);
+  if (hiFi) paintPlumes(ctx, ox, oy, cellPx, cells, side);
 
   const cellToXY = new Map();
   for (let iy = 0; iy < side; iy++) {
@@ -334,69 +563,128 @@ export function drawLocalView(cvs, inspect, opts = {}) {
       if (c >= 0) cellToXY.set(c, [ix, iy]);
     }
   }
-  // Jitter multiple agents in the same cell so they don't stack
+  ctx.imageSmoothingEnabled = hiFi;
+  const beings = [];
   const cellCounts = new Map();
   for (let i = 0; i < ENT.n; i++) {
     const m = ENT.meta[i];
-    if (!m) continue;
+    if (!m || m.dead) continue;
     const xy = cellToXY.get(m.cell);
     if (!xy) continue;
     const [ix, iy] = xy;
     const n = cellCounts.get(m.cell) || 0;
     cellCounts.set(m.cell, n + 1);
-    const h = hash2(m.cell, n);
-    const jx = ((h & 255) / 255 - 0.5) * cellPx * 0.55;
-    const jy = (((h >> 8) & 255) / 255 - 0.5) * cellPx * 0.55;
-    const cx = ox + ix * cellPx + cellPx * 0.5 + jx;
-    const cy = oy + iy * cellPx + cellPx * 0.5 + jy;
+    const u = entityBlend(m);
+    let px = ix, py = iy;
+    if (u < 1 && m.prevCell >= 0) {
+      const pxy = cellToXY.get(m.prevCell);
+      if (pxy) { px = pxy[0] + (ix - pxy[0]) * u; py = pxy[1] + (iy - pxy[1]) * u; }
+    }
+    const h = hash2(m.id || m.cell, n);
+    const jx = ((h & 255) / 255 - 0.5) * cellPx * 0.45;
+    const jy = (((h >> 8) & 255) / 255 - 0.5) * cellPx * 0.45;
+    const gait = entityGait(m);
+    const cx = ox + px * cellPx + cellPx * 0.5 + jx + gait[0];
+    const cy = oy + py * cellPx + cellPx * 0.5 + jy + gait[1];
+    const ageK = m.age ? Math.min(1.15, 0.72 + Math.min(40, m.age) * 0.008) : 1;
     const planScale = m.plan?.size ? Math.min(1.35, 0.55 + m.plan.size * 0.35) : 1;
-    const size = Math.max(4, cellPx * (m.kind === 5 ? 0.72 : m.kind <= 3 ? 0.78 : m.kind >= 14 ? 0.55 : 0.62) * planScale);
-    if (hiFi) drawSprite(ctx, m.kind, cx, cy, size);
+    const size = Math.max(4, cellPx * (m.kind === 5 ? 0.72 : m.kind <= 3 ? 0.78 : m.kind >= 14 ? 0.55 : 0.62) * planScale * ageK);
+    const flip = (m.heading || 0) < 0;
+    const lean = Math.sin((m.heading || 0) * 0.4) * 0.12;
+    const out = isOutNow(m.kind, m.cell, m.id || 0);
+    if (!out && !hiFi) continue;
+    ctx.save();
+    if (!out) ctx.globalAlpha = 0.22;
+    if (hiFi && cellPx >= 8) castShadow(ctx, cx, cy, size, cellLight(m.cell));
+    if (hiFi) drawSprite(ctx, m.kind, cx, cy, size, { flip, lean });
     else {
       const rgb = KIND_RGB[m.kind] || [125, 255, 106];
-      ctx.fillStyle = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+      fillRGB(ctx, rgb[0], rgb[1], rgb[2]);
       drawKindGlyph(ctx, cx, cy, cellPx, m.kind);
     }
+    if (followId != null && m.id === followId) {
+      ctx.strokeStyle = 'rgba(180,255,160,0.9)';
+      ctx.lineWidth = Math.max(1.2, dpr);
+      ctx.beginPath();
+      ctx.arc(cx, cy, size * 0.78, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+    beings.push({ x: cx, y: cy, size, meta: m });
   }
+  patch.beings = beings;
 
   const fx = ox + radius * cellPx + cellPx * 0.5;
   const fy = oy + radius * cellPx + cellPx * 0.5;
-  ctx.strokeStyle = 'rgba(255,255,255,0.75)';
-  ctx.lineWidth = Math.max(1.5, dpr);
+  const arm = Math.max(3, cellPx * 0.22);
+  ctx.strokeStyle = 'rgba(255,236,180,0.55)';
+  ctx.lineWidth = Math.max(1, dpr);
   ctx.beginPath();
-  ctx.moveTo(fx - cellPx, fy); ctx.lineTo(fx + cellPx, fy);
-  ctx.moveTo(fx, fy - cellPx); ctx.lineTo(fx, fy + cellPx);
+  ctx.moveTo(fx - arm, fy); ctx.lineTo(fx + arm, fy);
+  ctx.moveTo(fx, fy - arm); ctx.lineTo(fx, fy + arm);
   ctx.stroke();
 
-  // Status for HTML strip
+  drawScaleBar(ctx, ox, oy, cellPx, side, dpr);
+  ctx.restore();
+
+  if (_pan.far && _hold?.width && panU < 1) {
+    ctx.globalAlpha = 1 - panE;
+    ctx.drawImage(_hold, 0, 0);
+    ctx.globalAlpha = 1;
+  }
+
+  patch.hoverCell = hoverCell;
   const statusCell = hoverCell >= 0 ? hoverCell : focus;
-  const life = W.life[statusCell] || 0;
-  const build = W.build[statusCell] || 0;
-  const label = lifeLabel(W, statusCell);
-  const biome = W.biome ? BIOMES[W.biome[statusCell]] : '';
-  const guild = dominantGuildAt(W, statusCell);
-  const pinned = pin >= 0;
+  const desc = describeCell(statusCell, alpha);
+  const scale = patchScale(side);
   patch.status = {
-    pinned,
+    pinned: pin >= 0,
+    seek,
+    why: seek === 'life' ? _seek.why : '',
     cell: statusCell,
-    life,
-    build,
-    label,
-    biome,
-    guild,
+    life: desc.life,
+    build: desc.build,
+    label: lifeLabel(W, statusCell),
+    biome: desc.biome,
+    guild: desc.guild,
     key: legendKeyAt(W, statusCell),
     zoom: radius,
     side,
+    place: placeSentence(statusCell),
+    scaleKm: scale.km | 0,
+    scaleNamed: scale.named,
+    cellKm: scale.cellKm | 0,
+    day: cellSun(statusCell) > 0.12 ? 'day' : cellSun(statusCell) < -0.12 ? 'night' : 'twilight',
+    moonlit: cellSun(statusCell) < -0.12 && (W.moonIllum ?? 0) > 0.18 && (W.moon?.mass || 0) > 0.05,
+    shares,
+    nCells: side * side - (patch.missing || 0),
+    rivers,
+    water: desc.water?.stage || '',
+    whisper: W.chron ? String((whatHappenedHere(W.chron, statusCell, 1)[0] || {}).label || '').slice(0, 42) : '',
   };
   return patch;
 }
 
+function entityBlend(m) {
+  if (m.arriveAt == null) return 1;
+  const span = Math.max(0.18, m.stride ? 0.28 / Math.max(0.4, m.stride) : 0.35);
+  return Math.max(0, Math.min(1, 1 - (m.arriveAt - presentTime()) / span));
+}
+
+function entityGait(m) {
+  if (reducedMotion() || m.behav === 'rest') return [0, 0];
+  const f = (m.plan?.stride || m.stride || 1);
+  const freq = 6.5 * Math.pow(Math.max(0.2, f), -0.16);
+  const bob = Math.sin(presentTime() * freq + (m.id || 0) * 0.2) * 1.1;
+  return [0, m.kind <= 2 ? 0 : bob];
+}
+
 function ditherCell(ctx, x, y, cellPx, c, life) {
   const biome = W.biome ? BIOMES[W.biome[c]] : null;
-  const n = ((c * 1103515245) >>> 0);
+  const n = hash2(c, 0x11fe);
   const dots = Math.min(cellPx * cellPx * 0.12, 6 + (life * 8) | 0);
   for (let i = 0; i < dots; i++) {
-    const h = ((n + i * 9973) >>> 0);
+    const h = hash2(n, i * 9973);
     const px = x + (h % cellPx);
     const py = y + ((h >> 8) % cellPx);
     const bright = (h >> 16) & 1;
@@ -411,150 +699,681 @@ function ditherCell(ctx, x, y, cellPx, c, life) {
   }
 }
 
-function hash2(a, b) {
-  let h = ((a * 374761393) ^ (b * 668265263)) >>> 0;
-  h = Math.imul(h ^ (h >>> 13), 1274126177);
-  return (h ^ (h >>> 16)) >>> 0;
-}
-
-function touchesSea(c) {
-  for (let k = 0; k < 4; k++) {
-    const n = NBR[c * 4 + k];
-    if (n >= 0 && W.h[n] < W.seaLevel) return true;
-  }
-  return false;
-}
-
-/** WorldBox-style sub-cell texture from moisture, ice, ash, coast, biome. */
-function paintCellDetail(ctx, x, y, cellPx, c, baseCol) {
-  const isSea = W.h[c] < W.seaLevel;
-  const ice = W.ice[c] || 0;
-  const ash = W.ash?.[c] || 0;
-  const dust = W.dust?.[c] || 0;
-  const moist = W.moist[c] || 0;
-  const biome = W.biome ? BIOMES[W.biome[c]] : null;
-  const base = parseRGB(baseCol);
+function paintCellDetail(ctx, x, y, cellPx, c, desc, rgb, cells, side, ix, iy, light) {
   const step = Math.max(1, (cellPx / 8) | 0);
   const seed = hash2(c, (W.seed | 0) ^ 0x9e3779b9);
+  const t = presentTime();
 
-  if (isSea) {
-    const depth = W.seaLevel - W.h[c];
-    // Shallows sparkle + deeper bands
-    for (let py = 0; py < cellPx; py += step) {
-      for (let px = 0; px < cellPx; px += step) {
-        const h = hash2(seed, (py << 8) | px);
-        if (depth < 0.08 && (h & 7) === 0) {
-          ctx.fillStyle = 'rgba(160,210,230,0.35)';
-          ctx.fillRect(x + px, y + py, step, step);
-        } else if ((h & 15) === 0) {
-          ctx.fillStyle = 'rgba(20,50,80,0.22)';
-          ctx.fillRect(x + px, y + py, step, step);
-        }
-      }
-    }
-    if (ice > 0.35) {
-      ctx.fillStyle = `rgba(220,235,250,${0.25 + ice * 0.45})`;
-      ctx.fillRect(x + 1, y + 1, cellPx - 2, cellPx - 2);
-    }
+  if (desc.sea) {
+    paintWater(ctx, x, y, cellPx, c, desc, seed, step, t);
     return;
   }
 
-  // Coastal sand fringe
-  if (touchesSea(c) && ice < 0.35 && (W.build[c] || 0) < 0.2) {
-    ctx.fillStyle = 'rgba(214,190,120,0.55)';
-    const fringe = Math.max(1, (cellPx * 0.22) | 0);
-    ctx.fillRect(x, y + cellPx - fringe, cellPx, fringe);
+  paintSlope(ctx, x, y, cellPx, c, cells, side, ix, iy);
+  paintCoast(ctx, x, y, cellPx, c, desc, cells, side, ix, iy);
+  paintBiomeTexture(ctx, x, y, cellPx, c, desc, rgb, seed, step);
+  paintLandWater(ctx, x, y, cellPx, c, desc, cells, side, ix, iy, seed);
+  paintIce(ctx, x, y, cellPx, desc, seed, step);
+  if (desc.ash > 0.08) paintAsh(ctx, x, y, cellPx, desc, seed, step);
+  const lava = W.lava?.[c] || 0;
+  if (lava > 0.05) {
+    ctx.fillStyle = `rgba(255,70,16,${0.2 + lava * 0.55})`;
+    ctx.fillRect(x + cellPx * 0.2, y + cellPx * 0.35, cellPx * 0.6, cellPx * 0.45);
   }
-
-  // Biome / moisture micro-pixels
-  const dens = Math.min(0.22, 0.04 + moist * 0.12 + (W.life[c] || 0) * 0.06);
-  const nPix = Math.min(((cellPx * cellPx * dens) / (step * step)) | 0, 48);
-  for (let i = 0; i < nPix; i++) {
-    const h = hash2(seed, i * 131);
-    const px = x + (h % cellPx);
-    const py = y + ((h >> 8) % cellPx);
-    let r = base[0], g = base[1], b = base[2];
-    if (ice > 0.4) {
-      r = 210 + (h & 31); g = 220 + ((h >> 3) & 27); b = 235 + ((h >> 6) & 19);
-    } else if (biome === 'desert' || moist < 0.18) {
-      r = Math.min(255, r + 18); g = Math.min(255, g + 8); b = Math.max(0, b - 10);
-    } else if (biome === 'boreal' || biome === 'tundra') {
-      r = Math.max(0, r - 12); g = Math.min(255, g + 8); b = Math.min(255, b + 6);
-    } else if ((h & 3) === 0) {
-      r = Math.max(0, r - 14); g = Math.min(255, g + 16); b = Math.max(0, b - 10);
-    } else {
-      r = Math.min(255, r + 10); g = Math.min(255, g + 14); b = Math.max(0, b - 6);
-    }
-    ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
-    ctx.fillRect(px, py, step, step);
+  if (desc.dust > 0.12) paintDust(ctx, x, y, cellPx, c, desc, t);
+  paintWear(ctx, x, y, cellPx, c, desc);
+  paintGrowth(ctx, x, y, cellPx, c, desc);
+  if (light?.sun > 0.15 && desc.moist > 0.55 && desc.ice < 0.25) {
+    ctx.fillStyle = `rgba(210,226,232,${Math.min(0.16, (desc.moist - 0.5) * 0.22)})`;
+    ctx.fillRect(x + 1, y + 1, cellPx - 2, Math.max(1, (cellPx * 0.1) | 0));
   }
-
-  if (ash > 0.08) {
-    ctx.fillStyle = `rgba(55,52,48,${Math.min(0.55, ash * 0.7)})`;
-    for (let i = 0; i < 4 + (ash * 10) | 0; i++) {
-      const h = hash2(seed ^ 0x55, i);
-      ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), step, step);
-    }
-  }
-  if (dust > 0.12) {
-    ctx.fillStyle = `rgba(180,150,100,${Math.min(0.4, dust * 0.5)})`;
+  if (light?.warm > 0.35 && light.sun > -0.15 && light.sun < 0.22) {
+    ctx.fillStyle = `rgba(255,140,50,${(light.warm - 0.35) * 0.22})`;
     ctx.fillRect(x, y, cellPx, cellPx);
   }
 }
 
-/** Multi-pixel life for every rung — mats → flora → fauna → ocean → daisies. */
-function stampLife(ctx, x, y, cellPx, c) {
-  const isSea = W.h[c] < W.seaLevel;
-  const life = W.life[c] || 0;
+function paintWater(ctx, x, y, cellPx, c, desc, seed, step, t) {
+  const wu = W.oceanU?.[c] || W.windU?.[c] || 0.08;
+  const wv = W.oceanV?.[c] || W.windV?.[c] || 0;
+  const spd = Math.hypot(wu, wv);
+  const wave = W.waveHt?.[c] || spd;
+  ctx.fillStyle = `rgba(4,16,32,${0.06 + Math.min(0.28, desc.depth * 1.5)})`;
+  ctx.fillRect(x, y, cellPx, cellPx);
+  if (desc.depth < 0.07) {
+    const k = 1 - desc.depth / 0.07;
+    ctx.fillStyle = `rgba(168,148,88,${0.1 + k * 0.32})`;
+    ctx.fillRect(x, y, cellPx, cellPx);
+  }
+  const foam = Math.min(0.28, wave * 0.4);
+  if (foam > 0.04 && desc.ice < 0.3) {
+    const edge = Math.max(1, (cellPx * (0.1 + foam * 0.2)) | 0);
+    ctx.fillStyle = `rgba(214,228,236,${0.08 + foam})`;
+    if (wu >= 0) ctx.fillRect(x + cellPx - edge, y, edge, cellPx);
+    else ctx.fillRect(x, y, edge, cellPx);
+  }
+  if (cellPx >= 10 && desc.ice < 0.45) {
+    const drift = reducedMotion() ? 0 : t * (4 + spd * 10);
+    const nWave = spd > 0.18 ? 2 : 1;
+    ctx.strokeStyle = `rgba(196,216,228,${0.08 + Math.min(0.12, spd * 0.18)})`;
+    ctx.lineWidth = 1;
+    ctx.lineCap = 'round';
+    for (let i = 0; i < nWave; i++) {
+      const h = hash2(seed, i * 19);
+      const y0 = y + 2 + (((h + (drift | 0)) % Math.max(1, cellPx - 4)));
+      const x0 = x + 1 + (h & 3);
+      const x1 = x + cellPx - 2 - ((h >> 4) & 3);
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.quadraticCurveTo((x0 + x1) * 0.5, y0 + wu * cellPx * 0.12, x1, y0 + wu * cellPx * 0.08);
+      ctx.stroke();
+    }
+  }
+  if (desc.depth < 0.07) {
+    const swell = reducedMotion() ? 0.5 : 0.5 + Math.sin(t * 1.4 + (c & 15)) * 0.5;
+    ctx.fillStyle = `rgba(210,236,248,${0.06 + swell * 0.1})`;
+    ctx.fillRect(x, y, cellPx, Math.max(1, (cellPx * 0.12) | 0));
+  }
+  const nightLight = cellLight(c);
+  if (nightLight.night > 0.25 && nightLight.moon > 0.12 && desc.ice < 0.4 && cellPx >= 8) {
+    const a = nightLight.night * nightLight.moon * 0.34;
+    ctx.fillStyle = `rgba(148,176,228,${a * 0.4})`;
+    ctx.fillRect(x, y, cellPx, Math.max(1, (cellPx * 0.1) | 0));
+    const hx = hash2(seed, 41);
+    ctx.fillStyle = `rgba(190,214,248,${a})`;
+    ctx.fillRect(x + 2 + (hx % Math.max(1, cellPx - 6)), y + 2 + ((hx >> 8) % Math.max(1, cellPx - 6)), Math.max(2, cellPx * 0.22), 1);
+  }
+  const tide = tidePhase(c);
+  const inter = W.intertidal?.[c] || 0;
+  if (desc.depth < 0.05 && (inter > 0.08 || desc.depth < 0.025)) {
+    const flats = (1 - tide) * (0.35 + inter * 0.5);
+    if (flats > 0.12) {
+      ctx.fillStyle = `rgba(168,142,88,${Math.min(0.55, flats * 0.7)})`;
+      ctx.fillRect(x, y + cellPx * (0.45 + tide * 0.35), cellPx, cellPx * (0.55 - tide * 0.35));
+    }
+  }
+  if (desc.ice > 0.35) {
+    ctx.fillStyle = `rgba(220,235,250,${0.25 + desc.ice * 0.45})`;
+    ctx.fillRect(x + 1, y + 1, cellPx - 2, cellPx - 2);
+  }
+  if (desc.biome === 'vent') {
+    ctx.fillStyle = `rgba(200,70,36,${0.12 + Math.sin(t * 2.4 + c) * 0.06})`;
+    ctx.fillRect(x + cellPx * 0.3, y + cellPx * 0.4, cellPx * 0.4, cellPx * 0.5);
+  } else if (desc.biome === 'upwelling') {
+    ctx.fillStyle = `rgba(70,190,200,${0.1 + Math.sin(t * 1.8 + c) * 0.05})`;
+    ctx.fillRect(x, y, cellPx, cellPx);
+  } else if (desc.biome === 'gyre') {
+    ctx.strokeStyle = 'rgba(90,160,200,0.18)';
+    ctx.beginPath();
+    ctx.arc(x + cellPx * 0.5, y + cellPx * 0.5, cellPx * 0.32, t * 0.35, t * 0.35 + 2.4);
+    ctx.stroke();
+  }
+}
+
+function paintSlope(ctx, x, y, cellPx, c, cells, side, ix, iy) {
+  const at = (dx, dy) => {
+    const xx = ix + dx, yy = iy + dy;
+    if (xx < 0 || yy < 0 || xx >= side || yy >= side) return W.h[c];
+    const n = cells[yy * side + xx];
+    return n >= 0 ? W.h[n] : W.h[c];
+  };
+  const gx = (at(1, 0) - at(-1, 0)) * 0.5;
+  const gy = (at(0, 1) - at(0, -1)) * 0.5;
+  const shade = Math.max(-0.18, Math.min(0.18, -gx * 0.9 - gy * 0.45));
+  if (Math.abs(shade) < 0.02) return;
+  ctx.fillStyle = shade > 0 ? `rgba(255,255,240,${shade})` : `rgba(8,14,28,${-shade * 1.3})`;
+  ctx.fillRect(x, y, cellPx, cellPx);
+}
+
+function paintCoast(ctx, x, y, cellPx, c, desc, cells, side, ix, iy) {
+  if (desc.ice > 0.35 || desc.build > 0.2) return;
+  const sea = (dx, dy) => {
+    const xx = ix + dx, yy = iy + dy;
+    if (xx < 0 || yy < 0 || xx >= side || yy >= side) return false;
+    const n = cells[yy * side + xx];
+    return n >= 0 && isSubmerged(W, n);
+  };
+  const tide = tidePhase(c);
+  const inter = W.intertidal?.[c] || 0;
+  const fringe = Math.max(1, (cellPx * (0.16 + tide * 0.1 + inter * 0.08)) | 0);
+  const wet = Math.max(1, (fringe * (0.4 + tide * 0.35)) | 0);
+  ctx.fillStyle = `rgba(214,190,120,${0.45 + tide * 0.22})`;
+  if (sea(0, 1)) ctx.fillRect(x, y + cellPx - fringe, cellPx, fringe);
+  if (sea(0, -1)) ctx.fillRect(x, y, cellPx, fringe);
+  if (sea(1, 0)) ctx.fillRect(x + cellPx - fringe, y, fringe, cellPx);
+  if (sea(-1, 0)) ctx.fillRect(x, y, fringe, cellPx);
+  ctx.fillStyle = 'rgba(40,90,120,0.28)';
+  if (sea(0, 1)) ctx.fillRect(x, y + cellPx - wet, cellPx, wet);
+  if (sea(0, -1)) ctx.fillRect(x, y, cellPx, wet);
+  if (sea(1, 0)) ctx.fillRect(x + cellPx - wet, y, wet, cellPx);
+  if (sea(-1, 0)) ctx.fillRect(x, y, wet, cellPx);
+  // Bay / spit in a corner where two seas meet
+  if (sea(1, 0) && sea(0, 1)) {
+    ctx.fillStyle = 'rgba(32,80,110,0.45)';
+    ctx.beginPath();
+    ctx.moveTo(x + cellPx, y + cellPx);
+    ctx.arc(x + cellPx, y + cellPx, fringe * 1.6, Math.PI, Math.PI * 1.5);
+    ctx.fill();
+  }
+}
+
+function paintBiomeTexture(ctx, x, y, cellPx, c, desc, rgb, seed, step) {
+  const biome = desc.biome;
+  const t = presentTime();
+  if (biome === 'desert') {
+    ctx.strokeStyle = 'rgba(210,170,110,0.28)';
+    ctx.lineWidth = Math.max(1, step);
+    for (let i = 0; i < 4; i++) {
+      const h = hash2(seed, i * 41);
+      const y0 = y + 2 + ((h % Math.max(1, cellPx - 4)));
+      ctx.beginPath();
+      ctx.moveTo(x, y0);
+      ctx.quadraticCurveTo(x + cellPx * 0.5, y0 + ((h >> 8) & 3) - 1, x + cellPx, y0);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (biome === 'savanna') {
+    ctx.strokeStyle = 'rgba(170,150,60,0.35)';
+    ctx.lineWidth = 1;
+    const n = 6 + ((desc.life * 8) | 0);
+    for (let i = 0; i < n; i++) {
+      const h = hash2(seed, i * 17);
+      const px = x + (h % cellPx);
+      const py = y + ((h >> 8) % cellPx);
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      ctx.lineTo(px + 1, py - Math.max(2, (cellPx * 0.14) | 0));
+      ctx.stroke();
+    }
+    return;
+  }
+  if (biome === 'grassland') {
+    ctx.fillStyle = 'rgba(150,170,70,0.22)';
+    for (let i = 0; i < 10; i++) {
+      const h = hash2(seed, i * 13);
+      ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), 1, Math.max(2, step + 1));
+    }
+    return;
+  }
+  if (biome === 'tropRainforest' || biome === 'tempRainforest') {
+    ctx.fillStyle = 'rgba(10,40,22,0.22)';
+    ctx.fillRect(x + 1, y + cellPx * 0.45, cellPx - 2, cellPx * 0.5);
+    for (let i = 0; i < 8; i++) {
+      const h = hash2(seed, i * 29);
+      ctx.fillStyle = (h & 1) ? 'rgba(20,80,42,0.35)' : 'rgba(36,110,52,0.28)';
+      ctx.beginPath();
+      ctx.ellipse(x + (h % cellPx), y + ((h >> 8) % (cellPx * 0.7)), cellPx * 0.18, cellPx * 0.1, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+  if (biome === 'tropSeasonal' || biome === 'tempDeciduous') {
+    const n = 8 + ((desc.life * 6) | 0);
+    for (let i = 0; i < n; i++) {
+      const h = hash2(seed, i * 11);
+      ctx.fillStyle = (h & 2) ? 'rgba(70,120,50,0.28)' : 'rgba(120,140,55,0.22)';
+      ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), step + 1, step);
+    }
+    return;
+  }
+  if (biome === 'boreal') {
+    ctx.fillStyle = 'rgba(20,50,36,0.28)';
+    for (let i = 0; i < 7; i++) {
+      const h = hash2(seed, i * 23);
+      const px = x + (h % cellPx), py = y + ((h >> 8) % cellPx);
+      ctx.beginPath();
+      ctx.moveTo(px, py - 3);
+      ctx.lineTo(px + 2, py + 2);
+      ctx.lineTo(px - 2, py + 2);
+      ctx.fill();
+    }
+    return;
+  }
+  if (biome === 'tundra') {
+    for (let i = 0; i < 9; i++) {
+      const h = hash2(seed, i * 7);
+      ctx.fillStyle = (h & 1) ? 'rgba(140,150,120,0.3)' : 'rgba(90,110,80,0.22)';
+      ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), step, step);
+    }
+    return;
+  }
+  if (biome === 'vent') {
+    ctx.fillStyle = 'rgba(80,40,36,0.35)';
+    ctx.fillRect(x, y, cellPx, cellPx);
+    ctx.strokeStyle = `rgba(220,90,40,${0.25 + Math.sin(t * 2 + c) * 0.1})`;
+    ctx.beginPath();
+    ctx.moveTo(x + cellPx * 0.3, y + cellPx);
+    ctx.lineTo(x + cellPx * 0.45, y + cellPx * 0.4);
+    ctx.lineTo(x + cellPx * 0.6, y + cellPx);
+    ctx.stroke();
+    return;
+  }
+  if (biome === 'upwelling') {
+    ctx.strokeStyle = 'rgba(80,180,200,0.22)';
+    for (let i = 0; i < 4; i++) {
+      const h = hash2(seed, i);
+      const x0 = x + ((h + ((t * 8) | 0)) % cellPx);
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x0 + 2, y + cellPx);
+      ctx.stroke();
+    }
+    return;
+  }
+  if (biome === 'gyre') {
+    ctx.strokeStyle = 'rgba(60,140,180,0.2)';
+    ctx.beginPath();
+    ctx.arc(x + cellPx * 0.5, y + cellPx * 0.5, cellPx * 0.28, t * 0.4, t * 0.4 + 2.2);
+    ctx.stroke();
+    return;
+  }
+  if (biome === 'reef') {
+    ctx.fillStyle = 'rgba(30,140,130,0.22)';
+    ctx.fillRect(x, y + cellPx * 0.35, cellPx, cellPx * 0.3);
+    return;
+  }
+  const dens = Math.min(0.28, 0.04 + desc.moist * 0.12 + desc.life * 0.08);
+  const nPix = Math.min(((cellPx * cellPx * dens) / (step * step)) | 0, 40);
+  for (let i = 0; i < nPix; i++) {
+    const h = hash2(seed, i * 131);
+    fillRGB(ctx, rgb[0] + ((h & 8) ? 8 : -8), rgb[1] + 6, rgb[2] - 4);
+    ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), step, step);
+  }
+}
+
+function paintIce(ctx, x, y, cellPx, desc, seed, step) {
+  if (desc.ice < 0.4) return;
+  const n = 3 + ((desc.ice * 8) | 0);
+  for (let i = 0; i < n; i++) {
+    const h = hash2(seed ^ 0x1ce, i);
+    const px = x + (h % cellPx);
+    const py = y + ((h >> 8) % cellPx);
+    if (desc.ice > 0.75) ctx.fillStyle = 'rgba(160,200,230,0.45)';
+    else if ((h & 5) === 0) ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    else ctx.fillStyle = 'rgba(200,220,240,0.35)';
+    ctx.fillRect(px, py, step + ((h >> 4) & 1), step);
+  }
+}
+
+function paintWear(ctx, x, y, cellPx, c, desc) {
+  const wear = wearAt(c);
+  if (wear < 0.04 || desc.sea || desc.ice > 0.4) return;
+  ctx.fillStyle = `rgba(92,72,48,${Math.min(0.38, wear * 0.42)})`;
+  const mid = (cellPx * 0.46) | 0;
+  const w = Math.max(1, (cellPx * (0.08 + wear * 0.1)) | 0);
+  ctx.fillRect(x + mid, y + 1, w, cellPx - 2);
+}
+
+function paintGrowth(ctx, x, y, cellPx, c, desc) {
+  if (!W.prevLife || desc.sea) return;
+  const d = (W.life[c] || 0) - (W.prevLife[c] || 0);
+  if (d > 0.018) {
+    ctx.fillStyle = `rgba(140,220,90,${Math.min(0.28, d * 2.2)})`;
+    ctx.fillRect(x + 1, y + 1, cellPx - 2, cellPx - 2);
+  } else if (d < -0.025) {
+    ctx.fillStyle = `rgba(48,22,16,${Math.min(0.24, -d * 1.6)})`;
+    ctx.fillRect(x, y, cellPx, cellPx);
+  }
+}
+
+function paintCellGrid(ctx, ox, oy, cellPx, cells, side, dpr) {
+  if (cellPx < 6 || cellPx >= 16) return;
+  ctx.save();
+  ctx.lineWidth = Math.max(1, dpr * 0.5);
+  ctx.strokeStyle = 'rgba(8,12,18,0.28)';
+  ctx.beginPath();
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      const c = cells[iy * side + ix];
+      if (c < 0 || isSubmerged(W, c)) continue;
+      const x = ox + ix * cellPx;
+      const y = oy + iy * cellPx;
+      const right = ix + 1 < side ? cells[iy * side + ix + 1] : -1;
+      const down = iy + 1 < side ? cells[(iy + 1) * side + ix] : -1;
+      if (right >= 0 && !isSubmerged(W, right)) {
+        ctx.moveTo(x + cellPx + 0.5, y);
+        ctx.lineTo(x + cellPx + 0.5, y + cellPx);
+      }
+      if (down >= 0 && !isSubmerged(W, down)) {
+        ctx.moveTo(x, y + cellPx + 0.5);
+        ctx.lineTo(x + cellPx, y + cellPx + 0.5);
+      }
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function downhillDelta(cells, side, ix, iy, c) {
+  let bh = W.h[c], dx = 0, dy = 1;
+  for (let oy = -1; oy <= 1; oy++) {
+    for (let ox = -1; ox <= 1; ox++) {
+      if (!ox && !oy) continue;
+      const xx = ix + ox, yy = iy + oy;
+      if (xx < 0 || yy < 0 || xx >= side || yy >= side) continue;
+      const n = cells[yy * side + xx];
+      if (n >= 0 && W.h[n] < bh) { bh = W.h[n]; dx = ox; dy = oy; }
+    }
+  }
+  return [dx, dy];
+}
+
+function paintLandWater(ctx, x, y, cellPx, c, desc, cells, side, ix, iy, seed) {
+  const w = desc.water;
+  if (!w || w.stage === 'dry' || w.stage === 'ice' || w.stage === 'ocean') return;
+  if (desc.ice > 0.45 || desc.build > 0.55) return;
+  const [dx, dy] = downhillDelta(cells, side, ix, iy, c);
+  const drainX = x + cellPx * (0.5 + dx * 0.28);
+  const drainY = y + cellPx * (0.5 + dy * 0.28);
+
+  if (w.stage === 'sheet' || w.stage === 'drip') {
+    const a = w.stage === 'drip' ? w.amount * 0.12 : 0.08 + w.amount * 0.28;
+    ctx.fillStyle = `rgba(28,62,78,${a})`;
+    const n = w.stage === 'drip' ? 1 : 1 + ((w.amount * 5) | 0);
+    for (let i = 0; i < n; i++) {
+      const h = hash2(seed, 0x11d + i * 19);
+      const px = x + 2 + (h % Math.max(1, cellPx - 5));
+      const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 5));
+      const u = 0.35 + (i / Math.max(1, n)) * 0.5;
+      ctx.beginPath();
+      ctx.ellipse(px * (1 - u) + drainX * u, py * (1 - u) + drainY * u, 1.2 + w.amount * 2, 0.8 + w.amount, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+
+  if (w.stage === 'pond') {
+    ctx.fillStyle = `rgba(14,48,72,${0.22 + w.amount * 0.45})`;
+    ctx.beginPath();
+    ctx.ellipse(drainX, drainY, cellPx * (0.22 + w.amount * 0.22), cellPx * (0.16 + w.amount * 0.14), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(170,214,228,${0.25 + w.amount * 0.35})`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+}
+
+function paintRivers(ctx, ox, oy, cellPx, cells, side) {
+  const flow = W.flow;
+  if (!flow) return 0;
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const segs = [];
+  let nRivers = 0;
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      const c = cells[iy * side + ix];
+      if (c < 0 || isSubmerged(W, c)) continue;
+      const f = flow[c] || 0;
+      if ((W.lake?.[c] || 0) > 0.5) {
+        const wet = waterStage(c);
+        const a = 0.42 + wet.amount * 0.4;
+        const cx = ox + ix * cellPx + cellPx * 0.5;
+        const cy = oy + iy * cellPx + cellPx * 0.52;
+        ctx.fillStyle = `rgba(10,40,64,${a})`;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, cellPx * (0.42 + wet.amount * 0.1), cellPx * (0.34 + wet.amount * 0.08), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = `rgba(168,214,228,${0.4 + wet.amount * 0.25})`;
+        ctx.lineWidth = Math.max(1, cellPx * 0.07);
+        ctx.stroke();
+        nRivers++;
+      }
+      if (f < 0.0012) continue;
+      let bx = ix, by = iy, found = false;
+      const dest = W.drainTo?.[c];
+      if (dest >= 0) {
+        for (let dy = -1; dy <= 1 && !found; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const xx = ix + dx, yy = iy + dy;
+            if (xx < 0 || yy < 0 || xx >= side || yy >= side) continue;
+            if (cells[yy * side + xx] === dest) { bx = xx; by = yy; found = true; break; }
+          }
+        }
+      }
+      if (!found) {
+        let bestH = W.h[c];
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (!dx && !dy) continue;
+            const xx = ix + dx, yy = iy + dy;
+            if (xx < 0 || yy < 0 || xx >= side || yy >= side) continue;
+            const n = cells[yy * side + xx];
+            if (n >= 0 && W.h[n] < bestH) {
+              bestH = W.h[n]; bx = xx; by = yy; found = true;
+            }
+          }
+        }
+      }
+      if (!found) continue;
+      const w = Math.max(0.7, Math.min(cellPx * 0.42, Math.log1p(f * 5200) * (f > 0.016 ? 0.78 : 0.42)));
+      segs.push({
+        x0: ox + ix * cellPx + cellPx * 0.5,
+        y0: oy + iy * cellPx + cellPx * 0.5,
+        x1: ox + bx * cellPx + cellPx * 0.5,
+        y1: oy + by * cellPx + cellPx * 0.5,
+        w,
+        salt: c,
+      });
+      nRivers++;
+    }
+  }
+  const strokeSeg = (s, width, color) => {
+    const dx = s.x1 - s.x0, dy = s.y1 - s.y0;
+    const mx = (s.x0 + s.x1) * 0.5 + -dy * 0.08;
+    const my = (s.y0 + s.y1) * 0.5 + dx * 0.08;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(s.x0, s.y0);
+    ctx.quadraticCurveTo(mx, my, s.x1, s.y1);
+    ctx.stroke();
+  };
+  for (const s of segs) strokeSeg(s, s.w + (s.w > 2 ? 1.6 : 0.9), 'rgba(10,32,52,0.82)');
+  for (const s of segs) strokeSeg(s, Math.max(0.6, s.w * 0.42), 'rgba(168,214,228,0.88)');
+  ctx.restore();
+  return nRivers;
+}
+
+function paintPlumes(ctx, ox, oy, cellPx, cells, side) {
+  if (reducedMotion()) return;
+  const t = presentTime();
+  const loc = new Map();
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      const c = cells[iy * side + ix];
+      if (c >= 0) loc.set(c, [ix, iy]);
+    }
+  }
+  const drawPlume = (ix, iy, mag, salt) => {
+    const x = ox + ix * cellPx + cellPx * 0.5;
+    const y = oy + iy * cellPx + cellPx * 0.35;
+    const n = 5 + ((mag * 6) | 0);
+    for (let i = 0; i < n; i++) {
+      const h = hash2(salt, i + ((t * 4) | 0));
+      const rise = ((t * (14 + mag * 10) + i * 7) % (cellPx * 1.6));
+      const drift = Math.sin(t * 0.9 + i) * cellPx * 0.12;
+      const a = Math.max(0, 0.28 - rise / (cellPx * 2.2)) * mag;
+      ctx.fillStyle = `rgba(${70 + (h & 15)},${62 + ((h >> 4) & 15)},${58},${a})`;
+      ctx.beginPath();
+      ctx.arc(x + drift + ((h & 7) - 3), y - rise, 1.4 + mag * 1.8 + ((h >> 8) & 1), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  };
+  const seen = new Set();
+  for (const v of (W.volcanoes || [])) {
+    if ((v.magma || 0) < 0.18 && (W.ash?.[v.cell] || 0) < 0.12) continue;
+    const xy = loc.get(v.cell);
+    if (!xy) continue;
+    seen.add(v.cell);
+    drawPlume(xy[0], xy[1], Math.min(1, (v.magma || 0) * 0.7 + (W.ash?.[v.cell] || 0)), v.cell);
+  }
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      const c = cells[iy * side + ix];
+      if (c < 0 || seen.has(c)) continue;
+      const ash = W.ash?.[c] || 0;
+      if (ash > 0.28) drawPlume(ix, iy, Math.min(1, ash), c ^ 0x51);
+    }
+  }
+}
+
+function castShadow(ctx, px, py, size, light) {
+  if (!light || light.night > 0.55 || light.sun < -0.15) return;
+  const len = size * (0.28 + Math.max(0.08, 0.4 - Math.max(0, light.sun) * 0.25));
+  ctx.fillStyle = `rgba(6,10,18,${0.14 + (1 - light.expo) * 0.12})`;
+  ctx.beginPath();
+  ctx.ellipse(px + size * 0.14, py + size * 0.3, len, size * 0.16, 0.38, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function paintAsh(ctx, x, y, cellPx, desc, seed, step) {
+  ctx.fillStyle = `rgba(55,52,48,${Math.min(0.55, desc.ash * 0.7)})`;
+  const n = 4 + ((desc.ash * 10) | 0);
+  for (let i = 0; i < n; i++) {
+    const h = hash2(seed ^ 0x55, i);
+    ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), step, step);
+  }
+}
+
+function paintDust(ctx, x, y, cellPx, c, desc, t) {
+  const wu = W.windU?.[c] || 0.2;
+  const a = Math.min(0.42, desc.dust * 0.5);
+  if (reducedMotion()) {
+    ctx.fillStyle = `rgba(180,150,100,${a})`;
+    ctx.fillRect(x, y, cellPx, cellPx);
+    return;
+  }
+  const edge = ((Math.sin(t * 0.35 + c * 0.01) * 0.5 + 0.5) * cellPx * 0.4) | 0;
+  ctx.fillStyle = `rgba(180,150,100,${a})`;
+  ctx.fillRect(x, y, cellPx, cellPx);
+  ctx.fillStyle = `rgba(210,180,120,${a * 0.45})`;
+  const dir = wu >= 0 ? 1 : -1;
+  ctx.fillRect(dir > 0 ? x : x + cellPx - edge, y, edge, cellPx);
+}
+
+function weatherOverlay(ctx, ox, oy, cellPx, cells, side) {
+  const t = presentTime();
+  const still = reducedMotion();
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      const c = cells[iy * side + ix];
+      if (c < 0) continue;
+      const x = ox + ix * cellPx;
+      const y = oy + iy * cellPx;
+      const sun = cellSun(c);
+      const moist = W.moist?.[c] || 0;
+      if (sun > -0.1 && sun < 0.24 && moist > 0.38 && isLand(W, c)) {
+        const fog = Math.max(0, 1 - Math.abs(sun - 0.06) * 5) * (moist - 0.32) * 0.42;
+        if (fog > 0.04) {
+          ctx.fillStyle = `rgba(214,224,232,${Math.min(0.38, fog)})`;
+          ctx.fillRect(x, y, cellPx, cellPx);
+        }
+      }
+      if (sun > -0.18 && sun < 0.2) {
+        const band = Math.max(0, 1 - Math.abs(sun) * 4.2);
+        ctx.fillStyle = `rgba(255,110,42,${band * 0.16})`;
+        ctx.fillRect(x, y, cellPx, cellPx);
+      }
+      const life = W.life?.[c] || 0;
+      const bloom = Math.max(life, W.reef?.[c] || 0);
+      if (sun < -0.12 && bloom > 0.14) {
+        const glow = Math.min(0.28, (bloom - 0.12) * (-sun) * 0.45);
+        ctx.fillStyle = `rgba(40,180,120,${glow})`;
+        ctx.fillRect(x, y, cellPx, cellPx);
+      }
+      const storm = W.stormField?.[c] || 0;
+      const trail = W.stormTrail?.[c] || 0;
+      const surge = W.surgeField?.[c] || 0;
+      if (trail > 0.12) {
+        ctx.fillStyle = `rgba(255,190,70,${Math.min(0.34, trail * 0.4)})`;
+        ctx.fillRect(x, y + cellPx * 0.4, cellPx, Math.max(1, (cellPx * 0.14) | 0));
+      }
+      if (storm > 0.1) {
+        ctx.fillStyle = `rgba(20,52,78,${Math.min(0.4, storm * 0.34)})`;
+        ctx.fillRect(x, y, cellPx, cellPx);
+      }
+      if (surge > 0.008) {
+        ctx.fillStyle = `rgba(255,120,42,${Math.min(0.36, surge * 10)})`;
+        ctx.fillRect(x, y, cellPx, cellPx);
+      }
+      if (still) continue;
+      const cloud = W.clouds?.[c] || 0;
+      if (cloud > 0.18) {
+        const wu = W.windU?.[c] || 0.1;
+        const shift = ((t * wu * 18) % cellPx + cellPx) % cellPx;
+        ctx.fillStyle = `rgba(12,18,32,${Math.min(0.34, (cloud - 0.12) * 0.4)})`;
+        ctx.beginPath();
+        ctx.ellipse(
+          x + cellPx * 0.45 + shift - cellPx * 0.2,
+          y + cellPx * 0.42,
+          cellPx * (0.42 + cloud * 0.18),
+          cellPx * (0.28 + cloud * 0.12),
+          0, 0, Math.PI * 2
+        );
+        ctx.fill();
+      }
+      const precip = W.precip?.[c] || 0;
+      const ice = W.ice[c] || 0;
+      if (precip > 0.05 && ice < 0.45 && cellPx >= 8) {
+        const [dx, dy] = downhillDelta(cells, side, ix, iy, c);
+        const n = precip > 0.32 ? 2 + ((precip * 3) | 0) : precip > 0.14 ? 1 + ((precip * 2) | 0) : 1;
+        const a = precip < 0.12 ? precip * 0.55 : Math.min(0.42, 0.08 + precip * 0.34);
+        ctx.strokeStyle = `rgba(198,218,232,${a})`;
+        ctx.lineWidth = precip > 0.28 ? 1.2 : 1;
+        const len = Math.max(2, cellPx * (0.1 + precip * 0.14));
+        for (let i = 0; i < n; i++) {
+          const h = hash2(c, i * 17);
+          const px = x + 2 + ((h + ((t * 36) | 0)) % Math.max(1, cellPx - 4));
+          const py = y + (((h >> 8) + ((t * 62) | 0)) % cellPx);
+          ctx.beginPath();
+          ctx.moveTo(px, py);
+          ctx.lineTo(px + dx * len * 0.35, py + dy * len * 0.35 + len);
+          ctx.stroke();
+        }
+      }
+      if (storm > 0.35 && sun < 0.05) {
+        const flash = (hash2(c, (t * 8) | 0) & 31) === 0;
+        if (flash) {
+          ctx.fillStyle = 'rgba(230,240,255,0.55)';
+          ctx.fillRect(x, y, cellPx, cellPx);
+        }
+      }
+    }
+  }
+}
+
+function stampLife(ctx, x, y, cellPx, c, desc, light) {
   const cls = W.lifeClass?.[c] || 0;
   const unlocked = W.unlockedClass || 0;
-  const biome = W.biome ? BIOMES[W.biome[c]] : null;
-  const guild = dominantGuildAt(W, c);
-  const ice = W.ice[c] || 0;
-  const build = W.build[c] || 0;
   const seed = hash2(c, 0x11fe);
 
-  // 1) Microbial / guild mats (Archean → modern understory)
-  stampMats(ctx, x, y, cellPx, c, guild, seed);
-
-  // 2) Stromatolites as layered domes
+  stampMats(ctx, x, y, cellPx, c, desc.guild, seed);
   if ((W.stromatolite?.[c] || 0) > 0.15) {
     stampStromatolites(ctx, x, y, cellPx, c, W.stromatolite[c], seed);
   }
-
-  // 3) Daisyworld
   if (W.rule?.daisyworld || (W.blackDaisy?.[c] || 0) > 0.1 || (W.whiteDaisy?.[c] || 0) > 0.1) {
     stampDaisies(ctx, x, y, cellPx, c, seed);
   }
-
-  if (isSea) {
-    stampOceanLife(ctx, x, y, cellPx, c, life, cls, guild, seed);
+  if (desc.sea) {
+    stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed);
     return;
   }
-
-  if (ice > 0.45) {
-    stampIceLife(ctx, x, y, cellPx, c, life, seed);
+  if (desc.ice > 0.45) {
+    stampIceLife(ctx, x, y, cellPx, c, desc.life, seed);
     return;
   }
-
-  // 4) Land flora — skip heavy canopy under dense towns
-  if (life > 0.06 && build < 0.55) {
-    stampFlora(ctx, x, y, cellPx, c, life, biome, cls, seed);
+  if (desc.life > 0.06 && desc.build < 0.55) {
+    stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light);
   }
-
-  // 5) Ambient fauna by morphology class (fills gaps ENT density misses)
-  if (unlocked >= 3 && cls >= 3 && life > 0.2 && build < 0.7) {
-    stampAmbientFauna(ctx, x, y, cellPx, c, cls, life, seed);
+  if (unlocked >= 3 && cls >= 3 && desc.life > 0.2 && desc.build < 0.7) {
+    stampAmbientFauna(ctx, x, y, cellPx, c, cls, desc.life, seed);
   }
 }
 
-function guildRGB(guild) {
-  if (!guild) return null;
-  const rgb = GUILD_RGB[guild];
-  return rgb || null;
-}
-
-/** Pixel-mat carpet coloured by dominant redox guild / pigment. */
 function stampMats(ctx, x, y, cellPx, c, guild, seed) {
   const mat = Math.max(
     W.matCover?.[c] || 0,
@@ -562,19 +1381,21 @@ function stampMats(ctx, x, y, cellPx, c, guild, seed) {
     (W.life[c] || 0) < 0.25 && (W.life[c] || 0) > 0.05 ? W.life[c] * 0.6 : 0
   );
   if (mat < 0.08) return;
-  const rgb = guildRGB(guild) || (W.dominantPigment === 'retinal'
+  const rgb = (guild && GUILD_RGB[guild]) || (W.dominantPigment === 'retinal'
     ? [180, 50, 140]
     : W.dominantPigment === 'bchl' ? [120, 45, 110] : [40, 110, 70]);
   const step = Math.max(1, (cellPx / 10) | 0);
-  const n = Math.min(60, (2 + mat * cellPx * 0.9) | 0);
-  for (let i = 0; i < n; i++) {
-    const h = hash2(seed, i * 19);
-    const px = x + (h % cellPx);
-    const py = y + ((h >> 8) % cellPx);
-    const a = 0.25 + mat * 0.45 + ((h >> 16) & 1) * 0.1;
-    const shade = 0.75 + ((h >> 17) & 3) * 0.08;
-    ctx.fillStyle = `rgba(${(rgb[0] * shade) | 0},${(rgb[1] * shade) | 0},${(rgb[2] * shade) | 0},${a})`;
-    ctx.fillRect(px, py, step + ((h >> 20) & 1), step);
+  const thresh = 1 - mat;
+  for (let py = 0; py < cellPx; py += step) {
+    for (let px = 0; px < cellPx; px += step) {
+      const h = hash2(seed, (py << 8) | px) / 4294967296;
+      const wave = Math.sin(px * 0.35 + py * 0.18 + stampPhase(c, 0) * 0.15) * 0.5 + 0.5;
+      if (h * 0.45 + wave * 0.55 < thresh) continue;
+      const a = 0.22 + mat * 0.4 + (h > 0.7 ? 0.1 : 0);
+      const shade = 0.72 + h * 0.28;
+      ctx.fillStyle = `rgba(${(rgb[0] * shade) | 0},${(rgb[1] * shade) | 0},${(rgb[2] * shade) | 0},${a})`;
+      ctx.fillRect(x + px, y + py, step + 1, step);
+    }
   }
 }
 
@@ -582,7 +1403,8 @@ function stampStromatolites(ctx, x, y, cellPx, c, strength, seed) {
   const n = Math.min(4, 1 + (strength * 3) | 0);
   for (let i = 0; i < n; i++) {
     const h = hash2(seed ^ 0x57, i);
-    const cx = x + 3 + (h % Math.max(1, cellPx - 6));
+    const sway = windSway(c, i, cellPx);
+    const cx = x + 3 + (h % Math.max(1, cellPx - 6)) + sway[0];
     const baseY = y + cellPx - 2 - ((h >> 8) % Math.max(1, (cellPx * 0.2) | 0));
     const w = Math.max(3, (cellPx * (0.18 + strength * 0.12)) | 0);
     const layers = 2 + ((h >> 16) & 2);
@@ -606,8 +1428,9 @@ function stampDaisies(ctx, x, y, cellPx, c, seed) {
     for (let i = 0; i < n; i++) {
       const h = hash2(seed ^ salt, i * 13);
       if (dens < 0.25 && (h & 3) !== 0) continue;
-      const px = x + 2 + (h % Math.max(1, cellPx - 4));
-      const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4));
+      const sway = windSway(c, i + salt, cellPx);
+      const px = x + 2 + (h % Math.max(1, cellPx - 4)) + sway[0];
+      const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4)) + sway[1];
       drawSprite(ctx, kind, px, py, Math.max(5, cellPx * 0.32));
     }
   };
@@ -615,41 +1438,44 @@ function stampDaisies(ctx, x, y, cellPx, c, seed) {
   if (white > 0.1) place(13, white, 0xb1b);
 }
 
-function stampOceanLife(ctx, x, y, cellPx, c, life, cls, guild, seed) {
-  const reef = W.reef?.[c] || 0;
-  const bloom = Math.max(life, reef);
-
-  // Phytoplankton / pigment flecks
+function stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed) {
+  const bloom = Math.max(desc.life, desc.reef);
+  const t = presentTime();
   if (bloom > 0.08) {
-    const rgb = guildRGB(guild) || (reef > 0.2 ? [30, 190, 170] : [20, 150, 140]);
+    const rgb = (desc.guild && GUILD_RGB[desc.guild]) || (desc.reef > 0.2 ? [30, 190, 170] : [20, 150, 140]);
     const n = Math.min(40, (2 + bloom * cellPx * 0.7) | 0);
+    const drift = reducedMotion() ? 0 : (t * 6) | 0;
     for (let i = 0; i < n; i++) {
       const h = hash2(seed, i * 23);
       ctx.fillStyle = `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${0.2 + bloom * 0.35})`;
-      ctx.fillRect(x + (h % cellPx), y + ((h >> 8) % cellPx), 1 + (h & 1), 1 + ((h >> 2) & 1));
+      ctx.fillRect(x + ((h + drift) % cellPx), y + ((h >> 8) % cellPx), 1 + (h & 1), 1 + ((h >> 2) & 1));
     }
   }
-
-  // Reef structures
-  if (reef > 0.15 || (life > 0.3 && (W.biome ? BIOMES[W.biome[c]] : '') === 'reef')) {
-    const n = Math.min(4, 1 + (reef * 5) | 0);
+  if (desc.reef > 0.12 || desc.biome === 'reef') {
+    const crest = y + cellPx * (desc.depth < 0.05 ? 0.3 : 0.48);
+    ctx.fillStyle = 'rgba(70,190,175,0.16)';
+    ctx.fillRect(x + 1, y + 1, cellPx - 2, crest - y);
+    ctx.fillStyle = 'rgba(12,48,68,0.2)';
+    ctx.fillRect(x + 1, crest, cellPx - 2, y + cellPx - crest - 1);
+    ctx.fillStyle = 'rgba(240,248,255,0.16)';
+    ctx.fillRect(x + 1, crest - 1, cellPx - 2, 2);
+    const n = Math.min(5, 2 + (desc.reef * 4) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed ^ 0x4eef, i);
-      const px = x + 2 + (h % Math.max(1, cellPx - 4));
-      const py = y + cellPx * 0.35 + ((h >> 8) % Math.max(1, (cellPx * 0.5) | 0));
-      drawSprite(ctx, 14, px, py, Math.max(5, cellPx * (0.35 + reef * 0.25)));
+      const px = x + 2 + (i / Math.max(1, n - 1)) * (cellPx - 4);
+      const py = crest + ((h >> 8) % Math.max(1, (cellPx * 0.16) | 0));
+      drawSprite(ctx, 14, px, py, Math.max(5, cellPx * (0.32 + desc.reef * 0.22)));
     }
   }
-
-  // Fish / marine fauna when morphology allows
-  if (cls >= 4 || life > 0.4) {
-    const n = Math.min(3, (life * 4 + (cls >= 4 ? 1 : 0)) | 0);
+  if (cls >= 4 || desc.life > 0.4) {
+    const n = Math.min(3, (desc.life * 4 + (cls >= 4 ? 1 : 0)) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed ^ 0xf15a, i);
-      if ((h & 3) === 0 && life < 0.35) continue;
-      const px = x + 2 + (h % Math.max(1, cellPx - 4));
+      if ((h & 3) === 0 && desc.life < 0.35) continue;
+      const swim = reducedMotion() ? 0 : Math.sin(t * 1.6 + i) * cellPx * 0.12;
+      const px = x + 2 + (h % Math.max(1, cellPx - 4)) + swim;
       const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4));
-      drawSprite(ctx, 15, px, py, Math.max(4, cellPx * 0.28));
+      drawSprite(ctx, 15, px, py, Math.max(4, cellPx * 0.28), { flip: swim < 0 });
     }
   }
 }
@@ -665,18 +1491,44 @@ function stampIceLife(ctx, x, y, cellPx, c, life, seed) {
   }
 }
 
-/** Multi-pixel flora stamps — trees / grass / flowers / sparse understory. */
-function stampFlora(ctx, x, y, cellPx, c, life, biome, cls, seed) {
-  // Early life: skip canopy sprites — mats already carry the read
+function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light) {
+  const life = desc.life;
+  const biome = desc.biome;
+  const ph = seasonAt(c);
+  const autumn = ph.autumn > 0.28 && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest');
   if (cls < 2 && life < 0.35) {
-    // Sparse sprouts only
     const n = Math.min(3, (life * 5) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed, i * 17);
-      ctx.fillStyle = 'rgba(90,160,60,0.7)';
-      const px = x + (h % cellPx);
-      const py = y + ((h >> 8) % cellPx);
-      ctx.fillRect(px, py, 1, Math.max(2, (cellPx * 0.12) | 0));
+      const sway = windSway(c, i, cellPx);
+      ctx.fillStyle = autumn ? 'rgba(180,110,40,0.7)' : 'rgba(90,160,60,0.7)';
+      ctx.fillRect(x + (h % cellPx) + sway[0], y + ((h >> 8) % cellPx) + sway[1], 1, Math.max(2, (cellPx * 0.12) | 0));
+    }
+    return;
+  }
+
+  // Litter / understorey
+  if (life > 0.2 && cellPx >= 12) {
+    ctx.fillStyle = autumn ? 'rgba(70,42,22,0.26)' : 'rgba(40,50,28,0.22)';
+    ctx.fillRect(x + 1, y + cellPx * 0.55, cellPx - 2, cellPx * 0.4);
+  }
+
+  const cover = Math.min(1, life * 1.1);
+  if (cover > 0.62 && (biome === 'tropRainforest' || biome === 'tempRainforest' || biome === 'boreal' || life > 0.7)) {
+    const crowns = 3 + ((cover * 3) | 0);
+    for (let i = 0; i < crowns; i++) {
+      const h = hash2(seed, i * 17);
+      const sway = windSway(c, i, cellPx);
+      const px = x + cellPx * (0.18 + (i / crowns) * 0.64) + sway[0];
+      const py = y + cellPx * (0.38 + ((h >> 8) % 20) * 0.01) + sway[1];
+      const rw = cellPx * (0.28 + cover * 0.16);
+      if (cellPx >= 14) castShadow(ctx, px, py + rw * 0.4, rw, light);
+      const a = autumn ? (i & 1 ? 'rgba(176,92,32,0.7)' : 'rgba(148,78,28,0.65)')
+        : (i & 1 ? 'rgba(28,90,48,0.72)' : 'rgba(40,110,55,0.65)');
+      ctx.fillStyle = a;
+      ctx.beginPath();
+      ctx.ellipse(px, py, rw, rw * 0.55, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
     return;
   }
@@ -684,20 +1536,25 @@ function stampFlora(ctx, x, y, cellPx, c, life, biome, cls, seed) {
   const count = Math.min(1 + (life * 5) | 0, cellPx >= 20 ? 7 : 5);
   for (let i = 0; i < count; i++) {
     const h = hash2(seed, i * 17);
-    const px = x + 2 + (h % Math.max(1, cellPx - 4));
-    const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4));
+    const sway = windSway(c, i, cellPx);
+    const px = x + 2 + (h % Math.max(1, cellPx - 4)) + sway[0];
+    const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4)) + sway[1];
     let kind;
     if (biome === 'boreal' || biome === 'tundra' || biome === 'ice') kind = 1;
     else if (biome === 'desert') kind = (h & 3) === 0 ? 3 : 2;
     else if (biome === 'savanna' || biome === 'grassland') kind = (h & 3) ? 2 : 0;
     else if (biome === 'tropRainforest' || biome === 'tempRainforest') kind = (h & 1) ? 0 : 1;
     else kind = life > 0.45 ? ((h & 1) ? 0 : 1) : 2;
-
     const s = Math.max(5, cellPx * (0.26 + ((h >> 16) & 7) * 0.03 + (kind <= 1 ? 0.06 : 0)));
     if (life < 0.18 && (h & 3) !== 0) continue;
+    if (cellPx >= 12) castShadow(ctx, px, py, s, light);
     drawSprite(ctx, kind, px, py, s);
-
-    // Flower flecks once angiosperms exist
+    if (autumn && kind <= 1) {
+      ctx.fillStyle = `rgba(210,120,36,${Math.min(0.35, ph.autumn * 0.4)})`;
+      ctx.beginPath();
+      ctx.ellipse(px, py - s * 0.15, s * 0.28, s * 0.16, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
     if ((W.transitions?.landPlants || cls >= 2) && (biome === 'grassland' || biome === 'savanna' || biome === 'tempDeciduous')
       && (h & 7) === 0 && cellPx >= 12) {
       ctx.fillStyle = (h & 16) ? '#e8c84a' : (h & 32) ? '#e07090' : '#f0f0f8';
@@ -706,26 +1563,25 @@ function stampFlora(ctx, x, y, cellPx, c, life, biome, cls, seed) {
   }
 }
 
-/** Fauna silhouettes by lifeClass — arthropod → mammal. */
 function stampAmbientFauna(ctx, x, y, cellPx, c, cls, life, seed) {
   const dens = Math.min(3, ((life - 0.15) * 4 + (cls - 2) * 0.4) | 0);
+  const t = presentTime();
+  const sun = cellSun(c);
   for (let i = 0; i < dens; i++) {
     const h = hash2(seed ^ 0xfa01, i * 41);
-    // Sparse enough that ENT sprites stay primary
     if ((h & 7) > 3 + dens) continue;
-    const px = x + 2 + (h % Math.max(1, cellPx - 4));
-    const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4));
-    // Land arthropods / early land animals: tiny multi-pixel bugs
-    if (cls <= 4) {
-      stampBug(ctx, px, py, h);
-      continue;
+    const nocturnal = (h & 16) !== 0;
+    if (nocturnal ? sun > 0.08 : sun < -0.15) {
+      if (cellPx < 16) continue;
+      ctx.globalAlpha = 0.18;
     }
-    let kind;
-    if (cls >= 7) kind = 8;      // mammal
-    else if (cls >= 6) kind = 7; // reptile / large
-    else kind = 8;               // amphibian-ish
-    const s = Math.max(4, cellPx * (0.22 + cls * 0.04));
-    drawSprite(ctx, kind, px, py, s);
+    const walk = reducedMotion() ? 0 : Math.sin(t * 1.3 + i * 1.7) * cellPx * 0.08;
+    const px = x + 2 + (h % Math.max(1, cellPx - 4)) + walk;
+    const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4));
+    if (cls <= 4) { stampBug(ctx, px, py, h); ctx.globalAlpha = 1; continue; }
+    const kind = cls >= 7 ? 8 : 7;
+    drawSprite(ctx, kind, px, py, Math.max(4, cellPx * (0.22 + cls * 0.04)), { flip: walk < 0 });
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -739,32 +1595,43 @@ function stampBug(ctx, px, py, h) {
   if ((h & 8) === 0) ctx.fillRect(px + 1, py - 1, 1, 1);
 }
 
-/** House / hut / town silhouettes from build intensity. */
-function stampBuildings(ctx, x, y, cellPx, c, build) {
+function stampBuildings(ctx, x, y, cellPx, c, build, cells, side, ix, iy, light) {
   const seed = hash2(c, 0xb1d);
   const n = build > 0.7 ? 3 : build > 0.4 ? 2 : 1;
   const pathCol = 'rgba(170,140,90,0.55)';
-  // Dirt path through the cell
   if (build > 0.25 && cellPx >= 12) {
     ctx.fillStyle = pathCol;
     const mid = (cellPx * 0.45) | 0;
-    ctx.fillRect(x + mid, y + 1, Math.max(2, (cellPx * 0.12) | 0), cellPx - 2);
-    if (build > 0.45) {
+    const nbrBuild = (dx, dy) => {
+      const xx = ix + dx, yy = iy + dy;
+      if (xx < 0 || yy < 0 || xx >= side || yy >= side) return false;
+      const ncell = cells[yy * side + xx];
+      return ncell >= 0 && (W.build[ncell] || 0) > 0.12;
+    };
+    if (nbrBuild(0, 1) || nbrBuild(0, -1) || build > 0.25) {
+      ctx.fillRect(x + mid, y + 1, Math.max(2, (cellPx * 0.12) | 0), cellPx - 2);
+    }
+    if (nbrBuild(1, 0) || nbrBuild(-1, 0) || build > 0.45) {
       ctx.fillRect(x + 1, y + ((cellPx * 0.55) | 0), cellPx - 2, Math.max(2, (cellPx * 0.1) | 0));
     }
+  }
+  if (build > 0.35 && cellPx >= 14) {
+    ctx.fillStyle = 'rgba(196, 178, 96, 0.28)';
+    ctx.fillRect(x + 2, y + 2, cellPx * 0.42, cellPx * 0.38);
+    ctx.strokeStyle = 'rgba(120,100,60,0.35)';
+    ctx.strokeRect(x + 2, y + 2, cellPx * 0.42, cellPx * 0.38);
   }
   for (let i = 0; i < n; i++) {
     const h = hash2(seed, i + 1);
     const bw = Math.max(4, (cellPx * (0.28 + build * 0.12)) | 0);
     const bh = Math.max(5, (bw * (0.7 + ((h & 7) * 0.05))) | 0);
     const bx = x + 2 + (h % Math.max(1, cellPx - bw - 3));
-    const by = y + cellPx - bh - 2 - ((h >> 8) % Math.max(1, (cellPx * 0.25) | 0));
-    // Walls
+    const by = y + cellPx - bh - 2 - ((h >> 8) % Math.max(1, (cellPx * 0.18) | 0));
+    if (cellPx >= 12) castShadow(ctx, bx + bw * 0.5, by + bh, bw, light);
     const wall = build > 0.55 ? '#c8b8a0' : '#b89a70';
     const roof = build > 0.55 ? '#c04038' : '#8c5b3d';
     ctx.fillStyle = wall;
     ctx.fillRect(bx, by + (bh * 0.35) | 0, bw, (bh * 0.65) | 0);
-    // Roof triangle
     ctx.fillStyle = roof;
     ctx.beginPath();
     ctx.moveTo(bx - 1, by + (bh * 0.38) | 0);
@@ -772,44 +1639,69 @@ function stampBuildings(ctx, x, y, cellPx, c, build) {
     ctx.lineTo(bx + bw + 1, by + (bh * 0.38) | 0);
     ctx.closePath();
     ctx.fill();
-    // Door
     if (bw >= 6) {
-      ctx.fillStyle = '#5d4530';
+      const lit = light?.lights > 0.2;
+      const flicker = lit && ((hash2(c, i + ((presentTime() * 7) | 0)) & 7) !== 0);
+      ctx.fillStyle = flicker ? '#f4d478' : '#5d4530';
       const dw = Math.max(1, (bw * 0.22) | 0);
       ctx.fillRect(bx + ((bw - dw) / 2) | 0, by + bh - ((bh * 0.35) | 0), dw, (bh * 0.35) | 0);
     }
   }
 }
 
+function drawScaleBar(ctx, ox, oy, cellPx, side, dpr) {
+  const { km, named } = patchScale(side);
+  const barCells = Math.max(1, Math.round(side * 0.28));
+  const bw = barCells * cellPx;
+  const x = ox + 6 * dpr;
+  const y = oy + side * cellPx - 10 * dpr;
+  ctx.fillStyle = 'rgba(6,8,14,0.45)';
+  ctx.fillRect(x - 3, y - 10, bw + 8, 16);
+  ctx.strokeStyle = 'rgba(230,236,248,0.75)';
+  ctx.lineWidth = Math.max(1, dpr);
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + bw, y);
+  ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3);
+  ctx.moveTo(x + bw, y - 3); ctx.lineTo(x + bw, y + 3);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(220,228,240,0.8)';
+  ctx.font = `${Math.max(8, 9 * dpr)}px ui-monospace, Menlo, monospace`;
+  ctx.fillText(`${km | 0} km · ${named}`, x, y - 4);
+}
+
 function drawKindGlyph(ctx, cx, cy, cellPx, kind) {
-  const r = Math.max(1.5, cellPx * (kind === 5 ? 0.28 : kind <= 2 ? 0.2 : 0.18));
-  if (kind <= 2) {
-    // Plant — triangle / diamond
-    ctx.beginPath();
-    ctx.moveTo(cx, cy - r);
-    ctx.lineTo(cx + r * 0.7, cy + r * 0.6);
-    ctx.lineTo(cx - r * 0.7, cy + r * 0.6);
-    ctx.closePath();
-    ctx.fill();
-  } else if (kind === 5) {
-    // Settler — square
-    ctx.fillRect(cx - r * 0.7, cy - r * 0.7, r * 1.4, r * 1.4);
-  } else if (kind === 14 || kind === 15) {
-    // Marine — ellipse
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, r * 1.1, r * 0.55, 0, 0, Math.PI * 2);
-    ctx.fill();
-  } else if (kind >= 6 && kind <= 8) {
-    // Fauna — circle with ring
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
+  const r = Math.max(1.8, cellPx * (kind === 5 ? 0.3 : kind <= 2 ? 0.22 : 0.2));
+  ctx.save();
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(8,12,18,0.78)';
+  ctx.lineWidth = Math.max(1.2, cellPx * 0.1);
+  const path = () => {
+    if (kind <= 2) {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r * 0.7, cy + r * 0.6);
+      ctx.lineTo(cx - r * 0.7, cy + r * 0.6);
+      ctx.closePath();
+    } else if (kind === 5) {
+      ctx.beginPath();
+      ctx.rect(cx - r * 0.7, cy - r * 0.7, r * 1.4, r * 1.4);
+    } else if (kind === 14 || kind === 15) {
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, r * 1.1, r * 0.55, 0, 0, Math.PI * 2);
+    } else {
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    }
+  };
+  path();
+  ctx.stroke();
+  path();
+  ctx.fill();
+  if (kind >= 6 && kind <= 8) {
     ctx.strokeStyle = 'rgba(255,255,255,0.35)';
     ctx.lineWidth = 1;
     ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI * 2);
-    ctx.fill();
   }
+  ctx.restore();
 }

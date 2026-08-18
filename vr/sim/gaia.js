@@ -50,7 +50,7 @@ export function gaiaTick(W, chronLog) {
   W.meanLife = lifeSum / NC;
   W.landFrac = land / NC;
   W._forestFrac = land > 0 ? forest / land : 0;
-  W._amoc = W._amoc ?? 0.7;
+  W._amoc = W.conveyor ?? W._amoc ?? 0.7;
   W._monsoon = W._monsoon ?? 0.5;
   W._borealStress = clamp(W.meanTemp - 0.4, 0, 1);
 

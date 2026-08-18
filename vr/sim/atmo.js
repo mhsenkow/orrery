@@ -4,6 +4,7 @@ import { clamp, lerp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { greenhouseFromGases, totalPressure } from '../rulesets.js';
 import { circumbinaryBeat } from './exophysics.js';
+import { neighbourEN, neighbourMean } from './vecop.js';
 
 /**
  * Insolation with obliquity (seasons) + diurnal term from sun angle.
@@ -75,21 +76,42 @@ export function computeWinds(W) {
   }
 }
 
-/** Advect a scalar field by wind (upwind, area-aware). Uses U and V. */
-export function advect(field, W, rate) {
-  const { windU, windV, _adv } = W;
+/** Advect a scalar by a geographic (east, north) velocity pair.
+ *  Flux-form, area-weighted: mass `field * AREA` is conserved to the limiter. */
+export function advectField(field, uArr, vArr, scratch, rate) {
+  scratch.fill(0);
   for (let c = 0; c < NC; c++) {
-    const u = windU[c] || 0;
-    const v = windV[c] || 0;
-    // NBR layout: 0/1 ≈ E/W face proxy, 2/3 ≈ N/S
-    const upU = u > 0 ? NBR[c * 4 + 1] : NBR[c * 4];
-    const upV = v > 0 ? NBR[c * 4 + 2] : NBR[c * 4 + 3];
-    const au = Math.min(1, Math.abs(u));
-    const av = Math.min(1, Math.abs(v));
-    const fromU = field[c] + (field[upU] - field[c]) * rate * au;
-    _adv[c] = fromU + (field[upV] - fromU) * rate * av * 0.85;
+    const u = uArr[c] || 0, v = vArr[c] || 0;
+    if (u * u + v * v < 1e-12) continue;
+    const ac = AREA[c] || 1;
+    const mass = field[c] * ac;
+    if (!(mass > 0)) continue;
+    let out = 0;
+    const flux = [0, 0, 0, 0];
+    for (let k = 0; k < 4; k++) {
+      const { e, n } = neighbourEN(c, k);
+      const chord = Math.hypot(e, n) || 1e-6;
+      const along = (u * e + v * n) / chord;
+      if (along <= 0) continue;
+      const f = Math.min(0.22, rate * along);
+      flux[k] = f;
+      out += f;
+    }
+    if (out <= 0) continue;
+    const scale = out > 0.45 ? 0.45 / out : 1;
+    for (let k = 0; k < 4; k++) {
+      if (flux[k] <= 0) continue;
+      const amt = mass * flux[k] * scale;
+      scratch[c] -= amt;
+      scratch[NBR[c * 4 + k]] += amt;
+    }
   }
-  field.set(_adv);
+  for (let c = 0; c < NC; c++) field[c] += scratch[c] / (AREA[c] || 1);
+}
+
+/** Advect a scalar field by wind (upwind, geographic frame). */
+export function advect(field, W, rate) {
+  advectField(field, W.windU, W.windV, W._adv, rate);
 }
 
 export function cloudsTick(W) {
@@ -172,7 +194,8 @@ export function atmoTick(W, sunDir) {
   const { temp, moist, ice, clouds, h, seaLevel, gases, _t, ash } = W;
   const gh = greenhouseFromGases(gases, R);
   W.greenhouse = gh;
-  computeWinds(W);
+  // Winds come from geostrophicWind (called before this tick). The old
+  // three-band computeWinds field was overwritten every tick and never advected.
 
   const lapse = 0.45 * R.gravity;
   const Ptot = totalPressure(gases, R);
@@ -195,7 +218,7 @@ export function atmoTick(W, sunDir) {
     const polarCool = (R.earthLike && !R.deepTime) ? absLat * absLat * 0.16 : 0;
     const eq = insol * (1 - alb) * 0.95 + gh * 1.4 - above * lapse * 0.35 + 0.12 - polarCool;
     const c4 = c * 4;
-    const dT = (temp[NBR[c4]] + temp[NBR[c4 + 1]] + temp[NBR[c4 + 2]] + temp[NBR[c4 + 3]]) * 0.25 - temp[c];
+    const dT = neighbourMean(temp, c) - temp[c];
     let maritime = isSea ? 1 : 0;
     if (!isSea) {
       for (let k = 0; k < 4; k++) if (h[NBR[c4 + k]] < seaLevel) maritime += 0.2;

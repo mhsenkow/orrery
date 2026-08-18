@@ -3,7 +3,7 @@
 export const TOOL_TIPS = {
   inspect: {
     title: 'Inspect',
-    body: 'Click a cell to read elevation, temperature, moisture, life, guild, and crust. Free — looking never costs energy. Left-drag spins the planet.',
+    body: 'Click a cell to read elevation, temperature, moisture, life, guild, and crust. Free — looking never costs energy. Left-drag spins the planet. Shift-drag (or middle-mouse) slides it aside so the map can breathe; Home recenters.',
   },
   core: {
     title: 'Core sample',
@@ -120,9 +120,9 @@ export const PLAY_TIPS = {
     title: 'Life type',
     body: 'Only used by Seed guild. Chooses which metabolism you plant — e.g. cyanobacteria make oxygen; methanogens need no O₂. Other tools ignore this menu.',
   },
-  timerate: {
-    title: 'Clock speed',
-    body: 'Years that pass per simulation tick — from seasons (1 yr) to geologic (10 Myr), or Adaptive which follows the era. Also on the deep-time ribbon; , / . to step.',
+  timeribbon: {
+    title: 'Time ribbon',
+    body: 'When: pick Present or From origin (regenerates the world). Speed: years per tick — Adaptive follows the era. ⏸ pause · ⏩ fast frames until an event. Keys: Space , .',
   },
   brushmask: {
     title: 'Only paint on…',
@@ -144,17 +144,17 @@ export const PLAY_TIPS = {
     title: 'Undo stroke',
     body: 'Reverts the last direct edit (heights, life paint, etc.). Years that already passed stay passed — you can take back a gesture, not deep time. Ctrl+Z.',
   },
-  godff: {
-    title: 'Skip ahead',
-    body: 'Runs the clock fast and stops on a first occurrence, state change, or extinction so you don’t miss the interesting beat.',
-  },
   godwatch: {
     title: 'Watch mode',
-    body: 'Hides the dock and local panel. Planet, sound, clock — for leaving it running. Click again to get the UI back.',
+    body: 'Hides the dock and local panel. Planet, sound, and the time ribbon stay — for leaving it running.',
   },
   godbookmark: {
     title: 'Bookmark',
     body: 'Marks this age and state in your list so you can remember when something mattered. (Jump-back to full state is still light.)',
+  },
+  localSeek: {
+    title: 'Track',
+    body: 'Life: a slow tour — the globe turns to a new kind of place (coast, reef, bloom, night), then the map fades in. Stay holds this patch. Click the map to pin; A hunts again.',
   },
   scenariosel: {
     title: 'Challenge',
@@ -204,9 +204,222 @@ export const PLAY_TIPS = {
     title: 'Gaia',
     body: 'Autopilot agent that nudges solar/CO₂ when the climate drifts, and logs why. You can still override it.',
   },
-  deeptime: {
-    title: 'Deep time',
-    body: 'Start at formation (~4.57 Ga) with adaptive ticks from Myr to years. Modern Earth mode stays near the present.',
+  pause: {
+    title: 'Pause',
+    body: 'Same control as ⏸ on the time ribbon. Space also toggles. Does not change years-per-tick.',
+  },
+  newseed: {
+    title: 'Reseed',
+    body: 'Keep this planet type, roll a new terrain seed. Same settings, different mountains.',
+  },
+  catbtn: {
+    title: 'Worlds',
+    body: 'The planet picker — invented types (Earth, Vermis…) and real bodies (Europa, TRAPPIST-1 e). Not the World dock tab, which is this run’s modes.',
+  },
+  catprev: {
+    title: 'Previous body',
+    body: 'Step backward through the catalogue. Key [',
+  },
+  catnext: {
+    title: 'Next body',
+    body: 'Step forward through the catalogue. Key ]',
+  },
+  worldchip: {
+    title: 'This planet',
+    body: 'Name and mode of the world on screen. Click to open the Worlds picker.',
+  },
+  docktoggle: {
+    title: 'Dock',
+    body: 'Collapse or expand the left panel. Watch mode hides it entirely; the time ribbon stays.',
+  },
+  vrbtn: {
+    title: 'VR',
+    body: 'Enter a headset session when WebXR is available. The same sim, in reach.',
+  },
+  opacity: {
+    title: 'Surface opacity',
+    body: 'Fade the crust so overlays, clouds, and the interior cut can be read. Ghost 40% is a preset.',
+  },
+  grid: {
+    title: 'Cell grid',
+    body: 'Draws the cube-sphere mesh. Useful when inspecting a single cell; off for a clean globe.',
+  },
+  xray: {
+    title: 'X-ray cut',
+    body: 'Hides a slice of the sphere so core / mantle / ice-shell layers show. Pair with Rock → Core.',
+  },
+  xrayAmt: {
+    title: 'Cut depth',
+    body: 'How far the slice eats into the globe. Shallow = crust peek; deep = inner core.',
+  },
+  viewClear: {
+    title: 'Clear view',
+    body: 'Opacity 100%, grid off. Does not change the overlay — that’s Layers → None.',
+  },
+  viewGhost: {
+    title: 'Ghost 40%',
+    body: 'Drops opacity so a field overlay reads through the surface. Overlay still chosen in Layers.',
+  },
+  viewOrbitGuides: {
+    title: 'Axis guides',
+    body: 'Cyan = spin axis, white = equator, gold = ecliptic. The angle between cyan and gold is tilt.',
+  },
+  simN: {
+    title: 'Sim cells',
+    body: 'Climate, life, and the map all run on this grid. Changing N regenerates the world. Bigger is slower.',
+  },
+  globeSubd: {
+    title: 'Globe quads',
+    body: 'Visual mesh only — the sim does not get more cells. Instant. At high N the mesh auto-caps.',
+  },
+  orreryTable: {
+    title: 'Orrery table',
+    body: 'Shelf of saved worlds as a 3D table. Click a globe to load it. Play → Genesis → Save world fills the shelf.',
+  },
+  export: {
+    title: 'Chronicle',
+    body: 'Download this run’s era log as markdown — what happened, not a screenshot.',
+  },
+  labRefresh: {
+    title: 'Refresh instruments',
+    body: 'Redraw Lab charts from the current world. They already tick; use this after a big jump.',
+  },
+  labPaper: {
+    title: 'Paper',
+    body: 'Export a short scientific-paper draft of this world (methods, figures, chronicle) as markdown.',
+  },
+  labSave: {
+    title: 'Save file',
+    body: 'Download a JSON snapshot you can reload. Shelf (Play → Genesis) keeps worlds inside the app instead.',
+  },
+  labFinale: {
+    title: 'Finale',
+    body: 'Write an ending artefact from how this world actually died or settled — not a score screen.',
+  },
+  labPng: {
+    title: 'PNG',
+    body: 'Export the first Lab chart as a PNG. Useful for a paper figure or a postcard.',
+  },
+  labDual: {
+    title: 'Dual',
+    body: 'Dev check: run 24 ticks in a worker and compare hashes. Not a play control.',
+  },
+  catsort: {
+    title: 'Sort bodies',
+    body: 'Catalogue order, nearest to us, easiest to observe, or fewest assumed numbers.',
+  },
+  catcsv: {
+    title: 'CSV import',
+    body: 'Replace the body list from a NASA-style table. Types (Earth, Vermis…) stay in the app.',
+  },
+  climDay: {
+    title: 'Day length',
+    body: 'Rotation period vs Earth. Faster spin → more, narrower wind bands. Same lever as the Spin± tool.',
+  },
+  climTilt: {
+    title: 'Tilt (obliquity)',
+    body: 'Angle between spin axis and orbit. 0° = no seasons; 90° = one pole in the sun for half the year.',
+  },
+  climSeason: {
+    title: 'Season phase',
+    body: 'Where you are in the orbit. Moves the ITCZ and which pole is in daylight. Does not change year length.',
+  },
+  climMoonOn: {
+    title: 'Moon',
+    body: 'Luna-mass moon on/off. With a moon: spring–neap tides and a steadier axis. Same idea as the Moon tool.',
+  },
+  climMoonMass: {
+    title: 'Moon mass',
+    body: 'Heavier moon → stronger tides and a more locked axis. 1.00 M is Luna.',
+  },
+  climMoonDist: {
+    title: 'Moon distance',
+    body: 'Closer = huge tides (Roche floor ~0.38). Phobos-close moons do not last.',
+  },
+  rockHeat: {
+    title: 'Mantle heat',
+    body: 'Internal heat budget. Wakes volcanoes and plate vigor. Not a surface-temperature slider.',
+  },
+  rockMag: {
+    title: 'Magnetic field',
+    body: 'Dynamo strength. Paints aurora and slows atmospheric escape. Comes from core × heat × spin.',
+  },
+  stormGenesis: {
+    title: 'Genesis',
+    body: 'Chance a warm basin tries to organise on its own. 0% = only you seed. Default is rare (~8%).',
+  },
+  stormStrict: {
+    title: 'Strict',
+    body: 'How often a seed is allowed to die. Easy almost always works. Honest/harsh need a real basin — SST, shear, moisture.',
+  },
+  stormSize: {
+    title: 'Size',
+    body: 'How far the rain shield and overlay core spread. Does not change wind physics, only the storm’s footprint.',
+  },
+  stormVigor: {
+    title: 'Vigor',
+    body: 'How hard a storm intensifies over warm water. Landfall still guts it.',
+  },
+};
+
+/** Sub-desks inside each dock tab. */
+export const SUITE_TIPS = {
+  tools: {
+    verbs: { title: 'Verbs', body: 'The ten you use constantly — inspect, seed, raise, strike. Right-click the planet after picking one.' },
+    more: { title: 'More', body: 'Secondary verbs: disasters, chemistry, climate brushes. Same click rules as Verbs.' },
+    station: { title: 'Station', body: 'Readouts for this cell and the globe — not tools. Inspect left-drags to spin. Shift-drag parks the globe.' },
+  },
+  god: {
+    aim: { title: 'Life', body: 'Which metabolism Seed guild plants, plus undo / watch / bookmark.' },
+    brush: { title: 'Brush', body: 'Mask and snap so Raise / Lower / Ice only hit land, coasts, plate edges, etc.' },
+    challenge: { title: 'Challenge', body: 'Optional goals with limits. Teaches the coupled systems; skip if you just want a sandbox.' },
+    genesis: { title: 'Genesis', body: 'Author a named variant — seed, what-if preset, today’s world. Saves onto the local shelf.' },
+  },
+  view: {
+    look: { title: 'Look', body: 'How see-through the crust is, and whether the cell grid is drawn. Shift-drag slides the globe; Home puts it back.' },
+    layers: { title: 'Layers', body: 'Paint one field on the globe. Hover a button for what the colours mean.' },
+    slice: { title: 'Slice', body: 'X-ray cut through the globe. Pair with Rock → Core on ice-shell worlds.' },
+    guides: { title: 'Guides', body: 'Spin axis / equator / ecliptic, plus the keyboard cheat-sheet.' },
+  },
+  lab: {
+    all: { title: 'All', body: 'Every instrument card. The other desks filter this same list.' },
+    tower: { title: 'Tower', body: 'Redox ladder and Gaia — who is eating what, and whether the planet is self-regulating.' },
+    curves: { title: 'Curves', body: 'Time series: temperature, gases, diversity. The Keeling-style plots.' },
+    survey: { title: 'Survey', body: 'Maps and spectra — cores you have taken, transit sketch, Whitaker biomes.' },
+    notes: { title: 'Notes', body: 'Model limits and glossary. What this sim will not pretend to know.' },
+  },
+  sandbox: {
+    modes: { title: 'Modes', body: 'Energy (Free / Observe / Budget), Gaia autopilot, and grid resolution.' },
+    archive: { title: 'Archive', body: 'Orrery table of shelf worlds, and a markdown chronicle export.' },
+  },
+};
+
+export const RIBBON_TIPS = {
+  era: {
+    title: 'Era',
+    body: 'When the world starts. Present vs From origin regenerates Earth. Not the same as clock speed below.',
+  },
+  rate: {
+    title: 'Years per tick',
+    body: 'How much time one sim step advances. Adaptive follows the era (Myr in the Hadean, years in the Holocene). Keys , .',
+  },
+  pause: {
+    title: 'Pause',
+    body: 'Freeze the clock. Same as Pause in the top bar. Space.',
+  },
+  slower: { title: 'Slower', body: 'One step coarser on the years-per-tick list. Key ,' },
+  faster: { title: 'Faster', body: 'One step finer / faster on the years-per-tick list. Key .' },
+  ff: {
+    title: 'Fast frames',
+    body: 'Run more frames per second until something notable happens. Does not change years per tick.',
+  },
+  mode: {
+    title: 'Run mode',
+    body: 'Holocene Earth, deep-time Earth, or an alien/catalogue world. Decides who owns life and how fast the clock may go.',
+  },
+  track: {
+    title: 'Deep-time track',
+    body: 'Hadean → Phanerozoic. Needle is now. On Holocene Earth this is a legend; the clock itself stays in years.',
   },
 };
 

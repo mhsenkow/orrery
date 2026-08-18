@@ -47,12 +47,24 @@ export function getSpriteAtlas() {
   return _atlas;
 }
 
-/** Draw sprite `kind` (0–15) centred at (cx,cy) sized to `size` CSS/device pixels. */
-export function drawSprite(ctx, kind, cx, cy, size) {
+/** Draw sprite `kind` (0–15) centred at (cx,cy) sized to `size` CSS/device pixels.
+ *  opts.flip mirrors for heading; opts.lean shears into the turn. */
+export function drawSprite(ctx, kind, cx, cy, size, opts = {}) {
   const atlas = getSpriteAtlas();
   const k = Math.max(0, Math.min(SPRITES.length - 1, kind | 0));
   const sx = (k % ATLAS_COLS) * TILE;
   const sy = Math.floor(k / ATLAS_COLS) * TILE;
   const s = Math.max(2, size);
-  ctx.drawImage(atlas, sx, sy, TILE, TILE, cx - s * 0.5, cy - s * 0.5, s, s);
+  const flip = !!opts.flip;
+  const lean = opts.lean || 0;
+  if (!flip && !lean) {
+    ctx.drawImage(atlas, sx, sy, TILE, TILE, cx - s * 0.5, cy - s * 0.5, s, s);
+    return;
+  }
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (flip) ctx.scale(-1, 1);
+  if (lean) ctx.transform(1, 0, lean, 1, 0, 0);
+  ctx.drawImage(atlas, sx, sy, TILE, TILE, -s * 0.5, -s * 0.5, s, s);
+  ctx.restore();
 }

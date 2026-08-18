@@ -21,7 +21,7 @@ function deskTab(id, icon, label, title) {
 export function platesPanelChrome() {
   return `
     <p class="god-lead">
-      <b>Rock suite</b> — cores drive dynamos; dynamos shield air; heat drives plates. Catalogue worlds carry matched interiors.
+      Cores drive dynamos; dynamos shield air; heat drives plates.
     </p>
 
     <div class="clim-desks" role="tablist" aria-label="Rock desks">
@@ -69,7 +69,7 @@ export function platesPanelChrome() {
           <button type="button" id="rockPoleAt">${iconSVG('plate')}<span class="btn-label">Pole → inspect</span></button>
           <button type="button" id="rockOmegaUp" title="Faster spin">${iconSVG('spin')}<span class="btn-label">ω+</span></button>
           <button type="button" id="rockOmegaDn" title="Slower / reverse">${iconSVG('spin')}<span class="btn-label">ω−</span></button>
-          <button type="button" id="rockOverlayPlates">${iconSVG('tabview')}<span class="btn-label">Plate map</span></button>
+          <button type="button" id="rockOverlayPlates" title="Paint plates on the globe">${iconSVG('tabview')}<span class="btn-label">Plate map</span></button>
         </div>
         <p class="god-note">Redirecting a pole rewrites the next ~200 Myr of geography. Boundaries reclassify immediately.</p>
       </div>
@@ -83,7 +83,7 @@ export function platesPanelChrome() {
         <div class="tools clim-actions">
           <button type="button" id="rockRift">${iconSVG('river')}<span class="btn-label">Draw rift</span></button>
           <button type="button" id="rockOrogeny">${iconSVG('raise')}<span class="btn-label">Force orogeny</span></button>
-          <button type="button" id="rockOverlayBounds">${iconSVG('quake')}<span class="btn-label">Bound overlay</span></button>
+          <button type="button" id="rockOverlayBounds" title="Paint plate boundaries">${iconSVG('quake')}<span class="btn-label">Bound overlay</span></button>
           <button type="button" id="rockReclass">${iconSVG('refresh')}<span class="btn-label">Reclassify</span></button>
         </div>
         <p class="god-note">Cyan = diverge (ridges) · orange = converge (trenches / ranges) · gold = transform.</p>
@@ -97,7 +97,7 @@ export function platesPanelChrome() {
         <div id="rockFireList" class="clim-list"></div>
         <div class="tools clim-actions">
           <button type="button" id="rockPlume">${iconSVG('plume')}<span class="btn-label">Plant plume</span></button>
-          <button type="button" id="rockOverlayCrust">${iconSVG('core')}<span class="btn-label">Crust map</span></button>
+          <button type="button" id="rockOverlayCrust" title="Paint crust type">${iconSVG('core')}<span class="btn-label">Crust map</span></button>
         </div>
         <p class="god-note">Hotspots sit in the mantle frame — plates drift over them and leave island chains.</p>
       </div>
@@ -114,7 +114,7 @@ export function platesPanelChrome() {
           <button type="button" data-overlay="plates">${iconSVG('plate')}<span class="btn-label">Plates</span></button>
           <button type="button" data-overlay="bounds">${iconSVG('quake')}<span class="btn-label">Bounds</span></button>
         </div>
-        <p class="god-note">Young seafloor is warm at ridges; old ocean floor sinks. Continents keep thick, ancient crust.</p>
+        <p class="god-note">Young seafloor is warm at ridges; old ocean floor sinks.</p>
       </div>
     </div>
   `;
@@ -359,8 +359,6 @@ export function bindPlatesPanel(opts = {}) {
 
   const paint = (mode) => {
     setOverlay?.(mode);
-    const sel = document.getElementById('overlayMode');
-    if (sel) { sel.value = mode; sel.dispatchEvent(new Event('change')); }
   };
 
   document.getElementById('rockOverlayPlates')?.addEventListener('click', () => paint('plates'));

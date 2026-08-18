@@ -3,6 +3,7 @@
 
 import { W } from '../../world.js';
 import { formatAge, adaptiveTickYears } from '../time.js';
+import { isModernEarth } from '../ruleMode.js';
 
 /** Years advanced per simulation tick. Adaptive follows geologic era. */
 export const TIME_RATES = [
@@ -38,6 +39,10 @@ export function setTimeRate(id) {
   const r = TIME_RATES.find((x) => x.id === id) || TIME_RATES[0];
   W.timeRateId = r.id;
   W.fixedDtYr = r.dtYr;
+  if (isModernEarth(W.rule) && r.dtYr != null && r.dtYr > 200) {
+    // Holocene Earth stays on human-scale clocks unless deep time is enabled
+    return setTimeRate('decade');
+  }
   if (r.dtYr != null) W.dtYr = r.dtYr;
   else W.dtYr = adaptiveTickYears(W.ageYr || 0, {});
   return r;
@@ -57,7 +62,11 @@ export function cycleTimeRate(dir = 1) {
     const dt = W.dtYr || adaptiveTickYears(W.ageYr || 0, {});
     if (step > 0) {
       const next = FIXED_RATES.find((r) => r.dtYr > dt * 1.01);
-      return setTimeRate((next || FIXED_RATES[FIXED_RATES.length - 1]).id);
+      const pick = (next || FIXED_RATES[FIXED_RATES.length - 1]).id;
+      if (isModernEarth(W.rule) && (TIME_RATES.find((r) => r.id === pick)?.dtYr || 0) > 200) {
+        return setTimeRate('decade');
+      }
+      return setTimeRate(pick);
     }
     const prev = [...FIXED_RATES].reverse().find((r) => r.dtYr < dt * 0.99);
     return setTimeRate((prev || FIXED_RATES[0]).id);
@@ -67,7 +76,9 @@ export function cycleTimeRate(dir = 1) {
   const ni = i + step;
   if (ni < 0) return setTimeRate(FIXED_RATES[0].id);
   if (ni >= FIXED_RATES.length) return setTimeRate('auto');
-  return setTimeRate(FIXED_RATES[ni].id);
+  const pick = FIXED_RATES[ni].id;
+  if (isModernEarth(W.rule) && FIXED_RATES[ni].dtYr > 200) return setTimeRate('decade');
+  return setTimeRate(pick);
 }
 
 /** Snapshot for the ribbon / dock — rate name + effective tick length. */

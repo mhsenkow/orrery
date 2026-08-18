@@ -3,7 +3,7 @@
 
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
-import { kleiberDensity, TRAITS } from './evolve.js';
+import { kleiberDensity, TRAITS, nodeOf } from './evolve.js';
 
 export const BIOMES = [
   'tundra', 'boreal', 'tempDeciduous', 'tempRainforest', 'grassland',
@@ -25,7 +25,7 @@ export function nppField(W) {
       // Ocean: light + nutrients; upwelling boost. Item 68.
       const depth = seaLevel - h[c];
       const light = Math.max(0, 1 - depth * 6);
-      const up = W.upwelling?.[c] || 0;
+      const up = W.upwell?.[c] || W.upwelling?.[c] || 0;
       npp = light * (0.15 + W.nutrientN[c] * 0.4 + W.nutrientP[c] * 0.3 + up * 0.5);
       // Tidal nutrient pump — shallow + high range
       const tide = W.tideRange?.[c] || 0;
@@ -57,6 +57,10 @@ export function nppField(W) {
 /** Wind-driven upwelling proxy from divergence of wind field. Item 68. */
 export function computeUpwelling(W) {
   if (!W.upwelling) W.upwelling = new Float32Array(NC);
+  if (W.upwell) {
+    W.upwelling.set(W.upwell);
+    return;
+  }
   const { windU, windV, h, seaLevel } = W;
   for (let c = 0; c < NC; c++) {
     if (h[c] >= seaLevel) { W.upwelling[c] = 0; continue; }
@@ -65,7 +69,6 @@ export function computeUpwelling(W) {
       const n = NBR[c * 4 + k];
       div += (windU[n] - windU[c]) + (windV[n] - windV[c]);
     }
-    // Eastern-boundary / equatorial divergence → upwelling
     const lat = DIR[c * 3 + 1];
     const eq = 1 - Math.abs(lat) * 2;
     W.upwelling[c] = clamp((-div) * 2 + Math.max(0, eq) * 0.15, 0, 1);
@@ -110,7 +113,7 @@ export function ecologyTick(W, chronLog) {
     const isSea = W.h[c] < W.seaLevel;
     const b = classifyBiome(W.temp[c], W.moist[c], W.ice[c], isSea, {
       reef: W.reef[c],
-      upwelling: W.upwelling[c],
+      upwelling: W.upwell?.[c] || W.upwelling?.[c] || 0,
       depth: isSea ? W.seaLevel - W.h[c] : 0,
       vent: W.bound[c] === 0 && isSea,
     });
@@ -169,7 +172,7 @@ export function ecologyTick(W, chronLog) {
   // Herbivory arms race. Item 71.
   if (W.tree?.living?.length > 1) {
     for (const id of W.tree.living) {
-      const n = W.tree.nodes.find((x) => x.id === id);
+      const n = nodeOf(W.tree, id);
       if (!n) continue;
       if (n.traits[TRAITS.trophic] < 0.2) {
         // plants escalate defence
@@ -203,7 +206,7 @@ function meanNpp(W) {
 function updateFoodWeb(W) {
   W.foodWeb = W.foodWeb || { links: [] };
   if (!W.tree?.living?.length) return;
-  const nodes = W.tree.living.map((id) => W.tree.nodes.find((x) => x.id === id)).filter(Boolean);
+  const nodes = W.tree.living.map((id) => nodeOf(W.tree, id)).filter(Boolean);
   const links = [];
   for (const a of nodes) {
     for (const b of nodes) {

@@ -4,6 +4,7 @@
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { maybeCaptureMoment } from './time.js';
+import { isModernEarth } from './ruleMode.js';
 
 /**
  * Guilds ordered by approximate reduction potential / energy yield.
@@ -31,6 +32,7 @@ export const GUILDS = [
 
 const DONORS = ['H2', 'H2S', 'Fe2', 'CH4', 'NH4', 'orgC', 'N2', 'H2O', 'lignin'];
 const ACCEPTORS = ['O2', 'NO3', 'NO2', 'SO4', 'Fe3', 'CO2', 'light', 'none', 'ATP'];
+const SPECIES_KEYS = [...DONORS, ...ACCEPTORS.filter((a) => !DONORS.includes(a))];
 
 export function createSpeciesFields() {
   const fields = {};
@@ -47,6 +49,35 @@ export function createGuildDensity() {
   return g;
 }
 
+/** Per-species relaxation toward abiotic equilibrium (provenance: fitted). */
+const RELAX = {
+  H2S: 0.05, Fe2: 0.02, orgC: 0.10, SO4: 0.03, NO3: 0.15, NH4: 0.15, CH4: 0.20,
+  H2: 0.08, Fe3: 0.06, NO2: 0.12, lignin: 0.04,
+  light: 1.0, O2: 1.0, CO2: 1.0, H2O: 1.0, N2: 1.0, none: 1.0, ATP: 0.5,
+};
+
+/** Photolithotroph maintenance scale — they do not respire organics (provenance: fitted). */
+const MAINT_SCALE = {
+  purpleSulfur: 0.5,
+  greenSulfur: 0.5,
+  photoferrotroph: 0.55,
+  cyanobacteria: 0.6,
+};
+
+/** Global means of the slowest-relaxing species fields (chemistry memory readout). */
+export function speciesMemoryReadout(W) {
+  if (!W.species) return [];
+  const skip = new Set(['light', 'O2', 'CO2', 'H2O', 'N2', 'none', 'ATP']);
+  const keys = Object.keys(W.species).filter((k) => !skip.has(k));
+  keys.sort((a, b) => (RELAX[a] ?? 0.1) - (RELAX[b] ?? 0.1));
+  return keys.slice(0, 3).map((k) => {
+    const arr = W.species[k];
+    let s = 0;
+    for (let c = 0; c < NC; c++) s += arr[c];
+    return { id: k, mean: s / NC, relax: RELAX[k] ?? 0.1 };
+  });
+}
+
 export function initRedox(W) {
   W.species = createSpeciesFields();
   W.guildDens = createGuildDensity();
@@ -56,6 +87,8 @@ export function initRedox(W) {
   W.stromatolite = new Float32Array(NC);
   W.bifRock = new Float32Array(NC); // banded iron formation deposit
   W.matCover = new Float32Array(NC);
+  W.modulePool = new Set();
+  W.transitionAge = {};
   W.transitions = {
     abiogenesis: false,
     rnaWorld: false,
@@ -96,68 +129,119 @@ export function seedModernGuilds(W) {
   W.dominantPigment = 'chla';
 }
 
+/** One-time species field seed (called from initRedox). */
+export function initSpeciesFields(W) {
+  relaxSpeciesFields(W, 1.5, true);
+}
+
+function speciesEquilibrium(W, c) {
+  const { h, seaLevel, bound, gases, moist, temp, life } = W;
+  const isSea = h[c] < seaLevel;
+  const shallow = isSea && (seaLevel - h[c]) < 0.12;
+  const lit = isSea
+    ? Math.max(0, 1 - (seaLevel - h[c]) * 8) * Math.max(0.1, temp[c])
+    : Math.max(0.15, temp[c]);
+  const eq = {};
+  eq.H2 = isSea ? 0.02 : 0.001;
+  // provenance: fitted — anoxygenic photosynthesis viable on lit shelves (yield 0.28, maint 0.04)
+  eq.H2S = (shallow && lit > 0.5) ? 0.22 : (isSea ? 0.03 : 0.002);
+  eq.Fe2 = isSea ? (W.fe2Ocean || 0.3) : 0.01;
+  eq.Fe3 = isSea ? 0.05 : 0.1;
+  eq.CH4 = isSea ? clamp((gases.CH4 || 0) * 10, 0, 1) : 0;
+  eq.NH4 = 0.04;
+  eq.NO3 = gases.O2 > 0.01 ? 0.08 : 0.001;
+  eq.NO2 = gases.O2 > 0.01 ? 0.02 : 0.001;
+  eq.SO4 = gases.O2 > 0.005 ? 0.15 : 0.01;
+  // saturation sketch: atmospheric CO₂ mapped to dissolved 0–1
+  eq.CO2 = clamp(gases.CO2 * 20, 0, 1);
+  eq.O2 = isSea ? gases.O2 * 0.7 : gases.O2;
+  eq.orgC = life[c] * 0.3;
+  eq.N2 = gases.N2;
+  eq.H2O = isSea || moist[c] > 0.2 ? 1 : moist[c];
+  eq.lignin = W.transitions?.landPlants ? life[c] * 0.2 : 0;
+  eq.light = lit;
+  eq.none = 1;
+  eq.ATP = 0.5;
+  return eq;
+}
+
 function seedVentChemistry(W) {
+  relaxSpeciesFields(W, 1.5, true);
+}
+
+/** Relax toward equilibrium + vent flux + lateral diffusion — chemistry has memory. */
+export function relaxSpeciesFields(W, dt, init = false) {
   const { species, h, seaLevel, bound } = W;
+  const diffuseRate = init ? 0 : 0.04 * dt;
+  const scratch = init ? null : Object.fromEntries(SPECIES_KEYS.map((k) => [k, new Float32Array(NC)]));
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
-    // Baseline ocean chemistry
-    species.H2[c] = isSea ? 0.02 : 0.001;
-    species.H2S[c] = isSea ? 0.03 : 0.002;
-    species.Fe2[c] = isSea ? (W.fe2Ocean || 0.3) : 0.01;
-    species.Fe3[c] = isSea ? 0.05 : 0.1;
-    species.CH4[c] = isSea ? (W.gases.CH4 || 0) * 10 : 0;
-    species.NH4[c] = 0.04;
-    species.NO3[c] = W.gases.O2 > 0.01 ? 0.08 : 0.001;
-    species.NO2[c] = W.gases.O2 > 0.01 ? 0.02 : 0.001;
-    species.SO4[c] = W.gases.O2 > 0.005 ? 0.15 : 0.01;
-    species.CO2[c] = W.gases.CO2 * 20;
-    species.O2[c] = isSea ? W.gases.O2 * 0.7 : W.gases.O2;
-    species.orgC[c] = W.life[c] * 0.3;
-    species.N2[c] = W.gases.N2;
-    species.H2O[c] = isSea || W.moist[c] > 0.2 ? 1 : W.moist[c];
-    species.lignin[c] = W.transitions?.landPlants ? W.life[c] * 0.2 : 0;
-    species.light[c] = isSea
-      ? Math.max(0, 1 - (seaLevel - h[c]) * 8) * Math.max(0.1, W.temp[c])
-      : Math.max(0.15, W.temp[c]);
-    species.none[c] = 1;
-    species.ATP[c] = 0.5;
-
-    // Serpentinization / vents — abiotic H₂. Item 16.
-    if (bound[c] === 0 && isSea) {
-      species.H2[c] = Math.min(1, species.H2[c] + 0.45);
-      species.H2S[c] = Math.min(1, species.H2S[c] + 0.25);
-      species.Fe2[c] = Math.min(1, species.Fe2[c] + 0.2);
+    const eq = speciesEquilibrium(W, c);
+    for (const key of SPECIES_KEYS) {
+      const arr = species[key];
+      if (!arr) continue;
+      const r = RELAX[key] ?? 0.1;
+      let v = init ? eq[key] ?? 0 : arr[c] + ((eq[key] ?? 0) - arr[c]) * r * dt;
+      if (!init && diffuseRate > 0 && key !== 'orgC' && key !== 'lignin') {
+        let sum = 0;
+        for (let k = 0; k < 4; k++) sum += arr[NBR[c * 4 + k]];
+        v += (sum / 4 - v) * diffuseRate * (r > 0.5 ? 0.8 : 0.15);
+      }
+      if (bound[c] === 0 && isSea) {
+        if (key === 'H2') v = Math.min(1, v + 0.08 * dt);
+        if (key === 'H2S') v = Math.min(1, v + 0.05 * dt);
+        if (key === 'Fe2') v = Math.min(1, v + 0.04 * dt);
+      }
+      v = clamp(v, 0, 1);
+      if (init) arr[c] = v;
+      else scratch[key][c] = v;
     }
   }
+  if (!init) {
+    for (const key of SPECIES_KEYS) {
+      const arr = species[key];
+      if (arr) arr.set(scratch[key]);
+    }
+  }
+}
+
+function markTransition(W, key, chronLog, label) {
+  W.transitions[key] = true;
+  W.transitionAge[key] = W.ageYr;
+  W.modulePool?.add(key);
+  if (chronLog && label) chronLog(W.year, 'evolution', 0, 1, label);
 }
 
 function guildViable(g, sp, c, W) {
   if (g.oxygenic && !W.transitions.oxygenicPhotosynthesis) return 0;
   if (g.id === 'aerobe' && !W.transitions.aerobicRespiration) return 0;
   if (g.id === 'decomposer' && !W.transitions.landPlants) return 0;
-  if (g.vent && W.bound[c] !== 0) return 0.15; // weak away from vents
 
   const donor = sp[g.donor]?.[c] ?? 0;
   const acc = g.acceptor === 'none' ? 1 : (sp[g.acceptor]?.[c] ?? 0);
   if (donor < 0.01 || acc < 0.01) return 0;
 
-  // Nitrogenase poisoned by O₂. Item 21.
   if (g.id === 'nFixer' && sp.O2[c] > 0.05) return donor * acc * 0.05;
 
-  // Free-energy style yield under local T. Item 15.
   const T = W.temp[c];
-  const maint = 0.04 + Math.max(0, 0.5 - T) * 0.08;
-  const energy = g.yield * donor * acc * (0.6 + T * 0.5);
-  return Math.max(0, energy - maint);
+  const maintScale = MAINT_SCALE[g.id] ?? 1;
+  const maint = (0.04 + Math.max(0, 0.5 - T) * 0.08) * maintScale;
+  let energy = g.yield * donor * acc * (0.6 + T * 0.5);
+  let ventPenalty = 1;
+  if (g.vent && W.bound[c] !== 0) ventPenalty = 0.15;
+  return Math.max(0, energy * ventPenalty - maint);
 }
 
 export function redoxTick(W, chronLog) {
   if (W.rule.daisyworld || W.rule.airless) return;
   if (!W.species) initRedox(W);
 
-  seedVentChemistry(W);
+  const dtRelax = Math.min(1.5, (W.dtYr || 200) / 5e5);
+  const modern = isModernEarth(W.rule);
+  // init=false always — modern uses faster relaxation, not hard reset each tick
+  relaxSpeciesFields(W, dtRelax * (modern ? 2.5 : 1), false);
   const { species, guildDens, life, h, seaLevel, gases, rng } = W;
-  const dt = Math.min(1.5, (W.dtYr || 200) / 5e5);
+  const dt = dtRelax;
   const roll = rng || (() => 0.5);
 
   // Contigent inventions
@@ -249,18 +333,17 @@ export function redoxTick(W, chronLog) {
     cellBio *= clamp(0.5 + arrhenius * 0.5, 0.3, 2);
 
     const target = clamp(cellBio * 0.45 + W.matCover[c] * 0.3, 0, 1);
-    const modern = W.rule.earthLike && !W.rule.deepTime;
-    if (W.transitions.abiogenesis || modern) {
-      // Modern Earth: gentle nudge so seeded biomes persist
-      life[c] = lerpLife(life[c], modern ? Math.max(life[c] * 0.98, target) : target,
-        modern ? 0.04 * dt : 0.15 * dt);
+    if (modern) {
+      // Holocene Earth: bio.js + seedEarth own life[]; redox only tracks guilds + chemistry
+      species.orgC[c] = clamp(life[c] * 0.4 + species.orgC[c] * 0.92, 0, 1);
+      totalLife += life[c] * AREA[c];
+    } else if (W.transitions.abiogenesis) {
+      life[c] = lerpLife(life[c], target, 0.22 * dt);
+      totalLife += life[c] * AREA[c];
     } else {
-      life[c] *= Math.max(0, 1 - 0.01 * dt); // sterile until origin
+      life[c] *= Math.max(0, 1 - 0.01 * dt);
+      totalLife += life[c] * AREA[c];
     }
-    totalLife += life[c] * AREA[c];
-
-    // Legacy class index from dominant complexity
-    W.lifeClass[c] = classFromTransitions(W, bestId, isSea);
   }
 
   for (const g of GUILDS) W.guilds[g.id] = means[g.id] / NC;
@@ -275,9 +358,11 @@ export function redoxTick(W, chronLog) {
     W.hazeAntiGreenhouse = (W.hazeAntiGreenhouse || 0) * 0.99;
   }
 
-  // Organic carbon field
-  for (let c = 0; c < NC; c++) {
-    species.orgC[c] = clamp(life[c] * 0.4 + species.orgC[c] * 0.9, 0, 1);
+  // Organic carbon field (modern handled inline above)
+  if (!isModernEarth(W.rule)) {
+    for (let c = 0; c < NC; c++) {
+      species.orgC[c] = clamp(life[c] * 0.4 + species.orgC[c] * 0.9, 0, 1);
+    }
   }
 
   if (photosynthProxy > 1) {
@@ -313,15 +398,17 @@ export function pigmentLandTint(pigment, base) {
   return base;
 }
 
-function classFromTransitions(W, bestId, isSea) {
-  const T = W.transitions;
-  if (T.language || T.endothermy) return 7;
-  if (T.landPlants && !isSea) return 2;
-  if (T.biomineral && isSea) return 4;
-  if (T.multicellular) return isSea ? 4 : 3;
-  if (T.eukaryote) return 1;
-  if (bestId === 'cyanobacteria' || bestId === 'aerobe') return 0;
-  return 0;
+function litShelfFraction(W) {
+  let lit = 0, total = 0;
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] >= W.seaLevel) continue;
+    const depth = W.seaLevel - W.h[c];
+    if (depth > 0.15) continue;
+    total++;
+    const light = W.species?.light?.[c] ?? 0;
+    if (light > 0.5) lit++;
+  }
+  return total > 0 ? lit / total : 0;
 }
 
 function maybeInvent(W, chronLog, roll) {
@@ -338,7 +425,7 @@ function maybeInvent(W, chronLog, roll) {
       const t = W.temp[c];
       if (t > 0.35 && t < 0.95) chance += 0.00002 * dt;
     }
-    if (W.rule.earthLike && !W.rule.deepTime) {
+    if (isModernEarth(W.rule)) {
       T.abiogenesis = true; // modern Earth already has life
     } else if (roll() < chance || (ma < 4000 && ma > 3500 && roll() < 0.08 * dt) || (ma < 3800 && roll() < 0.03 * dt)) {
       T.abiogenesis = true;
@@ -359,89 +446,85 @@ function maybeInvent(W, chronLog, roll) {
     return;
   }
 
-  // Oxygenic photosynthesis — once, hard. Item 19.
+  // Oxygenic photosynthesis — state-gated, not date-gated. Item 19.
+  // dt=2 (Archean cap) → p_pre=0.0008×2=0.0016/tick, p_nopre=0.00005×2=0.0001/tick.
+  // Over N≈2500 Archean ticks: P(pre)=1-(1-0.0016)^2500≈0.98; P(nopre)=1-(1-0.0001)^2500≈0.22.
+  // Shape: pre>0.02 → 16× base rate; without precursors invention stays unlikely (~10–25%).
   if (!T.oxygenicPhotosynthesis && T.abiogenesis) {
     const pre = (W.guilds.purpleSulfur || 0) + (W.guilds.greenSulfur || 0);
-    const p = pre > 0.02 ? 0.0008 * dt : 0.00005 * dt;
-    if (W.rule.earthLike && !W.rule.deepTime) T.oxygenicPhotosynthesis = true;
-    else if (ma < 3000 && roll() < p) {
-      T.oxygenicPhotosynthesis = true;
-      if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Oxygenic photosynthesis invented');
+    const shelf = litShelfFraction(W);
+    // pre>0.006 → 16× rate (fitted: purpleSulfur ~0.008 viable on shelves)
+    const p = pre > 0.006 ? 0.0008 * dt : 0.00005 * dt;
+    if (isModernEarth(W.rule)) {
+      markTransition(W, 'oxygenicPhotosynthesis', chronLog, 'Oxygenic photosynthesis invented');
+    } else if (pre > 0.005 && shelf > 0.06 && roll() < p) {
+      markTransition(W, 'oxygenicPhotosynthesis', chronLog, 'Oxygenic photosynthesis invented');
     }
   }
 
   if (T.oxygenicPhotosynthesis && W.gases.O2 > 0.01 && !T.aerobicRespiration) {
-    if (roll() < 0.01 * dt || (W.rule.earthLike && !W.rule.deepTime)) {
-      T.aerobicRespiration = true;
-      if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Aerobic respiration');
+    if (roll() < 0.01 * dt || (isModernEarth(W.rule))) {
+      markTransition(W, 'aerobicRespiration', chronLog, 'Aerobic respiration');
     }
   }
 
-  // Eukaryote / mitochondrion — singular hard gate. Item 34.
   if (!T.eukaryote && T.aerobicRespiration && W.gases.O2 > 0.005) {
-    const p = 0.0003 * dt;
-    if (W.rule.earthLike && !W.rule.deepTime) T.eukaryote = true;
-    else if (ma < 2100 && roll() < p) {
-      T.eukaryote = true;
+    const o2 = W.gases.O2;
+    // provenance: fitted — once O₂ is well above GOE threshold, endosymbiosis is likely
+    const p = o2 > 0.2 ? 0.012 * dt : o2 > 0.05 ? 0.004 * dt : 0.0003 * dt;
+    if (isModernEarth(W.rule)) {
+      markTransition(W, 'eukaryote', chronLog, 'Endosymbiosis: mitochondrion');
       T.bacteriaArchaea = true;
-      if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Endosymbiosis: mitochondrion');
+      maybeCaptureMoment(W, 'firstEukaryote', 'First eukaryote');
+    } else if (o2 > 0.008 && roll() < p) {
+      markTransition(W, 'eukaryote', chronLog, 'Endosymbiosis: mitochondrion');
+      T.bacteriaArchaea = true;
       maybeCaptureMoment(W, 'firstEukaryote', 'First eukaryote');
     }
   }
 
   if (T.eukaryote && T.oxygenicPhotosynthesis && !T.plastid) {
-    if (roll() < 0.0005 * dt || (W.rule.earthLike && !W.rule.deepTime)) {
-      T.plastid = true;
-      if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Primary plastid');
+    if (roll() < 0.0005 * dt || (isModernEarth(W.rule))) {
+      markTransition(W, 'plastid', chronLog, 'Primary plastid');
     }
   }
 
   if (T.eukaryote && !T.sex && roll() < 0.001 * dt) T.sex = true;
 
   if (!T.multicellular && T.eukaryote && W.gases.O2 > 0.03) {
-    const p = 0.0004 * dt;
-    if (W.rule.earthLike && !W.rule.deepTime) T.multicellular = true;
-    else if (ma < 800 && roll() < p) {
-      T.multicellular = true;
-      if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Multicellularity');
+    const o2 = W.gases.O2;
+    // provenance: fitted — multicellularity follows once O₂ supports larger bodies
+    const p = o2 > 0.08 ? 0.003 * dt : 0.0004 * dt;
+    if (isModernEarth(W.rule)) {
+      markTransition(W, 'multicellular', chronLog, 'Multicellularity');
+      maybeCaptureMoment(W, 'firstMulticellular', 'First multicellular body');
+    } else if (o2 > 0.035 && roll() < p) {
+      markTransition(W, 'multicellular', chronLog, 'Multicellularity');
       maybeCaptureMoment(W, 'firstMulticellular', 'First multicellular body');
     }
   }
 
   if (!T.biomineral && T.multicellular && W.gases.O2 > 0.08 && W.carbon?.omegaAragonite > 1.5) {
-    if (roll() < 0.002 * dt || (W.rule.earthLike && !W.rule.deepTime)) {
-      T.biomineral = true;
-      if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Biomineralization / Cambrian skeletons');
+    if (roll() < 0.002 * dt || (isModernEarth(W.rule))) {
+      markTransition(W, 'biomineral', chronLog, 'Biomineralization / Cambrian skeletons');
     }
   }
 
-  // Terrestrialization — four conditions. Item 40.
   if (!T.landPlants && T.multicellular && W.ozone > 0.15) {
     let soilOk = 0;
     for (let c = 0; c < NC; c++) if (W.h[c] >= W.seaLevel && W.soil[c] > 0.1) soilOk++;
-    if (soilOk > NC * 0.02 || (W.rule.earthLike && !W.rule.deepTime)) {
-      if (roll() < 0.001 * dt || (W.rule.earthLike && !W.rule.deepTime)) {
-        T.landPlants = true;
-        if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Land plants');
+    if (soilOk > NC * 0.02 || (isModernEarth(W.rule))) {
+      if (roll() < 0.001 * dt || (isModernEarth(W.rule))) {
+        markTransition(W, 'landPlants', chronLog, 'Land plants');
         maybeCaptureMoment(W, 'firstLandPlant', 'First land plant');
       }
     }
   }
 
   if (T.landPlants && !T.endothermy && W.gases.O2 > 0.12 && roll() < 0.0003 * dt) {
-    T.endothermy = true;
+    markTransition(W, 'endothermy', chronLog, null);
   }
-  if (T.endothermy && !T.language && W.unlockedClass >= 6 && roll() < 0.0001 * dt) {
-    T.language = true;
-    if (chronLog) chronLog(W.year, 'evolution', 0, 1, 'Language — last transition');
+  if (T.endothermy && !T.language && (W.transitions?.landPlants || W.unlockedClass >= 5) && roll() < 0.0001 * dt) {
+    markTransition(W, 'language', chronLog, 'Language — last transition');
   }
-
-  // Sync unlockedClass for agents / sprites
-  W.unlockedClass = 0;
-  if (T.eukaryote) W.unlockedClass = 1;
-  if (T.multicellular) W.unlockedClass = 2;
-  if (T.biomineral) W.unlockedClass = 4;
-  if (T.landPlants) W.unlockedClass = 5;
-  if (T.endothermy) W.unlockedClass = 7;
-  if (W.rule.earthLike && !W.rule.deepTime) W.unlockedClass = Math.max(W.unlockedClass, 6);
 }

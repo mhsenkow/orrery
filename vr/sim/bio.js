@@ -57,17 +57,13 @@ export function bioTick(W, chronLog) {
     const isSea = h[c] < seaLevel;
     const landUV = isSea || W.ozone > 0.15;
     const cap = Math.max(0.2, carryingCapacity(W, c));
-    let best = lifeClass[c] || 0, fit = 0.3;
+    let fit = 0.3;
     for (let i = 0; i < LIFE_CLASSES.length; i++) {
       const f = envelopeOk(LIFE_CLASSES[i], temp[c], moist[c], O2, landUV, isSea);
-      if (f > 0 && i <= W.unlockedClass) {
-        best = i;
-        fit = f;
-      }
+      if (f > 0 && i <= W.unlockedClass) fit = Math.max(fit, f);
     }
     if (W.bound[c] === 0 && isSea) {
       fit = Math.max(fit, 0.55);
-      best = Math.max(best, 0);
     }
     if (isSea && (seaLevel - h[c]) < 0.1 && temp[c] > 0.4) fit = Math.max(fit, 0.5);
 
@@ -80,9 +76,7 @@ export function bioTick(W, chronLog) {
     const maxL = Math.min(1, (cap + 0.1) * seaCap) * (aridGate ? 1 : 0);
 
     if (useRedox) {
-      // Soft envelope clamp only — redox sets the target
       _l[c] = clamp(life[c], 0, maxL > 0.05 ? Math.max(maxL, life[c] * 0.9) : life[c] * 0.95);
-      lifeClass[c] = best;
       const bio = _l[c] * AREA[c];
       // provenance: fitted — residual gas coupling; burial owns O₂ in carbon.js
       photosynth += bio * 0.00000002;
@@ -94,7 +88,6 @@ export function bioTick(W, chronLog) {
       const before = life[c];
       _l[c] = clamp(life[c] + growth, 0, maxL);
       if (_l[c] > before + 0.015) grown++;
-      lifeClass[c] = best;
       const bio = _l[c] * AREA[c];
       // provenance: invented for legibility — prefer carbon.js burial path when present
       photosynth += bio * 0.00000008;
@@ -104,7 +97,6 @@ export function bioTick(W, chronLog) {
       const die = aridGate ? 0.035 : 0.06;
       _l[c] = Math.max(0, life[c] - die);
       if (_l[c] < before - 0.01) died++;
-      if (_l[c] < 0.02) lifeClass[c] = 0;
     }
 
     if (!isSea) {
@@ -244,7 +236,7 @@ export function seedLife(W, cell, classIndex) {
     if (d > thresh) {
       const f = (d - thresh) / (1 - thresh + 1e-6);
       W.life[c] = Math.max(W.life[c], 0.7 + f * 0.3);
-      W.lifeClass[c] = cls;
+      W.lifeClass[c] = cls; // derived-field override: recomputed next evolveTick
       if (W.h[c] >= W.seaLevel) {
         W.moist[c] = Math.max(W.moist[c], 0.45 + f * 0.35);
         W.ice[c] *= 0.35;

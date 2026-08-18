@@ -90,6 +90,12 @@ function sanitize(rule, opts = {}) {
   if (!Array.isArray(rule.sky) || rule.sky.length < 3) rule.sky = [0.02, 0.03, 0.06];
   if (typeof rule.land !== 'function') rule.land = byId('terra').land;
   if (typeof rule.ocean !== 'function') rule.ocean = byId('terra').ocean;
+  // Catalogue / exo worlds must not inherit Holocene-Earth biosphere shortcuts
+  if (rule.catalogueId && rule.id !== 'terra' && !rule.name?.startsWith?.('Earth')) {
+    rule.earthLike = false;
+  } else if (rule.worldRecord && rule.id !== 'terra' && rule.catalogueId) {
+    rule.earthLike = false;
+  }
   if (opts.failMissing && hasRecord) {
     const r = rule.worldRecord.radius?.v;
     const m = rule.worldRecord.mass?.v;

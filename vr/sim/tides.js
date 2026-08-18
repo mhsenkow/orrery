@@ -3,6 +3,7 @@
 
 import { NC, DIR, NBR } from '../sphere.js';
 import { clamp } from '../math.js';
+import { localSeaLevel, cellElev } from './cellSurface.js';
 
 /** Allocate tidal fields once. */
 export function initTides(W) {
@@ -107,7 +108,7 @@ export function tidesTick(W) {
   }
 
   if (W._seaBase == null) W._seaBase = W.seaLevel;
-  W.seaLevel = W._seaBase;
+  // Do not overwrite hydro's ice/thermal sea level — tideHeight adds on top locally
 }
 
 /** Shelf / basin amplification — Fundy-ish vs Mediterranean-ish. */
@@ -132,8 +133,7 @@ function basinRange(W, c, raw) {
 }
 
 function updateShoreCell(W, c) {
-  const localSea = (W._seaBase ?? W.seaLevel) + (W.tideHeight[c] || 0);
-  const elev = W.h[c] - localSea;
+  const elev = cellElev(W, c);
   const range = W.tideRange[c] || 0;
   W.tideWet[c] = elev < 0 ? 1 : 0;
   const near = elev > -0.06 && elev < 0.05 && range > 0.0025;

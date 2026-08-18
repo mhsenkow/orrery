@@ -22,6 +22,8 @@ What this simulation deliberately does **not** do. Stating the boundary is what 
 ## Life & evolution
 
 - **Trait vectors** are ~11 floats, not sequences. Speciation is allopatric-component splitting plus a light ecological nudge — not full population genetics.
+- **`lifeClass` and `unlockedClass`** are derived compatibility shims: one writer per tick (`deriveLifeClass`) from guild density and the phylogeny, not morphology gates.
+- **Species fields** (`H2S`, `Fe²⁺`, `orgC`, …) relax toward abiotic equilibrium each tick rather than resetting; dissolved chemistry has memory on the slow fields.
 - **Phylogeny** is a tree object with ghosts; horizontal gene transfer is only partially sketched.
 - **Major transitions** are contingent gates with probabilities, not developmental simulations.
 - **Food webs** are sparse trophic links from traits, not measured interaction matrices.

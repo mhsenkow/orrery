@@ -2,10 +2,49 @@
 
 import { clamp, lerp, mulberry32, fbm, ridged } from '../math.js';
 import { rngOf } from './rng.js';
+import { naturalizeHypsometry, softenPlateCrust } from './terrainShape.js';
 import { NC, NF, N, NBR, NBR8, DIR, AREA, dirToCell } from '../sphere.js';
 
 
+const MANTLE_DENS = 3.3;
 const DIV = 0, CONV = 1, TRANS = 2;
+
+export function isostaticElev(W, c) {
+  const pl = W.plates?.[W.plateId[c]];
+  const thick = W.crust[c];
+  const dens = pl?.density ?? 2.8;
+  const oceanic = !!pl?.oceanic;
+  const freeboard = thick * (1 - dens / MANTLE_DENS) * (oceanic ? 1.6 : 3.4);
+  let elev = freeboard - (oceanic ? 0.42 : -0.08);
+  if (oceanic) elev -= 0.015 * Math.sqrt(Math.max(0, W.age[c]));
+  return clamp(elev, -1.2, 1.2);
+}
+
+export function snapshotIsostasy(W) {
+  if (!W._iso0 || W._iso0.length !== NC) W._iso0 = new Float32Array(NC);
+  for (let c = 0; c < NC; c++) W._iso0[c] = isostaticElev(W, c);
+}
+
+/** Apply crustal thickness changes to height without wiping sculpted terrain. */
+export function applyIsostasy(W) {
+  if (!W.plates || !W._iso0) return;
+  for (let c = 0; c < NC; c++) {
+    const now = isostaticElev(W, c);
+    const dh = now - W._iso0[c];
+    if (Math.abs(dh) < 1e-5) continue;
+    const step = dh * 0.18;
+    W.h[c] = clamp(W.h[c] + step, -1.2, 1.2);
+    W._iso0[c] += step;
+  }
+}
+
+function silicaForVent(W, cell, hotspot) {
+  if (hotspot) return 0.48;
+  const pl = W.plates?.[W.plateId[cell]];
+  if (W.bound[cell] === CONV && pl && !pl.oceanic) return 0.63;
+  if (W.bound[cell] === DIV) return 0.49;
+  return 0.52;
+}
 
 function randomUnit(rng) {
   const u = rng() * 2 - 1, th = rng() * Math.PI * 2, r = Math.sqrt(1 - u * u);
@@ -153,14 +192,13 @@ export function generateTectonics(W, seed, rule) {
   }
 
   // Isostasy: elev ∝ thickness / density floating on mantle (~3.3)
+  softenPlateCrust(W, seed, plates);
   const h = W.h;
-  const mantle = 3.3;
   for (let c = 0; c < NC; c++) {
     const pl = plates[plateId[c]];
     const thick = crust[c];
     const dens = pl.density;
-    // Airy-ish freeboard — continents ride high enough for ~25–40% land
-    const freeboard = thick * (1 - dens / mantle) * (pl.oceanic ? 1.6 : 3.4);
+    const freeboard = thick * (1 - dens / MANTLE_DENS) * (pl.oceanic ? 1.6 : 3.4);
     let elev = freeboard - (pl.oceanic ? 0.42 : -0.08);
     if (pl.oceanic) elev -= 0.015 * Math.sqrt(Math.max(0, age[c]));
     // Mild noise for coastline interest
@@ -172,6 +210,8 @@ export function generateTectonics(W, seed, rule) {
     }
     h[c] = clamp(elev, -1.2, 1.2);
   }
+
+  naturalizeHypsometry(W, seed, { seaLevel: 0 });
 
   W.plates = plates;
   W.volcanoes = [];
@@ -189,7 +229,10 @@ export function generateTectonics(W, seed, rule) {
   const eruptChance = 0.015 + (W.interior?.heatFlow || 1) * 0.03 * (lid === 'stagnant' ? 0.25 : 1);
   for (let c = 0; c < NC; c++) {
     if (bound[c] === CONV && crust[c] > 0.5 && rng() < eruptChance) {
-      W.volcanoes.push({ cell: c, magma: 0.5 + rng(), next: rng() * 40 });
+      W.volcanoes.push({
+        cell: c, magma: 0.5 + rng(), next: rng() * 40,
+        silica: silicaForVent(W, c, false),
+      });
     }
   }
   for (const hs of W.hotspots) {
@@ -198,8 +241,15 @@ export function generateTectonics(W, seed, rule) {
       const d = DIR[c * 3] * hs.pos[0] + DIR[c * 3 + 1] * hs.pos[1] + DIR[c * 3 + 2] * hs.pos[2];
       if (d > bd) { bd = d; best = c; }
     }
-    W.volcanoes.push({ cell: best, magma: 1.2 * (W.interior?.heatFlow || 1), next: 5, hotspot: true });
+    W.volcanoes.push({
+      cell: best, magma: 1.2 * (W.interior?.heatFlow || 1), next: 5, hotspot: true,
+      silica: 0.48,
+    });
   }
+
+  if (!W.lava || W.lava.length !== NC) W.lava = new Float32Array(NC);
+  else W.lava.fill(0);
+  snapshotIsostasy(W);
 
   return plates;
 }
@@ -382,6 +432,12 @@ export function tectonicsTick(W, chron, log) {
   for (let c = 0; c < NC; c++) {
     if (bound[c] === DIV) {
       age[c] = Math.max(0, age[c] * (1 - 0.005 * vigor));
+      if (plates[plateId[c]]?.oceanic) crust[c] = Math.min(crust[c], lerp(crust[c], 0.28, 0.008 * vigor));
+    }
+    if (bound[c] === CONV) {
+      const pl = plates[plateId[c]];
+      if (pl && !pl.oceanic) crust[c] = Math.min(1.6, crust[c] + 0.00055 * vigor);
+      else if (pl?.oceanic) crust[c] = Math.max(0.12, crust[c] * (1 - 0.0012 * vigor));
     }
     if (bound[c] === TRANS || bound[c] === CONV) {
       strain[c] = Math.min(2, strain[c] + 0.008 * vigor);
@@ -395,28 +451,84 @@ export function tectonicsTick(W, chron, log) {
     age[c] += 0.02 * Math.max(0.2, vigor);
   }
 
-  // Magma charge & eruptions — heatFlow scales recharge
+  if (!W.lava || W.lava.length !== NC) W.lava = new Float32Array(NC);
+
   const heat = W.interior?.heatFlow || 1;
   for (const v of W.volcanoes) {
+    if (v.silica == null) v.silica = silicaForVent(W, v.cell, !!v.hotspot);
+    if (v.vol == null) {
+      v.vol = 0.45 + (v.magma || 0.5) * 0.25;
+      v.roof = v.silica > 0.58 ? 0.52 : 0.82;
+      v.depth = v.hotspot ? 0.32 : 0.55;
+      v.volatiles = 0.15 + v.silica * 0.45;
+    }
     v.next -= 1;
+    v.vol = Math.min(2.4, v.vol + 0.008 * heat);
     v.magma = Math.min(2, v.magma + 0.01 * heat);
-    if (v.next <= 0 && v.magma > 0.6) {
-      const power = v.magma;
-      v.magma *= 0.3;
-      v.next = (20 + rng() * 80) / Math.max(0.35, heat);
-      h[v.cell] = Math.min(1.2, h[v.cell] + power * 0.04);
+    v.silica = clamp(v.silica + 0.00012 * (1.1 - heat * 0.35), 0.42, 0.78);
+    v.volatiles = clamp(v.volatiles + 0.00008, 0.05, 0.7);
+    const overpress = v.vol / Math.max(0.2, v.roof);
+    if (v.next <= 0 && v.magma > 0.55 && overpress > 0.85) {
+      const dumped = Math.min(v.vol, v.vol * 0.62 + v.magma * 0.2);
+      const silica = v.silica;
+      const visc = Math.exp((silica - 0.5) * 12);
+      const explosive = silica > 0.58 || v.volatiles > 0.45;
+      const caldera = dumped > v.roof * 1.05 && explosive;
+      v.vol -= dumped;
+      v.magma *= 0.28;
+      v.volatiles *= 0.45;
+      v.next = (18 + rng() * 70) / Math.max(0.35, heat);
+      const power = dumped;
+      const plume = power * (explosive ? 1.35 : 0.4) * (0.5 + v.volatiles);
+      if (caldera) {
+        h[v.cell] = Math.max(-0.35, h[v.cell] - power * 0.07);
+        W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.9);
+      } else if (explosive) {
+        h[v.cell] = Math.max(-0.2, h[v.cell] - power * 0.02);
+        W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.7);
+      } else {
+        h[v.cell] = Math.min(1.2, h[v.cell] + power * 0.04 / visc);
+        W.lava[v.cell] = Math.min(1, (W.lava[v.cell] || 0) + power * 0.55);
+        W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.18);
+      }
       crust[v.cell] = Math.min(1.6, crust[v.cell] + power * 0.05);
-      W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.4);
-      // Earth-like: Pinatubo-scale pulses, not permanent aerosol winter.
-      // Non-Earth / deep-time worlds keep the stronger climate lever.
-      const sulphPulse = W.rule.earthLike ? power * 0.0007 : power * 0.015;
+      const strat = plume > 0.55;
+      const sulphPulse = (W.rule.earthLike ? power * 0.0007 : power * 0.015)
+        * (explosive ? 1.4 : 0.6) * (strat ? 1 : 0.25);
       const sulphCap = W.rule.earthLike ? 0.04 : 0.3;
       W.gases.sulphate = Math.min(sulphCap, W.gases.sulphate + sulphPulse);
       const co2Pulse = W.rule.earthLike ? power * 0.000015 : power * 0.004;
       W.gases.CO2 = Math.min(0.5, W.gases.CO2 + co2Pulse);
-      if (log) log(W.year, 'eruption', v.cell, power, power > 1 ? 'Major eruption' : 'Eruption');
+      const label = caldera
+        ? 'Caldera collapse'
+        : explosive
+          ? (power > 1 ? 'Plinian eruption' : 'Explosive eruption')
+          : (power > 1 ? 'Major eruption' : 'Lava eruption');
+      if (log) log(W.year, 'eruption', v.cell, power, label);
     }
   }
+
+  // Lava flows downhill and cools
+  const lava = W.lava;
+  const _h = W._h;
+  _h.set(lava);
+  for (let c = 0; c < NC; c++) {
+    const v = lava[c];
+    if (v < 0.01) { _h[c] = v * 0.92; continue; }
+    let sink = c, drop = 0;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      const s = h[c] - h[n];
+      if (s > drop) { drop = s; sink = n; }
+    }
+    const flow = Math.min(v * 0.22, drop * 0.8);
+    _h[c] = (v - flow) * 0.94;
+    if (sink !== c) _h[sink] = Math.min(1, _h[sink] + flow * 0.85);
+    if (flow > 0.002) h[c] = Math.min(1.2, h[c] + flow * 0.008);
+  }
+  lava.set(_h);
+
+  applyIsostasy(W);
 }
 
 /** Re-Voronoi cells from drifted plate centres (keeps plate objects, moves ownership). */

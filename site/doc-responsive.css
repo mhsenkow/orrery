@@ -1,0 +1,30 @@
+/* Shared mobile / safe-area rules for generated backlog pages.
+   Linked after each page's inline <style> so these win on equal specificity. */
+html { overflow-x: clip; -webkit-text-size-adjust: 100%; }
+.wrap {
+  padding-left: max(26px, env(safe-area-inset-left, 0px));
+  padding-right: max(26px, env(safe-area-inset-right, 0px));
+}
+.controls { top: env(safe-area-inset-top, 0px); }
+.nav { line-height: 1.75; }
+
+@media (max-width: 720px) {
+  .wrap {
+    padding: 24px max(14px, env(safe-area-inset-right, 0px)) 72px max(14px, env(safe-area-inset-left, 0px));
+  }
+  .nav { font-size: 12px; line-height: 1.9; }
+  .tally { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .filters { gap: 6px; }
+  button.f { min-height: 36px; }
+  #q { flex: 1 1 100%; min-width: 0; width: 100%; }
+  #shown { margin-left: 0; width: 100%; }
+  h1 { font-size: clamp(26px, 8.5vw, 42px); }
+  header { padding-top: 28px; }
+  .crit ol { grid-template-columns: minmax(0, 1fr); }
+  .tw, .arc, pre { max-width: 100%; }
+  table { font-size: 13px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}

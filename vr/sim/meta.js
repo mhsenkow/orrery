@@ -3,7 +3,7 @@
 
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
-import { TRAITS } from './evolve.js';
+import { TRAITS, nodeOf } from './evolve.js';
 
 /** Record fossils when lineages die in depositing cells. Item 177. */
 export function recordFossil(W, node, cell, reason = 'burial') {
@@ -31,7 +31,7 @@ export function horizontalGeneTransfer(W, chronLog) {
   const dt = Math.min(2, (W.dtYr || 200) / 1e6);
   if (rng() > 0.02 * dt) return;
 
-  const living = W.tree.living.map((id) => W.tree.nodes.find((x) => x.id === id)).filter(Boolean);
+  const living = W.tree.living.map((id) => nodeOf(W.tree, id)).filter(Boolean);
   const microbes = living.filter((n) => n.traits[TRAITS.bodyMass] < 0.35);
   if (microbes.length < 2) return;
   const a = microbes[(rng() * microbes.length) | 0];
@@ -117,7 +117,7 @@ export function flagEndemics(W) {
   const small = new Set();
   // Rebuild per-lineage range area roughly via pop
   for (const id of W.tree.living) {
-    const n = W.tree.nodes.find((x) => x.id === id);
+    const n = nodeOf(W.tree, id);
     if (!n) continue;
     n.endemic = n.pop > 0 && n.pop < 12;
     if (n.endemic) small.add(id);
@@ -129,7 +129,7 @@ export function flagEndemics(W) {
 export function climateRangeShift(W) {
   if (!W.tree) return;
   for (const id of W.tree.living) {
-    const n = W.tree.nodes.find((x) => x.id === id);
+    const n = nodeOf(W.tree, id);
     if (!n || !n.cells?.length) continue;
     const tOpt = n.traits[TRAITS.tOpt];
     let stress = 0;
@@ -139,6 +139,29 @@ export function climateRangeShift(W) {
     }
     n._climateDebt = stress / Math.max(1, n.cells.length);
   }
+}
+
+/** Population-weighted mean range contiguity per lineage. Biosphere P0-40. */
+export function rangeContiguity(W) {
+  if (!W.tree || !W.popId) return 0;
+  let weighted = 0, totalPop = 0;
+  for (const id of W.tree.living) {
+    const node = nodeOf(W.tree, id);
+    if (!node?.cells?.length) continue;
+    let contig = 0;
+    for (const c of node.cells) {
+      let hasNeigh = false;
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[c * 4 + k];
+        if (W.popId[n] === id) { hasNeigh = true; break; }
+      }
+      if (hasNeigh) contig++;
+    }
+    const frac = contig / node.cells.length;
+    weighted += frac * node.pop;
+    totalPop += node.pop;
+  }
+  return totalPop > 0 ? weighted / totalPop : 0;
 }
 
 /** Multi-rate schedule: which subsystems run this tick. Item 194 / next 44. */

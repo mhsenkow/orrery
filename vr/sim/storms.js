@@ -2,7 +2,7 @@
  *  Toy cyclones: midlatitude commas + tropical eyes when SST/shear allow. */
 
 import { NC, DIR, NBR } from '../sphere.js';
-import { clamp } from '../math.js';
+import { clamp, lerp } from '../math.js';
 import { issueReceipt } from './god/receipt.js';
 import { rngOf } from './rng.js';
 
@@ -18,7 +18,22 @@ export function initStorms(W) {
     W.stormField = new Float32Array(NC);
     W.surgeField = new Float32Array(NC);
   }
+  if (!W.stormTrail || W.stormTrail.length !== NC) {
+    W.stormTrail = new Float32Array(NC);
+  }
   W._stormNameIx = W._stormNameIx || 0;
+  if (!W.stormCtl) {
+    W.stormCtl = { genesis: 0.08, strict: 0.7, size: 1, vigor: 1 };
+  }
+}
+
+export function stormControl(W) {
+  initStorms(W);
+  return W.stormCtl;
+}
+
+export function setStormControl(W, patch) {
+  Object.assign(stormControl(W), patch);
 }
 
 function nextName(W) {
@@ -70,15 +85,19 @@ export function seedStorm(W, cell, opts = {}) {
   const mid = midlatFavor(W, best);
   const kind = trop >= mid && trop > 0.25 ? 'tropical' : 'extratropical';
   const favor = Math.max(trop, mid);
+  const ctl = stormControl(W);
+  const strict = clamp(ctl.strict ?? 0.7, 0, 1);
+  const vigor = clamp(ctl.vigor ?? 1, 0.4, 2);
 
   const roll = rngOf(W, 'rngGod')();
-  const need = kind === 'tropical' ? 0.35 : 0.28;
-  if (favor < need || roll > favor * 0.95 + 0.15) {
+  const need = lerp(0.06, kind === 'tropical' ? 0.42 : 0.34, strict);
+  const pass = favor >= need && roll < favor * lerp(1.15, 0.55, strict) + lerp(0.55, 0.12, strict);
+  if (!pass) {
     issueReceipt({
       tool: 'weather',
       cell: best,
       intent: 'Seed storm',
-      expected: `Failed — ${kind} favor ${favor.toFixed(2)} (need ~${need})`,
+      expected: `Failed — ${kind} favor ${favor.toFixed(2)} (need ~${need.toFixed(2)})`,
     });
     return {
       ok: false,
@@ -94,7 +113,7 @@ export function seedStorm(W, cell, opts = {}) {
     cell: best,
     lat: DIR[best * 3 + 1],
     lon: Math.atan2(DIR[best * 3 + 2], DIR[best * 3]),
-    intensity: clamp(0.35 + favor * 0.45, 0.3, 1),
+    intensity: clamp((0.35 + favor * 0.45) * vigor, 0.3, 1),
     age: 0,
     track: [best],
     landfall: false,
@@ -123,19 +142,22 @@ export function steerStorm(W, stormId, du = 0, dv = 0) {
 
 function paintStorm(W, s) {
   const c0 = s.cell;
-  const rad = s.kind === 'tropical' ? 5 : 7;
+  const ctl = stormControl(W);
+  const size = clamp(ctl.size ?? 1, 0.5, 2.2);
+  const focus = s.id === W.stormFocusId ? 1.4 : 1;
+  const rad = Math.round((s.kind === 'tropical' ? 5 : 7) * size);
   const seen = new Set([c0]);
   const q = [{ c: c0, d: 0 }];
   while (q.length) {
     const { c, d } = q.shift();
-    const fall = Math.exp(-d * 0.45) * s.intensity;
+    const fall = Math.exp(-d * (0.38 / size)) * s.intensity * focus;
     W.stormField[c] = Math.max(W.stormField[c], fall);
     W.clouds[c] = Math.max(W.clouds[c], 0.35 + fall * 0.55);
     W.precip[c] = Math.max(W.precip[c] || 0, fall * 0.7);
     // Eye: clear centre for tropical
     if (s.kind === 'tropical' && d === 0) {
       W.clouds[c] = Math.min(W.clouds[c], 0.25);
-      W.stormField[c] = s.intensity * 0.3;
+      W.stormField[c] = s.intensity * 0.28 * focus;
     }
     if (d >= rad) continue;
     for (let k = 0; k < 4; k++) {
@@ -153,14 +175,19 @@ export function stormsTick(W, log = null) {
   initStorms(W);
   W.stormField.fill(0);
   W.surgeField.fill(0);
+  W.stormTrail.fill(0);
+
+  const ctl = stormControl(W);
+  const genesis = clamp(ctl.genesis ?? 0.08, 0, 1);
+  const vigor = clamp(ctl.vigor ?? 1, 0.4, 2);
 
   // Spontaneous genesis only when chronicle is live (skip silent warm-up / goldens)
-  if (log && (W.storms.length < 5) && (W.ageYr | 0) % 7 === 0) {
+  if (log && genesis > 0 && (W.storms.length < 5) && (W.ageYr | 0) % 7 === 0) {
     const roll = rngOf(W, 'rngGod')();
-    if (roll > 0.92) {
+    if (roll > 1 - genesis) {
       const c = (roll * NC * 17) | 0;
       const f = Math.max(tropicalFavor(W, c % NC), midlatFavor(W, c % NC));
-      if (f > 0.45) seedStorm(W, c % NC, { radius: 4, log });
+      if (f > lerp(0.22, 0.5, ctl.strict ?? 0.7)) seedStorm(W, c % NC, { radius: 4, log });
     }
   }
 
@@ -192,7 +219,14 @@ export function stormsTick(W, log = null) {
     if (best > 0.01 || s.age % 2 === 0) s.cell = next;
     s.lat = DIR[s.cell * 3 + 1];
     s.track.push(s.cell);
-    if (s.track.length > 40) s.track.shift();
+    if (s.track.length > 48) s.track.shift();
+
+    const nTrack = s.track.length;
+    const focus = s.id === W.stormFocusId ? 1.25 : 1;
+    for (let i = 0; i < nTrack; i++) {
+      const c = s.track[i];
+      W.stormTrail[c] = Math.max(W.stormTrail[c], ((i + 1) / nTrack) * s.intensity * 0.9 * focus);
+    }
 
     const favor = s.kind === 'tropical' ? tropicalFavor(W, s.cell) : midlatFavor(W, s.cell);
     const onLand = W.h[s.cell] >= W.seaLevel;
@@ -203,7 +237,7 @@ export function stormsTick(W, log = null) {
         if (log) log(W.year, 'storm', s.cell, s.intensity, `${s.name} landfall`);
       }
     } else {
-      s.intensity = clamp(s.intensity * 0.97 + favor * 0.04, 0.05, 1);
+      s.intensity = clamp(s.intensity * 0.97 + favor * 0.04 * vigor, 0.05, 1);
     }
 
     if (s.intensity > 0.45) applySurge(W, s, log);
@@ -254,6 +288,10 @@ function applySurge(W, s, log = null) {
 /** Panel / HUD snapshot. */
 export function stormDeskSnapshot(W) {
   initStorms(W);
+  let basin = 0;
+  for (let c = 0; c < NC; c += 9) {
+    basin = Math.max(basin, tropicalFavor(W, c), midlatFavor(W, c));
+  }
   const list = (W.storms || []).map((s) => ({
     id: s.id,
     name: s.name,
@@ -268,10 +306,13 @@ export function stormDeskSnapshot(W) {
   return {
     count: list.length,
     max: W._stormMax || list[0]?.intensity || 0,
+    basin,
     list,
     tidePhase: W.tidePhase || '—',
     note: list.length
-      ? `${list.length} active · strongest ${list[0]?.name || '—'}`
-      : 'No active storms — seed one, or wait for genesis',
+      ? `${list.length} on the track · ${list[0].name} strongest`
+      : basin > 0.35
+        ? 'No named storms — teal basins are still open'
+        : 'Quiet — spin, warmth, or moisture is too low to organise',
   };
 }

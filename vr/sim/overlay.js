@@ -1,24 +1,50 @@
+import { tropicalFavor, midlatFavor } from './storms.js';
+import { DIR } from '../sphere.js';
+
 /** Field overlay modes painted via gbuf emphasis. */
 
 export const OVERLAYS = [
-  { id: 'none', label: 'None' },
-  { id: 'temp', label: 'Temperature' },
-  { id: 'press', label: 'Pressure' },
-  { id: 'wind', label: 'Wind' },
-  { id: 'npp', label: 'NPP' },
-  { id: 'guild', label: 'Guild' },
-  { id: 'touch', label: 'Your touch' },
-  { id: 'upwell', label: 'Upwelling' },
-  { id: 'tide', label: 'Tide range' },
-  { id: 'intertidal', label: 'Intertidal' },
-  { id: 'storm', label: 'Storms' },
-  { id: 'vent', label: 'Ice vents' },
-  { id: 'lid', label: 'Ice lid' },
-  { id: 'plates', label: 'Plates' },
-  { id: 'bounds', label: 'Boundaries' },
-  { id: 'crust', label: 'Crust' },
-  { id: 'crustAge', label: 'Crust age' },
+  { id: 'none', label: 'None', icon: 'inspect', tip: 'Clear the field paint and show the surface as-is.' },
+  { id: 'temp', label: 'Temperature', icon: 'solar', tip: 'Hot → cold. Red is warm; blue is cold. Not the same as insolation.' },
+  { id: 'press', label: 'Pressure', icon: 'weather', tip: 'Surface pressure field that drives the synoptic chart and storm seeds.' },
+  { id: 'wind', label: 'Wind', icon: 'spin', tip: 'Surface wind speed and direction. Fast rotators show more, narrower bands.' },
+  { id: 'npp', label: 'NPP', icon: 'seedGuild', tip: 'Net primary productivity — how hard the biosphere is growing on that cell.' },
+  { id: 'guild', label: 'Guild', icon: 'o2', tip: 'Dominant metabolism colour (cyano, methanogen, aerobe…). Same palette as Seed guild.' },
+  { id: 'diversity', label: 'Clade diversity', icon: 'seed', tip: 'How many lineages occupy the cell. Bright = crowded tree, not just biomass.' },
+  { id: 'touch', label: 'Your touch', icon: 'raise', tip: 'Cells you have edited this run — mountains, seeds, strikes. The planet’s memory of you.' },
+  { id: 'upwell', label: 'Upwelling', icon: 'river', tip: 'Ocean upwelling. Nutrient-rich water rising; often the productive coasts.' },
+  { id: 'current', label: 'Currents', icon: 'spin', tip: 'Surface currents. Western-boundary jets run warm and fast; eastern boundaries are cold and slow.' },
+  { id: 'enso', label: 'ENSO', icon: 'weather', tip: 'East–west tropical SST dipole. Warm east is El Niño; cold east is La Niña.' },
+  { id: 'wave', label: 'Sea state', icon: 'flats', tip: 'Wind-wave height from fetch. The Southern Ocean is rough because nothing stops the wind.' },
+  { id: 'river', label: 'Rivers', icon: 'river', tip: 'Drainage and lakes. Bright threads are high discharge; pools are closed basins.' },
+  { id: 'mantle', label: 'Mantle', icon: 'core', tip: 'Dynamic topography — the surface rising over upwellings and sinking over downwellings.' },
+  { id: 'tide', label: 'Tide range', icon: 'moon', tip: 'Spring–neap tidal range. Needs a moon; solar-only worlds stay faint.' },
+  { id: 'intertidal', label: 'Intertidal', icon: 'flats', tip: 'Ground that wets and dries with the tide — the strip life actually meets twice a day.' },
+  { id: 'storm', label: 'Storms', icon: 'stormdesk', tip: 'Teal = basins that can organise. Bright cores = named cyclones (eye is dimmer). Gold trail = track. Orange coast = surge. Empty still means something — the basins.' },
+  { id: 'vent', label: 'Ice vents', icon: 'plume', tip: 'Warm cracks in an ice shell. Life on ice-ocean moons lives here, not on the surface.' },
+  { id: 'lid', label: 'Ice lid', icon: 'ice', tip: 'Ice-shell thickness / stagnant lid. Darker where the crust of ice is thicker.' },
+  { id: 'plates', label: 'Plates', icon: 'plate', tip: 'Named tectonic plates. Colour is identity, not height.' },
+  { id: 'bounds', label: 'Boundaries', icon: 'quake', tip: 'Divergent (rift), convergent (trench/orogen), transform. Reclassifies when you steer a pole.' },
+  { id: 'crust', label: 'Crust', icon: 'core', tip: 'Crust type and thickness — the thing Raise / Lower actually edits.' },
+  { id: 'crustAge', label: 'Crust age', icon: 'deeptime', tip: 'Seafloor age. Young at ridges, old toward trenches — if plates are mobile.' },
 ];
+
+const OVERLAY_ORDER = [
+  'none', 'temp', 'press', 'wind', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
+  'plates', 'bounds', 'crust', 'crustAge',
+  'tide', 'storm', 'npp', 'guild',
+];
+
+export function overlayById(id) {
+  return OVERLAYS.find((o) => o.id === id) || OVERLAYS[0];
+}
+
+export function overlaysForPicker() {
+  return [
+    ...OVERLAY_ORDER.map(overlayById),
+    ...OVERLAYS.filter((o) => !OVERLAY_ORDER.includes(o.id)),
+  ];
+}
 
 /** Deterministic plate tint from id. */
 function plateRGB(pid) {
@@ -53,12 +79,53 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 30 + spd * 40 + Math.max(0, u) * 80;
       g = 50 + spd * 100;
       b = 80 + spd * 60 + Math.max(0, -u) * 90;
+    } else if (mode === 'current') {
+      const u = W.oceanU?.[c] || 0, v = W.oceanV?.[c] || 0;
+      const spd = Math.min(1, Math.hypot(u, v));
+      if (W.h[c] < W.seaLevel) {
+        r = 8 + spd * 40 + Math.max(0, u) * 90;
+        g = 40 + spd * 140;
+        b = 90 + spd * 120 + Math.max(0, v) * 80;
+      } else {
+        r = (r * 0.22) | 0; g = (g * 0.22) | 0; b = (b * 0.28) | 0;
+      }
+    } else if (mode === 'enso') {
+      if (W.h[c] < W.seaLevel && Math.abs(DIR[c * 3 + 1]) < 0.35) {
+        const anom = (W.oceanSurf?.[c] || 0.5) - 0.5;
+        r = 40 + Math.max(0, anom) * 280;
+        g = 50 + (1 - Math.abs(anom)) * 40;
+        b = 80 + Math.max(0, -anom) * 220;
+      } else {
+        r = (r * 0.2) | 0; g = (g * 0.2) | 0; b = (b * 0.25) | 0;
+      }
+    } else if (mode === 'wave') {
+      const w = W.waveHt?.[c] || 0;
+      if (W.h[c] < W.seaLevel) {
+        r = 20 + w * 80; g = 50 + w * 140; b = 90 + w * 150;
+      } else {
+        r = (r * 0.2) | 0; g = (g * 0.22) | 0; b = (b * 0.28) | 0;
+      }
+    } else if (mode === 'river') {
+      const f = W.flow?.[c] || 0;
+      const lk = W.lake?.[c] || 0;
+      if (W.h[c] >= W.seaLevel) {
+        const k = Math.min(1, Math.log1p(f * 800) * 0.35 + lk);
+        r = 12 + k * 30; g = 40 + k * 90; b = 60 + k * 140;
+      } else {
+        r = (r * 0.25) | 0; g = (g * 0.28) | 0; b = (b * 0.32) | 0;
+      }
+    } else if (mode === 'mantle') {
+      const d = ((W.dynTopo?.[c] || 0) + 1) * 0.5;
+      r = 40 + d * 180; g = 30 + (1 - Math.abs(d - 0.5) * 2) * 80; b = 80 + (1 - d) * 140;
     } else if (mode === 'npp') {
       const n = W.npp?.[c] || 0;
       r = 20; g = n * 255; b = 40 + n * 80;
     } else if (mode === 'guild') {
       const mx = Math.max(r, g, b) || 1;
       r = (r / mx) * 220; g = (g / mx) * 220; b = (b / mx) * 220;
+    } else if (mode === 'diversity') {
+      const d = (W.cladeCount?.[c] || 0) / 9;
+      r = 20 + d * 60; g = 40 + d * 180; b = 80 + (1 - d) * 100;
     } else if (mode === 'touch') {
       const hit = W.touchMap?.[c] || 0;
       r = r * (1 - hit) + 255 * hit;
@@ -78,14 +145,38 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
         r = 180 + it * 60; g = 140 + it * 40; b = 70;
       }
     } else if (mode === 'storm') {
+      const trop = tropicalFavor(W, c);
+      const mid = midlatFavor(W, c);
+      const favor = trop > mid ? trop : mid;
       const tracked = W.stormField?.[c] || 0;
-      const surge = Math.min(1, (W.surgeField?.[c] || 0) * 25);
-      const haze = Math.min(1, (W.clouds?.[c] || 0) * (W.precip?.[c] || 0) * 1.6
-        + Math.max(0, W.converg?.[c] || 0) * 0.35);
-      const s = Math.max(tracked, haze * 0.55);
-      r = 35 + s * 50 + surge * 180;
-      g = 45 + s * 70 + surge * 40;
-      b = 70 + s * 150;
+      const trail = W.stormTrail?.[c] || 0;
+      const surge = Math.min(1, (W.surgeField?.[c] || 0) * 22);
+      r = r * 0.18 + 10;
+      g = g * 0.2 + 14;
+      b = b * 0.28 + 22;
+      if (favor > 0.1) {
+        const f = (favor - 0.1) / 0.9;
+        const tropish = trop >= mid;
+        r += f * (tropish ? 18 : 36);
+        g += f * (tropish ? 120 : 70);
+        b += f * (tropish ? 95 : 40);
+      }
+      if (trail > 0.05) {
+        r = r * (1 - trail) + 255 * trail;
+        g = g * (1 - trail) + 188 * trail;
+        b = b * (1 - trail) + 62 * trail;
+      }
+      if (tracked > 0.1) {
+        const k = tracked > 1 ? 1 : tracked;
+        r = 40 + k * 70;
+        g = 80 + k * 140;
+        b = 140 + k * 115;
+      }
+      if (surge > 0.08) {
+        r = Math.min(255, r + surge * 160);
+        g = Math.min(255, g + surge * 40);
+        b = Math.max(30, b - surge * 50);
+      }
     } else if (mode === 'vent') {
       const v = W.shellVent?.[c] || 0;
       r = 40 + v * 200; g = 30 + v * 80; b = 20 + v * 40;

@@ -800,7 +800,7 @@ function html() {
   const cats = JSON.stringify(CATS.map(([id, name, blurb]) => ({ id, name, blurb })));
   const crit = JSON.stringify(CRITICAL.slice(0, 14).map((r) => ({ k: r.k, id: r.x.id, t: r.x.t, n: r.n })));
   return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY — real parameters for every world</title>
 <style>
 :root{
@@ -914,6 +914,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
 }
 @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
+<link rel="stylesheet" href="doc-responsive.css">
 
 <div class="wrap">
 <header>
@@ -926,7 +927,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <a href="worlds.html">Worlds</a> · <a href="evolution.html">Evolution</a> ·
   <a href="godgame.html">God layer</a> · <a href="next.html">Next 200</a> ·
   <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> ·
-  <a href="../vr/">Prototype</a></p>
+  <a href="living.html">Alive</a> · <a href="currents.html">Currents</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>500<small>18 categories</small></dd></div>
     <div><dt>Bodies</dt><dd>120<small>each pinned</small></dd></div>

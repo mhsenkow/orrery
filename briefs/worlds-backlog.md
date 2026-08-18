@@ -6,6 +6,8 @@ The prototype ships five invented rulesets. This is the route from there to a ca
 
 Composition: **64** engine capabilities, **120** worlds to ship, **16** instrument, pipeline and play items.
 
+The in-app Worlds picker lists playable bodies only. Engine (PHYS) and product (UX) items are a roadmap — they live here and in `site/worlds.html`, not as clickable catalogue entries.
+
 Effort is S/M/L. Impact is 1–3, where 3 means the catalogue is materially worse without it. **Needs** lists the engine capabilities an item depends on — a world cannot be built before its physics exists.
 
 Every quoted figure comes from the NASA Exoplanet Archive `pscomppars` table (queried 2026-08) or the relevant mission publication. Contested results are flagged as contested rather than resolved.

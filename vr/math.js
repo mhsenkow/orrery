@@ -93,6 +93,29 @@ export function qAxis(o, ax, ay, az, ang) {
   return o;
 }
 
+export function qrot(q, x, y, z, o = [0, 0, 0]) {
+  const qx = q[0], qy = q[1], qz = q[2], qw = q[3];
+  const tx = 2 * (qy * z - qz * y);
+  const ty = 2 * (qz * x - qx * z);
+  const tz = 2 * (qx * y - qy * x);
+  o[0] = x + qw * tx + (qy * tz - qz * ty);
+  o[1] = y + qw * ty + (qz * tx - qx * tz);
+  o[2] = z + qw * tz + (qx * ty - qy * tx);
+  return o;
+}
+
+export function qnlerp(o, a, b, t) {
+  let bx = b[0], by = b[1], bz = b[2], bw = b[3];
+  if (a[0] * bx + a[1] * by + a[2] * bz + a[3] * bw < 0) {
+    bx = -bx; by = -by; bz = -bz; bw = -bw;
+  }
+  o[0] = a[0] + (bx - a[0]) * t;
+  o[1] = a[1] + (by - a[1]) * t;
+  o[2] = a[2] + (bz - a[2]) * t;
+  o[3] = a[3] + (bw - a[3]) * t;
+  return qnorm(o);
+}
+
 export function qFromTo(o, a, b) {
   const d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
   if (d > 0.999999) { o[0] = o[1] = o[2] = 0; o[3] = 1; return o; }

@@ -2,6 +2,7 @@
 // Single source of truth for the ORRERY *worlds* backlog — the 200 steps that
 // take us from five invented rulesets to a catalogue of real planets and moons.
 // Emits  briefs/worlds-backlog.md  and  site/worlds.html  so the two can't drift.
+// vr/catalogue.js gets playable BODY rows only; PHYS/UX stay in the docs.
 //
 //   node scripts/worlds.mjs
 //
@@ -307,6 +308,8 @@ function markdown() {
   L.push('');
   L.push(`Composition: **${count(x => x.k === 'PHYS')}** engine capabilities, **${count(x => x.k === 'BODY')}** worlds to ship, **${count(x => x.k === 'UX')}** instrument, pipeline and play items.`);
   L.push('');
+  L.push('The in-app Worlds picker lists playable bodies only. Engine (PHYS) and product (UX) items are a roadmap — they live here and in `site/worlds.html`, not as clickable catalogue entries.');
+  L.push('');
   L.push(`Effort is S/M/L. Impact is 1–3, where 3 means the catalogue is materially worse without it. **Needs** lists the engine capabilities an item depends on — a world cannot be built before its physics exists.`);
   L.push('');
   L.push('Every quoted figure comes from the NASA Exoplanet Archive `pscomppars` table (queried 2026-08) or the relevant mission publication. Contested results are flagged as contested rather than resolved.');
@@ -349,7 +352,7 @@ function html() {
   const cats = JSON.stringify(CATS.map(([id, name, blurb]) => ({ id, name, blurb })));
   const dep = JSON.stringify(Object.fromEntries(D.filter(x => x.s).map(x => [x.s, dependents(x.s)])));
   return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY — 200 real worlds</title>
 <style>
 :root{
@@ -436,13 +439,15 @@ a:hover{text-decoration:underline}
   h1{font-size:27px}
 }
 </style>
+<link rel="stylesheet" href="doc-responsive.css">
 <div class="wrap">
 <header>
   <h1>Two hundred real worlds</h1>
   <p class="sub">ORRERY ships five invented rulesets. This is the route from there to a catalogue of
   actual planets and moons — tidally locked worlds, moons with oceans under ice, planets orbiting
   brown dwarfs, pulsars and white dwarfs, and planets orbiting nothing at all — built so that each
-  world is a <b>consequence</b> of its parameters rather than a hand-painted skin.</p>
+  world is a <b>consequence</b> of its parameters rather than a hand-painted skin.
+  Engine and product items here are a roadmap; the in-app Worlds picker only lists playable bodies.</p>
   <div class="counts" id="counts"></div>
 </header>
 
@@ -600,8 +605,10 @@ console.log('\nwrote briefs/worlds-backlog.md, site/worlds.html, vr/catalogue.js
 
 /* ------------------------------------------- in-game catalogue module -- */
 function catalogueModule() {
-  const cats = CATS.map(([id, name, blurb]) => ({ id, name, blurb }));
-  const items = D.map(x => ({
+  const bodies = D.filter((x) => x.k === 'BODY');
+  const bodyCats = new Set(bodies.map((x) => x.c));
+  const cats = CATS.filter(([id]) => bodyCats.has(id)).map(([id, name, blurb]) => ({ id, name, blurb }));
+  const items = bodies.map((x) => ({
     id: x.id,
     c: x.c,
     k: x.k,
@@ -613,9 +620,12 @@ function catalogueModule() {
     s: x.s || '',
     p: x.p || [],
   }));
-  return `/** Auto-generated from scripts/worlds.mjs — do not edit by hand. */
+  return `/** Auto-generated from scripts/worlds.mjs — do not edit by hand.
+ *  Playable BODY entries only. Engine (PHYS) and product (UX) backlog lives in
+ *  briefs/worlds-backlog.md and site/worlds.html.
+ */
 export const CATALOGUE_CATS = ${JSON.stringify(cats, null, 2)};
 export const CATALOGUE = ${JSON.stringify(items, null, 2)};
-export const CATALOGUE_KIND = { PHYS: 'Engine', BODY: 'World', UX: 'Product' };
+export const CATALOGUE_KIND = { BODY: 'World' };
 `;
 }

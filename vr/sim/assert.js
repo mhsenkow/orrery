@@ -5,6 +5,35 @@ import { NC, AREA } from '../sphere.js';
 
 const EPS = 1e-4;
 
+/** Scan key fields for NaN/Infinity. Biosphere plan P0-09. */
+export function assertNoNaN(W) {
+  const fields = ['life', 'temp', 'moist'];
+  if (W.macroDens) fields.push('macroDens');
+  for (const key of fields) {
+    const arr = W[key];
+    if (!arr) continue;
+    for (let c = 0; c < NC; c++) {
+      const v = arr[c];
+      if (!Number.isFinite(v)) {
+        throw new Error(`assertNoNaN: ${key}[${c}]=${v}`);
+      }
+    }
+  }
+}
+
+/** Species fields must stay on 0–1 scale after redoxTick. P0-65. */
+export function assertSpeciesScale(W) {
+  if (!W.species || W.debugAssert !== 'throw') return;
+  for (const [key, arr] of Object.entries(W.species)) {
+    for (let c = 0; c < NC; c++) {
+      const v = arr[c];
+      if (v < -EPS || v > 1.001) {
+        throw new Error(`assertSpeciesScale: species.${key}[${c}]=${v}`);
+      }
+    }
+  }
+}
+
 /** Area-weighted water proxy: ocean depth + moisture on land + ice. */
 export function waterMass(W) {
   let m = 0;
@@ -63,6 +92,12 @@ export function assertBudgets(W) {
 
   if ((W._droppedTicks || 0) > 0 && (W.year | 0) % 64 === 0) {
     warnings.push(`droppedTicks=${W._droppedTicks} reason=${W._dropReason || '?'}`);
+  }
+  try {
+    assertNoNaN(W);
+    assertSpeciesScale(W);
+  } catch (e) {
+    warnings.push(e.message);
   }
   // Angular momentum sketch: spin + moon orbital L
   if (W.moon?.mass > 0.05) {

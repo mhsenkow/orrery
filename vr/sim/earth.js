@@ -97,10 +97,8 @@ export function seedEarthBiosphere(W) {
       if (depth < 0.09 && t > 0.40 && t < 0.78 && lat < 0.55) {
         W.reef[c] = 0.25 + rng() * 0.45;
         W.life[c] = 0.22 + rng() * 0.28;
-        W.lifeClass[c] = 4;
       } else if (depth < 0.2 && t > 0.28) {
         W.life[c] = 0.06 + rng() * 0.1;
-        W.lifeClass[c] = 0;
       }
       continue;
     }
@@ -114,13 +112,11 @@ export function seedEarthBiosphere(W) {
     if (m < 0.11 || desertBelt) {
       W.moist[c] = Math.min(W.moist[c], 0.10 + rng() * 0.06);
       W.life[c] = rng() < 0.12 ? 0.04 + rng() * 0.06 : 0;
-      W.lifeClass[c] = 0;
       continue;
     }
 
     if (lat < 0.32 && m > 0.35 && t > 0.42) {
       W.life[c] = 0.62 + rng() * 0.28;
-      W.lifeClass[c] = 2;
       W.moist[c] = Math.max(m, 0.55);
       continue;
     }
@@ -128,19 +124,16 @@ export function seedEarthBiosphere(W) {
     if (lat < 0.70 && m > 0.20 && t > 0.32 && t < 0.78) {
       const lush = m > 0.34;
       W.life[c] = (lush ? 0.50 : 0.30) + rng() * 0.28;
-      W.lifeClass[c] = lush ? 2 : 1;
       continue;
     }
 
     if (lat < 0.86 && t > 0.20 && t < 0.50 && m > 0.16) {
       W.life[c] = 0.30 + rng() * 0.32;
-      W.lifeClass[c] = 1;
       continue;
     }
 
     if (lat < 0.90 && t > 0.16 && m > 0.12) {
       W.life[c] = 0.08 + rng() * 0.14;
-      W.lifeClass[c] = 0;
     }
   }
 }

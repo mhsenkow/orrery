@@ -10,12 +10,14 @@ import { atmoTick, atmoMetaTick } from './sim/atmo.js';
 import { bioTick, seedLife, LIFE_CLASSES } from './sim/bio.js';
 import { gaiaTick } from './sim/gaia.js';
 import { fitSeaLevel, seedPolarIce, seedEarthBiosphere, primeEarthMoisture } from './sim/earth.js';
+import { refineEarthHypsometry } from './sim/earthTerrain.js';
 import {
   initDeepTime, advanceClock, hadeanTick, formatAge, maybeCaptureMoment,
 } from './sim/time.js';
 import { createCarbonState, carbonTick, UNIT_MAP } from './sim/carbon.js';
-import { initRedox, redoxTick, seedModernGuilds } from './sim/redox.js';
+import { initRedox, redoxTick, seedModernGuilds, initSpeciesFields } from './sim/redox.js';
 import { initEvolution, evolveTick, forkWorldSeed, treeSummary } from './sim/evolve.js';
+import { deriveLifeClass, unlockedClassFromPool } from './sim/lifeclass.js';
 import { ecologyTick } from './sim/ecology.js';
 import { extinctionTick, noteImpact } from './sim/extinction.js';
 import { alienTick } from './sim/alien.js';
@@ -30,7 +32,9 @@ import { applyIceShell, iceShellTick } from './sim/iceshell.js';
 import { initTides, tidesTick } from './sim/tides.js';
 import { initStorms, stormsTick } from './sim/storms.js';
 import { applyInterior, interiorTick } from './sim/core.js';
+import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
+import { isModernEarth, isDeepTimeEarth, cloneRuleForRun } from './sim/ruleMode.js';
 
 function buf() { return new Float32Array(NC); }
 function ibuf() { return new Int32Array(NC); }
@@ -44,19 +48,46 @@ export function reallocateWorldFields(target = W) {
     'flow', 'lake', 'windU', 'windV', 'life', 'soil', 'nutrientN', 'nutrientP',
     'reef', 'build', 'blackDaisy', 'whiteDaisy',
     'press', 'converg', 'tideRange', 'tideHeight', 'intertidal', 'tideWet', 'tideU', 'tideV',
-    'stormField', 'surgeField',
+    'stormField', 'surgeField', 'stormTrail',
+    'oceanU', 'oceanV', 'waveHt', 'lava', 'mixDepth', 'groundW',
+    'mantleU', 'mantleV', 'dynTopo',
     '_t', '_m', '_l', '_h', '_adv', 'prevTemp', 'prevLife', 'prevIce',
+    'macroDens', 'cladeCount',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
   target.lifeClass = u8();
   target.plateId = ibuf();
+  target.popId = ibuf();
+  target.drainTo = ibuf();
+  target.drainTo2 = ibuf();
   target.storms = [];
   target.bound = new Int8Array(NC);
   target._order = new Int32Array(NC);
   target.shellLid = target.shellOcean = target.shellMantle = target.shellVent = null;
   target._iceShell = false;
   target._simN = SIM_N;
+  // Prognostic ocean/isostasy live outside the buf() list — leftover values
+  // from a previous generate() make the next golden run diverge.
+  target.oceanSurf = target.oceanDeep = target.oceanSalt = target.upwell = null;
+  target._tauE = target._tauN = null;
+  target._iso0 = null;
+  target._mantle = null;
+  target._dyn0 = null;
+  target._ensoIndex = 0;
+  target._thermoclineTilt = 0;
+  target._walkerSST = 0;
+  target._ensoPhase = 'neutral';
+  target._ensoEvent = null;
+  target._drainTick = null;
+  target._hydroDirty = true;
+  target._mocSv = 17;
+  target._jetLat = 0;
+  target._monsoon = 0.5;
+  target.conveyor = 1;
+  target._amoc = 1;
+  target.thermohaline = 'on';
+  target._conveyorNote = null;
 }
 
 /** Change cube-sphere resolution; pair with remeshPlanet() in render. */
@@ -108,9 +139,11 @@ function attachRng(seed) {
   attachWorldRng(W, seed);
 }
 
-export function generate(seed, rule) {
+export function generate(seed, ruleIn) {
+  const rule = cloneRuleForRun(ruleIn);
   W.seed = seed;
   W.rule = rule;
+  reallocateWorldFields(W);
   attachRng(seed);
   W.chron = createChronicle();
   W._waterMass0 = null;
@@ -126,12 +159,24 @@ export function generate(seed, rule) {
   W._recoveryBoost = 0;
   W._inMassExt = false;
   W._lomagundi = false;
+  W._tickIndex = 0;
+  W._prevLiving = undefined;
+  W._extinctionPulse = 0;
+  W.extinctionDebt = 0;
+  W.endemicCount = 0;
+  W.refuge = null;
+  W.albedoPaint = null;
+  W.touchHeat = null;
+  W.erosionLock = null;
+  W.fossils = null;
+  W.traces = null;
+  W._speciesScratch = null;
   W.hazeAntiGreenhouse = 0;
 
   initDeepTime(W, rule);
 
   // Deep-time Earth starts reducing; modern Earth keeps calibrated air
-  if (rule.deepTime && rule.earthLike) {
+  if (isDeepTimeEarth(rule)) {
     W.gases = {
       N2: 0.7, O2: 0.0, CO2: 0.12, CH4: 0.001, H2O: 0.02, dust: 0.02, sulphate: 0,
     };
@@ -144,7 +189,7 @@ export function generate(seed, rule) {
   initGod(W);
 
   // Modern Earth starts with transitions already crossed
-  if (rule.earthLike && !rule.deepTime) {
+  if (isModernEarth(rule)) {
     Object.assign(W.transitions, {
       abiogenesis: true, rnaWorld: true, luca: true, bacteriaArchaea: true,
       oxygenicPhotosynthesis: true, aerobicRespiration: true, eukaryote: true,
@@ -153,6 +198,8 @@ export function generate(seed, rule) {
     });
     W.unlockedClass = 6;
     W.fe2Ocean = 0.001;
+  } else if (isDeepTimeEarth(rule)) {
+    W.fe2Ocean = 0.45;
   }
 
   W.obliquity = rule.obliquity;
@@ -169,6 +216,25 @@ export function generate(seed, rule) {
     W.moon = W.moon || { mass: 0.6, distance: 1.2, formed: W.ageYr };
   }
   W.energy = W.energyCap;
+  W.moments = {};
+  W.argueResponses = [];
+  W.receipts = [];
+  W.interventionLog = [];
+  W.delayedHooks = [];
+  W.attribution = { player: 0, planet: 1, acts: 0 };
+  W.pendingForecast = null;
+  W.overshootWarn = null;
+  W.cooldowns = {};
+  W.energyDebt = 0;
+  W.bankedEnergy = 0;
+  W.toolUses = {};
+  W.disasterChain = [];
+  W.gaiaLog = [];
+  W.bookmarks = [];
+  W.civ = null;
+  W.plates = null;
+  W.hotspots = null;
+  W.volcanoes = [];
   W.ash.fill(0); W.dust.fill(0); W.sediment.fill(0);
   W.soil.fill(0); W.reef.fill(0);
   W.blackDaisy.fill(0); W.whiteDaisy.fill(0);
@@ -185,6 +251,7 @@ export function generate(seed, rule) {
     W.intertidal.fill(0); W.tideWet.fill(0);
   }
   if (W.stormField) { W.stormField.fill(0); W.surgeField.fill(0); }
+  if (W.stormTrail) W.stormTrail.fill(0);
   W.storms = [];
   W._stormCount = 0;
   W._stormMax = 0;
@@ -204,10 +271,11 @@ export function generate(seed, rule) {
   applyInterior(W, rule, rule._catalogueItem || null);
 
   generateTectonics(W, seed, rule);
-
+  initMantle(W, seed);
   W._seaBase = null;
   W.seaLevel = -0.05 + rule.totalWater * 0.42;
   if (rule.targetLandFrac != null) fitSeaLevel(W, rule.targetLandFrac);
+  if (rule.earthLike) refineEarthHypsometry(W, seed, rule);
 
   for (let c = 0; c < NC; c++) {
     const lat = Math.abs(DIR[c * 3 + 1]);
@@ -226,6 +294,7 @@ export function generate(seed, rule) {
       }
     }
   }
+  geostrophicWind(W);
 
   // Climate warmup — Hadean is playable when deepTime, not a silent skip
   const deepOpen = rule.deepTime || (!rule.earthLike && !rule.daisyworld && !rule.airless);
@@ -270,10 +339,10 @@ export function generate(seed, rule) {
       W.life[c] = Math.min(1, W.blackDaisy[c] + W.whiteDaisy[c]);
     }
     W.seaLevel = -0.5;
-    W.rule.solar = 0.7;
+    rule.solar = 0.7;
     W.solar = 0.7;
     W._baseSolar = 0.7;
-  } else if (rule.earthLike && !rule.deepTime) {
+  } else if (isModernEarth(rule)) {
     W.gases.N2 = rule.gases.N2;
     W.gases.O2 = rule.gases.O2;
     W.gases.CO2 = rule.gases.CO2;
@@ -285,6 +354,9 @@ export function generate(seed, rule) {
     primeEarthMoisture(W);
     seedEarthBiosphere(W);
     seedModernGuilds(W);
+    initSpeciesFields(W);
+    W.unlockedClass = unlockedClassFromPool(W);
+    deriveLifeClass(W);
   } else if (!rule.airless) {
     // Sparse nuclei — or wait for abiogenesis in deep time
     if (!deepOpen) {
@@ -301,6 +373,9 @@ export function generate(seed, rule) {
       }
     }
   }
+
+  // Chemistry memory seeded once climate + coastlines are stable
+  if (!isModernEarth(rule)) initSpeciesFields(W);
 
   W._waterMass0 = null;
   hydroTick(W);
@@ -353,7 +428,7 @@ export function simTick(silent = false) {
 
   // Advance season for phenology / snow line
   // Holocene Earth: ~one orbital turn per sim year. Deep time keeps the slow crawl.
-  if (rule.earthLike && !rule.deepTime) {
+  if (isModernEarth(rule)) {
     W.season = (W.season || 0) + (W.dtYr || 10) * (Math.PI * 2) / 365.25;
   } else {
     W.season = (W.season || 0) + 0.02 * Math.min(1, (W.dtYr || 200) / 1e4);
@@ -364,12 +439,13 @@ export function simTick(silent = false) {
     erosionTick(W);
   }
   if (!rule.daisyworld) interiorTick(W, log);
+  if (!rule.daisyworld && !rule.airless) mantleTick(W);
 
   // Climate fields: GPGPU when GL float FBOs exist; else CPU atmo + wind
   const gpu = gpgpuClimateTick(W);
   if (!gpu) {
-    atmoTick(W, _sunDir);
     geostrophicWind(W);
+    atmoTick(W, _sunDir);
   } else {
     atmoMetaTick(W);
   }
@@ -408,6 +484,10 @@ export function simTick(silent = false) {
 
   if (!silent) {
     maybeNameEra(W.chron, W);
+    if (W._ensoEvent) {
+      chronLog(W.year, 'climate', 0, W._ensoIndex || 0, W._ensoEvent);
+      W._ensoEvent = null;
+    }
     if (W._springEvent) {
       chronLog(W.year, 'tide', 0, W.meanTideRange || 0, 'Spring tides');
       W._springEvent = false;

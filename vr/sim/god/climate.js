@@ -141,24 +141,29 @@ export function seedClouds(cell) {
 
 /** Re-route current / freshen conveyor. Item 37. */
 export function tripOceanConveyor(fresh = true) {
-  W.thermohaline = fresh ? 'shutdown' : 'on';
   if (fresh) {
     for (let c = 0; c < NC; c++) {
       if (DIR[c * 3 + 1] > 0.4 && W.h[c] < W.seaLevel) {
+        if (W.oceanSalt) W.oceanSalt[c] = Math.max(0.05, W.oceanSalt[c] * 0.72);
         W.moist[c] = Math.min(1, W.moist[c] + 0.15);
       }
     }
+    W.conveyor = Math.max(0.05, (W.conveyor ?? 1) * 0.45);
+  } else {
+    W.conveyor = Math.min(1, (W.conveyor ?? 0.4) + 0.35);
   }
+  W._amoc = W.conveyor;
+  W.thermohaline = W.conveyor < 0.28 ? 'shutdown' : 'on';
   issueReceipt({
     tool: 'current',
     cell: 0,
     intent: fresh ? 'Freshen conveyor' : 'Restart conveyor',
-    expected: `Thermohaline → ${W.thermohaline}`,
+    expected: `Overturning → ${W.thermohaline} (${(W.conveyor * 17).toFixed(0)} Sv sketch)`,
     delayYr: 200,
     delayLabel: 'Ocean circulation regime shift',
   });
   chronLog(W.year, 'tool', 0, 1, `Thermohaline ${W.thermohaline}`);
-  return { ok: true, state: W.thermohaline };
+  return { ok: true, state: W.thermohaline, conveyor: W.conveyor };
 }
 
 /** Magnetosphere lever — also nudges interior conductivity so field has a cause. */

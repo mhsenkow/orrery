@@ -2,6 +2,9 @@
  *  Next backlog sound items — weight per act, planet soundscape, silence. */
 
 import { W } from './world.js';
+import { BIOMES } from './sim/ecology.js';
+import { NBR } from './sphere.js';
+import { cellSun, tidePhase } from './sim/present.js';
 
 let ctx = null;
 let master = null;
@@ -13,15 +16,24 @@ let windGain = null;
 let oceanGain = null;
 let impactPanner = null;
 let started = false;
+let muted = false;
+let masterGainValue = 0.22;
 let lastKind = '';
 let lastEraKey = '';
+
+export function audioMute(on) {
+  muted = on == null ? !muted : !!on;
+  if (master) master.gain.setTargetAtTime(muted ? 0 : masterGainValue, ctx?.currentTime || 0, 0.08);
+  return muted;
+}
+export function audioMuted() { return muted; }
 
 export function audioInit() {
   if (started) return;
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain();
-    master.gain.value = 0.22;
+    master.gain.value = muted ? 0 : masterGainValue;
     master.connect(ctx.destination);
 
     // Spatial bus for impacts — planet sits ahead of the listener
@@ -118,25 +130,61 @@ export function playEraDrone(ageYr) {
   }
 }
 
-export function audioUpdate() {
+export function audioUpdate(focusCell = -1) {
   if (!started || !ctx) return;
   if (ctx.state === 'suspended') ctx.resume();
+  if (muted) {
+    master.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+    return;
+  }
 
   const airless = !!W.rule?.airless;
   const snowball = W.state === 'snowball' || (W.iceFrac || 0) > 0.7;
   const silence = airless ? 0.02 : snowball ? 0.35 : 1;
+  const night = focusCell >= 0 ? Math.max(0, -cellSun(focusCell)) : 0;
+  const nightK = 1 - night * 0.55;
+
+  const biome = (focusCell >= 0 && W.biome) ? BIOMES[W.biome[focusCell]] : null;
+  let bedMul = 1, windMul = 1, oceanMul = 1, bedHz = null;
+  if (biome === 'tropRainforest' || biome === 'tempRainforest') { bedMul = 1.55; bedHz = 1800; }
+  else if (biome === 'desert' || biome === 'savanna') { bedMul = 0.55; windMul = 1.6; bedHz = 900; }
+  else if (biome === 'tundra' || biome === 'ice' || biome === 'boreal') { bedMul = 0.45; bedHz = 420; }
+  else if (biome === 'reef' || biome === 'upwelling' || biome === 'gyre') { oceanMul = 1.7; bedMul = 0.7; }
+  else if (biome === 'vent' || biome === 'deep') { bedMul = 0.35; bedHz = 280; }
+
+  let coastK = 0;
+  if (focusCell >= 0) {
+    if (W.h[focusCell] < W.seaLevel) coastK = 1;
+    else {
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[focusCell * 4 + k];
+        if (n >= 0 && W.h[n] < W.seaLevel) { coastK = 1; break; }
+      }
+    }
+  }
+  const sun = focusCell >= 0 ? cellSun(focusCell) : 0;
+  const dawn = Math.max(0, 1 - Math.abs(sun - 0.08) * 6);
+  const tide = tidePhase(focusCell >= 0 ? focusCell : 0);
 
   const h = W.health ?? 0.5;
   humOsc.frequency.setTargetAtTime(40 + h * 40 + W.meanTemp * 20, ctx.currentTime, 0.5);
-  humGain.gain.setTargetAtTime((0.02 + h * 0.06) * silence, ctx.currentTime, 0.5);
+  humGain.gain.setTargetAtTime((0.02 + h * 0.06) * silence * nightK, ctx.currentTime, 0.5);
 
-  const bed = (0.02 + W.meanLife * 0.1 + (W.gases?.dust || 0) * 0.05) * silence;
+  const bed = (0.02 + W.meanLife * 0.1 + (W.gases?.dust || 0) * 0.05)
+    * silence * bedMul * nightK * (1 + dawn * 0.55);
   bedGain.gain.setTargetAtTime(bed, ctx.currentTime, 0.8);
+  if (bedFilter && bedHz) bedFilter.frequency.setTargetAtTime(bedHz, ctx.currentTime, 1.2);
 
-  const wind = Math.min(0.12, 0.02 + (W.meanWind || W.gases?.dust || 0) * 0.15) * silence;
+  const wind = Math.min(0.14, 0.02 + (W.meanWind || W.gases?.dust || 0) * 0.15) * silence * windMul;
   windGain.gain.setTargetAtTime(wind, ctx.currentTime, 0.6);
 
-  const ocean = Math.min(0.1, (1 - (W.landFrac || 0.3)) * 0.08 * (1 - (W.iceFrac || 0) * 0.7)) * silence;
+  const river = Math.min(0.06, (W.flow?.[focusCell] || 0) * 12);
+  const seaState = focusCell >= 0 ? (W.waveHt?.[focusCell] || 0) : 0;
+  const ocean = Math.min(0.18, (
+    (1 - (W.landFrac || 0.3)) * 0.06
+    + coastK * (0.035 + tide * 0.05 + seaState * 0.08)
+    + river
+  ) * (1 - (W.iceFrac || 0) * 0.7)) * silence * oceanMul;
   oceanGain.gain.setTargetAtTime(ocean, ctx.currentTime, 0.8);
 
   playEraDrone(W.ageYr ?? W.year);

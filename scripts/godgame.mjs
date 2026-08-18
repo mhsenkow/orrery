@@ -382,7 +382,7 @@ function html() {
   const now = JSON.stringify(NOW);
   const seq = JSON.stringify(SEQ);
   return `<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY — 200 ways to act like a god</title>
 <style>
 :root{
@@ -504,6 +504,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
 }
 @media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
 </style>
+<link rel="stylesheet" href="doc-responsive.css">
 
 <div class="wrap">
 <header>
@@ -514,7 +515,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <p class="nav"><a href="./">Pitch</a> · <a href="backlog.html">Systems</a> ·
   <a href="worlds.html">Worlds</a> · <a href="evolution.html">Evolution</a> ·
   <a href="next.html">Next 200</a> ·
-  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="../vr/">Prototype</a></p>
+  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> · <a href="currents.html">Currents</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>200<small>15 categories</small></dd></div>
     <div><dt>Kind</dt><dd>${count((x) => x.k === 'HAND')}/${count((x) => x.k === 'SYS')}/${count((x) => x.k === 'PLAY')}<small>hand · system · play</small></dd></div>
