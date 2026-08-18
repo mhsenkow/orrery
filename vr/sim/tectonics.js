@@ -4,6 +4,7 @@ import { clamp, lerp, mulberry32, fbm, ridged } from '../math.js';
 import { rngOf } from './rng.js';
 import { naturalizeHypsometry, softenPlateCrust } from './terrainShape.js';
 import { NC, NF, N, NBR, NBR8, DIR, AREA, dirToCell } from '../sphere.js';
+import { paintEdifice } from './planetTick.js';
 
 
 const MANTLE_DENS = 3.3;
@@ -411,7 +412,9 @@ export function tectonicsTick(W, chron, log) {
   if (!plates) return;
   const vigor = W.interior?.vigor ?? 1;
   const lid = W.interior?.lidMode || 'mobile';
-  const morph = lid === 'mobile' || lid === 'episodic';
+  const morph = lid === 'mobile';
+  const boundRate = lid === 'mobile' ? 1 : lid === 'episodic' ? 0.04 : 0;
+  if (W._canvasMode) return;
 
   // Mild morph: drift plate centres along Euler velocity (mobile lids only, live ticks)
   if (log && morph && vigor > 0.2) {
@@ -430,18 +433,18 @@ export function tectonicsTick(W, chron, log) {
   }
 
   for (let c = 0; c < NC; c++) {
-    if (bound[c] === DIV) {
-      age[c] = Math.max(0, age[c] * (1 - 0.005 * vigor));
-      if (plates[plateId[c]]?.oceanic) crust[c] = Math.min(crust[c], lerp(crust[c], 0.28, 0.008 * vigor));
+    if (boundRate > 0 && bound[c] === DIV) {
+      age[c] = Math.max(0, age[c] * (1 - 0.005 * vigor * boundRate));
+      if (plates[plateId[c]]?.oceanic) crust[c] = Math.min(crust[c], lerp(crust[c], 0.28, 0.008 * vigor * boundRate));
     }
-    if (bound[c] === CONV) {
+    if (boundRate > 0 && bound[c] === CONV) {
       const pl = plates[plateId[c]];
-      if (pl && !pl.oceanic) crust[c] = Math.min(1.6, crust[c] + 0.00055 * vigor);
-      else if (pl?.oceanic) crust[c] = Math.max(0.12, crust[c] * (1 - 0.0012 * vigor));
+      if (pl && !pl.oceanic) crust[c] = Math.min(1.6, crust[c] + 0.00055 * vigor * boundRate);
+      else if (pl?.oceanic) crust[c] = Math.max(0.12, crust[c] * (1 - 0.0012 * vigor * boundRate));
     }
-    if (bound[c] === TRANS || bound[c] === CONV) {
-      strain[c] = Math.min(2, strain[c] + 0.008 * vigor);
-      if (strain[c] > 1.1 && rng() < strain[c] * 0.002 * vigor) {
+    if (boundRate > 0 && (bound[c] === TRANS || bound[c] === CONV)) {
+      strain[c] = Math.min(2, strain[c] + 0.008 * vigor * boundRate);
+      if (strain[c] > 1.1 && rng() < strain[c] * 0.002 * vigor * boundRate) {
         const mag = strain[c];
         strain[c] = 0.1;
         if (log) log(W.year, 'quake', c, mag, `Quake M${(4 + mag * 3).toFixed(1)}`);
@@ -480,14 +483,12 @@ export function tectonicsTick(W, chron, log) {
       v.next = (18 + rng() * 70) / Math.max(0.35, heat);
       const power = dumped;
       const plume = power * (explosive ? 1.35 : 0.4) * (0.5 + v.volatiles);
+      paintEdifice(W, v.cell, power, visc, caldera);
       if (caldera) {
-        h[v.cell] = Math.max(-0.35, h[v.cell] - power * 0.07);
         W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.9);
       } else if (explosive) {
-        h[v.cell] = Math.max(-0.2, h[v.cell] - power * 0.02);
         W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.7);
       } else {
-        h[v.cell] = Math.min(1.2, h[v.cell] + power * 0.04 / visc);
         W.lava[v.cell] = Math.min(1, (W.lava[v.cell] || 0) + power * 0.55);
         W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.18);
       }
@@ -549,6 +550,14 @@ export function reassignPlatesVoronoi(W) {
 
 /** Stream-power erosion + sediment deposition. */
 export function erosionTick(W) {
+  const kind = W._planetKind;
+  if (W._canvasMode) return;
+  if (kind === 'io' || kind === 'moon' || kind === 'mercury' || kind === 'airless'
+    || kind === 'magma' || kind === 'gas' || kind === 'venus'
+    || (W._iceShell && kind !== 'titan')) return;
+  let rate = 1;
+  if (kind === 'mars') rate = 0.06;
+  else if (kind === 'stagnant' || kind === 'titan') rate = 0.12;
   const { h, flow, moist, seaLevel, sediment } = W;
   const _h = W._h;
   for (let c = 0; c < NC; c++) {
@@ -560,8 +569,13 @@ export function erosionTick(W) {
       const slope = h[c] - h[n];
       if (slope > maxSlope) { maxSlope = slope; sink = n; }
     }
-    const erode = Math.min(0.004, discharge * maxSlope * maxSlope * 0.15);
-    _h[c] = h[c] - erode;
+    const lock = W.erosionLock?.[c];
+    const local = lock == null ? 1 : lock;
+    if (local <= 0) { _h[c] = h[c]; continue; }
+    const erode = Math.min(0.004 * rate * local, discharge * maxSlope * maxSlope * 0.15 * rate * local);
+    let lap = 0;
+    for (let k = 0; k < 4; k++) lap += h[NBR[c * 4 + k]] - h[c];
+    _h[c] = h[c] - erode + lap * 0.002 * rate * local;
     if (sink !== c) {
       if (h[sink] < seaLevel) {
         // delta

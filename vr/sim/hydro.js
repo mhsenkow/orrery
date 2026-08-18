@@ -84,15 +84,29 @@ export function computeRivers(W) {
   for (let c = 0; c < NC; c++) order[c] = c;
   order.sort((a, b) => h[b] - h[a]);
 
+  // `flow` is surface discharge (throughput), not ponded volume. A 0.35 floor on
+  // every land cell used to make the whole continent a river after D8 pile-up.
+  // Runoff is now the water that cannot infiltrate; groundwater stays underground
+  // until the table is high enough to seep (springs in valleys).
   for (let i = 0; i < NC; i++) {
     const c = order[i];
     if (h[c] < seaLevel) {
       lake[c] *= 0.9;
+      W.groundW[c] = (W.groundW[c] || 0) * 0.96;
       continue;
     }
-    const gw = W.groundW[c] || 0;
-    W.groundW[c] = clamp(gw * 0.97 + (W.precip[c] || 0) * 0.14 + (W.moist[c] || 0) * 0.02, 0, 1);
-    flow[c] += AREA[c] * (0.35 + (W.moist[c] || 0) * 0.45 + (W.precip[c] || 0) * 0.5) + gw * 0.14;
+    const rain = W.precip[c] || 0;
+    const soil = W.moist[c] || 0;
+    const table = W.groundW[c] || 0;
+    const wet = clamp((soil - 0.18) / 0.55, 0, 1);
+    const rainRunoff = rain * (0.08 + 0.72 * wet);
+    const satExcess = Math.max(0, soil - 0.58) * 0.18;
+    W.groundW[c] = clamp(
+      table * 0.984 + rain * (0.22 - wet * 0.12) + soil * 0.025 - rainRunoff * 0.06,
+      0, 1
+    );
+    const seep = W.groundW[c] > 0.64 ? (W.groundW[c] - 0.64) * 0.2 : 0;
+    flow[c] += AREA[c] * (rainRunoff + satExcess) + seep;
 
     let d1 = W.drainTo[c];
     if (d1 < 0) {
@@ -120,6 +134,7 @@ export function computeRivers(W) {
 
 /** Ice mass balance: accumulate above snowline, ablate below; separate sea/land. */
 export function iceTick(W) {
+  if (W._spinup) return;
   const { h, temp, iceLand, iceSea, seaLevel, moist, precip, rule } = W;
   // Seasonal snow line migration. Item 141.
   const season = W.season || 0;

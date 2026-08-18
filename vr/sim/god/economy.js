@@ -15,7 +15,7 @@ export function thermoCost(tool, magnitude = 1, opts = {}) {
     inspect: 0, core: 0, icecore: 0,
     solar: 40, co2: 25, o2: 20, tilt: 35, spin: 30,
     seed: 12, seedGuild: 10, design: 18, transplant: 15,
-    raise: 22, lower: 18, crust: 16, plume: 28, plate: 45,
+    raise: 22, lower: 18, flatten: 8, smooth: 6, sharpen: 7, roughen: 6, crust: 16, plume: 28, plate: 45,
     river: 8, gateway: 20, sealevel: 35, soil: 6, albedo: 10,
     meteor: 60, volcano: 40, quake: 28, plague: 35, ice: 30,
     lip: 80, supernova: 70, flare: 25, clathrate: 55, buster: 200,

@@ -1,6 +1,6 @@
 /** Post-process Earth hypsometry — continental structure, shelves, ranges, abyss. */
 
-import { clamp, fbm, ridged } from '../math.js';
+import { clamp, lerp, fbm, ridged } from '../math.js';
 import { NC, NBR, DIR } from '../sphere.js';
 import { naturalizeHypsometry } from './terrainShape.js';
 
@@ -64,4 +64,43 @@ export function refineEarthHypsometry(W, seed, rule) {
   }
 
   naturalizeHypsometry(W, seed, { seaLevel: W.seaLevel, coastAmp: 0.1, macroAmp: 0.08 });
+  paintContinentalShelf(W);
+}
+
+/** A shallow terrace oceanward of the coast — the missing hypsometric shoulder.
+ *  Painted after naturalize so Laplacian blending cannot flatten it back into a cliff. */
+function paintContinentalShelf(W) {
+  const sl = W.seaLevel ?? 0;
+  const dist = new Int16Array(NC);
+  dist.fill(99);
+  const q = [];
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] < sl) continue;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      if (n >= 0 && W.h[n] < sl && dist[n] > 0) {
+        dist[n] = 0;
+        q.push(n);
+      }
+    }
+  }
+  let qi = 0;
+  while (qi < q.length) {
+    const c = q[qi++];
+    if (dist[c] >= 3) continue;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      if (n >= 0 && W.h[n] < sl && dist[n] > dist[c] + 1) {
+        dist[n] = dist[c] + 1;
+        q.push(n);
+      }
+    }
+  }
+  for (let c = 0; c < NC; c++) {
+    if (dist[c] > 3) continue;
+    const t = dist[c] / 3;
+    const shelf = sl - 0.016 - t * 0.055;
+    if (W.h[c] < shelf) W.h[c] = lerp(W.h[c], shelf, 0.7);
+    else if (W.h[c] < sl) W.h[c] = lerp(W.h[c], shelf, 0.3);
+  }
 }

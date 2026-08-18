@@ -34,6 +34,25 @@ export function m4persp(o, fovy, asp, n, f) {
   return o;
 }
 
+/** World-space ray from a lookAt camera. NDC is -1..1 (y up). Matches m4lookAt + m4persp. */
+export function lookRay(ndcX, ndcY, eye, target, up, fovy, aspect) {
+  let zx = eye[0] - target[0], zy = eye[1] - target[1], zz = eye[2] - target[2];
+  let l = Math.hypot(zx, zy, zz) || 1;
+  zx /= l; zy /= l; zz /= l;
+  let xx = up[1] * zz - up[2] * zy, xy = up[2] * zx - up[0] * zz, xz = up[0] * zy - up[1] * zx;
+  l = Math.hypot(xx, xy, xz) || 1;
+  xx /= l; xy /= l; xz /= l;
+  const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
+  const tan = Math.tan(fovy / 2);
+  const rx = ndcX * tan * aspect;
+  const ry = ndcY * tan;
+  let dx = xx * rx + yx * ry - zx;
+  let dy = xy * rx + yy * ry - zy;
+  let dz = xz * rx + yz * ry - zz;
+  const dl = Math.hypot(dx, dy, dz) || 1;
+  return { origin: [eye[0], eye[1], eye[2]], dir: [dx / dl, dy / dl, dz / dl] };
+}
+
 export function m4lookAt(o, e, c, up) {
   let zx = e[0] - c[0], zy = e[1] - c[1], zz = e[2] - c[2];
   let l = Math.hypot(zx, zy, zz) || 1;

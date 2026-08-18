@@ -11,13 +11,14 @@ export function blankGenesis() {
     name: 'Unnamed',
     seed: freshSeed(),
     rulesetId: 'terra',
+    landscape: 'auto',
     deepTime: false,
     startAgeGa: null,
     star: { teff: 5772, mass: 1, radius: 1, ageGyr: 4.6 },
     ironFrac: 0.32,
     waterInventory: 1,
     volatileBudget: 1,
-    nPlates: 8,
+    nPlates: 12,
     continentFrac: 0.4,
     moons: [{ mass: 1, distance: 1 }],
     magnetosphere: 1,
@@ -101,8 +102,52 @@ export function randomizeGenesis(opts = {}) {
     g.habitabilityBias = false;
   }
   g.nPlates = 4 + (rng() * 10) | 0;
+  g.continentFrac = 0.18 + rng() * 0.38;
+  g.landFrac = g.continentFrac;
+  const lands = ['shattered', 'twoworlds', 'archipelago', 'pangaea', 'inland', 'belt', 'polar', 'highland', 'ridge'];
+  g.landscape = lands[(rng() * lands.length) | 0];
   g.ironFrac = 0.15 + rng() * 0.4;
   g.star.teff = 3500 + rng() * 4000;
+  return g;
+}
+
+import { parseWorldInput } from '../seedword.js';
+
+/** Resolve genesis seed field — number, world id, URL, or memorable text like "caty". */
+export function resolveGenesisSeed(raw, fallback = freshSeed()) {
+  const parsed = parseWorldInput(raw);
+  if (parsed?.encoded) return { seed: fallback, encoded: parsed.encoded };
+  if (parsed?.seed != null) {
+    return {
+      seed: parsed.seed >>> 0,
+      landscape: parsed.landscape,
+      label: parsed.label || null,
+    };
+  }
+  return { seed: fallback >>> 0 };
+}
+
+/** Read genesis panel values into a genesis object. */
+export function genesisFromPanel(doc = document, base = null) {
+  const g = base ? { ...base } : blankGenesis();
+  g.name = doc.getElementById('genesisname')?.value?.trim() || '';
+  const raw = doc.getElementById('genesisseed')?.value?.trim() || '';
+  const resolved = resolveGenesisSeed(raw, g.seed);
+  if (resolved.encoded) {
+    const dec = decodeSeedString(resolved.encoded);
+    if (dec?.g) Object.assign(g, dec.g);
+  } else {
+    g.seed = resolved.seed;
+    if (resolved.label) g.seedLabel = resolved.label;
+    if (resolved.landscape && resolved.landscape !== 'auto') g.landscape = resolved.landscape;
+  }
+  const preset = doc.getElementById('genesispreset')?.value;
+  g.landscape = doc.getElementById('genesisland')?.value || g.landscape || 'auto';
+  g.nPlates = +(doc.getElementById('genesisplates')?.value || g.nPlates);
+  g.waterInventory = (+(doc.getElementById('genesiswater')?.value || 100)) / 100;
+  g.landFrac = clamp((+(doc.getElementById('genesislandfrac')?.value || 29)) / 100, 0.05, 0.85);
+  // Preset last so "no plates" actually gets one plate, not the leftover slider.
+  if (preset) applyPreset(g, preset);
   return g;
 }
 
@@ -112,15 +157,18 @@ export function rulesetFromGenesis(genesis) {
   const rule = {
     ...base,
     deepTime: !!genesis.deepTime,
+    landscape: genesis.landscape || 'auto',
     startAgeGa: genesis.startAgeGa,
     nPlates: genesis.nPlates,
     continentFrac: genesis.continentFrac,
+    targetLandFrac: genesis.landFrac ?? genesis.continentFrac ?? base.targetLandFrac,
     magnetosphere: genesis.magnetosphere,
     solar: genesis.solar,
     obliquity: (genesis.obliquityDeg || 23.4) * Math.PI / 180,
     eccentricity: genesis.eccentricity ?? 0.0167,
     totalWater: (base.totalWater || 0.9) * (genesis.waterInventory || 1),
     worldName: genesis.name,
+    _genesisWater: genesis.waterInventory ?? 1,
   };
   if (genesis.difficulty === 'hard') {
     rule.solar = (rule.solar || 1) * 0.9;

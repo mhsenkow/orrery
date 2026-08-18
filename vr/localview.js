@@ -1,11 +1,11 @@
 /** Flat local patch view — unwraps a neighborhood of cells into a square map.
  *  Presentation clock, cached topology, shared cell description, motion. */
 
-import { NC, NBR, DIR } from './sphere.js';
+import { NC, NBR, DIR, N, cellAtFace } from './sphere.js';
 import { W } from './world.js';
 import { ENT } from './agents.js';
 import { BIOMES } from './sim/ecology.js';
-import { lifeLabel, KIND_RGB, legendKeyAt, GUILD_RGB } from './sim/lifeColour.js';
+import { lifeLabel, KIND_RGB, legendKeyAt, legendEntries, GUILD_RGB } from './sim/lifeColour.js';
 import { drawSprite } from './sprites.js';
 import { whatHappenedHere } from './chronicle.js';
 import {
@@ -14,13 +14,14 @@ import {
   placeSentence, patchScale, tidePhase, wearAt, isOutNow, seasonAt, waterStage,
 } from './sim/present.js';
 import { isLand, isSubmerged } from './sim/cellSurface.js';
+import { BRUSH } from './sim/god/brush.js';
 
 export const LOCAL_SIZES = [200, 280, 380, 500];
 export const LOCAL_SIZE_LABELS = ['S', 'M', 'L', 'XL'];
 export const LOCAL_SNAPS = ['tl', 'tr', 'bl', 'br'];
 export const LOCAL_GLOBE = ['off', 'rim', 'wash', 'both'];
-export const LOCAL_RADII = [3, 5, 8, 12, 18, 28];
-export const LOCAL_RADIUS_LABELS = ['7', '11', '17', '25', '37', '57'];
+export const LOCAL_RADII = [2, 3, 5, 8, 12, 18, 28, 42];
+export const LOCAL_RADIUS_LABELS = LOCAL_RADII.map((r) => String(r * 2 + 1));
 export const LOCAL_SEEK = ['stay', 'life'];
 export const LOCAL_SEEK_LABELS = ['Stay', 'Life'];
 
@@ -137,7 +138,8 @@ function kindScore(c, kind) {
   if (kind === 'reef') return (sea && reef > 0.16) ? reef * 1.6 : 0;
   if (kind === 'frontier') return (!sea && d > 0.012 && life < 0.45) ? 0.4 + d * 18 + (nl > life ? 0.25 : 0) : 0;
   if (kind === 'town') return build > 0.14 ? build * 1.8 : 0;
-  if (kind === 'river') return (!sea && flow > 0.008 && life > 0.1) ? 0.45 + Math.min(0.6, flow * 8) : 0;
+  if (kind === 'river') return (!sea && flow > 1.1 && life > 0.08)
+    ? 0.4 + Math.min(0.55, Math.log1p(flow) * 0.18) : 0;
   if (kind === 'night') return (cellSun(c) < -0.12 && (life > 0.14 || reef > 0.18)) ? 0.5 + life : 0;
   if (kind === 'vent') return (biome === 'vent' && (life > 0.06 || sea)) ? 1.1 : 0;
   if (kind === 'canopy') return (!sea && !touchesSea(c) && life > 0.38 && ice < 0.3) ? life : 0;
@@ -365,7 +367,25 @@ export function cellAtLocalPixel(patch, layout, px, py) {
 }
 
 export function hoverCellAt(patch, cssX, cssY) {
+  if (patch?.net) return cellAtNetPixel(patch.layout, cssX, cssY);
   return cellAtLocalPixel(patch, patch?.layout, cssX, cssY);
+}
+
+export function cellAtNetPixel(layout, px, py) {
+  if (!layout?.net) return -1;
+  const dpr = layout.dpr || 1;
+  const x = px * dpr - layout.ox;
+  const y = py * dpr - layout.oy;
+  const cellPx = layout.cellPx;
+  const gap = layout.gap || 2;
+  const n = layout.n;
+  const stride = n * cellPx + gap;
+  const col = Math.floor(x / stride);
+  const row = Math.floor(y / stride);
+  if (col < 0 || col > 2 || row < 0 || row > 1) return -1;
+  const i = Math.floor((x - col * stride) / cellPx);
+  const j = Math.floor((y - row * stride) / cellPx);
+  return cellAtFace(row * 3 + col, i, j, n);
 }
 
 export function beingAtLocalPixel(patch, cssX, cssY) {
@@ -417,11 +437,84 @@ function fillRGB(ctx, r, g, b, a) {
   else ctx.fillStyle = `rgb(${r | 0},${g | 0},${b | 0})`;
 }
 
+/** Full-sphere cube net — the molding table, not a neighborhood patch. */
+function drawNetView(cvs, inspect, opts = {}) {
+  const ctx = cvs.getContext('2d');
+  const Wpx = cvs.width, Hpx = cvs.height;
+  const dpr = cvs._dpr || 1;
+  const n = N;
+  const gap = Math.max(2, (2 * dpr) | 0);
+  const pad = Math.max(4, (4 * dpr) | 0);
+  const cellPx = Math.max(1, Math.floor((Math.min(Wpx, Hpx) - pad * 2 - gap * 2) / (n * 3)));
+  const netW = 3 * n * cellPx + 2 * gap;
+  const netH = 2 * n * cellPx + gap;
+  const ox = ((Wpx - netW) / 2) | 0;
+  const oy = ((Hpx - netH) / 2) | 0;
+  const sea = W.seaLevel;
+  const focus = inspect?.cell >= 0 ? inspect.cell : 0;
+  const hoverCell = opts.hoverCell ?? -1;
+
+  ctx.fillStyle = '#07090f';
+  ctx.fillRect(0, 0, Wpx, Hpx);
+  ctx.imageSmoothingEnabled = false;
+
+  for (let f = 0; f < 6; f++) {
+    const col = f % 3;
+    const row = (f / 3) | 0;
+    const fx = ox + col * (n * cellPx + gap);
+    const fy = oy + row * (n * cellPx + gap);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        const c = cellAtFace(f, i, j, n);
+        const h = W.h[c];
+        const ice = W.ice?.[c] || 0;
+        const lava = W.lava?.[c] || 0;
+        let r, g, b;
+        if (h < sea) {
+          const d = Math.min(1, (sea - h) * 1.6);
+          r = 8 + 20 * (1 - d); g = 28 + 40 * (1 - d); b = 70 + 50 * (1 - d);
+        } else {
+          const e = Math.min(1, (h - sea) / 0.7);
+          r = 90 + e * 90; g = 110 - e * 30; b = 70 - e * 20;
+          if ((W.life?.[c] || 0) > 0.12) {
+            r = 28; g = 72; b = 36;
+          }
+        }
+        if (ice > 0.45) { r = 236; g = 242; b = 250; }
+        if (lava > 0.08) { r = 255; g = 80; b = 24; }
+        const mark = W.strokeMark?.[c] || 0;
+        if (mark > 0.08) {
+          r = r + (255 - r) * mark;
+          g = g + (210 - g) * mark;
+          b = b + (70 - b) * mark;
+        }
+        if (BRUSH.previewCenter === c) { r = 255; g = 220; b = 90; }
+        else if (c === hoverCell) { r = Math.min(255, r + 50); g = Math.min(255, g + 36); }
+        if (c === focus) { r = Math.min(255, r + 20); b = Math.min(255, b + 40); }
+        fillRGB(ctx, r, g, b);
+        ctx.fillRect(fx + i * cellPx, fy + j * cellPx, cellPx, cellPx);
+      }
+    }
+  }
+
+  const patch = {
+    net: true,
+    focus,
+    cells: [],
+    side: n * 3,
+    layout: { cellPx, ox, oy, Wpx, Hpx, dpr, cssSize: cvs._cssSize || Wpx / dpr, net: true, n, gap },
+    status: { behind: false, net: true },
+    beings: [],
+  };
+  return patch;
+}
+
 let _pan = { from: -1, to: -1, t0: 0, dx: 0, dy: 0, far: false };
 let _hold = null;
 
 export function drawLocalView(cvs, inspect, opts = {}) {
   if (!cvs) return null;
+  if (opts.net) return drawNetView(cvs, inspect, opts);
   const radius = opts.radius ?? 8;
   const pin = opts.pin ?? -1;
   const seek = opts.seek === 'life' ? 'life' : 'stay';
@@ -473,11 +566,13 @@ export function drawLocalView(cvs, inspect, opts = {}) {
   ctx.save();
   if (panX || panY) ctx.translate(panX, panY);
 
-  const hiFi = cellPx >= 10;
+  const fid = mapFidelity(cellPx);
+  const hiFi = fid >= 2;
   const highlightGuild = opts.highlightGuild || null;
   const followId = opts.followId;
   ctx.imageSmoothingEnabled = false;
   const shares = Object.create(null);
+  let lifeSum = 0, living = 0;
 
   for (let iy = 0; iy < side; iy++) {
     for (let ix = 0; ix < side; ix++) {
@@ -498,9 +593,16 @@ export function drawLocalView(cvs, inspect, opts = {}) {
       let rgb = applyLight(mixGuild(desc.rgb, c, highlightGuild), light, c);
       const key = legendKeyAt(W, c);
       if (key) shares[key] = (shares[key] || 0) + 1;
+      lifeSum += desc.life || 0;
+      if ((desc.life || 0) > 0.08) living++;
       if (hoverKey && key && key !== hoverKey) {
         rgb = [rgb[0] * 0.28, rgb[1] * 0.28, rgb[2] * 0.32];
       }
+      const mark = W.strokeMark?.[c] || 0;
+      if (mark > 0.08) {
+        rgb = [rgb[0] + (255 - rgb[0]) * mark, rgb[1] + (210 - rgb[1]) * mark, rgb[2] + (70 - rgb[2]) * mark];
+      }
+      if (BRUSH.previewCenter === c) rgb = [255, 220, 88];
       fillRGB(ctx, rgb[0], rgb[1], rgb[2]);
       ctx.fillRect(x, y, cellPx, cellPx);
 
@@ -522,7 +624,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
         if (living) {
           if (hiFi) {
             ctx.imageSmoothingEnabled = true;
-            stampLife(ctx, x, y, cellPx, c, desc, light);
+            stampLife(ctx, x, y, cellPx, c, desc, light, fid);
             ctx.imageSmoothingEnabled = false;
           } else if (!desc.sea && desc.life > 0.08 && desc.ice < 0.4 && desc.build < 0.35) {
             ditherCell(ctx, x, y, cellPx, c, desc.life);
@@ -533,7 +635,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
       if (desc.build > 0.12) {
         if (hiFi) {
           ctx.imageSmoothingEnabled = true;
-          stampBuildings(ctx, x, y, cellPx, c, desc.build, cells, side, ix, iy, light);
+          stampBuildings(ctx, x, y, cellPx, c, desc.build, cells, side, ix, iy, light, fid);
           ctx.imageSmoothingEnabled = false;
         } else {
           const h = Math.max(2, (desc.build * cellPx * 0.85) | 0);
@@ -614,6 +716,9 @@ export function drawLocalView(cvs, inspect, opts = {}) {
   }
   patch.beings = beings;
 
+  const nCells = side * side - (patch.missing || 0);
+  const census = viewCensus(shares, nCells, beings, living, lifeSum);
+
   const fx = ox + radius * cellPx + cellPx * 0.5;
   const fy = oy + radius * cellPx + cellPx * 0.5;
   const arm = Math.max(3, cellPx * 0.22);
@@ -624,7 +729,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
   ctx.moveTo(fx, fy - arm); ctx.lineTo(fx, fy + arm);
   ctx.stroke();
 
-  drawScaleBar(ctx, ox, oy, cellPx, side, dpr);
+  drawScaleBar(ctx, ox, oy, cellPx, side, dpr, census.line);
   ctx.restore();
 
   if (_pan.far && _hold?.width && panU < 1) {
@@ -657,12 +762,59 @@ export function drawLocalView(cvs, inspect, opts = {}) {
     day: cellSun(statusCell) > 0.12 ? 'day' : cellSun(statusCell) < -0.12 ? 'night' : 'twilight',
     moonlit: cellSun(statusCell) < -0.12 && (W.moonIllum ?? 0) > 0.18 && (W.moon?.mass || 0) > 0.05,
     shares,
-    nCells: side * side - (patch.missing || 0),
+    census,
+    nCells,
     rivers,
     water: desc.water?.stage || '',
     whisper: W.chron ? String((whatHappenedHere(W.chron, statusCell, 1)[0] || {}).label || '').slice(0, 42) : '',
   };
   return patch;
+}
+
+const KIND_CENSUS = {
+  0: 'trees', 1: 'scrub', 2: 'grass', 3: 'scrub', 4: 'rock',
+  5: 'settlers', 6: 'ice fauna', 7: 'worms', 8: 'worms',
+  9: 'plants', 12: 'daisies', 13: 'daisies', 14: 'reef life', 15: 'fish',
+};
+
+/** Cover + moving life in this map window — not the crosshair cell. */
+function viewCensus(shares, nCells, beings, living, lifeSum) {
+  const n = Math.max(1, nCells | 0);
+  const labels = Object.fromEntries(legendEntries().map((e) => [e.id, e.label]));
+  const ranked = Object.entries(shares)
+    .map(([id, count]) => ({
+      id,
+      n: count,
+      pct: Math.round((count / n) * 100),
+      label: labels[id] || id,
+    }))
+    .filter((e) => e.n > 0 && e.pct >= 1)
+    .sort((a, b) => b.n - a.n || a.id.localeCompare(b.id));
+  const bag = Object.create(null);
+  for (const b of beings || []) {
+    const m = b.meta;
+    if (!m || m.dead) continue;
+    const label = KIND_CENSUS[m.kind] || 'fauna';
+    bag[label] = (bag[label] || 0) + 1;
+  }
+  const critters = Object.entries(bag)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([k, c]) => `${c} ${k}`);
+  const cover = ranked.slice(0, 4).map((e) => `${e.label} ${e.pct}%`);
+  const bits = cover.concat(critters);
+  const lifePct = Math.round((living / n) * 100);
+  if (!ranked.some((e) => e.id !== 'ocean' && e.id !== 'barren' && e.id !== 'desert' && e.id !== 'ice')
+      && lifePct > 0 && lifePct < 96) {
+    bits.push(`alive ${lifePct}%`);
+  }
+  return {
+    ranked,
+    line: bits.join(' · ') || 'empty',
+    lifePct,
+    meanLife: lifeSum / n,
+    beings: bag,
+  };
 }
 
 function entityBlend(m) {
@@ -677,6 +829,19 @@ function entityGait(m) {
   const freq = 6.5 * Math.pow(Math.max(0.2, f), -0.16);
   const bob = Math.sin(presentTime() * freq + (m.id || 0) * 0.2) * 1.1;
   return [0, m.kind <= 2 ? 0 : bob];
+}
+
+/** Stamp density rungs. 0 colour · 1 grain · 2 sprites · 3 tile · 4 ground. */
+function mapFidelity(cellPx) {
+  if (cellPx >= 40) return 4;
+  if (cellPx >= 22) return 3;
+  if (cellPx >= 10) return 2;
+  if (cellPx >= 6) return 1;
+  return 0;
+}
+
+function fidCap(fid, a, b, c) {
+  return fid >= 4 ? c : fid >= 3 ? b : a;
 }
 
 function ditherCell(ctx, x, y, cellPx, c, life) {
@@ -1121,7 +1286,8 @@ function paintRivers(ctx, ox, oy, cellPx, cells, side) {
         ctx.stroke();
         nRivers++;
       }
-      if (f < 0.0012) continue;
+      // Headwaters are real discharge but not a drawing. Amount = how full the channel is.
+      if (f < 0.22) continue;
       let bx = ix, by = iy, found = false;
       const dest = W.drainTo?.[c];
       if (dest >= 0) {
@@ -1149,13 +1315,15 @@ function paintRivers(ctx, ox, oy, cellPx, cells, side) {
         }
       }
       if (!found) continue;
-      const w = Math.max(0.7, Math.min(cellPx * 0.42, Math.log1p(f * 5200) * (f > 0.016 ? 0.78 : 0.42)));
+      const amt = Math.min(1, Math.log1p(f) / Math.log1p(16));
+      const w = Math.max(0.7, Math.min(cellPx * 0.24, 0.55 + amt * cellPx * 0.18));
       segs.push({
         x0: ox + ix * cellPx + cellPx * 0.5,
         y0: oy + iy * cellPx + cellPx * 0.5,
         x1: ox + bx * cellPx + cellPx * 0.5,
         y1: oy + by * cellPx + cellPx * 0.5,
         w,
+        amt,
         salt: c,
       });
       nRivers++;
@@ -1172,8 +1340,11 @@ function paintRivers(ctx, ox, oy, cellPx, cells, side) {
     ctx.quadraticCurveTo(mx, my, s.x1, s.y1);
     ctx.stroke();
   };
-  for (const s of segs) strokeSeg(s, s.w + (s.w > 2 ? 1.6 : 0.9), 'rgba(10,32,52,0.82)');
-  for (const s of segs) strokeSeg(s, Math.max(0.6, s.w * 0.42), 'rgba(168,214,228,0.88)');
+  for (const s of segs) strokeSeg(s, s.w + 0.7, `rgba(10,32,52,${0.26 + s.amt * 0.48})`);
+  for (const s of segs) {
+    if (s.amt < 0.32) continue;
+    strokeSeg(s, Math.max(0.45, s.w * 0.34), `rgba(168,214,228,${0.1 + s.amt * 0.4})`);
+  }
   ctx.restore();
   return nRivers;
 }
@@ -1346,7 +1517,7 @@ function weatherOverlay(ctx, ox, oy, cellPx, cells, side) {
   }
 }
 
-function stampLife(ctx, x, y, cellPx, c, desc, light) {
+function stampLife(ctx, x, y, cellPx, c, desc, light, fid = 2) {
   const cls = W.lifeClass?.[c] || 0;
   const unlocked = W.unlockedClass || 0;
   const seed = hash2(c, 0x11fe);
@@ -1356,21 +1527,21 @@ function stampLife(ctx, x, y, cellPx, c, desc, light) {
     stampStromatolites(ctx, x, y, cellPx, c, W.stromatolite[c], seed);
   }
   if (W.rule?.daisyworld || (W.blackDaisy?.[c] || 0) > 0.1 || (W.whiteDaisy?.[c] || 0) > 0.1) {
-    stampDaisies(ctx, x, y, cellPx, c, seed);
+    stampDaisies(ctx, x, y, cellPx, c, seed, fid);
   }
   if (desc.sea) {
-    stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed);
+    stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed, fid);
     return;
   }
   if (desc.ice > 0.45) {
-    stampIceLife(ctx, x, y, cellPx, c, desc.life, seed);
+    stampIceLife(ctx, x, y, cellPx, c, desc.life, seed, fid);
     return;
   }
   if (desc.life > 0.06 && desc.build < 0.55) {
-    stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light);
+    stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light, fid);
   }
   if (unlocked >= 3 && cls >= 3 && desc.life > 0.2 && desc.build < 0.7) {
-    stampAmbientFauna(ctx, x, y, cellPx, c, cls, desc.life, seed);
+    stampAmbientFauna(ctx, x, y, cellPx, c, cls, desc.life, seed, fid);
   }
 }
 
@@ -1420,11 +1591,11 @@ function stampStromatolites(ctx, x, y, cellPx, c, strength, seed) {
   }
 }
 
-function stampDaisies(ctx, x, y, cellPx, c, seed) {
+function stampDaisies(ctx, x, y, cellPx, c, seed, fid = 2) {
   const black = W.blackDaisy?.[c] || 0;
   const white = W.whiteDaisy?.[c] || 0;
   const place = (kind, dens, salt) => {
-    const n = Math.min(cellPx >= 20 ? 5 : 3, (dens * 6) | 0);
+    const n = Math.min(fidCap(fid, 3, 6, 9), (dens * 6) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed ^ salt, i * 13);
       if (dens < 0.25 && (h & 3) !== 0) continue;
@@ -1438,7 +1609,7 @@ function stampDaisies(ctx, x, y, cellPx, c, seed) {
   if (white > 0.1) place(13, white, 0xb1b);
 }
 
-function stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed) {
+function stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed, fid = 2) {
   const bloom = Math.max(desc.life, desc.reef);
   const t = presentTime();
   if (bloom > 0.08) {
@@ -1459,7 +1630,7 @@ function stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed) {
     ctx.fillRect(x + 1, crest, cellPx - 2, y + cellPx - crest - 1);
     ctx.fillStyle = 'rgba(240,248,255,0.16)';
     ctx.fillRect(x + 1, crest - 1, cellPx - 2, 2);
-    const n = Math.min(5, 2 + (desc.reef * 4) | 0);
+    const n = Math.min(fidCap(fid, 5, 8, 12), 2 + (desc.reef * (fid >= 3 ? 8 : 4)) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed ^ 0x4eef, i);
       const px = x + 2 + (i / Math.max(1, n - 1)) * (cellPx - 4);
@@ -1468,7 +1639,7 @@ function stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed) {
     }
   }
   if (cls >= 4 || desc.life > 0.4) {
-    const n = Math.min(3, (desc.life * 4 + (cls >= 4 ? 1 : 0)) | 0);
+    const n = Math.min(fidCap(fid, 3, 5, 8), (desc.life * 4 + (cls >= 4 ? 1 : 0)) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed ^ 0xf15a, i);
       if ((h & 3) === 0 && desc.life < 0.35) continue;
@@ -1480,9 +1651,9 @@ function stampOceanLife(ctx, x, y, cellPx, c, desc, cls, seed) {
   }
 }
 
-function stampIceLife(ctx, x, y, cellPx, c, life, seed) {
+function stampIceLife(ctx, x, y, cellPx, c, life, seed, fid = 2) {
   if (life < 0.1) return;
-  const n = Math.min(3, 1 + (life * 3) | 0);
+  const n = Math.min(fidCap(fid, 3, 5, 7), 1 + (life * 3) | 0);
   for (let i = 0; i < n; i++) {
     const h = hash2(seed, i * 29);
     const px = x + 2 + (h % Math.max(1, cellPx - 4));
@@ -1491,13 +1662,13 @@ function stampIceLife(ctx, x, y, cellPx, c, life, seed) {
   }
 }
 
-function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light) {
+function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light, fid = 2) {
   const life = desc.life;
   const biome = desc.biome;
   const ph = seasonAt(c);
   const autumn = ph.autumn > 0.28 && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest');
   if (cls < 2 && life < 0.35) {
-    const n = Math.min(3, (life * 5) | 0);
+    const n = Math.min(fidCap(fid, 3, 6, 10), (life * 5) | 0);
     for (let i = 0; i < n; i++) {
       const h = hash2(seed, i * 17);
       const sway = windSway(c, i, cellPx);
@@ -1515,7 +1686,7 @@ function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light) {
 
   const cover = Math.min(1, life * 1.1);
   if (cover > 0.62 && (biome === 'tropRainforest' || biome === 'tempRainforest' || biome === 'boreal' || life > 0.7)) {
-    const crowns = 3 + ((cover * 3) | 0);
+    const crowns = fidCap(fid, 3, 5, 8) + ((cover * 3) | 0);
     for (let i = 0; i < crowns; i++) {
       const h = hash2(seed, i * 17);
       const sway = windSway(c, i, cellPx);
@@ -1533,7 +1704,7 @@ function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light) {
     return;
   }
 
-  const count = Math.min(1 + (life * 5) | 0, cellPx >= 20 ? 7 : 5);
+  const count = Math.min(1 + (life * 5) | 0, fidCap(fid, 5, 10, 16));
   for (let i = 0; i < count; i++) {
     const h = hash2(seed, i * 17);
     const sway = windSway(c, i, cellPx);
@@ -1563,8 +1734,8 @@ function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light) {
   }
 }
 
-function stampAmbientFauna(ctx, x, y, cellPx, c, cls, life, seed) {
-  const dens = Math.min(3, ((life - 0.15) * 4 + (cls - 2) * 0.4) | 0);
+function stampAmbientFauna(ctx, x, y, cellPx, c, cls, life, seed, fid = 2) {
+  const dens = Math.min(fidCap(fid, 3, 5, 8), ((life - 0.15) * 4 + (cls - 2) * 0.4) | 0);
   const t = presentTime();
   const sun = cellSun(c);
   for (let i = 0; i < dens; i++) {
@@ -1595,9 +1766,9 @@ function stampBug(ctx, px, py, h) {
   if ((h & 8) === 0) ctx.fillRect(px + 1, py - 1, 1, 1);
 }
 
-function stampBuildings(ctx, x, y, cellPx, c, build, cells, side, ix, iy, light) {
+function stampBuildings(ctx, x, y, cellPx, c, build, cells, side, ix, iy, light, fid = 2) {
   const seed = hash2(c, 0xb1d);
-  const n = build > 0.7 ? 3 : build > 0.4 ? 2 : 1;
+  const n = build > 0.7 ? fidCap(fid, 3, 5, 7) : build > 0.4 ? fidCap(fid, 2, 3, 4) : 1;
   const pathCol = 'rgba(170,140,90,0.55)';
   if (build > 0.25 && cellPx >= 12) {
     ctx.fillStyle = pathCol;
@@ -1649,14 +1820,19 @@ function stampBuildings(ctx, x, y, cellPx, c, build, cells, side, ix, iy, light)
   }
 }
 
-function drawScaleBar(ctx, ox, oy, cellPx, side, dpr) {
+function drawScaleBar(ctx, ox, oy, cellPx, side, dpr, censusLine) {
   const { km, named } = patchScale(side);
   const barCells = Math.max(1, Math.round(side * 0.28));
   const bw = barCells * cellPx;
   const x = ox + 6 * dpr;
   const y = oy + side * cellPx - 10 * dpr;
-  ctx.fillStyle = 'rgba(6,8,14,0.45)';
-  ctx.fillRect(x - 3, y - 10, bw + 8, 16);
+  const font = `${Math.max(8, 9 * dpr)}px ui-monospace, Menlo, monospace`;
+  ctx.font = font;
+  const kmText = `${km | 0} km · ${named}`;
+  const extra = censusLine ? Math.round(12 * dpr) : 0;
+  const tw = Math.max(bw + 8, ctx.measureText(censusLine || kmText).width + 10, ctx.measureText(kmText).width + 10);
+  ctx.fillStyle = 'rgba(6,8,14,0.55)';
+  ctx.fillRect(x - 3, y - 10 - extra, tw, 16 + extra);
   ctx.strokeStyle = 'rgba(230,236,248,0.75)';
   ctx.lineWidth = Math.max(1, dpr);
   ctx.beginPath();
@@ -1664,9 +1840,12 @@ function drawScaleBar(ctx, ox, oy, cellPx, side, dpr) {
   ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3);
   ctx.moveTo(x + bw, y - 3); ctx.lineTo(x + bw, y + 3);
   ctx.stroke();
-  ctx.fillStyle = 'rgba(220,228,240,0.8)';
-  ctx.font = `${Math.max(8, 9 * dpr)}px ui-monospace, Menlo, monospace`;
-  ctx.fillText(`${km | 0} km · ${named}`, x, y - 4);
+  ctx.fillStyle = 'rgba(220,228,240,0.85)';
+  ctx.fillText(kmText, x, y - 4);
+  if (censusLine) {
+    ctx.fillStyle = 'rgba(158,232,196,0.95)';
+    ctx.fillText(censusLine, x, y - 4 - extra + Math.round(2 * dpr));
+  }
 }
 
 function drawKindGlyph(ctx, cx, cy, cellPx, kind) {

@@ -3,15 +3,15 @@
 export const TOOL_TIPS = {
   inspect: {
     title: 'Inspect',
-    body: 'Click a cell to read elevation, temperature, moisture, life, guild, and crust. Free — looking never costs energy. Left-drag spins the planet. Shift-drag (or middle-mouse) slides it aside so the map can breathe; Home recenters.',
+    body: 'Click a cell to read elevation, temperature, moisture, life, guild, and crust. Numbers land in Lab → Station. Free — looking never costs energy. Left-drag spins the planet. Shift-drag (or middle-mouse) slides it aside; Home recenters.',
   },
   core: {
     title: 'Core sample',
-    body: 'Drill a rock column and open it in Lab. Shows strata, proxies (δ¹³C, pH), and anything disasters wrote into the rock. Free.',
+    body: 'Drill a rock column. Shows strata, proxies (δ¹³C, pH), and anything disasters wrote into the rock. Opens Lab → Station. Free — does not change the world.',
   },
   icecore: {
     title: 'Ice core',
-    body: 'Sample ice for trapped atmosphere — CO₂ history and isotope hints. Needs ice on the cell. Free.',
+    body: 'Sample ice for trapped atmosphere — CO₂ history and isotope hints. Needs ice on the cell. Opens Lab → Station. Free — does not change the world.',
   },
   seedGuild: {
     title: 'Seed guild',
@@ -32,6 +32,26 @@ export const TOOL_TIPS = {
   lower: {
     title: 'Thin crust',
     body: 'Thins the crust so the surface can subside — rifts, basins, drowned shelves. Right-drag to carve. The model may flood low spots.',
+  },
+  flatten: {
+    title: 'Flatten',
+    body: 'Pulls nearby cells toward the height you clicked. A terrace, a mesa, a landing. Ticks still run unless Canvas mode is on.',
+  },
+  smooth: {
+    title: 'Smooth',
+    body: 'Averages a cell with its neighbours. Softens a stroke without moving the mean much. Use after Raise if the ridge is too sharp.',
+  },
+  sharpen: {
+    title: 'Sharpen',
+    body: 'Pushes cells away from their neighbours’ mean — scarps and ridges get steeper. The opposite of Smooth.',
+  },
+  roughen: {
+    title: 'Roughen',
+    body: 'Sprinkles high-frequency relief without changing the mean height. Use on a mesa you flattened too cleanly.',
+  },
+  crust: {
+    title: 'Crust type',
+    body: 'Paints buoyant continental crust. Hold Alt and click for oceanic (thin, dense, will subduct). Drag strokes a continent.',
   },
   plume: {
     title: 'Mantle plume',
@@ -142,7 +162,11 @@ export const PLAY_TIPS = {
   },
   godundo: {
     title: 'Undo stroke',
-    body: 'Reverts the last direct edit (heights, life paint, etc.). Years that already passed stay passed — you can take back a gesture, not deep time. Ctrl+Z.',
+    body: 'Reverts the last direct edit (heights, life paint, etc.). Years that already passed stay passed — you can take back a gesture, not deep time. Ctrl+Z. Height undo is the active layer, not a copy of the whole planet.',
+  },
+  godredo: {
+    title: 'Redo stroke',
+    body: 'Puts back the stroke you just undid. Ctrl+Shift+Z. A new stroke clears the redo list.',
   },
   godwatch: {
     title: 'Watch mode',
@@ -170,11 +194,27 @@ export const PLAY_TIPS = {
   },
   genesisseed: {
     title: 'Seed',
-    body: 'RNG seed for terrain and chance. Same seed + same settings → same world. Leave blank to roll one.',
+    body: 'A number, four-word id, a link, or a word like caty. Same text always grows the same start.',
+  },
+  genesisland: {
+    title: 'Land shape',
+    body: 'Where the continents go — pangaea, two worlds, archipelago. Independent of how many plates sit underneath.',
+  },
+  genesisplates: {
+    title: 'Plates',
+    body: 'Voronoi tessellation of the crust. More plates means more boundaries, not automatically more continents. Create paints the plate map on the globe so you can see them. Rock → Plates keeps it on.',
+  },
+  genesiswater: {
+    title: 'Water',
+    body: 'Ocean inventory after land % is fitted. Higher than 1× drowns the shelves; lower exposes them.',
+  },
+  genesislandfrac: {
+    title: 'Land',
+    body: 'How much of the globe stays above sea level. The shape menu decides where that land is.',
   },
   genesispreset: {
     title: 'What-if preset',
-    body: 'One-parameter Earth variants: no Moon, high O₂, no plates, dimmer star, start at Cambrian, etc.',
+    body: 'One-parameter Earth variants: no Moon, high O₂, no plates, dimmer star, start at Cambrian, etc. Applied on Create, after the sliders.',
   },
   genesisrand: {
     title: 'Random habitable',
@@ -182,7 +222,7 @@ export const PLAY_TIPS = {
   },
   genesisgo: {
     title: 'Create world',
-    body: 'Author a new planet from the name, seed, and preset, then drop you into play.',
+    body: 'Builds from this desk — shape, plates, water, land % — and paints plates on the globe so you can check the tessellation.',
   },
   dailyseed: {
     title: 'Today’s world',
@@ -193,8 +233,8 @@ export const PLAY_TIPS = {
     body: 'Stores this run on a local shelf so you can keep several planets, not just the one on screen.',
   },
   godshare: {
-    title: 'Copy link-seed',
-    body: 'Copies a compact string (genesis + recent interventions) you can paste to reproduce or continue a world.',
+    title: 'Copy world id',
+    body: 'Copies four words and a landscape — ember-coral-dune-frost.shattered — plus a ?world= link. Anyone opening that link gets the same starting continents.',
   },
   budget: {
     title: 'Energy mode',
@@ -210,7 +250,7 @@ export const PLAY_TIPS = {
   },
   newseed: {
     title: 'Reseed',
-    body: 'Keep this planet type, roll a new terrain seed. Same settings, different mountains.',
+    body: 'New climate and new land from a fresh seed. Same planet type. Reroll land keeps the air and only moves the continents.',
   },
   catbtn: {
     title: 'Worlds',
@@ -226,7 +266,7 @@ export const PLAY_TIPS = {
   },
   worldchip: {
     title: 'This planet',
-    body: 'Name and mode of the world on screen. Click to open the Worlds picker.',
+    body: 'Name, landscape, and the four-word world id. Click to open the Worlds catalogue. Pick land, under Play, shares a starting continent layout.',
   },
   docktoggle: {
     title: 'Dock',
@@ -260,17 +300,81 @@ export const PLAY_TIPS = {
     title: 'Ghost 40%',
     body: 'Drops opacity so a field overlay reads through the surface. Overlay still chosen in Layers.',
   },
-  viewOrbitGuides: {
-    title: 'Axis guides',
-    body: 'Cyan = spin axis, white = equator, gold = ecliptic. The angle between cyan and gold is tilt.',
+  canvasmode: {
+    title: 'Canvas mode',
+    body: 'Freezes plates and rivers so a stroke stays put. The local map becomes a cube-net of the whole sphere — a molding table. Left-drag to paint.',
+  },
+  rerolland: {
+    title: 'Reroll land',
+    body: 'Keeps this atmosphere, life, and clock. Rolls new continents. The world-seed stays; a new land-seed is what you share if you like this layout.',
+  },
+  landpickbtn: {
+    title: 'Pick land',
+    body: 'Nine starting continent layouts as globes. The id under each one is shareable. First visit opens this so you choose a world instead of receiving one.',
+  },
+  layeradd: {
+    title: 'New layer',
+    body: 'An empty paint layer on top of the generated land. Raise and Lower write this one until you pick another.',
+  },
+  layerdup: {
+    title: 'Duplicate layer',
+    body: 'Copy of the selected paint layer, same opacity and mask. Hide the original to compare.',
+  },
+  layerdel: {
+    title: 'Delete layer',
+    body: 'Removes the selected paint layer. Land stays. One paint layer always remains.',
+  },
+  layerup: {
+    title: 'Layer up',
+    body: 'Composites later — sits on top. Blend order matters once you leave Add.',
+  },
+  layerdown: {
+    title: 'Layer down',
+    body: 'Composites earlier — sits closer to the generated land.',
+  },
+  layerflatten: {
+    title: 'Flatten',
+    body: 'Bakes every layer into Land. The stack is gone. A warning, not a silent consequence of pressing play.',
+  },
+  layeropacity: {
+    title: 'Layer opacity',
+    body: 'Turn a mountain range down to 40% after you have looked at it. The stroke stays; only the mix changes.',
+  },
+  layerblend: {
+    title: 'Blend',
+    body: 'Add is a signed offset. Max raises without carving the valley beside it. Min carves. Multiply scales relief. Replace paints an absolute height.',
+  },
+  layerpaint: {
+    title: 'Paint height or mask',
+    body: 'Height is the usual Raise/Lower. Mask paints where this layer applies — Lower conceals, Raise reveals.',
+  },
+  layerclipland: {
+    title: 'Clip to land',
+    body: 'The layer only applies on cells currently above sea level. A mask you can still paint afterwards.',
+  },
+  layerclearmask: {
+    title: 'Clear mask',
+    body: 'The layer applies everywhere again.',
+  },
+  lookPhoto: {
+    title: 'Photo',
+    body: 'Surface colours as a photograph — biomes, dark ocean, terminator gold. The default.',
+  },
+  lookDiagram: {
+    title: 'Diagram',
+    body: 'Climate field instead of photographic albedo. Temperature bands, not forests. Useful when comparing worlds.',
+  },
+  cloudFree: {
+    title: 'Cloud-free',
+    body: 'Hides the cloud shell. Like a composite Blue Marble, not a single weather day. Ice stays brighter than the missing clouds.',
   },
   simN: {
     title: 'Sim cells',
-    body: 'Climate, life, and the map all run on this grid. Changing N regenerates the world. Bigger is slower.',
+    body: 'Climate, life, and the map all run on this grid. Changing N regenerates the world. RAM is cheap even at N=768; each tick costs more CPU (bio/ocean stay on the CPU). High N will drop ticks to hold the frame.',
   },
   globeSubd: {
     title: 'Globe quads',
-    body: 'Visual mesh only — the sim does not get more cells. Instant. At high N the mesh auto-caps.',
+    body: 'Visual mesh only — the sim does not get more cells. Instant. Auto-caps so the globe edge stays ≤768.',
   },
   orreryTable: {
     title: 'Orrery table',
@@ -365,13 +469,14 @@ export const PLAY_TIPS = {
 /** Sub-desks inside each dock tab. */
 export const SUITE_TIPS = {
   tools: {
-    verbs: { title: 'Verbs', body: 'The ten you use constantly — inspect, seed, raise, strike. Right-click the planet after picking one.' },
-    more: { title: 'More', body: 'Secondary verbs: disasters, chemistry, climate brushes. Same click rules as Verbs.' },
-    station: { title: 'Station', body: 'Readouts for this cell and the globe — not tools. Inspect left-drags to spin. Shift-drag parks the globe.' },
+    verbs: { title: 'Verbs', body: 'The ones that change the world — seed, raise, strike. Looking and cores live in Lab → Station.' },
+    land: { title: 'Land', body: 'Landscaping: raise, lower, flatten, rivers, crust. The gold disc on the globe is the brush. Q looks (spin); cores live in Lab.' },
+    life: { title: 'Life', body: 'Seed a metabolism or declare a refuge. Reading a cell is Lab → Station.' },
+    strike: { title: 'Strike', body: 'Impacts, eruptions, quakes — and whole-planet climate levers. Attacks flash the cell; levers name the new number.' },
   },
   god: {
     aim: { title: 'Life', body: 'Which metabolism Seed guild plants, plus undo / watch / bookmark.' },
-    brush: { title: 'Brush', body: 'Mask and snap so Raise / Lower / Ice only hit land, coasts, plate edges, etc.' },
+    brush: { title: 'Brush', body: 'Height layers, then mask and snap so Raise / Lower only hit land, coasts, plate edges.' },
     challenge: { title: 'Challenge', body: 'Optional goals with limits. Teaches the coupled systems; skip if you just want a sandbox.' },
     genesis: { title: 'Genesis', body: 'Author a named variant — seed, what-if preset, today’s world. Saves onto the local shelf.' },
   },
@@ -382,10 +487,11 @@ export const SUITE_TIPS = {
     guides: { title: 'Guides', body: 'Spin axis / equator / ecliptic, plus the keyboard cheat-sheet.' },
   },
   lab: {
+    station: { title: 'Station', body: 'Inspect, core sample, ice core — actions that only return numbers. Globe HUD and the cell you clicked. Left-drag still spins.' },
     all: { title: 'All', body: 'Every instrument card. The other desks filter this same list.' },
     tower: { title: 'Tower', body: 'Redox ladder and Gaia — who is eating what, and whether the planet is self-regulating.' },
     curves: { title: 'Curves', body: 'Time series: temperature, gases, diversity. The Keeling-style plots.' },
-    survey: { title: 'Survey', body: 'Maps and spectra — cores you have taken, transit sketch, Whitaker biomes.' },
+    survey: { title: 'Survey', body: 'Maps and spectra — transit sketch, Whitaker biomes. Cores you have taken sit on Station.' },
     notes: { title: 'Notes', body: 'Model limits and glossary. What this sim will not pretend to know.' },
   },
   sandbox: {

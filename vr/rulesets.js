@@ -6,7 +6,7 @@
 import { clamp, lerp } from './math.js';
 
 /** Earth land: pleasant NASA-ish biomes that still separate cleanly from orbit. */
-const landTerra = (t, m, l, e, ice) => {
+const landTerra = (t, m, l, e, ice, extra) => {
   if (ice > 0.5 && l < 0.18) return [240, 245, 250];
   const rock = clamp((e - 0.48) * 2.2, 0, 1);
   const elevCool = rock * 0.35;
@@ -16,16 +16,16 @@ const landTerra = (t, m, l, e, ice) => {
     let r, g, b;
     if (m < 0.20) {
       // Sahel / scrub — olive that still beats desert gold
-      r = lerp(148, 108, k); g = lerp(142, 128, k); b = lerp(78, 52, k);
+      r = lerp(118, 78, k); g = lerp(108, 88, k); b = lerp(58, 38, k);
     } else if (t > 0.52 && m > 0.42) {
-      // Tropical canopy — deep emerald, saturated enough to read from orbit
-      r = lerp(42, 18, k); g = lerp(138, 105, k); b = lerp(62, 48, k);
+      // Tropical canopy — albedo ~0.12, nearly black from DSCOVR
+      r = lerp(22, 10, k); g = lerp(48, 26, k); b = lerp(28, 16, k);
     } else if (t < 0.36) {
-      // Boreal — cooler blue-green
-      r = lerp(58, 36, k); g = lerp(122, 100, k); b = lerp(90, 72, k);
+      // Boreal — albedo ~0.08, cooler and darker than the tropics
+      r = lerp(16, 8, k); g = lerp(36, 22, k); b = lerp(28, 18, k);
     } else {
       // Temperate forest / meadow
-      r = lerp(62, 32, k); g = lerp(148, 118, k); b = lerp(64, 46, k);
+      r = lerp(28, 12, k); g = lerp(52, 30, k); b = lerp(24, 16, k);
     }
     if (ice > 0.28) {
       const frost = clamp((ice - 0.28) / 0.5, 0, 1);
@@ -42,15 +42,26 @@ const landTerra = (t, m, l, e, ice) => {
     ];
   }
 
-  // Barren — warm deserts vs cool highlands (slightly brighter from orbit)
+  // Barren — Sahara pale, Australian red, Gobi grey
   let r, g, b;
-  if (m < 0.14) { r = 226; g = 192; b = 118; }
+  const rockKind = extra?.rock ?? 0;
+  const lat = extra?.lat ?? 0.3;
+  const dust = extra?.dust ?? 0;
+  if (m < 0.14) {
+    if (t < 0.36 || lat > 0.55) { r = 176; g = 168; b = 152; } // Gobi / rain-shadow grey
+    else if (rockKind === 0 && t > 0.52) { r = 196; g = 118; b = 72; } // Australian red earth
+    else { r = 226; g = 192; b = 118; } // Sahara pale
+  }
   else if (m < 0.22) { r = 200; g = 166; b = 108; }
   else if (t < 0.34) { r = 158; g = 152; b = 142; }
   else { r = 146; g = 128; b = 100; }
   if (t < 0.36) {
     const k = clamp((0.36 - t) * 2.8, 0, 1);
     r = lerp(r, 168, k); g = lerp(g, 164, k); b = lerp(b, 158, k);
+  }
+  if (dust > 0.12) {
+    const k = clamp(dust, 0, 1) * 0.4;
+    r = lerp(r, 198, k); g = lerp(g, 152, k); b = lerp(b, 98, k);
   }
   if (ice > 0.38) return [234, 240, 248];
   return [lerp(r, 128, rock), lerp(g, 120, rock), lerp(b, 108, rock)];
@@ -72,8 +83,8 @@ export const RULESETS = [
     targetLandFrac: 0.29, targetMeanTemp: 0.50,
     atmo: [0.28, 0.50, 0.92], atmoStrength: 0.92, sky: [0.012, 0.035, 0.08],
     signature: 'glacial',
-    // Shallow shelves read brighter; deep basins stay ink-blue
-    ocean: (d) => [10 + 42 * d, 48 + 72 * d, 96 + 100 * d],
+    // Open-ocean albedo ~0.06; the blue is sky. `d` is shallowness.
+    ocean: (d) => [4 + 16 * d, 10 + 28 * d, 18 + 38 * d],
     land: landTerra,
   },
   {
@@ -133,16 +144,16 @@ export const RULESETS = [
     totalWater: 0.12, continentFrac: 0.95, nPlates: 8,
     atmo: [1.0, 0.52, 0.36], atmoStrength: 0.55, sky: [0.03, 0.018, 0.016],
     signature: 'dust',
-    ocean: () => [112, 66, 48],
+    ocean: () => [96, 58, 42],
     land: (t, m, l, e, ice) => {
-      if (ice > 0.42) return [226, 232, 240];
-      const rock = clamp((e - 0.48) * 2.2, 0, 1);
-      if (l > 0.08) {
-        const k = clamp(l, 0, 1);
-        return [lerp(80, 20, k), lerp(220, 140, k), lerp(30, 18, k)];
+      if (ice > 0.42) return [232, 236, 244];
+      const high = clamp((e - 0.42) * 1.8, 0, 1);
+      let r = lerp(118, 168, high), g = lerp(72, 96, high), b = lerp(48, 58, high);
+      if (l > 0.18) {
+        const k = clamp((l - 0.18) / 0.6, 0, 1);
+        r = lerp(r, 36, k); g = lerp(g, 72, k); b = lerp(b, 28, k);
       }
-      let r = lerp(196, 146, m), g = lerp(104, 78, m), b = lerp(66, 58, m);
-      return [lerp(r, 128, rock), lerp(g, 90, rock), lerp(b, 74, rock)];
+      return [r, g, b];
     },
   },
   {

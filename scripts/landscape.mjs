@@ -1,0 +1,963 @@
+#!/usr/bin/env node
+// Single source of truth for the ORRERY landscape backlog.
+// Emits  briefs/landscape-backlog.md  and  site/landscape.html.
+//
+//   node scripts/landscape.mjs
+//
+// 400 items on one question: how does the player decide what the land is?
+// Everything before the first tick — the opening world, the archetype, the
+// dials, the brush, the layers, the stamps, the imported heightmap — plus the
+// tooling that makes editing a planet feel like drawing rather than like
+// filing a form.
+//
+// k:  MAKE = the generator that produces the heightfield
+//     HAND = the instrument you hold and the stroke it makes
+//     PICK = choosing, presetting, previewing, sharing, teaching
+// e:  effort S/M/L.  i: impact 1..3.
+// g:  capability token this item provides.  n: tokens it needs first.
+
+import { writeFile, mkdir } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+const CATS = [
+  ['baseline', 'The world you are handed',
+    'Until this pass `boot()` ended in `runGenerate(20260808, RULESETS[0])` — one integer, hard-coded, so every first run this project has ever shown was the same planet. That is the whole of the opening experience: no choice, no variety, no way in. This pass adds an openings table and thirteen landscape archetypes, which is the floor. The ceiling is a front door that treats the first thirty seconds as the product: you should be choosing a world, not receiving one.'],
+  ['hypso', 'The hypsometric curve, which is a step',
+    'Measured on Earth, seed 20260808, N=64. The area-weighted elevation deciles of `h - seaLevel` run −0.795, −0.690, −0.663, −0.639, −0.613, −0.574, then **−0.033**, 0.002, 0.202, 0.275, 0.500. Half the planet sits on a flat abyssal plain, and the entire continental slope — 0.54 of a 1.30 range, forty per cent of the world\'s total relief — is crossed inside one decile of area. Only 4.8% of the globe lies within ±0.01 of sea level. Real Earth has a shelf shoulder there; this has a cliff. Every coastal item in every other backlog is downstream of that curve.'],
+  ['mass', 'One continent, every time',
+    'Six seeds of Earth, same ruleset: land fraction 29.2, 30.7, 30.1, 31.2, 29.2, 30.5 per cent — because `fitSeaLevel` binary-searches sea level until `targetLandFrac` is hit, so the number is an input, not an outcome. And the shape underneath never changes either. Seed 20260808 has 22 landmasses of which **one holds 7,323 of 7,460 land cells** and the second holds 47. There is no archipelago, no island arc, no second continent, no size distribution of any kind: one blob and twenty-one specks. Seeds moved the coastline. They never moved the kind of world.'],
+  ['picker', 'The front door',
+    'The way into a world today is `#genesisname`, `#genesisseed`, a preset `<select>`, and three buttons, on the third desk of the second tab of a dock that is closed on mobile. Nothing is previewed. Nothing is shown. You type a number you cannot evaluate into a field that gives you no feedback, and press Create. Compare the thing this product is actually competing with: a map-select screen with pictures.'],
+  ['seedgal', 'Seeds you can see',
+    '`freshSeed()` returns a `Uint32` from `crypto.getRandomValues`. `dailySeed()` derives one from the date. `encodeSeedString` base64s the whole genesis object. All three are correct and all three are invisible: a seed is a number in a text input, and the only way to know what it grows is to grow it. A seed should be a thumbnail, a name, and a row in a gallery you scroll.'],
+  ['dial', 'The dials that should exist before Create',
+    '`blankGenesis()` already carries `nPlates`, `continentFrac`, `waterInventory`, `ironFrac`, `obliquityDeg`, `eccentricity`, `magnetosphere` and a star — and the UI exposes exactly two of them: name and seed. `rulesetFromGenesis` reads all of them. The parameters are built, wired, and hidden. This category is about surfacing the ones that change the landscape, giving them units, and showing what each one does before you commit.'],
+  ['draw', 'Drawing the land',
+    'Canvas mode already freezes tectonics and turns the local map into a full-sphere cube net — the closest thing here to a canvas. What it is missing is everything that makes drawing feel like drawing: a stroke that follows the pointer instead of sampling cells under it, a projection you can choose, a cursor that shows what you will change, pressure, spacing, and the ability to draw a line rather than stamp a disc forty times.'],
+  ['brushkit', 'The brush itself',
+    '`BRUSH` has radius, hardness, rate, four profiles, seven masks, four snaps and two symmetries. That is a real brush — and then `paintBrush` scans all 24,576 cells for every stroke centre, `BRUSH.symmetry` documents a `\'great\'` mode `mirrorCells` never implements, and there is no pressure, no tilt, no spacing, no jitter, no per-tool default, and no way to save a brush you liked.'],
+  ['layer', 'Layers, masks and blend modes',
+    'The stack lives in `vr/sim/layers.js`. Generated land is a locked base; Raise and Lower write a paint layer with opacity, blend, hide, reorder, name, and an optional mask. `W.h` is the composite the rest of the sim already reads. Flatten is a button with a warning. Adjustment layers, groups, and dragging a continent across the sphere are still ahead.'],
+  ['stamp', 'Stamps and the landform library',
+    '`stampTerrain` has six: shield, craton, arc, trench, rift, basin. Each is a four-line lambda applied through the brush disc, and one of them ignored the falloff argument entirely until this pass, so a craton was a hard-edged circle. A landform library is the fastest possible route from "I want mountains there" to mountains there, and six hardcoded lambdas is not a library.'],
+  ['proc', 'Generators you can dial and mix',
+    '`naturalizeHypsometry` runs a fixed recipe: three-octave domain warp at 1.4, five-octave coast fBm at 5, four-octave macro at 1.05, three-octave detail at 9, three-octave ridged at 2.4, then two Laplacian passes. Those constants are the terrain of every generated world in the product, and not one of them is reachable from the UI. A generator you cannot dial is a preset with extra steps.'],
+  ['erode', 'Erosion as a tool, not only a tick',
+    '`erosionTick` runs `erode = min(0.004 * rate, discharge * slope² * 0.15 * rate)` once per sim tick, with a per-planet-kind rate and nothing else. It is a good little stream-power model that the player can never aim, never preview, never run for a hundred thousand years on one valley while the rest of the planet holds still. Erosion is what makes terrain look real; here it is a background process.'],
+  ['river', 'The drainage that is not there yet',
+    'Measured at t=0 on the default Earth: of 7,460 land cells, **185 carry flow above 0.1 and 8 carry flow above 0.5**. The world you are handed has no rivers. `computeRivers` builds a real D8/D∞ tree with depression lakes and groundwater baseflow, and after a hundred ticks it has 722 and 61 — but the opening picture, the screenshot, the first impression, is a continent with eight river cells on it.'],
+  ['coastfx', 'The coast, which is the only edge anyone looks at',
+    'A cell is 157 km across at N=64 and 104 km at N=96. Every coastline in the product is a contour of `h` against `seaLevel` on that grid, softened by two Laplacian passes in `naturalizeHypsometry` and one ochre `smoothstep` band in the shader. There are no fjords, no barrier islands, no spits, no estuaries, no sub-cell shoreline of any kind, and the shelf the coast should sit on does not exist in the hypsometry.'],
+  ['import', 'Bringing terrain in from outside',
+    'There is no path into this product for a heightfield that was not generated by it. Not an equirectangular PNG, not a real DEM, not an SVG outline of a coast someone drew, not another run\'s saved world. `serializeRun` writes seed, rule and events and explicitly does not write fields. Everything anyone makes here is trapped inside the generator that made it.'],
+  ['feel', 'What it feels like while you are drawing',
+    '`previewBrush` builds the disc that will be painted, `issueReceipt` explains what you did afterwards, and `undoStroke` can take back 24 strokes. Between the preview and the receipt there is nothing: no live ghost of the result, no before/after, no elevation readout under the cursor, no gesture that says "more", no way to see the stroke you are making as you make it. The tools are correct and they are silent.'],
+  ['resolve', 'A cell is 157 kilometres',
+    '`sphere.js` exports `N = 64`; the boot HTML asks for 96; `N_ALLOWED` goes to 768. At N=96 a cell is 104 km — larger than Corsica. Every brush, every stamp, every stroke and every coastline in this document is quantised to that. `changeResolution` exists and reallocates every field, and nothing resamples the terrain you already drew, so changing N throws your landscape away.'],
+  ['phys', 'Keeping the model honest while you draw',
+    'The moment a player draws a mountain, two systems disagree: `applyIsostasy` wants elevation to follow crustal thickness, and the stroke wrote elevation directly. `resistTick` taxes energy for holding terrain above equilibrium, `_iso0` tracks the settled state, and canvas mode resolves the argument by switching the geology off entirely. That is a truce, not an answer. The interesting product is one where the planet argues back and you can see it arguing.'],
+  ['share', 'Keeping, sharing and remixing a landscape',
+    '`downloadSave` writes JSON with seed, ruleset and an event log; `encodeSeedString` packs a genesis into base64; the shelf holds six worlds. None of it round-trips a drawn heightfield, because a drawn heightfield is not in the save format. Somebody who spends an hour sculpting a world currently cannot give it to anyone, cannot get it back after a reload, and cannot fork it.'],
+  ['learn', 'Knowing what you are shaping',
+    'The dock says "Landscaping. Right-click or drag to paint." That is the entire explanation of a system with ten land tools, seven brush masks, four snaps, six stamps and an isostasy model that will undo your work over the next fifty thousand years. Teaching here is not decoration: a tool whose consequence arrives in ten million years cannot be learned by experiment alone.'],
+];
+
+const P1 = [
+/* ------------------------------------------------------------ baseline -- */
+{c:'baseline',t:'Stop opening on one hard-coded planet',g:'openings',d:'`boot()` ended in `runGenerate(20260808, RULESETS[0])`. One integer. Every first run in this project\'s history was the same world, so the opening image could never surprise anyone and never taught that worlds vary. Fixed here: an `OPENINGS` table of hand-checked seed/archetype pairs, picked at random, with `?seed=` and `?land=` still pinning it exactly so a shared link is reproducible.',k:'PICK',e:'S',i:3},
+{c:'baseline',t:'Land archetypes, so a seed can change the kind of world',g:'archetype',d:'Added here as `vr/sim/landscapes.js`: thirteen masks applied to `W.h` between `generateTectonics` and `fitSeaLevel`, each with its own land-fraction and relief target. Measured across the set on one seed: land 8.1–56.9%, landmass count 1–95, largest-mass share 42.8–100%. Before it, every one of those numbers was ~30%, ~22 and ~98%.',k:'MAKE',e:'M',i:3},
+{c:'baseline',t:'Show the seed and the archetype on the world chip',n:['openings'],d:'`#worldchip` reads "Earth sandbox · seed 1043". It should also say which archetype grew it, because that is now the variable that matters most and the only place it appears is a `<select>` three panels deep.',k:'PICK',e:'S',i:2},
+{c:'baseline',t:'A first-boot world that is chosen, not received',g:'frontdoor',n:['openings','thumbs'],d:'The strongest version of the opening is not a better default — it is four or six thumbnails and the sentence "pick one". SimEarth opened on a menu of worlds. The dock hides that decision behind two tabs; the first screen should be the decision.',k:'PICK',e:'M',i:3},
+{c:'baseline',t:'Curate the openings instead of sampling uniformly',n:['openings'],d:'`OPENINGS` picks with `Math.random()` over ten equal entries. Weight them: Earth-normal most of the time, the strange ones occasionally, and never the same one twice in a row for a returning visitor. A first impression is a curated thing.',k:'PICK',e:'S',i:2},
+{c:'baseline',t:'Screenshot every opening and check it by eye',n:['openings','thumbs'],d:'Ten hand-picked pairs are ten claims that this seed on this archetype looks good, and nothing verifies them. A headless render of each into `site/img/openings/` turns the claim into something reviewable, and into the thumbnails the picker needs anyway.',k:'PICK',e:'M',i:2},
+{c:'baseline',t:'A world worth pausing on before the clock starts',d:'`runGenerate` finishes and the sim runs immediately. The first thirty seconds are the only time a player looks at the terrain rather than the simulation, and the product spends them advancing the clock. Start paused, on the landscape, with the tools open.',k:'PICK',e:'S',i:3},
+{c:'baseline',t:'Name the world you were given',d:'`W.worldName` exists and only genesis sets it. Every opening should arrive named — generated from its archetype and its shape, not "Earth sandbox" — because a named place is one you will come back to and a sandbox is one you will not.',k:'PICK',e:'S',i:2},
+{c:'baseline',t:'Reseed should say what changed',d:'`#newseed` calls `runGenerate(freshSeed(), W.rule)` and the planet silently becomes a different planet. Print the delta: land fraction, continent count, largest landmass, mean relief. The button rerolls a world; it should report the world it rolled.',k:'PICK',e:'S',i:2},
+{c:'baseline',t:'Separate "new terrain" from "new world"',d:'`Reseed` regenerates everything including gases, life and clock; `Reroll land` keeps them and rolls geography only. Two buttons, two meanings, one label each, no explanation. Say which is which in the button, not in a title attribute.',k:'PICK',e:'S',i:2},
+{c:'baseline',t:'Boot resolution and code default disagree',d:'`sphere.js` exports `N = 64`; the boot markup asks for 96 and `boot()` calls `changeResolution` when they differ. So the shipped grid is 96 (104 km/cell) while every comment, brief and constant in the codebase reasons about 64. Pick one and make the other read it.',k:'MAKE',e:'S',i:2},
+{c:'baseline',t:'Land fraction is an input pretending to be an outcome',g:'freeland',d:'`fitSeaLevel(W, rule.targetLandFrac)` binary-searches 18 times for the contour that gives 29% land. So no seed, no archetype and no amount of water ever produces a world that is 12% land or 60% land unless something explicitly asks. Make the target optional and let water inventory decide.',k:'MAKE',e:'M',i:3},
+{c:'baseline',t:'Water inventory should reach the coastline',n:['freeland'],d:'`rule.totalWater` sets `seaLevel = -0.05 + totalWater * 0.42` and is then immediately overwritten by `fitSeaLevel` on any world with a land target. The one dial that means "how much ocean is on this planet" is discarded on the worlds people actually play.',k:'MAKE',e:'S',i:3},
+{c:'baseline',t:'A dry world and a wet world should not share a sea-level clamp',d:'Fixed here: `shiftSeaLevel` clamped to a constant `0.15..0.85` on every world. Measured sea levels are Earth 0.196, Vermis −0.000, Selene −0.044, Ares −0.250 — so on three of the four rulesets the first click of the lever teleported the ocean, by +0.40 on a planet with no ocean at all.',k:'MAKE',e:'S',i:3},
+{c:'baseline',t:'Airless worlds should not report a sea level',d:'Selene has `seaLevel = -0.044` and 0.0% land, which means every cell on an airless moon is classified as ocean floor by `h[c] < seaLevel`. Half the code in hydro, ecology and the renderer branches on that comparison. Give waterless worlds a sentinel and make the comparison ask `liquidWaterOk` first.',k:'MAKE',e:'M',i:3},
+{c:'baseline',t:'The spin-up loop decides the landscape and nobody sees it',d:'`generate` runs 24 warm-up `simTick`s for Earth and up to 256 at high N, with ice albedo off, then re-fits sea level, then runs four more. The terrain that appears is the terrain after all of that. Any brief that says "the generator makes X" is describing a function three loops upstream of the output.',k:'MAKE',e:'M',i:2},
+{c:'baseline',t:'Generate time is unmeasured',g:'gentime',d:'At N=192 and above the code skips ocean and tectonics during warm-up specifically because a full `simTick` is "minutes of ocean/bio before the world even appears" — a comment, not a measurement. Time each phase of `generate` and print it. Every item about richer generation spends from a budget nobody has counted.',k:'MAKE',e:'S',i:2},
+{c:'baseline',t:'A cancel button for generation',n:['gentime'],d:'`generate` is one synchronous call that blocks the main thread through tectonics, mantle init, up to 256 climate ticks, hydro, ocean, tides and storms. At high N the tab is frozen with no progress and no way out. Yield between phases and let the user stop.',k:'PICK',e:'M',i:2},
+{c:'baseline',t:'Progress that names the phase',n:['gentime'],d:'`#bootload` is hidden when generation ends and shows nothing while it runs. "Plates · isostasy · climate 24/24 · rivers" is four lines of code and it turns dead air into the most legible explanation of the model the product has.',k:'PICK',e:'S',i:2},
+{c:'baseline',t:'Regenerate without losing the camera and the tools',d:'`runGenerate` calls `resetFocusCache()`, clears `S.follow`, resets the local pin and rebuilds geometry. Trying five seeds in a row means re-finding your view five times. Keep the camera; the point of trying seeds is comparing them from the same angle.',k:'PICK',e:'S',i:3},
+
+/* --------------------------------------------------------------- hypso -- */
+{c:'hypso',t:'Give the planet a continental shelf',g:'shelf',d:'The deciles jump from −0.574 to −0.033 in one step: 40% of the world\'s relief crossed by 10% of its area, with nothing on it. `refineEarthHypsometry` has a `shelfEps` of 0.03 and two passes that nudge land-adjacent cells down by 0.015, which is a rounding of the cliff, not a shelf. A shelf is a distinct population in the curve and needs to be generated as one.',k:'MAKE',e:'M',i:3},
+{c:'hypso',t:'Target a hypsometric curve, then solve for the field',g:'hypsocurve',n:['shelf'],d:'Every generator here works forward — plates, then isostasy, then noise, then whatever curve falls out. Invert it: state the curve you want (Earth\'s is a well-known bimodal), then histogram-match the generated field onto it. One pass, deterministic, and it fixes the shelf, the abyssal plain and the summit distribution together.',k:'MAKE',e:'L',i:3},
+{c:'hypso',t:'Show the curve while the world generates',g:'hypsoplot',n:['hypsocurve'],d:'A hypsometric plot is the single most informative picture of a heightfield and this product draws twenty-odd overlays and not that one. Area on one axis, elevation on the other, Earth\'s curve underplotted in grey. It makes every item in this category visible.',k:'PICK',e:'M',i:3},
+{c:'hypso',t:'Two populations, not one field with a threshold',n:['hypsocurve'],d:'Earth is bimodal because continental crust and oceanic crust are different rocks with different densities, and `isostaticElev` knows that — `freeboard = thick * (1 - dens/3.3) * (oceanic ? 1.6 : 3.4)`. The noise applied afterwards by `naturalizeHypsometry` runs across both populations identically and smears the gap that made them two.',k:'MAKE',e:'M',i:3},
+{c:'hypso',t:'The abyssal plain should be flat because it is old, not because it is empty',d:'Half the globe sits between −0.795 and −0.574 with almost no structure. Real abyssal plains are flat from sediment burial over fracture-zone topography. `sediment` exists as a field and never accumulates in the deep ocean, so the flatness here is the absence of a process rather than the result of one.',k:'MAKE',e:'M',i:2},
+{c:'hypso',t:'Age–depth is applied twice and neither is the right curve',d:'`isostaticElev` subtracts `0.015 * sqrt(age)`; `refineEarthHypsometry` separately subtracts `clamp((age - 40)/320, 0, 1) * 0.06`. Two different subsidence laws on the same field. The real one is a √t cooling curve flattening past 80 Ma, and it is worth having exactly once.',k:'MAKE',e:'S',i:2},
+{c:'hypso',t:'Mid-ocean ridges are a `+0.025` constant',d:'`if (bound[c] === DIV) elev += 0.025` is the entire ridge system. A real ridge is 2–3 km of relief, 1,000 km wide, with an axial valley on slow spreaders and none on fast ones, and it is the largest single landform on the planet. It should come from spreading rate, which `plateVelocityAt` already computes.',k:'MAKE',e:'M',i:2},
+{c:'hypso',t:'Trenches are missing entirely',d:'Convergent oceanic gets `elev -= 0.05`, which at this scaling is a few hundred metres. The deepest topography on Earth is a trench; on this planet it is a dimple. Depth should follow slab age and convergence rate, both of which are in the model.',k:'MAKE',e:'M',i:2},
+{c:'hypso',t:'A relief budget the whole pipeline agrees on',g:'reliefunit',d:'`h` is clamped to ±1.2, Earth relief is rendered at 0.028 exaggeration, `heightF = clamp(0.5 + (h - sea) * 2.2, 0, 1)` in the shader, and `isostaticElev` returns freeboard in units nobody names. Declare one mapping from `h` to metres and make every consumer use it. Without it no item in this document can state a real elevation.',k:'MAKE',e:'M',i:3},
+{c:'hypso',t:'Print elevations in metres, everywhere',n:['reliefunit'],d:'The inspector, the receipts, the cursor and the overlays all show `h` as a dimensionless number between −1.2 and 1.2. A player sculpting mountains has no idea whether they made a hill or the Himalaya. Metres, once `reliefunit` exists, in every readout.',k:'PICK',e:'S',i:3},
+{c:'hypso',t:'Depth and elevation should not share a ramp',d:'`refreshColours` lerps two ocean triples by `clamp((sea - h) * 1.9, 0, 1)`, so the entire ocean colour range is used up in the first half-unit of depth, and the abyssal plain — half the planet — is one flat colour. Hypsometry and colour ramp have to be designed against each other.',k:'MAKE',e:'S',i:2},
+{c:'hypso',t:'Sea level as a slider with the curve behind it',n:['hypsoplot'],d:'`shiftSeaLevel` is a lever with an ice budget and no picture. Put it on the hypsometric plot: drag the contour line, watch land fraction change along the curve, see immediately why 0.02 of sea level costs 4% of the planet here and 0.4% somewhere else.',k:'HAND',e:'M',i:3},
+{c:'hypso',t:'Elevation quantised to 1/255 before it reaches the shader',d:'Every field atlas channel is `UNSIGNED_BYTE` and `heightF` compresses roughly ±4 km into 256 steps. The terrain a player carefully sculpts is rounded to about 30 m per step before it is drawn, which puts a hard floor under every sub-cell detail item in this document.',k:'MAKE',e:'M',i:3},
+{c:'hypso',t:'Hypsometry per archetype, asserted',n:['archetype','hypsocurve'],d:'The thirteen archetypes now produce land fractions from 8.1% to 56.9%, and nothing checks that any of them still has a plausible curve. One test per archetype asserting bimodality, shelf fraction and max relief turns the library from a set of lambdas into a specification.',k:'MAKE',e:'M',i:2},
+{c:'hypso',t:'A slope field, computed once',g:'slopefield',d:'Erosion recomputes max slope per cell per tick; the shader finite-differences the height texture; the local map does its own thing; `isostaticPreview` does none of it. One derived slope-and-aspect field, rebuilt when `h` changes, is used by erosion, shading, soil, drainage, and every brush that should behave differently on a cliff.',k:'MAKE',e:'M',i:3},
+{c:'hypso',t:'Curvature too, since slope is half of it',n:['slopefield'],d:'Concave-up cells collect water and sediment; convex-up cells shed both. Every landform process in geomorphology is written in terms of the Laplacian of elevation, and the code computes `lap` inline in `erosionTick` and throws it away.',k:'MAKE',e:'S',i:2},
+{c:'hypso',t:'Terraces and benches as first-class shapes',n:['hypsocurve'],d:'Real landscapes are full of flat surfaces at particular heights: marine terraces, peneplains, lava plains, lake benches. Everything here is either sloped or the abyssal plain, because nothing in the generator can produce a level surface on purpose.',k:'MAKE',e:'M',i:1},
+{c:'hypso',t:'A summit distribution, not a noise ceiling',d:'Land elevation p95 is 0.396 and max is 0.500 on the default world — the top of the range is a clamp on fBm, so peaks are all the same height. Real ranges have a small number of much higher summits and a heavy tail. Ridged noise plus a summit-count target gets it.',k:'MAKE',e:'M',i:2},
+{c:'hypso',t:'Do not let `naturalizeHypsometry` flatten the shelf it is given',n:['shelf'],d:'Its second stage runs two Laplacian passes over every cell within 0.2 of sea level, blending 55% toward the neighbour mean. Any shelf edge, any fjord wall, any cliff inside that band is smoothed by the function whose stated purpose is making coastlines natural.',k:'MAKE',e:'M',i:2},
+{c:'hypso',t:'One test that says what the default Earth\'s curve is',n:['hypsocurve'],d:'`calibrate.mjs` asserts landFrac 0.22–0.38, iceFrac and meanTemp, and has never asserted anything about the shape of the land. The deciles in this category were measured by a throwaway script. Commit them, and the curve becomes a thing you can break.',k:'MAKE',e:'S',i:3},
+
+/* ---------------------------------------------------------------- mass -- */
+{c:'mass',t:'Target a landmass size distribution',g:'masssize',n:['archetype'],d:'Seed 20260808 gives one mass of 7,323 cells and a second of 47. Real continent areas follow a rough power law and so do islands. Generate against the distribution: pick the number of masses and their size ranks first, then place them, rather than thresholding a noise field and counting what falls out.',k:'MAKE',e:'L',i:3},
+{c:'mass',t:'Islands as objects, not as leftovers',g:'islands',n:['masssize'],d:'Ten of the 22 landmasses on the default world are one cell. A one-cell island at N=96 is 104 km across and made of nothing — no arc, no volcano, no lagoon, no reason to exist. Islands should be placed by a process (arc, hotspot track, rift fragment) and carry that identity.',k:'MAKE',e:'M',i:3},
+{c:'mass',t:'Island arcs from the subduction that makes them',n:['islands'],d:'`bound[c] === CONV` with an oceanic overriding plate produces `elev -= 0.05` and nothing else. Every real ocean-ocean convergence makes a chain of volcanic islands parallel to the trench. The boundary classification is already there; the arc is thirty lines.',k:'MAKE',e:'M',i:3},
+{c:'mass',t:'Hotspot tracks that actually leave a chain',n:['islands'],d:'`W.hotspots` are fixed in the mantle frame and `placePlume` adds one, so the geometry for a Hawaii is present. Whether a chain appears depends on plate speed times time, and with `omega` around 0.04 over the run lengths people play, nothing moves far enough to leave a track.',k:'MAKE',e:'M',i:2},
+{c:'mass',t:'A landmass report in the UI',g:'massreport',d:'Added as `landmassReport` in `landscapes.js` and currently only reachable from a script. Continent count, largest share, island count — three numbers that describe the world better than land fraction does, and land fraction is the one on screen.',k:'PICK',e:'S',i:2},
+{c:'mass',t:'Name the continents that exist',n:['massreport'],d:'`W._plateNames` names plates and nothing names landmasses. A continent you can point at by name is a place; an unnamed green shape is a texture. Generated names, per run, seeded — and never real Earth names on a generated coastline.',k:'PICK',e:'M',i:2},
+{c:'mass',t:'Separate the sea into named basins',n:['massreport'],d:'The same flood fill that finds continents finds ocean basins, and basins are what circulation, salinity, tides and gateways are actually about. `setGateway` opens and closes connections between things the model cannot name.',k:'MAKE',e:'M',i:2},
+{c:'mass',t:'Detect and report an inland sea',n:['massreport'],d:'The `inland` archetype makes one deliberately and nothing in the model knows it is enclosed. An ocean cell with no path to the largest basin is a different thing entirely — its own salinity, its own level, its own tides, its own extinction risk.',k:'MAKE',e:'M',i:2},
+{c:'mass',t:'Coastline length as a headline number',g:'coastlen',d:'The most informative single statistic about a landscape and the product does not compute it. It separates an archipelago from a Pangaea far better than land fraction, it predicts biodiversity, and it is one loop over `NBR`.',k:'PICK',e:'S',i:3},
+{c:'mass',t:'Continentality: distance from every land cell to the sea',g:'contdist',d:'A BFS from the coast, once per geometry rebuild. It gives arid interiors, it gives the difference between a Pangaea and an archipelago at the climate level rather than the picture level, and it is what makes the interior of a supercontinent a desert instead of a lookup on latitude.',k:'MAKE',e:'M',i:3},
+{c:'mass',t:'Let the archetype drive plate count and continent share',n:['archetype'],d:'`applyLandscape` masks the heightfield after `generateTectonics` has already picked `nPlates` and `contShare` from the ruleset. An archipelago should have been generated with many small plates in the first place, not carved out of twelve big ones afterwards.',k:'MAKE',e:'M',i:2},
+{c:'mass',t:'Continents that have been somewhere else',d:'Every generated world starts with its continents in their final position. Earth\'s geography is legible because it is the wreck of a supercontinent — matching coastlines, orogens where things collided, cratons older than the rocks around them. Run the plate model backwards from a Pangaea to get an arrangement that has a history.',k:'MAKE',e:'L',i:3},
+{c:'mass',t:'Rifted margins should match across the ocean',n:['archetype'],d:'The South Atlantic reads as a puzzle because it is one. A `twoworlds` archetype where the two coasts were once joined — mirrored shelf, conjugate rift structure — is one extra step in the mask and the most convincing single detail a generated world can have.',k:'MAKE',e:'M',i:3},
+{c:'mass',t:'Passive and active margins should not look the same',d:'One coast of a continent faces a subduction zone and has mountains at the water; the other faces an opening ocean and has a wide shelf and a coastal plain. `bound` knows which is which and the terrain treats them identically.',k:'MAKE',e:'M',i:3},
+{c:'mass',t:'Peninsulas, isthmuses and capes as recognised forms',n:['coastlen'],d:'A narrow land bridge is a gateway for life and a barrier for ocean circulation, and the model has no way to notice one exists. Skeletonising the land mask finds them, and once found they can be named, protected, or cut.',k:'MAKE',e:'M',i:2},
+{c:'mass',t:'Straits and their width',n:['massreport'],d:'`setGateway` opens a corridor with a 0.06 rad brush and never asks how wide the resulting strait is. Width is what decides whether a strait is a current, a tide race or a closed door, and the tide model would immediately use it.',k:'MAKE',e:'M',i:2},
+{c:'mass',t:'A minimum island size that means something',n:['islands'],d:'Below a cell there can be no island at all, which means a world of small islands is unrepresentable at any resolution the product ships. Sub-cell island *coverage* as a field — fraction of the cell that is land — is the honest way to carry them.',k:'MAKE',e:'L',i:2},
+{c:'mass',t:'Do not let two continents merge into one at the last minute',n:['archetype'],d:'The `shattered` archetype at radius 0.52 produced two masses covering 66% because the blobs touched; at 0.34 it produces 35. Any generator that places shapes needs a separation constraint, checked after the fact, not a hope.',k:'MAKE',e:'S',i:2},
+{c:'mass',t:'Latitude placement as a choice',d:'Land-by-latitude on the default world runs 29/24/27/29/41/31 per cent from equator to pole — effectively uniform, because plate centres are uniform on the sphere. Whether a world has polar continents is the single biggest control on whether it can glaciate, and it is currently an accident.',k:'MAKE',e:'M',i:3},
+{c:'mass',t:'A supercontinent should behave like one',n:['contdist'],d:'The default world already is a Pangaea and nothing downstream treats it as one: no continental interior desert from distance-to-sea, no monsoon from land–sea thermal contrast, no reduced weathering from a smaller coastline. The most common outcome of the generator is the least modelled.',k:'MAKE',e:'M',i:3},
+];
+
+const P2 = [
+/* -------------------------------------------------------------- picker -- */
+{c:'picker',t:'A world picker that shows worlds',g:'thumbs',d:'`#genesisseed` is a text input. The catalogue has a picker for 120 real bodies and the *generated* worlds — the ones this pass is about — have none. A grid of rendered thumbnails, each a real seed on a real archetype, is the difference between choosing and guessing.',k:'PICK',e:'L',i:3},
+{c:'picker',t:'Render thumbnails headlessly and commit them',n:['thumbs'],d:'A thumbnail that has to be generated live costs a full `generate` per tile, which at N=96 is seconds each. Bake them: a headless orthographic render of the height and land mask at 128px, stored as a sprite sheet, keyed by seed and archetype.',k:'PICK',e:'M',i:3},
+{c:'picker',t:'Roll a fresh row of candidates',n:['thumbs'],d:'Nine thumbnails and a reroll button is the entire interaction, and it is the one every world-building game has because it works. You are not picking a seed; you are picking a picture, which is the only thing you can actually evaluate.',k:'PICK',e:'M',i:3},
+{c:'picker',t:'Lock a candidate and reroll the rest',n:['thumbs'],d:'The mechanic that turns a reroll into a search. Keep the one you like, roll the other eight, keep two, roll seven. It is how anyone actually converges on a world they want.',k:'PICK',e:'M',i:2},
+{c:'picker',t:'Filter candidates by what you want',n:['thumbs','massreport'],d:'"More land", "more islands", "polar continents", "one big ocean" — filters over the measured statistics of each candidate rather than over the parameters that produced them. People know what they want to see, not which dial produces it.',k:'PICK',e:'M',i:2},
+{c:'picker',t:'Show the archetype blurb where the choice is made',g:'shapelib',n:['archetype'],d:'Each archetype carries a one-line description of the world it makes — "everything is coast; nothing is interior" — and it currently appears in a `<p>` under a `<select>` in the Play tab. That sentence is the reason to pick it and belongs next to the picture.',k:'PICK',e:'S',i:2},
+{c:'picker',t:'Say what an archetype costs you',n:['shapelib'],d:'An ocean world has almost no land to weather, so its carbon cycle has no thermostat; a polar-continent world can snowball. These are the interesting consequences and the picker presents thirteen options as if they were skins.',k:'PICK',e:'M',i:3},
+{c:'picker',t:'Compare two candidate worlds side by side',n:['thumbs'],d:'Two globes, same camera, same sun, with their statistics under each. The comparison is what makes a choice informed, and the product can already render two spheres — the orrery table does six.',k:'PICK',e:'M',i:2},
+{c:'picker',t:'Put the generated worlds on the orrery table',n:['thumbs'],d:'`orreryTable.js` lays six shelf worlds on a disc and tints them from mean life and temperature. That is already a physical picker; point it at generation candidates and the choice happens in the product\'s own metaphor instead of in a dropdown.',k:'PICK',e:'M',i:3},
+{c:'picker',t:'A picker that works on a phone',n:['thumbs'],d:'The whole authoring flow lives inside `#dock`, which collapses on narrow screens, behind two levels of tab. A full-screen picker is the only form of this that survives contact with a small viewport.',k:'PICK',e:'M',i:2},
+{c:'picker',t:'Remember what you picked last time',d:'No preference persists across a reload: not the archetype, not N, not the tool, not the overlay. Every session starts from the same defaults, so the product cannot learn that you always play archipelagos.',k:'PICK',e:'S',i:2},
+{c:'picker',t:'A history of worlds you have opened',d:'Seeds are lost the moment you reseed. A short list of the last dozen — thumbnail, seed, archetype, one line of stats — makes "that one two rerolls ago was better" a recoverable thought instead of a lost one.',k:'PICK',e:'M',i:3},
+{c:'picker',t:'Favourite a world',n:['thumbs'],d:'The shelf holds six saved runs and requires an explicit save. A star on a thumbnail is a lower-friction gesture and the one people actually use when they are still deciding.',k:'PICK',e:'S',i:2},
+{c:'picker',t:'Start from a real place',d:'Earth\'s own coastline is the most recognisable heightfield there is, and the product that claims to be a modern SimEarth generates a Voronoi Pangaea instead. A locked-coastline Earth start, clearly labelled, is a legitimate option in the picker.',k:'PICK',e:'L',i:3},
+{c:'picker',t:'A scenario is also a landscape choice',d:'`scenario.js` starts challenges on whatever world happens to be loaded. A challenge about glaciation on a world with no polar land is a different challenge. Scenarios should carry the archetype they were designed against.',k:'PICK',e:'M',i:2},
+{c:'picker',t:'The daily world should be a shared world',d:'`dailySeed()` derives a seed from the date and hands it to `runGenerate` with the current rule, so two people on the same day on different rulesets get different planets. Pin the archetype and the ruleset too and it becomes something two people can talk about.',k:'PICK',e:'S',i:2},
+{c:'picker',t:'Preview at low resolution, commit at full',n:['thumbs','gentime'],d:'Candidates only need to be right at 128px. Generate them at N=32 — one sixteenth of the cells — and regenerate the chosen one at the play resolution. Same seed, same archetype, and the shape survives because the mask is resolution-independent.',k:'PICK',e:'M',i:3},
+{c:'picker',t:'Say what the first tick will do to what you picked',d:'The world you choose is not the world you get: 24 warm-up climate ticks, a sea-level refit and four more ticks run before you see it, and erosion starts immediately after. Show the picked terrain and the settled terrain, because the difference is the model explaining itself.',k:'PICK',e:'M',i:2},
+{c:'picker',t:'Blend two archetypes',n:['archetype'],d:'`applyLandscape` already takes a `blend` option and nothing passes anything but 1. A 60/40 mix of `belt` and `shattered` is a world neither one describes, and the interpolation is free because both are masks over the same field.',k:'MAKE',e:'S',i:2},
+{c:'picker',t:'Let the picker be reached from anywhere',n:['frontdoor'],d:'Changing your mind about the world means finding the Play tab, the Genesis desk and the Create button. One keyboard shortcut and one topbar entry, so restarting is cheap. Cheap restarts are how anyone explores a generator.',k:'PICK',e:'S',i:2},
+{c:'picker',t:'Warn before discarding a world you edited',d:'`Reseed` and `Create` destroy an hour of sculpting with no confirmation and no undo, because the undo stack is per-stroke and `generate` reallocates every field. The one destructive button in the product is the one with no guard.',k:'PICK',e:'S',i:3},
+{c:'picker',t:'A landing state that is not a planet',n:['frontdoor'],d:'The product currently boots straight into a simulation. There is a version where the first thing on screen is nine worlds and the question "which one", and it is the version where a stranger understands what this is inside five seconds.',k:'PICK',e:'M',i:3},
+
+/* ------------------------------------------------------------- seedgal -- */
+{c:'seedgal',t:'A seed should be a word, not a Uint32',g:'seedword',d:'`freshSeed()` returns numbers like 3,254,118,904 and the input asks you to type one. A three-word encoding over a fixed list — reversible, so the number survives — makes seeds sayable, memorable and shareable out loud.',k:'PICK',e:'M',i:2},
+{c:'seedgal',t:'One string that carries the seed and the shape',n:['seedword','archetype'],d:'The archetype is now as load-bearing as the seed and `encodeSeedString` does not include it. A world identifier that omits half of what makes the world is not an identifier.',k:'PICK',e:'S',i:3},
+{c:'seedgal',t:'Paste a seed string and go',n:['seedword'],d:'`decodeSeedString` exists and nothing in the UI calls it — `#godshare` copies, and there is no field that reads. Half of a share feature is the receiving half.',k:'PICK',e:'S',i:3},
+{c:'seedgal',t:'A seed gallery that is curated by hand',n:['thumbs','seedword'],d:'Twenty worlds someone actually looked at, each with a name, a picture and a sentence about why it is interesting. It is the cheapest possible content and it is what teaches people what the generator can do.',k:'PICK',e:'M',i:3},
+{c:'seedgal',t:'Every screenshot should carry its seed',d:'`exportPng.js` writes the framebuffer. Stamping seed, archetype, N and sea level into a corner makes every image someone posts a reproducible thing, and every image someone posts an advertisement that works.',k:'PICK',e:'S',i:3},
+{c:'seedgal',t:'Read the seed out of a dropped screenshot',n:['seedword'],d:'If the stamp is there, the round trip is possible: drop the PNG on the window, get the world back. It is a small trick and it makes shared images into shared worlds.',k:'PICK',e:'M',i:1},
+{c:'seedgal',t:'Show near neighbours of the current seed',n:['thumbs'],d:'Seed ±1 is an unrelated planet, which is correct for a hash and useless for exploration. What people want is "like this one but different", which means perturbing the *parameters*, not the seed, and showing eight of them.',k:'PICK',e:'M',i:3},
+{c:'seedgal',t:'Separate the seed streams the archetype uses',d:'`applyLandscape` derives its RNG as `mulberry32(seed ^ 0x1a4d5ca9)`, sharing the world seed with everything else. Fork it through `forkRng` like the rest of the sim so changing the archetype does not shift the biology.',k:'MAKE',e:'S',i:2},
+{c:'seedgal',t:'A seed for the terrain and a seed for the run',d:'`rerollTerrain` mixes a new geography seed as `seed ^ (landRoll * 0x9e3779b9)` and overwrites `W.seed` with it, so the run\'s identity changes when only its geography did. Two seeds, kept apart, and you can replay the same life on new land.',k:'MAKE',e:'M',i:2},
+{c:'seedgal',t:'Say which seed made which feature',d:'`naturalizeHypsometry` alone uses six seed constants — `0x7a7a70`, `0x7a7a71`, `0x7a7a72`, `0xc04a57`, `0x4d414352`, `0x0645711`, `0x0d9301`. Naming them, in a table, is the difference between a debuggable generator and a magic one.',k:'MAKE',e:'S',i:1},
+{c:'seedgal',t:'The daily world deserves a gallery of its own',d:'A row of the last fourteen daily worlds, each a thumbnail, is a reason to come back and a free record of what the generator produces over time.',k:'PICK',e:'M',i:1},
+{c:'seedgal',t:'A shareable link that opens the exact world',g:'deeplink',n:['seedword'],d:'Added in part here: `?seed=` and `?land=` now pin the opening. Extend it to the full genesis — N, water, plates, obliquity — and every world becomes a URL.',k:'PICK',e:'S',i:3},
+{c:'seedgal',t:'Seeds in the chronicle',n:['deeplink'],d:'`chronLog(W.year, \'genesis\', 0, 1, `${rule.name} forms (seed ${seed})`)` already writes it into the event log, and the chronicle export is markdown. Make it a link and every exported history is replayable.',k:'PICK',e:'S',i:1},
+{c:'seedgal',t:'Do not lose the seed when a save is loaded',d:'`loadRunMeta` regenerates from seed and rule and drops the archetype, because the archetype is not in the save format. Any world made with a non-default shape currently cannot be reloaded as itself.',k:'PICK',e:'S',i:3},
+{c:'seedgal',t:'A seed that is provably good',n:['thumbs','massreport'],d:'The openings table is ten hand-picked pairs and nothing enforces that they stay good when the generator changes. Score each candidate against the statistics that matter and fail the build if a shipped opening drifts.',k:'PICK',e:'M',i:2},
+{c:'seedgal',t:'Let someone submit a seed',n:['seedword'],d:'The lowest-cost content pipeline in existence: a form, a screenshot, a name. The catalogue took 120 real bodies to fill; a seed gallery fills itself.',k:'PICK',e:'M',i:1},
+
+/* ---------------------------------------------------------------- dial -- */
+{c:'dial',t:'Surface the genesis parameters that already exist',g:'genpanel',d:'`blankGenesis()` carries nPlates, continentFrac, waterInventory, ironFrac, obliquityDeg, eccentricity, magnetosphere, solar and a full star, and `rulesetFromGenesis` reads every one. The UI exposes name and seed. The panel is not missing a model; it is missing a panel.',k:'PICK',e:'M',i:3},
+{c:'dial',t:'Plate count as a dial you can feel',n:['genpanel'],d:'`nPlates` defaults to 8 in genesis and 12 in the Earth ruleset, is clamped by lid mode, and decides how big continents are before any mask touches them. Two plates and twelve plates are different planets and the number is invisible.',k:'MAKE',e:'S',i:3},
+{c:'dial',t:'Continental share, which is not land fraction',n:['genpanel'],d:'`continentFrac` decides how many plates are continental; `targetLandFrac` decides how much of the sphere is above water. They are different quantities, they interact, and the UI shows neither.',k:'MAKE',e:'S',i:2},
+{c:'dial',t:'Water inventory in oceans, not in multiples',n:['genpanel','freeland'],d:'`waterInventory` is a dimensionless multiplier on `totalWater`. Express it as Earth oceans — 0.5, 1, 3, 10 — and a player can reason about what a water world means without reading the source.',k:'PICK',e:'S',i:3},
+{c:'dial',t:'Relief exaggeration as a slider',d:'`rule.relief` is 0.028 for Earth, 0.075 for Vermis, 0.048 for Selene, and it is a hard-coded per-ruleset constant that changes the entire read of a planet. The archetypes now carry a multiplier; a player should carry one too.',k:'PICK',e:'S',i:2},
+{c:'dial',t:'Tectonic vigour, which already exists',n:['genpanel'],d:'`W.interior.vigor` scales plate `omega` and `lidMode` gates it into mobile, stagnant, episodic, ice or none. That is the single biggest control on what a landscape becomes over time and it is set by the catalogue, never by a person.',k:'MAKE',e:'S',i:3},
+{c:'dial',t:'Erosion strength as a world parameter',n:['genpanel'],d:'`erosionTick` picks rate from `_planetKind`: Mars 0.06, stagnant and Titan 0.12, everything else 1. A world at 3 is a world of soft rounded relief and wide floodplains; a world at 0.1 keeps every scarp it ever had. One number, enormous consequence, unreachable.',k:'MAKE',e:'S',i:3},
+{c:'dial',t:'Show the consequence of a dial before it is committed',g:'dialpreview',n:['genpanel','thumbs'],d:'A parameter panel where each slider updates a small preview render is the difference between a form and an instrument. At N=32 the regeneration is fast enough to do it live.',k:'PICK',e:'L',i:3},
+{c:'dial',t:'Say which dials fight each other',n:['genpanel'],d:'Raising water inventory while `targetLandFrac` is pinned does nothing at all, because `fitSeaLevel` cancels it. A panel that lets you move a dial with no effect is worse than one that omits it.',k:'PICK',e:'S',i:3},
+{c:'dial',t:'Presets that set several dials at once',d:'`PRESETS` has eight and they are about air, moons and epochs — not one of them is about the land. "No plate tectonics" sets `nPlates: 1` and is the closest, and it is filed as a climate what-if.',k:'PICK',e:'S',i:2},
+{c:'dial',t:'A difficulty that means something geological',d:'`difficulty: \'hard\'` multiplies solar by 0.9 and halves the magnetosphere. A hard *landscape* is one with no shelf, no big rivers, one continent and violent erosion — and that is a more interesting difficulty than a dimmer star.',k:'PICK',e:'M',i:1},
+{c:'dial',t:'Randomise within the panel, not instead of it',d:'`randomizeGenesis` rolls everything and writes two fields back into the form. Per-dial dice, so you can randomise plate count while holding water, are how anyone actually uses a generator panel.',k:'PICK',e:'S',i:2},
+{c:'dial',t:'Lock a dial',n:['genpanel'],d:'The counterpart to per-dial randomise, and the thing that makes iterating on a world possible rather than a lottery.',k:'PICK',e:'S',i:2},
+{c:'dial',t:'Reset one dial to the Earth value',n:['genpanel'],d:'Every parameter has a calibrated Earth value in `RULESETS[0]`. A small reset affordance next to each makes Earth the reference point the whole product claims it is.',k:'PICK',e:'S',i:2},
+{c:'dial',t:'Units and ranges on every control',n:['genpanel'],d:'`obliquityDeg` is degrees, `eccentricity` is dimensionless, `ironFrac` is a mass fraction, `solar` is relative to Earth. Four different kinds of number with no labels between them.',k:'PICK',e:'S',i:3},
+{c:'dial',t:'Warn when a combination cannot make a landscape',n:['genpanel'],d:'Volatile budget 0.35 with magnetosphere 0.4 gives a world with no liquid water, so every landscape dial below it is moot. `liquidWaterOk` already knows; the panel should say so before Create, not after.',k:'PICK',e:'M',i:2},
+{c:'dial',t:'Save a parameter set as a named recipe',n:['genpanel'],d:'The archetypes are recipes someone wrote in JavaScript. Letting a player save theirs is the same feature with the author changed, and it is where user-generated content starts.',k:'PICK',e:'M',i:2},
+{c:'dial',t:'Genesis should be able to target a statistic',n:['massreport','dialpreview'],d:'"Give me a world with five continents and 40% land" is a search over parameters, and with a fast low-N preview it is a search you can actually run. Solve for the dials instead of asking the player to.',k:'MAKE',e:'L',i:2},
+{c:'dial',t:'Do not let the panel silently drop what it does not know',d:'`rulesetFromGenesis` builds a new object from a base ruleset and a fixed list of fields, so anything on the base that is not in that list survives by spread and anything on the genesis that is not in the list is dropped. Adding `landscape` to it in this pass was exactly that bug waiting to happen again.',k:'MAKE',e:'S',i:2},
+{c:'dial',t:'One place that documents every world parameter',d:'Landscape-relevant parameters currently live across `rulesets.js`, `blankGenesis`, `worldParams.js`, `applyInterior` and the archetype table. A single exported schema with names, units, ranges and defaults is what the panel, the tests and the docs should all read.',k:'MAKE',e:'M',i:3},
+{c:'dial',t:'Changing a dial mid-run should be possible where it makes sense',d:'Erosion rate, relief exaggeration and sea level are all live-adjustable in principle; plate count and water inventory are not. The panel should distinguish the two rather than requiring a full regenerate for everything.',k:'PICK',e:'M',i:2},
+{c:'dial',t:'The catalogue bodies should show their dials too',d:'120 real worlds arrive with measured parameters through `worldParams.js` and the genesis panel is only reachable for synthetic ones. Showing the same dials read-only on a real body is how a player learns what the numbers mean.',k:'PICK',e:'M',i:2},
+];
+
+const P3 = [
+/* ---------------------------------------------------------------- draw -- */
+{c:'draw',t:'A stroke is a path, not forty discs',g:'strokepath',d:'`continueDrag` fires `paintBrush` once per *cell* the pointer crosses and skips when the cell has not changed. So a fast drag paints a dotted line of overlapping discs and a slow one paints a trench, because rate is coupled to pointer speed. A stroke should be resampled to even spacing along its path, independent of how fast you moved.',k:'HAND',e:'M',i:3},
+{c:'draw',t:'Spacing, in fractions of the brush',n:['strokepath'],d:'Every drawing tool has it and it is the parameter that decides whether a stroke looks continuous or beaded. At 25% of radius the discs overlap into a line; at 100% they read as stamps. Both are useful and neither is currently reachable.',k:'HAND',e:'S',i:3},
+{c:'draw',t:'Accumulate a stroke into a buffer, apply once',g:'strokebuf',n:['strokepath'],d:'Because each disc writes straight into `W.h`, overlapping discs in one stroke compound — the middle of a slow stroke is painted five times. Accumulate the stroke\'s maximum influence per cell into scratch, then composite once at the end. This is what makes a stroke behave like a stroke.',k:'HAND',e:'M',i:3},
+{c:'draw',t:'Draw a straight line',n:['strokepath'],d:'Shift-click from the last point, the oldest interaction in raster editing. A mountain range, a rift, a coastline segment — all of them are lines, and all of them currently require dragging freehand across a sphere.',k:'HAND',e:'S',i:3},
+{c:'draw',t:'Draw a curve you can adjust',g:'splinetool',n:['strokepath'],d:'A control-point spline on the sphere, previewed before it commits, applied as a stroke. It is how you draw a mountain chain that follows an arc, a river that meanders, a coastline with intent — and it is editable after the fact, which freehand never is.',k:'HAND',e:'L',i:3},
+{c:'draw',t:'Close a shape and fill it',n:['splinetool'],d:'Draw a continent outline, close it, raise everything inside. The single most direct expression of "I want land here" and there is no way to say it. Interior test on the sphere is a signed solid-angle sum.',k:'HAND',e:'L',i:3},
+{c:'draw',t:'A lasso that selects cells',g:'selection',n:['splinetool'],d:'Selection is the idea underneath masks, fills, transforms and copy-paste, and it does not exist here. A set of cells with a soft edge, persistent, visible, and honoured by every tool.',k:'HAND',e:'L',i:3},
+{c:'draw',t:'Select by value, not only by region',n:['selection'],d:'"All land above 2 km", "everything within 200 km of the coast", "this plate". `maskOk` already does exactly this for seven fixed predicates inside the brush; promoting it to a real selection makes it composable and visible.',k:'HAND',e:'M',i:3},
+{c:'draw',t:'Grow, shrink and feather a selection',n:['selection'],d:'The three operations that turn a rough selection into a usable one, all of them BFS over `NBR`. Feather especially: a hard selection edge on a heightfield is a cliff.',k:'HAND',e:'M',i:2},
+{c:'draw',t:'Choose the projection you draw in',g:'paintproj',d:'Canvas mode gives a cube net, which is faithful and unfamiliar. Equirectangular is familiar and distorted at the poles. Orthographic-on-the-globe is direct and only shows half. All three are legitimate and the product offers exactly one.',k:'HAND',e:'L',i:3},
+{c:'draw',t:'Say how much the projection is lying',n:['paintproj'],d:'A circular brush on an equirectangular map is an ellipse on the sphere, worse toward the poles. Show the distortion — a Tissot indicatrix under the cursor, or just the true area of the stroke — because the alternative is a player who does not know why their polar continent is stretched.',k:'HAND',e:'M',i:2},
+{c:'draw',t:'Paint directly on the globe, at any zoom',d:'Painting on the sphere works through `pickCell`, and the brush radius is chosen for you by `brushForTier` from the camera distance — 900 km from orbit, 40 km at the surface. Coupling size to zoom is a good default and a bad law.',k:'HAND',e:'S',i:3},
+{c:'draw',t:'Rotate the globe while a stroke is in progress',d:'`startDrag` captures the pointer and every drag either paints or spins. A long stroke that crosses a quarter of the planet is impossible because the planet cannot turn under it. One modifier, and continents become drawable in one gesture.',k:'HAND',e:'M',i:3},
+{c:'draw',t:'A cursor that shows the brush on the surface',d:'`previewBrush` computes the affected cells and the globe draws them as marked cells, so the cursor is a stair-stepped patch of quads. A projected circle with a soft edge, drawn as a decal, reads as a brush instead of as a selection.',k:'HAND',e:'M',i:3},
+{c:'draw',t:'Pinpoint mode should be a brush size, not a mode',d:'`setPinpoint(true)` switches the whole brush to "clicked cell plus four neighbours at 0.45" and is toggled automatically whenever the local map is used. It is a special case of a one-cell radius, and having it as a separate branch inside `paintBrush` means every brush feature has to be implemented twice.',k:'HAND',e:'M',i:2},
+{c:'draw',t:'Draw on the local map and the globe with one code path',d:'The local map paints through pinpoint, the globe through the disc, and the two use different centre-finding, different sizes and different previews. The same stroke should mean the same thing wherever it is made.',k:'HAND',e:'M',i:3},
+{c:'draw',t:'Zoom the canvas without moving the camera',n:['paintproj'],d:'In canvas mode the cube net is drawn at a fixed cell size across the whole sphere. Detail work needs magnification of the *canvas*, which is a different thing from flying the camera closer, and only one of them exists.',k:'HAND',e:'M',i:2},
+{c:'draw',t:'Pan the canvas with a modifier, always',n:['paintproj'],d:'`if (S.canvasMode) return;` in the local-map pointer handler disables panning entirely while painting is on, so the one mode built for drawing is the one you cannot navigate.',k:'HAND',e:'S',i:3},
+{c:'draw',t:'Constrain a stroke to a latitude or a great circle',d:'Shift-drag constrains to an axis in every editor. On a sphere the useful constraints are a parallel, a meridian and a great circle, and all three are things real landforms follow.',k:'HAND',e:'M',i:2},
+{c:'draw',t:'Symmetry that includes the mode it advertises',d:'`BRUSH.symmetry` is documented as `null | \'equator\' | \'lat\' | \'great\'` and `mirrorCells` implements the first two. The third silently does nothing. Either implement great-circle mirroring or stop offering it.',k:'HAND',e:'S',i:2},
+{c:'draw',t:'Radial symmetry, n-fold',d:'Rotational repeats about an axis. Cheap to add once `mirrorCells` returns a list, and it is how you get a plausible planet out of four strokes when you are exploring rather than authoring.',k:'HAND',e:'S',i:1},
+{c:'draw',t:'Mirror finds its partner cell by scanning all 24,576 cells',d:'`mirrorCells` loops the entire sphere twice per stroke centre to find the maximum dot product with a reflected direction, when `dirToCell` maps a direction to a cell in constant time. Symmetry currently costs more than the stroke.',k:'HAND',e:'S',i:2},
+{c:'draw',t:'A dropper that picks the height under the cursor',d:'Flatten already needs a target height and takes it from the clicked cell. Making that an explicit dropper — pick a height here, then paint it there — turns two tools into one idea and is how terracing is done everywhere else.',k:'HAND',e:'S',i:2},
+{c:'draw',t:'Right-click should not be the paint button',d:'`const paint = S.canvasMode || e.button === 2 || (e.altKey && activeTool !== \'inspect\')` — so painting is bound to the context-menu button, which is also the OS gesture people use to save an image. Canvas mode makes left-drag paint; that should be the rule, not the exception.',k:'HAND',e:'S',i:3},
+{c:'draw',t:'A modifier that inverts the tool',d:'Raise and Lower, Smooth and Sharpen are the same tool with a sign. Alt-to-invert halves the number of tools you have to select between and is the convention in every sculpting application.',k:'HAND',e:'S',i:3},
+{c:'draw',t:'Draw before the clock is running, on purpose',d:'Canvas mode freezes tectonics, erosion and the geology tick and leaves climate running. That is the right idea and it is presented as an expert toggle in the Play tab. The authoring phase deserves to be a phase, not a checkbox.',k:'HAND',e:'M',i:3},
+
+/* ------------------------------------------------------------ brushkit -- */
+{c:'brushkit',t:'Stop scanning the whole sphere for every stroke',g:'gpupaint',d:'`paintBrush` loops all `NC` cells per stroke centre — 24,576 at N=64, 55,296 at N=96, 3.5 million at N=768 — testing a dot product against a cosine threshold. With a continuous drag that is a full-planet scan every frame. A neighbourhood BFS from the centre out to the radius touches only the cells inside the brush.',k:'HAND',e:'M',i:3},
+{c:'brushkit',t:'Brush radius in kilometres, shown',d:'`brushKm()` returns `radiusRad * 6371` and the dock prints "brush 900 km" in one corner. The number is right and it is the least prominent thing on the panel, on a planet where the difference between 40 km and 900 km is the difference between a valley and a continent.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Resize the brush with a drag, not a slider',d:'Hold a key, drag, watch the circle grow. It is the interaction every painting tool converged on because it keeps your eye on the canvas, and the slider it replaces is in a different panel.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'A brush radius that is not clamped to the planet',d:'`setBrushRadiusKm` clamps to 0.008–0.6 radians, or 51–3,822 km. The lower bound is a third of a cell at N=96 and the upper is most of a hemisphere. Neither end is useful and the range in between is not perceptually spaced.',k:'HAND',e:'S',i:2},
+{c:'brushkit',t:'Pressure from the pointer',d:'`PointerEvent.pressure` is available on every stylus and most trackpads, and `BRUSH.rate` is exactly the parameter it should drive. It is the single cheapest way to make sculpting feel like sculpting.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Velocity as a fallback for pressure',n:['strokepath'],d:'A mouse has no pressure and stroke speed is a decent proxy — fast means light. Free once the stroke is resampled to a path with timing.',k:'HAND',e:'S',i:2},
+{c:'brushkit',t:'The falloff function does not do what it says',d:'`falloff` computes `t` linearly from the dot product, switches on profile, then blends toward a hard disc by hardness. The `cosine` case comments "already baked into thresh space" and returns `t` — a linear ramp in cosine of angle, which is neither cosine nor linear in distance. The profile the tool uses by default is the one that is not implemented.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Profiles as an editable curve',d:'Four named profiles, one of them wrong, is less useful than one curve widget with presets. Sculpting tools all ended up with a curve because the shape of the falloff *is* the shape of the landform.',k:'HAND',e:'M',i:2},
+{c:'brushkit',t:'Show the profile as a cross-section',d:'A tiny graph next to the brush controls showing the height change through the middle of the stroke. It takes the four abstract words — cosine, gauss, flat, ring — and makes them a shape you recognise.',k:'HAND',e:'S',i:2},
+{c:'brushkit',t:'Per-tool brush defaults',d:'One global `BRUSH` is shared by Raise, Smooth, Carve river and Paint albedo. A river wants a one-cell brush; a continent wants nine hundred kilometres. Switching tools should restore the settings that tool was last used with.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Save a brush',d:'Radius, profile, hardness, rate, mask, snap and symmetry are seven coupled settings that took effort to get right. Naming a combination and getting it back is the difference between a toolkit and a control panel.',k:'HAND',e:'M',i:2},
+{c:'brushkit',t:'Masks should be visible before they bite',d:'`maskOk` silently skips cells that fail the predicate, so painting with the `continent` mask over ocean does nothing at all with no feedback. Tint the excluded cells in the preview, or the mask reads as a broken tool.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Combine masks',d:'Seven predicates, one at a time, no negation and no intersection. "Land and not snow", "ocean within 300 km of coast" — these are the ones people actually want, and they are two lines once masks are expressions.',k:'HAND',e:'M',i:2},
+{c:'brushkit',t:'Snap is a one-ring search and calls itself global',d:'`snapCell` examines the clicked cell and its four neighbours and picks the best. At a 900 km brush with a 104 km cell that is a search radius of one twentieth of the brush, so snapping to a coastline barely moves the stroke. Snap should search within the brush.',k:'HAND',e:'S',i:2},
+{c:'brushkit',t:'Snap to biome cannot work',d:'`snapCell` reads `W.biome` under a `mode === \'biome\'` branch, and no field called `biome` is ever allocated on `W`. The option is in the enum, in the UI, and dead.',k:'HAND',e:'S',i:2},
+{c:'brushkit',t:'Jitter and scatter',d:'Perfectly even strokes look generated. Positional jitter, size jitter and a scatter count are how every brush engine breaks that up, and on terrain they are how you get a field of hills rather than one ridge.',k:'HAND',e:'M',i:2},
+{c:'brushkit',t:'A texture brush that stamps noise, not a constant',n:['noisegraph'],d:'Every brush here applies a smooth falloff times a scalar. A brush whose amount is modulated by a noise field is the difference between a bump and terrain, and the noise functions already exist in `math.js`.',k:'HAND',e:'M',i:3},
+{c:'brushkit',t:'Brush follows the surface direction it is crossing',n:['slopefield'],d:'A stroke along a ridge and a stroke across it should not do the same thing. Once slope and aspect are a field, the brush can align to them, which is how a sculpting tool gets flow.',k:'HAND',e:'M',i:2},
+{c:'brushkit',t:'Continuous mode is declared and never read',d:'`BRUSH.continuous` is documented as "brush applies every frame while held" and no code reads it. Held-in-place accumulation is a real and distinct behaviour from drag accumulation and it is exactly what a Smooth tool wants.',k:'HAND',e:'S',i:2},
+{c:'brushkit',t:'Rate should be per second, not per event',d:'`BRUSH.rate` multiplies the falloff on every apply, and applies happen per pointer event. So the same stroke does different amounts of work on a 60 Hz and a 120 Hz display. Rate has to be scaled by elapsed time.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Report what a stroke actually did',d:'`paintBrush` returns cells, mean falloff and area in km² and the receipt prints an intent instead. "Raised 41,000 km² by an average of 180 m" is the sentence a player needs and the numbers for it are already returned.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'Cost should follow the area, not the click',d:'`tryPay(tool, mag)` charges per use with a fixed magnitude, so a 51 km brush and a 3,800 km brush cost the same 22 energy. The economy is measuring clicks when it means to measure work.',k:'HAND',e:'S',i:3},
+{c:'brushkit',t:'A brush that works in XR',d:'`brushForTier` takes a camera distance and the XR hands module exists, and there is no hand-driven sculpting path at all. Holding a planet and pushing a mountain up with a thumb is the product\'s own pitch.',k:'HAND',e:'L',i:2},
+{c:'brushkit',t:'One brush description shared by the globe, the map and the panel',d:'The globe draws `BRUSH.preview` as marked cells, the local map draws its own hover, and the dock prints `brushKm()`. Three renderings of one object, which is how they drift.',k:'HAND',e:'M',i:2},
+
+/* --------------------------------------------------------------- layer -- */
+{c:'layer',t:'A height layer stack',g:'heightlayer',d:'Added here as `vr/sim/layers.js`. Generated land is the locked base; paint layers sit on top and composite into `W.h` so the rest of the sim does not change. Opacity, hide, blend, reorder, name, a mask, per-layer undo, flatten-with-a-warning, and a stacked save are on the Brush desk.',k:'MAKE',e:'L',i:3},
+{c:'layer',t:'Opacity per layer',n:['heightlayer'],d:'Added here: a 0–100 slider on the selected paint layer. Composite is `base + value × opacity × mask` for Add. A mountain range can be turned down after you have looked at it.',k:'HAND',e:'S',i:3},
+{c:'layer',t:'Blend modes for elevation',n:['heightlayer'],d:'Added here: add, max (raise only), min (carve only), multiply, replace. Max places a mountain without digging the valley beside it. Non-add blends recompose from the cache below the active layer.',k:'HAND',e:'M',i:3},
+{c:'layer',t:'A mask on every layer',g:'maskstack',n:['heightlayer','selection'],d:'Added here: each paint layer can carry a 0–1 mask. Clip to land, clear, or paint the mask with Raise/Lower. Empty mask means the layer applies everywhere.',k:'HAND',e:'L',i:3},
+{c:'layer',t:'Adjustment layers',n:['heightlayer'],d:'Not new terrain but an operation on what is beneath: smooth, sharpen, terrace, remap the curve. Reorderable, removable, and applied at composite time rather than baked into the field.',k:'HAND',e:'M',i:3},
+{c:'layer',t:'Hide a layer to see underneath',n:['heightlayer'],d:'Added here: the eye on each row. Hide a stroke to see the generated land; hide Land to see only what you painted.',k:'HAND',e:'S',i:2},
+{c:'layer',t:'Reorder layers',n:['heightlayer'],d:'Added here: Up / Down on the Brush desk. Later in the list composites on top, which is what blend order needs.',k:'HAND',e:'S',i:2},
+{c:'layer',t:'Group layers',n:['heightlayer'],d:'A continent is fifteen strokes. Being able to move, hide or scale all fifteen as one thing is what makes a fifty-layer document tractable.',k:'HAND',e:'M',i:2},
+{c:'layer',t:'Composite the stack incrementally',n:['heightlayer'],d:'Added here for Add: a stroke updates `W.h[c]` by `dh × opacity × mask` without walking every layer. Hide, opacity, blend, reorder, and non-add modes still recompose. A below-cache sits under the active layer for those.',k:'MAKE',e:'M',i:3},
+{c:'layer',t:'The archetype should be the bottom layer',n:['heightlayer','archetype'],d:'Added here: generated land is the locked Land row. Reroll land captures a new base and reapplies paint layers on top, so a shape can be swapped under strokes you already made.',k:'MAKE',e:'M',i:3},
+{c:'layer',t:'Separate the layer the sim edits from the ones you drew',n:['heightlayer'],d:'Added here: tectonics, erosion and impacts write the base (or are absorbed into it each tick). Paint layers stay offsets. Hide the paints to see what the planet did.',k:'MAKE',e:'L',i:3},
+{c:'layer',t:'Undo should be per layer, not per field',n:['heightlayer'],d:'Added here: `beginStroke` snapshots the active paint layer (and base) instead of copying `W.h`. Redo is Ctrl+Shift+Z. Other fields still copy when the tool touches them.',k:'HAND',e:'M',i:3},
+{c:'layer',t:'Name a layer after what it is',n:['heightlayer'],d:'Added here: the row is an editable name. Default is Stroke 1, Stroke 2.',k:'HAND',e:'S',i:1},
+{c:'layer',t:'Duplicate and mirror a layer',n:['heightlayer'],d:'Draw one continent, duplicate it, mirror it across the planet, adjust. It is the fastest route to a plausible pair of conjugate margins and it is one operation.',k:'HAND',e:'M',i:2},
+{c:'layer',t:'Move a layer across the sphere',n:['heightlayer'],d:'A rotation applied at composite time, so a continent you drew in the wrong place can be dragged to the right one. On a sphere this is a quaternion and a resample, not a translation.',k:'HAND',e:'L',i:3},
+{c:'layer',t:'Scale and rotate a layer in place',n:['heightlayer'],d:'The rest of a transform tool. A range that is too big is currently a range you redraw.',k:'HAND',e:'L',i:2},
+{c:'layer',t:'Clip a layer to the one below',n:['maskstack'],d:'Snow only where there is mountain, sediment only where there is basin. The clipping-mask idea, which on a heightfield is how you make a detail layer respect the shape it is detailing.',k:'HAND',e:'M',i:2},
+{c:'layer',t:'Layers for fields that are not height',n:['heightlayer'],d:'`crust`, `soil`, `albedoPaint`, `ore` and `sediment` are all painted by tools with the same problems. The stack should be per-field so the whole toolkit inherits it at once.',k:'MAKE',e:'M',i:2},
+{c:'layer',t:'A layer panel that is not in the dock',n:['heightlayer'],d:'Every desk in the dock is a set of buttons in a scroll area. A layer stack needs drag, drop, reorder and inline rename, which is a different kind of surface than the one the product currently has.',k:'PICK',e:'M',i:2},
+{c:'layer',t:'Flatten the stack, deliberately and never automatically',n:['heightlayer'],d:'Added here: Flatten on the Brush desk, with a confirm. Play does not flatten. The sim absorbs into Land underneath the paints.',k:'MAKE',e:'M',i:3},
+{c:'layer',t:'Save the stack, not the result',n:['heightlayer','landsave'],d:'Added here: serialize v4 stores base plus each paint layer (sparse when mostly empty) alongside the composite `hB64` fallback. A saved world can be taken apart.',k:'PICK',e:'M',i:2},
+{c:'layer',t:'A memory budget for the stack',n:['heightlayer'],d:'Added here for saves: layers pack only the cells they touch when fewer than 35% are nonzero. In memory they are still dense, capped at 12 layers. Sparse live storage is what N=768 still wants.',k:'MAKE',e:'L',i:3},
+
+/* --------------------------------------------------------------- stamp -- */
+{c:'stamp',t:'A landform library with more than six entries',g:'stampatlas',d:'`stampTerrain` offers shield, craton, arc, trench, rift and basin. The obvious missing ones are volcano, caldera, impact crater, atoll, delta, canyon, escarpment, dune field, moraine, drumlin, mesa, fjord head, alluvial fan, karst, graben, horst, seamount, guyot and abyssal fracture zone.',k:'MAKE',e:'M',i:3},
+{c:'stamp',t:'Stamps with parameters, not fixed lambdas',n:['stampatlas'],d:'`craton` writes crust 0.85, age 1200 and height 0.55 — three constants with no way to ask for a smaller, younger, lower one. Every stamp needs size, amplitude, age and roughness at minimum.',k:'MAKE',e:'M',i:3},
+{c:'stamp',t:'Rotate a stamp',n:['stampatlas'],d:'Every stamp here is radially symmetric because a rotation on a sphere needs a tangent frame, and `EAST` and `NORTH` are exported from `sphere.js` and used by nothing in the sculpt path. A rift that can only run in one direction is not a rift.',k:'MAKE',e:'M',i:3},
+{c:'stamp',t:'Stamps that are elongated',n:['stampatlas'],d:'Ranges, rifts, trenches, canyons and dune fields are all long and thin. The brush is a disc, so all five are approximated by dragging a circle, which is why they all come out the same width.',k:'MAKE',e:'M',i:3},
+{c:'stamp',t:'A stamp preview before it lands',n:['stampatlas','livepreview'],d:'Six named lambdas whose effect can only be learned by applying them and undoing. A ghost of the result under the cursor turns the library into something browsable.',k:'HAND',e:'M',i:3},
+{c:'stamp',t:'Stamps as heightfield tiles, not as code',n:['stampatlas'],d:'A stamp could be a small height patch — authored, imported, or captured from real terrain — resampled onto the sphere at any size and rotation. That is how a library grows past what a programmer types.',k:'MAKE',e:'L',i:3},
+{c:'stamp',t:'Capture a stamp from the planet',n:['stampatlas','selection'],d:'Select a region you like, save it as a stamp, place it elsewhere. It closes the loop between authoring and library, and it is how the good stamps get made.',k:'HAND',e:'L',i:2},
+{c:'stamp',t:'The crater stamp exists twice and neither is reachable',d:'`planetTerrain.js` has `stampCraters` with rim, floor, ejecta and micro-roughening, and `applyImpact` in `world.js` digs a cosine pit with `h[c] -= power * 0.12 * f`. The good one is only ever called during generation; the tool calls the crude one.',k:'MAKE',e:'S',i:3},
+{c:'stamp',t:'Crater rims, ejecta and central peaks',d:'`stampCraters` has a rim ring and no ejecta blanket, no secondary field and no central peak, and central peaks appear above a size threshold in a way that is completely mechanical. On an airless world craters are the entire landscape.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'Craters that respect the surface they land on',d:'A crater in a lava plain, a crater in an ice shell and a crater in a sedimentary basin are three different shapes. `rock` already carries igneous, sedimentary and metamorphic and the stamps ignore it.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'Volcanoes as a shape, not a vent record',d:'`addVent` and `paintEdifice` build volcanoes by accumulating over ticks, which is right for a simulation and useless for authoring. A volcano stamp with a cone profile, a summit crater and a lava-field skirt places one in a click.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'Shield and stratovolcano are different objects',d:'`silicaForVent` already computes 0.48 for hotspots, 0.63 for continental arcs and 0.52 otherwise — the model knows the chemistry that decides the shape. Nothing turns that number into a profile.',k:'MAKE',e:'S',i:2},
+{c:'stamp',t:'A mountain range stamp that follows a path',n:['stampatlas','splinetool'],d:'Draw the arc, get a range: a central ridge with foothills, an asymmetric cross-section, and a rain shadow on the correct side. It is the single most requested thing anyone wants from a terrain editor.',k:'MAKE',e:'L',i:3},
+{c:'stamp',t:'Ranges should have a fabric',d:'`forceOrogeny` adds 0.25 crust and 0.12 height with ridged noise at frequency 8. Real ranges are made of parallel ridges and valleys aligned with the collision, which needs the tangent frame and a direction, not isotropic noise.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'A canyon stamp',n:['stampatlas'],d:'`carveRiver` walks up to 40 cells downhill lowering each by 0.025, which is a channel, not a canyon. Valles Marineris is hand-coded in `stampMars` as a cross-product distance test — the geometry is written and it is welded to one planet.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'An escarpment tool',n:['stampatlas'],d:'A one-sided cliff along a line. It is how you make a rift shoulder, a fault scarp, a plateau edge and a coastline that is not a beach, and it is not expressible with a symmetric disc.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'An atoll and a seamount',n:['stampatlas','islands'],d:'`reef` is a field with a colour and no landform. A guyot with a reef ring is what a hotspot island becomes, and it is the most recognisable small feature in an ocean.',k:'MAKE',e:'M',i:1},
+{c:'stamp',t:'A delta stamp',n:['stampatlas','riverfirst'],d:'`erosionTick` deposits into the sink cell with `sediment[sink] += erode * 2` and calls it a delta in a comment. A real delta is a fan of distributaries and it is where every early civilisation started.',k:'MAKE',e:'M',i:2},
+{c:'stamp',t:'Dune fields as a surface, not a height',d:'`dust` is a field and `signature: \'dust\'` drives a whole storm system on Ares. Dunes are a directional texture with a wavelength set by wind, which the wind field could actually supply.',k:'MAKE',e:'M',i:1},
+{c:'stamp',t:'Glacial forms',d:'A U-valley, a cirque, a moraine and a drumlin field are the signature of ice on land and `iceLand` is a field that only paints white. Half of the northern hemisphere\'s topography is glacial.',k:'MAKE',e:'L',i:2},
+{c:'stamp',t:'Stamps should write more than height',d:'`shield` sets rock 2 and age 800; `basin` sets rock 1 and age 0; `rift` sets neither. If a stamp is a landform then it has a rock type, an age, a crustal thickness and a boundary class, and the six existing ones are inconsistent about all four.',k:'MAKE',e:'S',i:2},
+{c:'stamp',t:'A stamp browser with pictures',n:['stampatlas','thumbs'],d:'Six words in a code branch is not a library even at six. Twenty-five landforms need a grid of thumbnails, which is the same rendering machinery the world picker needs.',k:'PICK',e:'M',i:3},
+];
+
+const P4 = [
+/* ---------------------------------------------------------------- proc -- */
+{c:'proc',t:'A noise graph instead of a fixed recipe',g:'noisegraph',d:'`naturalizeHypsometry` hard-codes a warp at 1.4, a five-octave coast fBm at 5, a four-octave macro at 1.05, a three-octave detail at 9 and a three-octave ridged at 2.4, then two Laplacian passes. Those seven constants are the terrain of every generated world in the product. A small node graph — noise, warp, remap, mix, mask — makes them a document instead of a source file.',k:'MAKE',e:'L',i:3},
+{c:'proc',t:'Expose the octaves, at minimum',n:['noisegraph'],d:'If the graph is too much, four sliders are not: macro amplitude, coast amplitude, detail amplitude, ridge amplitude. `naturalizeHypsometry` already takes `coastAmp` and `macroAmp` as options and `refineEarthHypsometry` passes 0.1 and 0.08. Two of the four are one line from being controls.',k:'MAKE',e:'S',i:3},
+{c:'proc',t:'Value noise is the only noise there is',d:'`vnoise` is trilinear-interpolated hash with a smoothstep, and `fbm` and `ridged` are both built on it. Value noise has visible axis-aligned structure at low octave counts, which is why the coastlines have a faint square grain. Gradient or simplex noise costs the same and does not.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'Domain warp with more than one level',d:'`naturalizeHypsometry` warps once at amplitude 0.32 with three octaves. Two levels of warp — warp the warp — is the standard trick that turns fBm into something that looks eroded, and it costs one more evaluation.',k:'MAKE',e:'S',i:3},
+{c:'proc',t:'Billow, terrace and worley as first-class basis functions',n:['noisegraph'],d:'Two basis functions produce every landscape in the product. Worley gives cellular basins and crater-like structure; billow gives rolling hills; a terrace remap gives sedimentary benches. Each is a dozen lines and each unlocks a whole class of terrain.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'A curve remap on the finished field',n:['noisegraph','hypsocurve'],d:'The most powerful single control in terrain generation: take the height histogram and push it through an editable curve. Flat-bottomed valleys, sharp peaks, terraced plateaus — all of them are one curve away and none of them require touching the generator.',k:'MAKE',e:'M',i:3},
+{c:'proc',t:'Noise that is aware of the sphere it is on',d:'Every `fbm` call takes the unit direction as its coordinate, so frequency is uniform on the sphere, which is correct. But nothing varies frequency with latitude, plate, crust type or distance from the coast, so the same grain covers ocean floor and mountain alike.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'Different noise for continental and oceanic crust',d:'`refineEarthHypsometry` branches on `pl.oceanic` for macro and craton terms and then adds the same `fbm(x*5,...)` to both with only the amplitude changed (0.04 vs 0.07). Abyssal hills and continental uplands have nothing in common.',k:'MAKE',e:'S',i:2},
+{c:'proc',t:'Stop generating below the cell size',d:'`fbm(x * 9, ...)` at N=96 has a period comparable to a few cells, so the highest detail octave is at or past the sampling limit. It is aliasing, not detail, and it is why the terrain has a fine mottle that changes when N changes.',k:'MAKE',e:'S',i:3},
+{c:'proc',t:'The generator should be resolution-independent',d:'`changeResolution` reallocates every field and the world must be regenerated. Because the generator samples continuous noise by direction, the same seed at N=64 and N=192 *should* be the same planet at two detail levels, and the crater and blob passes make it so. The plate, isostasy and erosion passes do not.',k:'MAKE',e:'L',i:3},
+{c:'proc',t:'Generate on the GPU',n:['gpupaint'],d:'The GPGPU path already runs climate on float framebuffers and probes for `EXT_color_buffer_float`. A heightfield is a much easier target than an advection solver, and it is what makes live parameter preview possible at play resolution.',k:'MAKE',e:'L',i:2},
+{c:'proc',t:'Plate generation is a Voronoi diagram and looks like one',d:'`generateTectonics` assigns every cell to the nearest of `nPlates` random centres. `softenPlateCrust` blends the two nearest thicknesses over a 0.08 dot-product gap and `naturalizeHypsometry` warps the result, and underneath it is still a Voronoi cell. Real plates have irregular, history-shaped outlines.',k:'MAKE',e:'M',i:3},
+{c:'proc',t:'Plate centres are uniform on the sphere',d:'`randomUnit(rng)` for every centre, so plates are all roughly the same size. Earth has seven major plates and dozens of microplates, a distribution that a uniform sample cannot produce and that decides how big continents are.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'Plate boundaries should be able to be curved',d:'Voronoi boundaries between two centres are great-circle arcs. Every real boundary is a sequence of ridge segments and transform offsets, which is a specific and instantly recognisable pattern that the model has the velocity field to produce.',k:'MAKE',e:'L',i:2},
+{c:'proc',t:'Crustal thickness is one fBm times a base',d:'`crust[c] = pl.baseThick * (0.85 + 0.3 * fbm(...))` for every cell in a plate. So a continent is one thickness with 15% noise, and cratons, orogens, rifted margins and accreted terranes — the actual structure of continental crust — are absent by construction.',k:'MAKE',e:'M',i:3},
+{c:'proc',t:'Terranes: continents assembled from pieces',d:'The reason real cratons have different ages and rock types in adjacent belts is that they were welded together. Generating a continent as three or four accreted blocks with sutures between them would give `age` and `rock` a geography instead of a per-plate constant.',k:'MAKE',e:'L',i:3},
+{c:'proc',t:'Let the archetype mask reach crust rather than only height',n:['archetype'],d:'`applyLandscape` lerps `crust` toward `0.28 + m * 0.62` at 55% and pushes `h` directly, so the mask is applied to both but the plate model was built before it and disagrees. Generating plates *from* the archetype is the honest ordering.',k:'MAKE',e:'M',i:3},
+{c:'proc',t:'A generation graph you can rerun from any node',n:['noisegraph'],d:'`generate` is one 200-line function that runs tectonics, mantle, archetype, sea level, hypsometry refinement, seeding, warm-up and hydro in sequence. Rerunning just the noise stage after a parameter change is impossible, so every experiment costs a full regenerate.',k:'MAKE',e:'L',i:3},
+{c:'proc',t:'Seed each generation stage separately',n:['noisegraph'],d:'Everything derives from one world seed, so changing the coastline noise changes the plates too. Per-stage seeds mean you can reroll the coast while keeping the continents, which is the single most useful thing an author can do.',k:'MAKE',e:'M',i:3},
+{c:'proc',t:'A generator that is not Earth-shaped by default',d:'`refineEarthHypsometry` runs only when `rule.earthLike`; everything else goes through `refinePlanetHypsometry`, which switches on nine hard-coded planet kinds. A generic rocky world with none of those names gets `stampStagnant` — fBm plus craters. That is the fallback for every world in the catalogue that is not famous.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'The generic path deserves as much care as Mars',d:'`stampMars` places Tharsis, Olympus, Hellas and Valles Marineris by hand with named unit vectors, and it is convincing. `stampStagnant` is four lines. The catalogue has 120 bodies and most of them fall through to the four lines.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'Show the generator its own output statistics',n:['massreport','hypsoplot'],d:'A generator with no measurement is tuned by looking at it. Land fraction, continent count, coastline length, hypsometric fit and relief distribution, printed after every generate, turn tuning into engineering.',k:'MAKE',e:'S',i:3},
+{c:'proc',t:'Reject and reroll a bad world automatically',n:['massreport'],d:'Some seeds produce a world that is one cell of land or an unbroken ocean. With statistics in hand the generator can notice and roll again, which is what every game with a map generator does and none of them advertise.',k:'MAKE',e:'M',i:2},
+{c:'proc',t:'Golden terrain tests',d:'`npm test` has 59 assertions and `goldenRun` hashes `h`, `temp`, `life`, `ice` and `moist` together after 40 ticks. Nothing asserts a property of the heightfield itself, so any change to the generator is invisible until someone looks at a planet.',k:'MAKE',e:'M',i:3},
+
+/* --------------------------------------------------------------- erode -- */
+{c:'erode',t:'Run erosion on demand, for a stated duration',g:'erodeondemand',d:'`erosionTick` runs once per sim tick and only from `simTick`. The single most useful terrain-authoring action is "run a million years of weather on this and show me", and the code to do it exists and is not reachable.',k:'HAND',e:'M',i:3},
+{c:'erode',t:'Erode inside a selection only',n:['erodeondemand','selection'],d:'Erosion is global. Aiming it at one range, one coast, one basin is how it becomes a brush rather than a weather forecast.',k:'HAND',e:'M',i:3},
+{c:'erode',t:'An erosion brush',n:['erodeondemand'],d:'Paint erosion where you drag. It is the tool that turns a blobby procedural mountain into something that looks like it has been rained on, and it is the highest-value single addition to the sculpting kit.',k:'HAND',e:'M',i:3},
+{c:'erode',t:'Preview the eroded result before committing',n:['erodeondemand','livepreview'],d:'A hundred iterations on a scratch copy of `h`, shown as a ghost. Erosion is slow and irreversible-feeling; a preview makes it explorable.',k:'HAND',e:'M',i:2},
+{c:'erode',t:'The stream-power law has no exponents',d:'`erode = min(0.004 * rate, discharge * maxSlope * maxSlope * 0.15 * rate)` fixes the slope exponent at 2 and the discharge exponent at 1. The standard form is `K·A^m·S^n` with m around 0.5 and n around 1, and the two exponents are what decide whether valleys come out V-shaped or flat-floored.',k:'MAKE',e:'S',i:3},
+{c:'erode',t:'Erodibility should vary with the rock',d:'`rock` carries igneous, sedimentary and metamorphic per cell and `erosionTick` never reads it. Differential erosion is why real landscapes have escarpments, mesas, hogbacks and waterfalls, and it is one lookup.',k:'MAKE',e:'S',i:3},
+{c:'erode',t:'Thermal erosion, which is missing entirely',d:'The `lap * 0.002` term is a diffusion, not a talus model. Real hillslopes have a critical angle above which material fails, and enforcing one is what gives scree slopes, cliff retreat and a maximum steepness that a heightfield otherwise never has.',k:'MAKE',e:'M',i:3},
+{c:'erode',t:'A repose angle the sculpting tools respect',d:'Nothing stops a brush stroke from making a cell 0.5 higher than its neighbour, which at 104 km spacing is a wall no planet could hold. A post-stroke relaxation toward the repose angle is what makes sculpted terrain believable without any further work.',k:'MAKE',e:'M',i:3},
+{c:'erode',t:'Sediment that goes somewhere and stays there',d:'`sediment[sink] += erode` accumulates and `sediment` is clamped to 1, but nothing converts sediment into elevation except the single `_h[sink] += erode * 0.85` in the same loop. A real deposition model fills basins, builds floodplains and buries the abyssal plain flat.',k:'MAKE',e:'M',i:3},
+{c:'erode',t:'Erosion should not run below sea level',d:'`if (h[c] < seaLevel) { _h[c] = h[c]; continue; }` correctly skips submerged cells, which means the seafloor never changes shape at all — no turbidity currents, no submarine canyons, no continental-rise fan. The largest sediment bodies on Earth are underwater.',k:'MAKE',e:'M',i:2},
+{c:'erode',t:'Glacial erosion',d:'`iceLand` exists and does nothing to `h`. Ice carves U-valleys, overdeepens basins, strips soil to bedrock and leaves the entire Canadian Shield looking the way it does. It is the second biggest sculptor on the planet and it is absent.',k:'MAKE',e:'L',i:3},
+{c:'erode',t:'Wind erosion where there is no water',d:'`erosionTick` rate is 0.06 on Mars and 0.12 on a stagnant lid — a fudge that says "less water, less erosion". Aeolian processes are the dominant sculptor on those worlds and have completely different signatures: yardangs, deflation basins, dune fields.',k:'MAKE',e:'M',i:2},
+{c:'erode',t:'Coastal erosion',d:'Nothing in the model erodes a coast. Wave energy is available from `waveHt`, the intertidal band is computed, and the shoreline is the fastest-changing landform on any wet planet.',k:'MAKE',e:'M',i:3},
+{c:'erode',t:'Erosion lock is a field with one writer and no reader',d:'`setErosionRate` allocates `W.erosionLock` and paints a rate into it, and `erosionTick` never reads the array. The tool exists, costs energy, issues a receipt, and does nothing.',k:'HAND',e:'S',i:3},
+{c:'erode',t:'Erosion should have a visible rate control',n:['erodeondemand'],d:'The per-planet-kind rate table is invisible and it is one of the strongest levers on what a world looks like after a hundred million years. A slider, with a stated meaning.',k:'PICK',e:'S',i:2},
+{c:'erode',t:'Show what erosion changed',n:['erodeondemand'],d:'A difference field between before and after, painted on the globe. It makes an invisible slow process into something you can watch, and it is the same machinery a stroke preview needs.',k:'PICK',e:'M',i:3},
+{c:'erode',t:'Erosion should not fight the player silently',d:'A sculpted mountain begins eroding on the next tick and there is no indication that it will. `issueReceipt` on `forceOrogeny` says "will erode into plateau" with a 10 Myr delay label, which is exactly right and is the only tool that does it.',k:'PICK',e:'S',i:3},
+{c:'erode',t:'Mass conservation across an erosion run',d:'`assertBudgets` runs every 32 ticks and checks water and carbon. Nothing checks that the rock removed from one cell arrives at another, and the deposition term is `erode * 0.85` and `erode * 0.7`, which loses 15–30% of it by construction.',k:'MAKE',e:'M',i:2},
+{c:'erode',t:'Erode a stamp as soon as it is placed',n:['stampatlas','erodeondemand'],d:'A crisp procedural landform placed into an old landscape looks placed. A few hundred erosion iterations local to the stamp is what blends it in, and it is the difference between a library that helps and one that shows.',k:'MAKE',e:'M',i:3},
+{c:'erode',t:'An age control on any landform',n:['stampatlas','erodeondemand'],d:'The same range at 0, 50 and 500 Myr is three different shapes. One slider, driving local erosion iterations, is a more useful control than any number of new stamps.',k:'HAND',e:'M',i:3},
+{c:'erode',t:'Erosion at high N is a full-sphere loop per tick',d:'`erosionTick` walks every cell, finds the steepest of four neighbours and sums a Laplacian. At N=768 that is 3.5 million cells per tick on the main thread, on top of everything else. Erosion only matters on land, and land is a third of the cells at most.',k:'MAKE',e:'M',i:2},
+{c:'erode',t:'Let a player freeze erosion where they want it',d:'`setErosionRate` was meant to be this and does not work. A canyon you carved deliberately being smoothed away by a diffusion term is the most common frustration in any sculpt-plus-simulate tool.',k:'HAND',e:'S',i:3},
+
+/* --------------------------------------------------------------- river -- */
+{c:'river',t:'Prime the drainage network before the world is shown',g:'riverfirst',d:'Measured at t=0: 185 of 7,460 land cells above flow 0.1, and 8 above 0.5. After 100 ticks, 722 and 61. `computeRivers` is called once from `hydroTick` during generate and the accumulation has had one pass to grow. Run it to steady state before handing the world over, and the first thing anyone sees has rivers on it.',k:'MAKE',e:'M',i:3},
+{c:'river',t:'Rivers should be part of what a seed is judged on',n:['riverfirst','thumbs'],d:'A world with a great river system is a better world and there is no way to see one in the picker. Once drainage is primed, total discharge and longest river are two more statistics a candidate can be sorted by.',k:'PICK',e:'S',i:2},
+{c:'river',t:'Depression filling, so basins are lakes and not sinks',d:'`computeRivers` sets `drainTo[c] = -1` at a local minimum and `lake` accumulates there. A proper priority-flood fills depressions to their spill point, which is what turns a pit into a lake with an outflow and a river below it.',k:'MAKE',e:'M',i:3},
+{c:'river',t:'Lakes with a level and a shoreline',d:'454 cells carry lake water on the default world and a lake is a scalar per cell, so it has no single surface elevation and no shore. A lake is a flat surface in a basin, which is the one thing the representation cannot express.',k:'MAKE',e:'M',i:3},
+{c:'river',t:'Rivers as polylines, not as a per-cell scalar',d:'`flow` is discharge per cell and the renderer draws bright cells. A river is a line: it has a source, a mouth, tributaries, an order and a length. Extracting the network as a graph makes all of that available for drawing, naming and reasoning.',k:'MAKE',e:'M',i:3},
+{c:'river',t:'Name the rivers',n:['riverfirst'],d:'`city.js` names settlements and nothing names a river. A named river is a landmark; an unnamed bright thread is a texture.',k:'PICK',e:'S',i:2},
+{c:'river',t:'Strahler order, which is free once there is a graph',d:'Order decides how a river should be drawn — width, colour, whether it is labelled — and the drainage tree already computes the topology it needs.',k:'MAKE',e:'S',i:2},
+{c:'river',t:'Draw a river below the cell size',d:'At 104 km per cell no real river is more than a fraction of a cell wide, so every river in the product is drawn as a whole coloured cell. A sub-cell polyline threading between cell centres is what makes a drainage network legible from orbit.',k:'MAKE',e:'M',i:3},
+{c:'river',t:'Carve river does not make a river',d:'`carveRiver` lowers up to 40 cells by 0.025 each following the local downhill and sets `flow` to 0.6, then stops at the first cell below sea level. It does not check that the path is monotonic after carving, does not widen downstream, and the D8 tree may reroute around it on the next rebuild.',k:'HAND',e:'M',i:3},
+{c:'river',t:'Draw a river along a path you choose',n:['splinetool','riverfirst'],d:'The carve tool follows the terrain\'s idea of downhill. An author wants to draw the river and have the terrain adjust — carve a monotonic profile along the drawn path and let the surrounding land follow.',k:'HAND',e:'L',i:3},
+{c:'river',t:'Meanders',d:'Every river in the model runs from cell centre to cell centre in one of eight directions, so every river is a staircase. Meandering is what rivers look like and it is a sub-cell property.',k:'MAKE',e:'M',i:2},
+{c:'river',t:'Floodplains and terraces',d:'The valley floor around a river is flat, wide and where people live, and there is nothing in the erosion model that widens a valley — only deepens it. Lateral erosion is one term.',k:'MAKE',e:'M',i:2},
+{c:'river',t:'Watersheds as regions',d:'The drainage tree partitions the land into basins and nothing computes the partition. A watershed overlay is one of the most legible pictures a terrain can produce and it explains the landscape better than height does.',k:'MAKE',e:'M',i:3},
+{c:'river',t:'Endorheic basins deserve to be labelled',d:'A basin that drains to a lake with no outlet behaves completely differently — salt, evaporation, no sediment delivery to the sea. The model produces them and cannot tell you it did.',k:'MAKE',e:'M',i:2},
+{c:'river',t:'The drainage tree rebuilds on a timer, not on a change',d:'`rebuild = W._hydroDirty || W._drainTick == null || (tick - W._drainTick) > 7`. So a sculpting stroke can wait up to seven ticks before the rivers know the terrain moved, and every stroke sets `_hydroDirty` or it does not — nothing in `sculpt.js` sets it at all.',k:'MAKE',e:'S',i:3},
+{c:'river',t:'Sorting the whole sphere every tick to accumulate flow',d:'`order.sort((a, b) => h[b] - h[a])` sorts all `NC` cells by elevation on every `computeRivers` call. At N=768 that is a 3.5-million-element comparison sort per tick. A bucketed or incremental order is the standard fix.',k:'MAKE',e:'M',i:2},
+{c:'river',t:'Springs, which the model already has',d:'The groundwater term seeps where the table is high and the comment says "springs in valleys". Nothing marks a spring, and a spring is a place — the head of a river, a reason for a settlement, a landmark.',k:'MAKE',e:'S',i:1},
+{c:'river',t:'Waterfalls at knickpoints',d:'A knickpoint is where the river profile has a step, usually at a rock-type boundary, and both the profile and the rock field exist. It is the most recognisable single river feature and it falls out of data already present.',k:'MAKE',e:'M',i:1},
+
+/* ------------------------------------------------------------- coastfx -- */
+{c:'coastfx',t:'A sub-cell coastline',g:'subcoast',d:'The shoreline is a threshold of `h` on a 104 km grid, so every coast in the product is a staircase of squares smoothed by two Laplacian passes. A marching-squares contour with fractal displacement, stored as a polyline, is what a coast has to be before any other item in this category means anything.',k:'MAKE',e:'L',i:3},
+{c:'coastfx',t:'Land fraction should come from the contour, not the cells',n:['subcoast'],d:'`fitSeaLevel` counts cells above a threshold, so land fraction is quantised to about 1/24,576 and a cell is either wholly land or wholly sea. A partial-coverage fraction per coastal cell is both more accurate and what a sub-cell coast needs anyway.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'The coast is where the shelf should be and is not',n:['shelf'],d:'Only 4.8% of the globe lies within ±0.01 of sea level, and a real continental shelf is 8% of the ocean at gentle gradient. The shoreline is a cliff edge in the hypsometry, so every coastal process has nowhere to happen.',k:'MAKE',e:'M',i:3},
+{c:'coastfx',t:'Fjords',n:['subcoast'],d:'Deep, narrow, glacially overdeepened inlets. They need glacial erosion and a sub-cell coast, and they are the most distinctive coastline type on the planet.',k:'MAKE',e:'L',i:2},
+{c:'coastfx',t:'Barrier islands, spits and lagoons',n:['subcoast'],d:'Longshore drift builds them and the model has wave height and no longshore transport. They are what a low-energy sandy coast looks like, and they are the difference between a coast and a boundary.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'Estuaries and rias',n:['subcoast','riverfirst'],d:'A drowned river valley. Sea level moves in this model — `updateSeaLevel` responds to ice volume and thermal expansion — so drowned valleys should appear on their own once the coast is sub-cell.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'Cliffed coasts versus depositional coasts',n:['subcoast','slopefield'],d:'A coast where the land arrives steeply is a cliff; where it arrives gently it is a beach. The slope field decides which, and the renderer paints the same symmetric ochre band on both.',k:'MAKE',e:'M',i:3},
+{c:'coastfx',t:'The shore band is symmetric and should not be',d:'The shader paints `smoothstep` on `heightF` around sea level, so the strip of beach reaches the same distance into the sea as onto the land. On the land side it is a coastal plain; on the sea side it is a shelf. They are different widths and different colours.',k:'MAKE',e:'S',i:2},
+{c:'coastfx',t:'Coastlines that move with the tide',d:'`intertidal`, `tideWet` and `tideRange` are all real fields and the shoreline in the picture does not move. A coast that visibly breathes twice a day is the cheapest possible proof that the model is running.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'Sea level change should redraw the coast, not just recolour it',d:'`shiftSeaLevel` changes a scalar and everything downstream re-thresholds. With a sub-cell coast the shoreline becomes an object that can be animated as the sea rises, which is the single most legible climate consequence there is.',k:'MAKE',e:'M',i:3},
+{c:'coastfx',t:'Snap-to-coast should work at the brush scale',d:'`snapCell` searches the four immediate neighbours. With a 900 km brush on a 104 km grid, snapping to the coast can move the centre by at most one cell out of nine. The feature is present and imperceptible.',k:'HAND',e:'S',i:2},
+{c:'coastfx',t:'A coast-following stroke',n:['subcoast','strokepath'],d:'Once the coastline is a polyline, a brush can run along it — widening a shelf, building a mountain chain parallel to a margin, seeding mangrove. Strokes that follow a feature are how you edit a feature.',k:'HAND',e:'M',i:2},
+{c:'coastfx',t:'Coastline length as a measured, reported number',n:['coastlen','subcoast'],d:'On a cell grid it is a count of boundary edges and it depends entirely on N — the classic coastline paradox, here as a bug. On a contour it is a length in kilometres at a stated scale, which is the honest version.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'Harbours, which `coast.js` already finds',d:'`coast.js` knows intertidal fraction and picks harbour settlements. A sheltered bay is a landform with a shape, and once identified it can be drawn, named and protected.',k:'MAKE',e:'S',i:1},
+{c:'coastfx',t:'Continental slope as a distinct surface',n:['shelf'],d:'Shelf, slope, rise, abyssal plain — four surfaces with four gradients and four sediment regimes. The model has one gradient between land and deep water and it crosses 40% of the world\'s relief.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'Submarine canyons',n:['shelf'],d:'They cut the slope, deliver sediment to the rise, and are a river\'s continuation below the water. Erosion stops at sea level, so they cannot exist.',k:'MAKE',e:'M',i:1},
+{c:'coastfx',t:'Reefs as a landform, not a colour',d:'`reef` is a field the renderer tints. A reef is a shallow rim that changes wave energy, lagoon depth and the shape of the coast behind it, and on a warm world it is the dominant coastal builder.',k:'MAKE',e:'M',i:2},
+{c:'coastfx',t:'Do not smooth the coast to make it natural',d:'`naturalizeHypsometry` adds fractal displacement near sea level and then runs two Laplacian passes over everything within 0.2 of it, blending 55% toward the neighbour mean. The second stage removes a good part of what the first added.',k:'MAKE',e:'S',i:3},
+{c:'coastfx',t:'A coast that is fractal below the cell and stable above it',n:['subcoast'],d:'Fractal detail added per frame or per resolution change makes the coastline flicker. The displacement has to be a deterministic function of position and seed so a coast looks the same at every zoom and every N.',k:'MAKE',e:'M',i:3},
+{c:'coastfx',t:'The coastline is the thumbnail',n:['thumbs','subcoast'],d:'At 128 pixels almost nothing about a planet survives except the outline of its land. Every item in the picker category is really an item about the coast.',k:'PICK',e:'S',i:3},
+];
+
+const P5 = [
+/* -------------------------------------------------------------- import -- */
+{c:'import',t:'Import an equirectangular heightmap',g:'dempipe',d:'The universal interchange format for planetary terrain and there is no way to load one. A PNG or 16-bit TIFF, resampled onto the cube sphere through `dirToCell`, is under a hundred lines and it opens the product to every heightmap anyone has ever made.',k:'MAKE',e:'M',i:3},
+{c:'import',t:'Import real Earth topography',n:['dempipe'],d:'ETOPO and GEBCO are public, and a downsampled Earth at N=96 is a few hundred kilobytes. It gives the product a calibrated reference terrain, a locked-coastline mode, and an answer to "does my generator look like a planet".',k:'MAKE',e:'M',i:3},
+{c:'import',t:'Import Mars, the Moon and Europa too',n:['dempipe'],d:'MOLA, LOLA and the Galileo shape models are all public. `stampMars` hand-places Tharsis and Hellas from memory; the real data is better and the catalogue already claims those worlds.',k:'MAKE',e:'M',i:2},
+{c:'import',t:'Say how an imported DEM was resampled',n:['dempipe'],d:'A 21,600×10,800 grid onto 55,296 cells is a 40:1 reduction and the choice between nearest, mean and max changes what survives. Mean loses peaks; max loses valleys. State it, because a teaching tool that imports real data has to.',k:'MAKE',e:'S',i:2},
+{c:'import',t:'Import a coastline drawing',n:['dempipe','subcoast'],d:'An SVG path or a traced bitmap defining where land is, with the interior filled procedurally. It is how most people actually want to author a world: draw the shape, let the machine make the mountains.',k:'MAKE',e:'M',i:3},
+{c:'import',t:'Import a mask to drive a parameter',n:['maskstack','dempipe'],d:'A greyscale image as a roughness field, an erosion-rate field or a rainfall field. It is the simplest possible bridge between an external tool and this one.',k:'MAKE',e:'M',i:2},
+{c:'import',t:'Export the heightfield',g:'demout',n:['dempipe'],d:'A 16-bit equirectangular PNG plus a JSON sidecar with the scale, sea level and N. It lets someone take a world into Blender, into a game engine, into a printer — and it is the only reason to sculpt something carefully.',k:'PICK',e:'M',i:3},
+{c:'import',t:'Export a cube-sphere atlas as well',n:['demout'],d:'The native layout is six `N×N` faces, which is exactly the format a game engine wants for a planet. Equirectangular is the lossy convenience format; this one is lossless.',k:'PICK',e:'S',i:2},
+{c:'import',t:'Export a mesh',n:['demout'],d:'`buildLatticeArrays` already emits a displaced sphere with normals. Writing it as glTF or STL is a serialiser, and a planet you can 3D print is a compelling artefact.',k:'PICK',e:'M',i:2},
+{c:'import',t:'Import another run\'s world',n:['landsave'],d:'`serializeRun` writes seed, ruleset and events and no fields. So even inside the product, one person\'s sculpted world cannot be loaded by another. The save format is a replay, and a landscape is not replayable.',k:'PICK',e:'M',i:3},
+{c:'import',t:'Drag and drop, everywhere',n:['dempipe'],d:'A file dropped on the canvas should just work: a PNG becomes a heightmap, a JSON becomes a world, a seed string becomes a world. Import that requires finding a menu does not get used.',k:'PICK',e:'S',i:2},
+{c:'import',t:'Preview an import before it lands',n:['dempipe','livepreview'],d:'An imported heightmap has an unknown range, an unknown sea level and an unknown orientation, and getting any of the three wrong produces nonsense. Show it, with sliders for range and sea level, before it replaces the world.',k:'PICK',e:'M',i:3},
+{c:'import',t:'Rotate an imported field onto the axis you want',n:['dempipe'],d:'An equirectangular image has a pole and a prime meridian, and they are almost never the ones you want. A rotation applied at resample time is three numbers and it makes the difference between usable and not.',k:'MAKE',e:'S',i:2},
+{c:'import',t:'Blend an import with generated terrain',n:['dempipe','heightlayer'],d:'Real Earth continents with procedural detail; a hand-drawn coast with generated mountains. As a layer with a blend mode this is free, and it is the most interesting thing import unlocks.',k:'MAKE',e:'M',i:3},
+{c:'import',t:'Import at a resolution the grid can hold',n:['dempipe','multires'],d:'A 4K heightmap onto N=64 throws away 99% of what was loaded. Either say so plainly or raise N on import, and the second is only possible once changing N does not destroy the world.',k:'MAKE',e:'M',i:2},
+{c:'import',t:'A credit line for imported data',n:['dempipe'],d:'The README already credits the NASA Exoplanet Archive for catalogue numbers. Terrain data from GEBCO, MOLA or LOLA carries the same obligation and the same benefit: it says the picture is not invented.',k:'PICK',e:'S',i:2},
+
+/* ---------------------------------------------------------------- feel -- */
+{c:'feel',t:'A live ghost of what the stroke will do',g:'livepreview',d:'`previewBrush` shows *which cells* will change and never *what will happen to them*. A translucent displaced overlay of the result — the same geometry path the globe already uses — turns every tool in the product from a guess into an aim.',k:'HAND',e:'L',i:3},
+{c:'feel',t:'Elevation under the cursor, in metres',n:['reliefunit'],d:'The inspector reports a cell when clicked. A persistent readout following the pointer — height, slope, distance to coast — is the single most useful piece of feedback a terrain editor can give and it costs a text node.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'Show the delta the stroke actually applied',d:'`paintBrush` returns cells, mean falloff and area. Flashing "+180 m over 41,000 km²" at the cursor after a stroke closes the loop between gesture and consequence in the moment, instead of in a receipt panel.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'A before/after toggle',g:'histstack',d:'Hold a key, see the terrain as it was before the current session, or before the last stroke. It is the fastest way to evaluate work and it needs only one snapshot.',k:'HAND',e:'M',i:3},
+{c:'feel',t:'A history panel, not a 24-deep stack',n:['histstack'],d:'`undoStack` is 24 entries of whole-field copies with no labels, no thumbnails, and no way to jump. A list of named steps you can click back to is the standard and it is what makes experimentation safe.',k:'HAND',e:'M',i:3},
+{c:'feel',t:'Redo',n:['histstack'],d:'`undoStroke` pops and discards. There is no redo anywhere in the product. Undo without redo is a trapdoor, and it makes people stop trying things.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'Undo should survive a pause and a tick',d:'`undoStroke` restores field snapshots and notes that "years that passed stay passed". If the sim advanced between the stroke and the undo, restoring `h` also throws away the erosion and isostasy that ran in between. It is honest and it is a trap.',k:'HAND',e:'M',i:2},
+{c:'feel',t:'Undo memory is enormous and unbounded in practice',d:'Eight fields at N=96 is about 1.7 MB per snapshot and the stack holds 24, so about 42 MB of retained `Float32Array`s at all times — and at N=768 the same stack is 2.7 GB. Nothing measures it and nothing adapts the depth to N.',k:'HAND',e:'M',i:3},
+{c:'feel',t:'Sculpting has no sound',d:'`audio.js` exists and drives a soundscape. A stroke that lands with a weight, a rumble under a plume, a hollow tone for a basin — sound is the cheapest way to make a gesture feel like it did something.',k:'HAND',e:'M',i:2},
+{c:'feel',t:'Haptics in XR',d:'A brush on a controller with no vibration is a brush you cannot feel land. The XR hands module is there; the pulse is one call.',k:'HAND',e:'S',i:1},
+{c:'feel',t:'Highlight the region a tool will affect before it is used',d:'`BRUSH.preview` is only rebuilt on hover in the local map and on the globe under some paths. Making it unconditional is what stops a 900 km brush from being a surprise.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'Show the isostatic settled height as a ghost',d:'`isostaticPreview` returns `{ now, settled, delta }` and is called from nowhere but `resistTick`, where it is used to compute an energy tax. The player never sees the number that predicts their mountain sinking.',k:'HAND',e:'M',i:3},
+{c:'feel',t:'The receipt says intent, not effect',d:'`issueReceipt({ intent: \'Thicken crust\', expected: \'Crust +0.12 · elevation will settle isostatically\' })` is a template string written when the tool was coded. Fill it from what actually happened — cells, area, mean delta, settled prediction.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'A stroke that can be adjusted after it lands',n:['heightlayer'],d:'Change the amount, the radius or the profile of the last stroke without redoing it. Every parametric modelling tool has this and it is the single biggest reduction in the cost of being wrong.',k:'HAND',e:'L',i:3},
+{c:'feel',t:'Repeat the last stroke',d:'One key. Place a mountain, move, place another. It is how a landscape gets built quickly and it is absent.',k:'HAND',e:'S',i:2},
+{c:'feel',t:'Do not fight the camera while sculpting',d:'`runGenerate` resets the focus cache and the follow target, `brushForTier` resizes the brush when you zoom, and the local map re-pins when you paint. Three separate pieces of helpfulness that together mean the view is never where you left it.',k:'HAND',e:'M',i:2},
+{c:'feel',t:'A tool cursor that says which tool is active',d:'The cursor is `crosshair` for every land tool. Raise, Lower, Smooth and Carve river are four different verbs and the pointer looks identical for all of them.',k:'HAND',e:'S',i:2},
+{c:'feel',t:'Keyboard shortcuts for the land tools',d:'`TOOLS` gives Raise `e`, Lower `f` and Carve river, Flatten, Smooth, Sharpen, Roughen, Crust type, Plume and Plate pole nothing at all. Seven of the ten land tools require a click into a panel.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'Bracket keys for brush size',d:'The most universal shortcut in any painting application. `setBrushRadiusKm` is one call and the keys are unbound.',k:'HAND',e:'S',i:3},
+{c:'feel',t:'Show the energy cost before the stroke, not after',d:'`pricePreview` exists and `tryPay` refuses after the gesture has begun. A brush that cannot afford what it is about to paint should say so while it is hovering.',k:'HAND',e:'S',i:2},
+{c:'feel',t:'Do not charge for a stroke that did nothing',d:'A stroke fully excluded by a mask paints zero cells and still pays, because `payOrFail` runs before `paintBrush` returns its count. The economy charges for the attempt.',k:'HAND',e:'S',i:2},
+{c:'feel',t:'A quiet mode for authoring',d:'While sculpting, the chronicle logs every stroke, receipts stack up, moments announce themselves and the HUD updates. `chronLog(W.year, \'sculpt\', cell, 1, \'Smoothed\')` fires once per stroke and a landscape takes hundreds of them.',k:'HAND',e:'S',i:2},
+
+/* ------------------------------------------------------------- resolve -- */
+{c:'resolve',t:'Changing resolution should keep the world',g:'multires',d:'`changeResolution` calls `setResolution` and `reallocateWorldFields`, which replaces every array. Everything sculpted is gone and the world must be regenerated. Resampling `h` through `sampleFaceField` — which exists, and does bilinear interpolation on a face — is the missing step.',k:'MAKE',e:'M',i:3},
+{c:'resolve',t:'Say what a cell is, on screen, always',d:'`cellKm()` returns `40075 / (4N)` and the number appears in a status line. 157 km at N=64 and 104 at N=96 is the scale of every decision in this document and it should be as prominent as the clock.',k:'PICK',e:'S',i:3},
+{c:'resolve',t:'Author at low N, refine at high N',n:['multires'],d:'Blocking out continents wants speed; detailing a coast wants cells. With resampling, the natural workflow is to shape at N=32 and refine at N=192, and it is currently impossible.',k:'MAKE',e:'M',i:3},
+{c:'resolve',t:'Detail should be added, not interpolated, when N rises',n:['multires','noisegraph'],d:'Bilinear upsampling gives a smooth blur at the new resolution. Adding an octave of noise keyed to position and seed gives terrain. The generator is already resolution-independent in its noise; the resample should be too.',k:'MAKE',e:'M',i:3},
+{c:'resolve',t:'A brush that is smaller than a cell',d:'`setBrushRadiusKm` floors at 0.008 rad, which is 51 km — half a cell at N=96. Below one cell the brush is meaningless, and above it every stroke is a mosaic. That is the resolution wall, and it is where sub-cell representation has to start.',k:'MAKE',e:'L',i:3},
+{c:'resolve',t:'Sub-cell height as a second field',d:'One coverage or detail scalar per cell would let a coastline, an island and a river exist below the grid without paying for a finer grid everywhere. It is the cheapest route past 104 km.',k:'MAKE',e:'L',i:3},
+{c:'resolve',t:'Adaptive resolution where the player is working',d:'A uniform grid spends the same cells on the abyssal plain as on a coast. The product will not get a quadtree cheaply, but it could get a second, finer patch around the area being edited.',k:'MAKE',e:'L',i:2},
+{c:'resolve',t:'The local map is the only place detail could live',d:'`LOCAL_RADII` is 3, 5, 8, 12, 18, 28 cells, so the tightest local view is a seven-cell square — 730 km across at N=96, drawn as 49 stamps. The "walk in" half of the pitch bottoms out at a scale where a cell is still a country.',k:'MAKE',e:'L',i:3},
+{c:'resolve',t:'Do not let generation cost scale as N⁴',n:['gentime'],d:'`generate` runs `Math.min(256, base * max(1, N/32))` warm-up ticks, and each tick is `O(NC)`. From N=32 to N=128 that is 16× the cells and 4× the ticks. The comment already admits the high-N path skips ocean and tectonics to stay tolerable.',k:'MAKE',e:'M',i:2},
+{c:'resolve',t:'Neighbour tables are rebuilt from scratch on every resolution change',d:'`setResolution` rebuilds `NBR`, `AREA`, `DIR`, `NBR8` and the basis, each a full sweep with `dirToCell` calls at face edges. At N=768 that is 3.5 million cells times four or eight neighbours, on the main thread, before anything else happens.',k:'MAKE',e:'M',i:2},
+{c:'resolve',t:'The six cube seams are where every tool misbehaves',d:'`buildNeighbours` resolves across-face neighbours through `dirToCell`, which is correct, and index-adjacency is not space-adjacency there — which is exactly what made `roughenTerrain`\'s index hash incoherent. Any tool that reasons about index locality is wrong at twelve edges.',k:'MAKE',e:'M',i:3},
+{c:'resolve',t:'Cell area varies and half the tools ignore it',d:'`buildAreas` normalises to a mean of 1 with a real spread from the tangent warp, and `paintBrush` sums `AREA[c] * R_KM²` correctly while `fitSeaLevel` uses `land / NC` and `erosionTick` treats every cell as equal. Consistency here decides whether numbers on screen are true.',k:'MAKE',e:'S',i:2},
+{c:'resolve',t:'A recommended N per device',d:'`recommendGlobeSubd` exists for mesh subdivision and nothing recommends N. A phone at N=192 will not finish generating; a desktop at N=64 is wasting a coastline.',k:'PICK',e:'S',i:2},
+{c:'resolve',t:'Warn before a resolution change destroys work',n:['multires'],d:'Until resampling exists, the N control is a delete button with a number next to it.',k:'PICK',e:'S',i:3},
+{c:'resolve',t:'Store the terrain at a resolution above the sim',n:['multires'],d:'The simulation is expensive per cell and the picture is not. A height field at 2× or 4× the sim grid gives coastlines and relief far past what the climate model can afford.',k:'MAKE',e:'L',i:3},
+{c:'resolve',t:'Say which resolution a brief was measured at',d:'Numbers in this document are N=64 unless stated. `sphere.js` says 64, the boot markup says 96, and several briefs still say 250 km per cell. Any measurement without its N is not a measurement.',k:'PICK',e:'S',i:2},
+
+/* ---------------------------------------------------------------- phys -- */
+{c:'phys',t:'Decide what happens when a stroke fights isostasy',g:'isolive',d:'`applyIsostasy` moves `h` toward `isostaticElev` at 18% per tick using `_iso0` as a reference, and a stroke writes `h` directly without touching `crust`. So Raise thickens crust *and* lifts height, and the isostasy model then argues with the part it did not author. The rule has never been written down.',k:'MAKE',e:'M',i:3},
+{c:'phys',t:'Sculpt crust, let elevation follow',n:['isolive'],d:'`thickenCrust` does both — `crust += amount * f` and `h += amount * 0.85 * f` — which pre-empts the model it claims to drive. Writing only crust and letting isostasy produce the mountain over the next fifty thousand years is the honest version, and it is a completely different feel.',k:'HAND',e:'M',i:3},
+{c:'phys',t:'Show the equilibrium the terrain is heading toward',n:['isolive'],d:'`isostaticPreview` computes it per cell. Painting the whole settled field as an overlay makes visible the difference between what you drew and what the planet will keep.',k:'PICK',e:'M',i:3},
+{c:'phys',t:'Canvas mode is a truce, not an answer',d:'`W._canvasMode` early-returns from `tectonicsTick`, `erosionTick` and `planetGeoTick`. It works, and it means the only way to draw reliably is to switch the geology off. The interesting product is one where you draw with the geology on and can see it push back.',k:'MAKE',e:'M',i:3},
+{c:'phys',t:'Canvas mode should say what it froze',d:'The toast reads "Canvas: cube net on the map. Left-drag to paint. Plates frozen." Erosion, sedimentation, volcanism and dynamic topography are also frozen and climate is not. Four systems off, one on, one sentence.',k:'PICK',e:'S',i:2},
+{c:'phys',t:'Isostasy has no flexure',d:'`isostaticElev` is a local column calculation — thickness times density contrast — so every cell floats independently. Real lithosphere is a plate with rigidity, which is why a mountain range has a foreland basin beside it and an ice sheet depresses a whole continent.',k:'MAKE',e:'L',i:2},
+{c:'phys',t:'Glacial rebound, which the model has all the pieces for',d:'`iceLand` is a mass, isostasy is a column balance, and nothing connects them. Post-glacial rebound is one of the few geological processes fast enough for a player to watch inside a run.',k:'MAKE',e:'M',i:2},
+{c:'phys',t:'Dynamic topography is computed and barely used',d:'`initMantle` and `mantleTick` produce `dynTopo` and a `mantle` overlay draws it. It is the reason a continent can be a kilometre higher than its crust says, and it does not reach the height field in any legible way.',k:'MAKE',e:'M',i:2},
+{c:'phys',t:'Sculpted terrain should be recorded as an intervention',d:'`W.interventionLog` and the chronicle both receive `sculpt` events with a cell and a magnitude, and neither records the shape. A world that is half-drawn should be able to say which half.',k:'PICK',e:'M',i:2},
+{c:'phys',t:'The touch overlay is the right idea',d:'`OVERLAYS` has `touch` — "cells you have edited this run" — driven by `W.strokeMark`, which `markStroke` sets to 1 and nothing ever decays. It is a permanent binary record where a fading, weighted one would tell a story.',k:'PICK',e:'S',i:2},
+{c:'phys',t:'Attribution between the player and the planet',d:'`W.attribution` tracks player and planet contributions as two scalars and increments them per act. On a heightfield the real question — how much of this mountain is yours and how much is erosion — is answerable per cell with a second accumulating field.',k:'MAKE',e:'M',i:2},
+{c:'phys',t:'Resist tick samples every eleventh cell',d:'`for (let c = 0; c < NC; c += 11)` estimates the tax on holding terrain above equilibrium from a ninth of the planet, with a fixed stride, so the sample is a lattice rather than a random subset. It is a stochastic estimator with no randomness.',k:'MAKE',e:'S',i:1},
+{c:'phys',t:'Volume and mass should be conserved when you sculpt',d:'Raise adds elevation from nowhere. A mode where the brush moves material rather than creating it — dig here, pile there — is both physically honest and a genuinely different and better tool.',k:'MAKE',e:'M',i:2},
+{c:'phys',t:'Water should respond immediately to terrain',d:'Nothing in `sculpt.js` sets `W._hydroDirty`, so carving a valley does not tell the drainage model to rebuild — it waits for the seven-tick timer. Raise a dam and the river keeps flowing through it.',k:'MAKE',e:'S',i:3},
+{c:'phys',t:'Sea level should respond to a sculpted basin',d:'`updateSeaLevel` early-returns to the fitted base on any world with `_seaBase` set, so digging an ocean-sized hole in a fitted world does not lower the sea at all. Ocean volume is conserved in the comment and not in the code path most worlds take.',k:'MAKE',e:'M',i:2},
+{c:'phys',t:'Plates should notice that you moved a continent',d:'`paintCrustType` flips `plates[plateId[c]].oceanic` for a whole plate when a brush touches one cell of it. The plate model is per-plate; the brush is per-cell; there is no representation in between.',k:'MAKE',e:'M',i:2},
+{c:'phys',t:'Boundary reclassification only happens for one tool',d:'`setPlatePole` calls `reclassifyBoundaries(W)`. `drawRift` writes `bound[c] = 0` directly, `forceOrogeny` writes 1, and `stampTerrain` writes both — none of them reclassify, so the boundary field and the plate velocities disagree until the next tick that recomputes.',k:'MAKE',e:'S',i:2},
+{c:'phys',t:'A simulate-a-while button',n:['erodeondemand'],d:'Sculpt, then run ten million years, then look. The clock controls exist and are framed around watching a run, not around settling a landscape. It is the same action as on-demand erosion and it should feel like a tool.',k:'HAND',e:'M',i:3},
+
+/* --------------------------------------------------------------- share -- */
+{c:'share',t:'Save the heightfield',g:'landsave',d:'`serializeRun` writes version, seed, ruleId, ageYr, gases, transitions, events and a tree summary, and explicitly not fields — "full field restore is out of scope". So the one thing a player spends an hour making is the one thing that is not saved.',k:'PICK',e:'M',i:3},
+{c:'share',t:'Compress it, because it is large',n:['landsave'],d:'`h` at N=96 is 221 KB raw and at N=768 it is 56 MB. Quantising to 16 bits and delta-coding along the face raster gets an order of magnitude, and the browser has `CompressionStream` for the rest.',k:'PICK',e:'M',i:2},
+{c:'share',t:'Autosave the world you are editing',n:['landsave'],d:'A reload loses everything. IndexedDB, one slot, written on a timer, is the difference between a toy and a place you keep coming back to.',k:'PICK',e:'M',i:3},
+{c:'share',t:'Version the save format',n:['landsave'],d:'`serializeRun` writes `version: 2` and `loadRunMeta` never reads it. Fields, layers and archetypes are all coming; the format needs to survive them.',k:'PICK',e:'S',i:2},
+{c:'share',t:'The shelf should hold a landscape, not a seed',n:['landsave'],d:'`godshelf` saves to a six-slot shelf and the orrery table renders those slots. Every one of them is currently a seed and a rule, so a sculpted world on the table is a different world when you pick it up.',k:'PICK',e:'M',i:3},
+{c:'share',t:'Fork a world',n:['landsave'],d:'`forkRun` exists and returns a new seed for rewinding the tape. Forking a *landscape* — same terrain, new run — is the more useful branch and the save format cannot express it.',k:'PICK',e:'M',i:2},
+{c:'share',t:'A postcard export with the world\'s identity on it',n:['demout'],d:'`exportPng.js` writes the framebuffer. Adding seed, archetype, N, land fraction and a scale bar makes every image a citation, and a citation is what makes a shared image useful.',k:'PICK',e:'S',i:3},
+{c:'share',t:'Export a flat map, not only the globe',n:['demout','paintproj'],d:'The thing people want to print, annotate and use is the map. The projection code needed for painting is the same code needed for exporting.',k:'PICK',e:'M',i:2},
+{c:'share',t:'A shareable URL that reproduces a drawn world',n:['landsave','deeplink'],d:'A seed fits in a URL; a heightfield does not. That is a real limit and it should be stated: seeds and archetypes share by link, sculpted worlds share by file.',k:'PICK',e:'S',i:2},
+{c:'share',t:'A gallery of worlds people made',n:['landsave','thumbs'],d:'The catalogue has 120 real bodies and the generator has infinite invented ones, and there is nowhere to put the good ones. It is the content strategy the product does not have.',k:'PICK',e:'L',i:2},
+{c:'share',t:'Record the authoring, not only the result',n:['histstack'],d:'A stroke log replays how a world was built. It is a tutorial that writes itself, a proof of authorship, and a much smaller file than the field.',k:'PICK',e:'M',i:1},
+{c:'share',t:'Name a world and have the name stick',d:'`W.worldName` is set by genesis, read by the shelf, and lost by `loadRunMeta` unless the metadata carries it. A world without a durable name is hard to talk about.',k:'PICK',e:'S',i:2},
+{c:'share',t:'Export the statistics with the world',n:['massreport','landsave'],d:'Land fraction, continent count, coastline length, hypsometric summary. A one-page fact sheet is what makes a shared world legible to someone who has not opened it.',k:'PICK',e:'S',i:2},
+{c:'share',t:'A save that a script can read',n:['landsave'],d:'`headless.mjs` can run a world and hash it, and cannot load one. Being able to point the headless runner at a saved landscape is what makes any of the testing items in this document possible.',k:'PICK',e:'M',i:2},
+{c:'share',t:'Say plainly what a save does and does not keep',d:'The current format restores a seed and replays. Someone who sculpts for an hour, saves, and reloads gets the generated world back with none of their work. Nothing in the UI warns them.',k:'PICK',e:'S',i:3},
+
+/* --------------------------------------------------------------- learn -- */
+{c:'learn',t:'Explain the land tools somewhere longer than a tooltip',g:'landtour',d:'The Land desk says "Landscaping. Right-click or drag to paint." That is the documentation for ten tools, seven masks, four snaps, six stamps and an isostasy model that will slowly undo your work. `tips.js` is 470 lines and this is what reaches the panel.',k:'PICK',e:'M',i:3},
+{c:'learn',t:'A guided first sculpt',n:['landtour'],d:'Raise a continent, smooth it, carve a river, watch it erode. Four steps, five minutes, and it teaches the whole model. `scenario.js` already has the machinery for a scripted sequence with goals.',k:'PICK',e:'M',i:3},
+{c:'learn',t:'Say what each tool does to the model, not to the picture',d:'"Thicken crust" is honest and opaque; "Raise" is clear and wrong. The receipt already explains the mechanism afterwards — `Crust +0.12 · elevation will settle isostatically` — and the button label contradicts it.',k:'PICK',e:'S',i:3},
+{c:'learn',t:'Teach the delay',d:'`issueReceipt` carries `delayYr` and `delayLabel`: 50 kyr for isostatic rebound, 10 Myr for an orogen eroding, 50 Myr for a hotspot track. Those numbers are the most interesting thing about sculpting a planet and they appear in a receipts list.',k:'PICK',e:'M',i:3},
+{c:'learn',t:'Explain the archetypes as geology, not as options',n:['shapelib'],d:'Why a supercontinent has a dry interior, why an archipelago cannot glaciate the same way, why an ocean world has no carbon thermostat. Thirteen paragraphs, and they turn a dropdown into the most teachable surface in the product.',k:'PICK',e:'M',i:3},
+{c:'learn',t:'A hypsometric curve with Earth behind it',n:['hypsoplot'],d:'The single most educational picture in this whole document: your world\'s curve, Earth\'s underplotted, and the shelf you do not have visible as a missing shoulder.',k:'PICK',e:'M',i:3},
+{c:'learn',t:'Compare your world to Earth on the numbers that matter',n:['massreport'],d:'Land 29%, largest continent 40% of land, coastline 356,000 km, mean elevation 840 m, mean ocean depth 3,700 m. Six numbers, side by side, and every one of them is a lesson.',k:'PICK',e:'S',i:3},
+{c:'learn',t:'Name what the player just made',n:['massreport'],d:'"You have made a supercontinent", "that is an inland sea", "those are island arcs". Recognition is teaching, and the statistics needed for it are already computed.',k:'PICK',e:'M',i:2},
+{c:'learn',t:'Say when the terrain is a diagram and not a planet',d:'A Voronoi Pangaea with a cliff for a coast is a diagram of plate tectonics wearing terrain. The product should be able to say so, the way `realism` says the render is not yet a photograph.',k:'PICK',e:'S',i:3},
+{c:'learn',t:'Do not name a generated continent after a real one',d:'The plates overlay uses identity colours and `_plateNames` generates names. Any coastline the player made is not Africa, and a teaching tool that says otherwise loses the room.',k:'PICK',e:'S',i:2},
+{c:'learn',t:'A glossary that reaches the land tools',d:'`glossary.js` exists. Craton, orogen, isostasy, hypsometry, freeboard, repose angle, knickpoint, endorheic — eight words this document depends on and a player has no way to look up.',k:'PICK',e:'S',i:2},
+{c:'learn',t:'Show the geological time a sculpt implies',d:'A range built by a brush in one second represents tens of millions of years of convergence. Saying that, once, converts a god-game gesture into a geology lesson.',k:'PICK',e:'S',i:3},
+{c:'learn',t:'A why-is-it-like-that probe for terrain',d:'`whatHappenedHere` searches the chronicle by cell. The terrain equivalent — why is this high, why is this dry, why is there no river here — is answerable from crust, boundary, age, distance-to-coast and drainage.',k:'PICK',e:'M',i:3},
+{c:'learn',t:'Teach by letting the player break something',d:'Close a gateway and watch circulation reorganise; remove the polar continents and watch the ice go. The tools exist and nothing frames them as experiments with an answer.',k:'PICK',e:'M',i:2},
+{c:'learn',t:'Say what is invented and what is measured',d:'`param-coverage.json` records which catalogue numbers are measured. A generated landscape has no measured content at all, and the product should say so as clearly as it credits the exoplanet archive.',k:'PICK',e:'S',i:3},
+];
+
+const D = [...P1, ...P2, ...P3, ...P4, ...P5];
+
+/* ------------------------------------------------------------- derive -- */
+D.forEach((x, i) => { x.id = i + 1; });
+
+const byCat = (id) => D.filter((x) => x.c === id);
+const count = (f) => D.filter(f).length;
+const KIND = { MAKE: 'Make', HAND: 'Hand', PICK: 'Pick' };
+/** Literal pipes inside inline code would split a markdown table cell. */
+const md = (t) => String(t).replace(/\|/g, '\\|');
+
+const provides = new Map();
+for (const x of D) if (x.g) provides.set(x.g, x);
+const dependents = (tok) => D.filter((y) => (y.n || []).includes(tok)).length;
+const CRITICAL = [...provides.keys()]
+  .map((k) => ({ k, x: provides.get(k), n: dependents(k) }))
+  .filter((r) => r.n > 0)
+  .sort((a, b) => b.n - a.n);
+
+const FIXED = [
+  ['Every first run this project has ever shown was the same planet', '`boot()` ended in `runGenerate(20260808, RULESETS[0])`. One hard-coded integer, so the opening world never varied, and the first thing anyone saw could never demonstrate that worlds vary at all. There is now an `OPENINGS` table of hand-checked seed/archetype pairs picked at random, with `?seed=` and `?land=` pinning a world exactly so a shared link stays reproducible.'],
+  ['A seed changed the coastline and never the kind of world', 'Six seeds of Earth give land fractions of 29.2–31.2% — because `fitSeaLevel` searches for the contour that hits `targetLandFrac` — and all six give one supercontinent. Seed 20260808 has 22 landmasses of which one holds 7,323 of 7,460 land cells and the second holds 47. `vr/sim/landscapes.js` adds thirteen archetypes applied between tectonics and the sea-level fit; across the set, land fraction now runs 8.1–56.9%, landmass count 1–95, and largest-mass share 42.8–100%.'],
+  ['Roughen hashed the cell index, not the cell', '`roughenTerrain` computed `((Math.sin(c * 12.9898) * 43758.5453) % 1)` from the *index* `c`. On a cube sphere, index-adjacent cells are not space-adjacent anywhere near a face edge, so the "roughness" was spatially incoherent exactly at the twelve seams — and it took no seed, so every world and every stroke roughened identically. It is seeded 3D value noise on `DIR` now.'],
+  ['The sea-level lever belonged to no world', '`shiftSeaLevel` clamped to a constant `0.15..0.85`. Measured sea levels are Earth 0.196, Vermis −0.000, Selene −0.044 and Ares −0.250, so on three of the four rulesets the very first click teleported the ocean — by +0.40 on Ares, a planet with no ocean. It now clamps to the world\'s own hypsometric range.'],
+  ['Flatten terraced toward a cell it was not painting around', '`flattenTerrain` read `W.h[cell]` for its target and then called `paintBrush(cell, …)`, which begins by applying `snapCell`. With snap set to coast or boundary the two cells differ, so the tool flattened the brush disc toward a height sampled somewhere else.'],
+  ['The craton stamp was a hard-edged disc', 'Five of the six entries in `stampTerrain` use the falloff argument `f`; `craton` ignored it entirely and wrote `crust = 0.85`, `age = 1200`, `h = 0.55` at full strength out to the brush edge. It now interpolates like the others.'],
+  ['A favourite start was a number nobody could say out loud', '`freshSeed()` returned a Uint32. Share copied a base64 genesis blob. There is now a 256-word list: four words encode the seed, a suffix names the archetype (`ember-coral-dune-frost.shattered`), `?world=` pins it, the chip shows it, and Paste on New world accepts the words, a URL, or a number.'],
+  ['Painting scanned the entire sphere, per stroke, per frame', '`paintBrush` and `mirrorCells` looped all `NC` cells. A drag was a full-planet scan every frame. The brush now BFS-walks the geodesic cap from the centre, mirrors through `dirToCell`, and spaces stamps along the great-circle path between pointer samples.'],
+  ['The default falloff profile was the one that was not implemented', '`falloff` returned `t` linearly from the dot product for the `cosine` case. It is now `0.5 - 0.5 cos(u π)` in geodesic distance from the centre, with hardness still lifting the edge toward a disk.'],
+  ['Three land tools did nothing, or nearly nothing', '`setErosionRate` wrote `W.erosionLock` and `erosionTick` never read it. `BRUSH.snap = \'biome\'` only searched a 1-ring (and `W.biome` is allocated). `BRUSH.symmetry === \'great\'` was documented and skipped. Erosion now multiplies by the lock, snap searches the brush cap, and great-circle symmetry is antipode plus equatorial mirrors.'],
+  ['Nothing told the water that the land moved', 'Sculpt never set `W._hydroDirty`, so rivers kept their old course for up to seven ticks after a valley was carved. `paintBrush` now marks hydro dirty, and generate primes drainage with extra `hydroTick`s so the opening picture has rivers on it.'],
+  ['The genesis panel hid the dials it already had', '`blankGenesis` carried nPlates, continentFrac and waterInventory; the UI showed a name and a seed. Those three are sliders now, and a landscape picker plus a paste field sit on the same desk.'],
+  ['The save format explicitly did not save the landscape', '`serializeRun` wrote seed, gases and an event log, with a comment that full field restore was out of scope. Version 3 stores landscape, land-seed, sea level and a quantized heightfield, and `loadRunMeta` puts them back.'],
+  ['There was no continental shelf', 'Hypsometry went abyss → cliff → plateau. `refineEarthHypsometry` now paints a 3-cell oceanward terrace after naturalize, so Laplacian blending cannot flatten the shoulder back into a wall.'],
+  ['The front door was a form, not a choice', 'The first thirty seconds were whatever `OPENINGS` rolled. First visit now pauses on a nine-globe picker; each card is a live mask thumbnail with a shareable id. Keep this one, or click another.'],
+  ['There was no non-destructive edit anywhere', 'Every tool wrote `W.h`. `vr/sim/layers.js` is a stack: generated land as the locked base, paint layers with opacity, blend (add/max/min/multiply/replace), hide, reorder, name, a mask, and per-layer undo. `W.h` is the composite. Flatten is a button with a warning. Saves store the stack.'],
+];
+
+const NOW = [
+  ['Land fraction is still an input wearing the costume of an outcome', '`fitSeaLevel` binary-searches sea level 18 times until `targetLandFrac` is met. The water-inventory slider now reaches `totalWater`, and genesis can set a land-fraction target, but an archetype still replaces that target with its own `land` number — so a 12%-land Earth still has to be asked for by name.'],
+  ['A cell is 104 kilometres and changing that throws the world away', '`sphere.js` exports `N = 64`; the boot markup asks for 96; `N_ALLOWED` reaches 768. `changeResolution` calls `reallocateWorldFields`, which replaces every array — so raising resolution to detail a coastline deletes the coastline. `sampleFaceField` already does the bilinear resample that would fix it, and nothing calls it for this.'],
+  ['The tools are still quieter than a painting program', 'Receipts now print area in km² and falloff is a real cosine, and the preview disc is the cells that will paint. There is still no elevation readout on the ghost, no before/after. Redo exists; live preview of the stroke does not.'],
+  ['The rest of the Photoshop half is still ahead', 'Adjustment layers, groups, clipping to the layer below, moving a continent with a quaternion, and a layer panel that is not a dock list. The stack is the representation; those are the verbs it still lacks.'],
+];
+
+const SEQ = [
+  ['Make the front door a choice', '`openings` and `archetype` shipped earlier; `thumbs` and `frontdoor` shipped this pass. Nine rendered candidates and the question "which one" is what every visitor sees. Generate the chosen world at play resolution; the thumbnails are mask sketches so the picker is cheap.'],
+  ['Fix the curve before decorating the coast', '`shelf` shipped a 3-cell terrace; `hypsocurve` is the rest. Half the planet is still a flat abyss. Every fjord, delta, barrier island and intertidal item — and most of the coastal items in the realism backlog — wants a fuller hypsometry than a shoulder on a cliff.'],
+  ['Give the generator a distribution to hit', '`masssize`, `islands`, `freeland`. One landmass holding 98% of the land is not a world type, it is the absence of a target. State the continent-size distribution and the land fraction you want and solve for the field, rather than thresholding noise and reporting what fell out.'],
+  ['Prime the drainage before anyone sees the world', '`riverfirst` now runs extra `hydroTick`s inside `generate`. Flow still depends on precip during spin-up; the first picture is no longer eight river cells, but it is not a mature drainage either.'],
+  ['Make the stroke a stroke', '`strokepath` spaces stamps along the pointer path; `gpupaint` is still ahead. The brush visits only its own cap. The height stack (`heightlayer`) shipped this pass.'],
+  ['Then the rest of what a layer stack is for', 'Adjustment layers, groups, a quaternion move, a panel that is not the dock. The representation is in; the verbs that only a stack makes cheap are next.'],
+  ['Then give the hand something to hold', '`livepreview`, `histstack`, `selection`. A ghost of the result, a history you can jump around in with a redo, and a set of cells that persists between tools. These are what make sculpting explorable rather than committal.'],
+  ['Then a library worth browsing', '`stampatlas`, `splinetool`, `noisegraph`. Twenty-five landforms with parameters and rotation, a spline you can draw a mountain chain along, and a noise recipe that is a document instead of seven constants inside `naturalizeHypsometry`.'],
+  ['Then let erosion be a tool', '`erodeondemand`. Aimed, previewed, run for a stated duration inside a selection, with a repose angle and a rock-dependent erodibility. It is the single strongest lever on whether sculpted terrain looks made or looks weathered, and the model for it is already written and only ever runs in the background.'],
+  ['Then get past 104 kilometres', '`multires`, `subcoast`. Resample instead of reallocating so resolution can change without destroying work, and give the shoreline a sub-cell representation so a coast is a contour rather than a staircase of squares. These two are what the "shrink and walk in" half of the pitch actually needs.'],
+  ['Then make a world keepable', '`landsave`, `dempipe`, `demout`. Save the field, import a heightmap, export one. Until a sculpted world survives a reload, every hour anyone spends in the tools is spent on something that will not exist tomorrow.'],
+  ['Then teach what is being shaped', '`landtour`, `hypsoplot`, `shapelib`. A tool whose consequence arrives in ten million years cannot be learned by experiment. The curve, the delay, the archetype as geology rather than as a skin — these are the items that turn a sculpting toy into the thing the product says it is.'],
+];
+
+/* ------------------------------------------------------------ markdown -- */
+function markdown() {
+  const L = [];
+  L.push('# ORRERY — landscape');
+  L.push('');
+  L.push(`**${D.length} items.** Generated from \`scripts/landscape.mjs\` — edit that file, not this one, then run \`node scripts/landscape.mjs\`.`);
+  L.push('');
+  L.push('One question: how does a player decide what the land is? Everything before the first tick — the opening world, the archetype, the dials, the brush, the layers, the stamps, the imported heightmap — and the tooling that would make editing a planet feel like drawing rather than like filing a form.');
+  L.push('');
+  L.push(`The first opening was one hard-coded integer. This pass adds a shareable four-word world id, a nine-globe picker, a brush that walks its own cap, a continental shelf, a height layer stack, and a save format that keeps both the composite and the stack. ${FIXED.length} faults from that list are done.`);
+  L.push('');
+  L.push(`Kind: **${count((x) => x.k === 'MAKE')}** generator, **${count((x) => x.k === 'HAND')}** instrument, **${count((x) => x.k === 'PICK')}** choosing or teaching. Effort is S/M/L. Impact is 1–3.`);
+  L.push('');
+
+  L.push('## Fixed in this pass');
+  L.push('');
+  for (const [a, b] of FIXED) L.push(`- **${a}.** ${b}`);
+  L.push('');
+
+  L.push('## Where the landscape actually is');
+  L.push('');
+  for (const [a, b] of NOW) L.push(`- **${a}.** ${b}`);
+  L.push('');
+
+  L.push('## The critical path');
+  L.push('');
+  L.push('The capabilities the largest number of other items are waiting on.');
+  L.push('');
+  L.push('| Capability | Item | Unblocks |');
+  L.push('|---|---|---|');
+  for (const r of CRITICAL.slice(0, 16)) {
+    L.push(`| \`${r.k}\` | ${r.x.id}. ${md(r.x.t)} | ${r.n} items |`);
+  }
+  L.push('');
+
+  for (const [id, name, blurb] of CATS) {
+    const items = byCat(id);
+    L.push(`## ${name} — ${items.length}`);
+    L.push('');
+    L.push(`_${blurb}_`);
+    L.push('');
+    L.push('| # | Item | Detail | Kind | Effort | Impact |');
+    L.push('|---|---|---|---|---|---|');
+    for (const x of items) {
+      const gives = x.g ? ` <br>gives \`${x.g}\`` : '';
+      const needs = x.n?.length ? ` <br>needs ${x.n.map((t) => '`' + t + '`').join(' ')}` : '';
+      L.push(`| ${x.id} | **${md(x.t)}**${gives}${needs} | ${md(x.d)} | ${KIND[x.k]} | ${x.e} | ${x.i} |`);
+    }
+    L.push('');
+  }
+
+  L.push('## Sequencing');
+  L.push('');
+  SEQ.forEach(([a, b], i) => L.push(`${i + 1}. **${a}.** ${b}`));
+  L.push('');
+  L.push('The through-line: the landscape is now something you pick, share, and carve. A four-word id names a starting world; a nine-globe picker asks which one; a brush walks its own cap and tells the rivers the land moved. What is still missing is the representation change everything else waits on — layers — so a stroke is still a write into `W.h`, undo is still a whole-field snapshot, and raising resolution still throws the coastline away.');
+  L.push('');
+  L.push('Photoshop meets Minecraft meets SimEarth is a fair description of the target, and it decomposes cleanly: Photoshop is `heightlayer`, `maskstack`, `selection`, `histstack` and `livepreview`; Minecraft is `strokepath`, `stampatlas` and the sub-cell scale that `multires` and `subcoast` open up; SimEarth is the part that already exists and argues back — isostasy, erosion, drainage — which is what makes this different from a heightmap editor. The order matters: the front door first, because everyone sees it, then the curve and the distribution so there is something worth drawing on, then the stroke, then the layers everything else waits on.');
+  L.push('');
+
+  return L.join('\n');
+}
+
+/* ----------------------------------------------------------------- html -- */
+function html() {
+  const data = JSON.stringify(D.map((x) => ({
+    id: x.id, c: x.c, t: x.t, d: x.d, k: x.k, e: x.e, i: x.i, g: x.g || '', n: x.n || [],
+  })));
+  const cats = JSON.stringify(CATS.map(([id, name, blurb]) => ({ id, name, blurb })));
+  const crit = JSON.stringify(CRITICAL.slice(0, 16).map((r) => ({ k: r.k, id: r.x.id, t: r.x.t, n: r.n })));
+  return `<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ORRERY — landscape</title>
+<style>
+:root{
+  --ground:#0c0f16; --panel:#151a24; --panel2:#1b2231; --rule:#252d3d;
+  --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688;
+  --accent:#c69a4f; --accent-soft:rgba(198,154,79,.13); --accent-line:rgba(198,154,79,.36);
+  --make:#7fc8a9; --make-soft:rgba(127,200,169,.14);
+  --hand:#7fb0e0; --hand-soft:rgba(127,176,224,.14);
+  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue","Segoe UI",Roboto,sans-serif;
+  --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){ --ground:#eef0f3; --panel:#fff; --panel2:#f5f6f9; --rule:#d9dde5;
+    --text:#12151c; --dim:#4e5768; --faint:#727d90;
+    --accent:#8a6420; --accent-soft:rgba(138,100,32,.09); --accent-line:rgba(138,100,32,.32);
+    --make:#22705a; --make-soft:rgba(34,112,90,.09); --hand:#215e93; --hand-soft:rgba(33,94,147,.09); }
+}
+:root[data-theme="dark"]{ --ground:#0c0f16; --panel:#151a24; --panel2:#1b2231; --rule:#252d3d;
+  --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688;
+  --accent:#c69a4f; --accent-soft:rgba(198,154,79,.13); --accent-line:rgba(198,154,79,.36);
+  --make:#7fc8a9; --make-soft:rgba(127,200,169,.14); --hand:#7fb0e0; --hand-soft:rgba(127,176,224,.14); }
+:root[data-theme="light"]{ --ground:#eef0f3; --panel:#fff; --panel2:#f5f6f9; --rule:#d9dde5;
+  --text:#12151c; --dim:#4e5768; --faint:#727d90;
+  --accent:#8a6420; --accent-soft:rgba(138,100,32,.09); --accent-line:rgba(138,100,32,.32);
+  --make:#22705a; --make-soft:rgba(34,112,90,.09); --hand:#215e93; --hand-soft:rgba(33,94,147,.09); }
+
+*{box-sizing:border-box;}
+body{margin:0; background:var(--ground); color:var(--text);
+     font:400 16px/1.6 var(--sans); -webkit-font-smoothing:antialiased;}
+.wrap{max-width:1080px; margin:0 auto; padding:40px 26px 110px;}
+
+header{border-bottom:1px solid var(--rule); padding-bottom:28px;}
+.eyebrow{font:500 10.5px/1 var(--mono); letter-spacing:.24em; text-transform:uppercase; color:var(--accent);}
+h1{font:700 clamp(34px,5.4vw,54px)/1.03 var(--sans); letter-spacing:-.035em; margin:15px 0 0; text-wrap:balance;}
+.sub{font:italic 400 clamp(17px,2.2vw,21px)/1.45 var(--serif); color:var(--dim);
+     margin:18px 0 0; max-width:50ch;}
+.nav{margin-top:20px; font:400 12.5px/1.7 var(--mono); color:var(--faint);}
+.nav a{color:var(--dim); text-decoration:none; border-bottom:1px solid var(--rule);}
+.nav a:hover{color:var(--accent); border-color:var(--accent-line);}
+
+.tally{display:grid; grid-template-columns:repeat(auto-fit,minmax(126px,1fr)); gap:1px;
+       background:var(--rule); border:1px solid var(--rule); border-radius:8px;
+       overflow:hidden; margin-top:26px;}
+.tally > div{background:var(--panel); padding:13px 15px;}
+.tally dt{font:500 9.5px/1 var(--mono); letter-spacing:.15em; text-transform:uppercase; color:var(--faint);}
+.tally dd{margin:9px 0 0; font:600 26px/1 var(--sans); letter-spacing:-.02em;
+          font-variant-numeric:tabular-nums;}
+.tally dd small{display:block; font:400 11px/1.5 var(--mono); color:var(--faint); margin-top:6px; letter-spacing:0;}
+
+.prose{margin-top:40px;}
+.prose h2{font:650 21px/1.2 var(--sans); letter-spacing:-.022em; margin:0 0 12px;
+          border-bottom:1px solid var(--rule); padding-bottom:10px;}
+.prose p{color:var(--dim); max-width:74ch; font-size:14.5px;}
+.state{list-style:none; margin:14px 0 0; padding:0; display:flex; flex-direction:column; gap:1px;
+       background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden;}
+.state li{background:var(--panel); padding:13px 16px; color:var(--dim); font-size:13.5px; line-height:1.6;}
+.state b{color:var(--text); font-weight:600;}
+.critwrap{overflow-x:auto;}
+.crit{width:100%; border-collapse:collapse; margin-top:14px; font-size:13.5px;}
+.crit td{border-top:1px solid var(--rule); padding:9px 12px; color:var(--dim);}
+.crit td:first-child{font:500 11.5px/1.6 var(--mono); color:var(--accent); width:1%; white-space:nowrap;}
+.crit td:last-child{text-align:right; font:500 11.5px/1.6 var(--mono); color:var(--faint); white-space:nowrap;}
+.seq{margin:14px 0 0; padding-left:20px; color:var(--dim); font-size:14px;}
+.seq li{margin-bottom:9px; max-width:74ch;}
+.seq b{color:var(--text);}
+code{font:500 12.5px/1 var(--mono); background:var(--panel2); border:1px solid var(--rule);
+     padding:2px 5px; border-radius:4px; color:var(--accent);}
+
+.controls{position:sticky; top:0; z-index:5; background:var(--ground);
+          padding:18px 0 14px; border-bottom:1px solid var(--rule); margin:44px 0 6px;}
+.filters{display:flex; flex-wrap:wrap; gap:7px; align-items:center;}
+.flabel{font:500 9.5px/1 var(--mono); letter-spacing:.17em; text-transform:uppercase;
+        color:var(--faint); margin-right:3px;}
+button.f{font:500 11.5px/1 var(--mono); color:var(--dim); cursor:pointer; background:transparent;
+         border:1px solid var(--rule); border-radius:5px; padding:7px 10px;}
+button.f:hover{border-color:var(--accent-line); color:var(--text);}
+button.f[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent);}
+button.f.make[aria-pressed="true"]{background:var(--make-soft); border-color:var(--make); color:var(--make);}
+button.f.hand[aria-pressed="true"]{background:var(--hand-soft); border-color:var(--hand); color:var(--hand);}
+#q{flex:1; min-width:170px; font:400 13px/1 var(--sans); color:var(--text);
+   background:var(--panel); border:1px solid var(--rule); border-radius:5px; padding:8px 11px;}
+#q::placeholder{color:var(--faint);}
+.tally2{margin-top:11px; font:500 11px/1 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums;}
+
+section{padding-top:38px; scroll-margin-top:120px;}
+.sechead{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap;
+         border-bottom:1px solid var(--rule); padding-bottom:10px;}
+.sechead h2{font:650 21px/1.2 var(--sans); letter-spacing:-.022em; margin:0;}
+.sechead .n{font:500 10.5px/1 var(--mono); color:var(--accent); background:var(--accent-soft);
+            border:1px solid var(--accent-line); padding:4px 7px; border-radius:4px;}
+.blurb{margin:13px 0 0; color:var(--dim); max-width:74ch; font-size:14.5px;}
+
+ol{list-style:none; margin:16px 0 0; padding:0; display:flex; flex-direction:column; gap:1px;
+   background:var(--rule); border:1px solid var(--rule); border-radius:8px; overflow:hidden;}
+li.item{background:var(--panel); padding:13px 16px; display:grid;
+   grid-template-columns:38px minmax(0,1fr) auto; gap:4px 14px; align-items:baseline;}
+li .id{font:500 11px/1.5 var(--mono); color:var(--faint); font-variant-numeric:tabular-nums;}
+li .t{font:600 14.5px/1.4 var(--sans); letter-spacing:-.008em;}
+li .d{grid-column:2; color:var(--dim); font-size:13.5px; line-height:1.55; max-width:76ch;}
+li .dep{grid-column:2; font:400 11px/1.6 var(--mono); color:var(--faint); margin-top:4px;}
+li .dep .gives{color:var(--accent);}
+li .tags{display:flex; gap:5px; align-items:center; grid-row:1; grid-column:3;}
+.tag{font:600 9px/1 var(--mono); letter-spacing:.1em; text-transform:uppercase;
+     padding:4px 6px; border-radius:3px; white-space:nowrap; border:1px solid transparent;}
+.tag.make{background:var(--make-soft); color:var(--make); border-color:var(--make);}
+.tag.hand{background:var(--hand-soft); color:var(--hand); border-color:var(--hand);}
+.tag.pick{background:transparent; color:var(--dim); border-color:var(--rule);}
+.tag.e{background:transparent; color:var(--faint); border-color:var(--rule);}
+.dots{display:inline-flex; gap:2px;}
+.dots i{width:5px; height:5px; border-radius:50%; background:var(--rule); display:block;}
+.dots i.on{background:var(--accent);}
+.empty{padding:44px 16px; text-align:center; color:var(--faint); font:400 13.5px/1.6 var(--mono);}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
+footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
+       font:400 12px/1.7 var(--mono); color:var(--faint);}
+@media (max-width:640px){
+  li.item{grid-template-columns:30px minmax(0,1fr);}
+  li .tags{grid-row:auto; grid-column:2; margin-top:7px;}
+}
+@media (prefers-reduced-motion: reduce){ *{transition:none !important;} }
+</style>
+<link rel="stylesheet" href="doc-responsive.css">
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">Deep dive · painting the world</div>
+  <h1>Landscape</h1>
+  <p class="sub">How does a player decide what the land is? Everything before the first tick —
+  the opening world, the archetype, the dials, the brush, the layers, the stamps — and the
+  tooling that would make editing a planet feel like drawing rather than like filing a form.</p>
+  <p class="nav"><a href="./">Pitch</a> · <a href="backlog.html">Systems</a> ·
+  <a href="worlds.html">Worlds</a> · <a href="evolution.html">Evolution</a> ·
+  <a href="godgame.html">God layer</a> · <a href="next.html">Next 200</a> ·
+  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> ·
+  <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> ·
+  <a href="currents.html">Currents</a> · <a href="realism.html">Realism</a> ·
+  <a href="../vr/">Prototype</a></p>
+  <dl class="tally">
+    <div><dt>Items</dt><dd>${D.length}<small>${CATS.length} categories</small></dd></div>
+    <div><dt>Kind</dt><dd>${count((x) => x.k === 'MAKE')}/${count((x) => x.k === 'HAND')}/${count((x) => x.k === 'PICK')}<small>make · hand · pick</small></dd></div>
+    <div><dt>Impact 3</dt><dd>${count((x) => x.i === 3)}<small>of ${D.length}</small></dd></div>
+    <div><dt>Effort</dt><dd>${count((x) => x.e === 'S')}/${count((x) => x.e === 'M')}/${count((x) => x.e === 'L')}<small>S / M / L</small></dd></div>
+  </dl>
+</header>
+
+<div class="prose">
+  <h2>Fixed in this pass</h2>
+  <ul class="state" id="fixed"></ul>
+
+  <h2 style="margin-top:40px">Where the landscape actually is</h2>
+  <ul class="state" id="now"></ul>
+
+  <h2 style="margin-top:40px">The critical path</h2>
+  <p>The capabilities the largest number of other items wait on.</p>
+  <div class="critwrap"><table class="crit"><tbody id="crit"></tbody></table></div>
+</div>
+
+<div class="controls">
+  <div class="filters">
+    <span class="flabel">Kind</span>
+    <button class="f make" data-k="k" data-v="MAKE" aria-pressed="false">Make</button>
+    <button class="f hand" data-k="k" data-v="HAND" aria-pressed="false">Hand</button>
+    <button class="f" data-k="k" data-v="PICK" aria-pressed="false">Pick</button>
+    <span class="flabel" style="margin-left:9px">Effort</span>
+    <button class="f" data-k="e" data-v="S" aria-pressed="false">S</button>
+    <button class="f" data-k="e" data-v="M" aria-pressed="false">M</button>
+    <button class="f" data-k="e" data-v="L" aria-pressed="false">L</button>
+    <span class="flabel" style="margin-left:9px">Impact</span>
+    <button class="f" data-k="i" data-v="3" aria-pressed="false">3</button>
+    <button class="f" data-k="i" data-v="2" aria-pressed="false">2</button>
+    <button class="f" data-k="i" data-v="1" aria-pressed="false">1</button>
+    <input id="q" type="search" placeholder="Search ${D.length} items…" aria-label="Search items">
+  </div>
+  <div class="tally2" id="shown"></div>
+</div>
+
+<div id="list"></div>
+
+<div class="prose" style="margin-top:56px">
+  <h2>Sequencing</h2>
+  <ol class="seq" id="seq"></ol>
+  <p style="margin-top:16px">The through-line: the landscape is now something you pick, share, and
+  carve. A four-word id names a starting world; a nine-globe picker asks which one; a brush walks
+  its own cap and tells the rivers the land moved. What is still missing is the representation
+  change everything else waits on — layers — so a stroke is still a write into <code>W.h</code>,
+  undo is still a whole-field snapshot, and raising resolution still throws the coastline away.</p>
+  <p>Photoshop meets Minecraft meets SimEarth decomposes cleanly. Photoshop is
+  <code>heightlayer</code>, <code>maskstack</code>, <code>selection</code>, <code>histstack</code>
+  and <code>livepreview</code>. Minecraft is <code>strokepath</code>, <code>stampatlas</code> and
+  the sub-cell scale that <code>multires</code> and <code>subcoast</code> open up. SimEarth is the
+  part that already exists and argues back — isostasy, erosion, drainage — which is what makes
+  this different from a heightmap editor.</p>
+</div>
+
+<footer>
+  Generated from <code>scripts/landscape.mjs</code> — edit the source and re-run, do not edit the output.
+</footer>
+</div>
+
+<script>
+"use strict";
+var DATA = ${data};
+var CATS = ${cats};
+var CRIT = ${crit};
+var NOW = ${JSON.stringify(NOW)};
+var FIXED = ${JSON.stringify(FIXED)};
+var SEQ = ${JSON.stringify(SEQ)};
+var KLABEL = {MAKE:'Make', HAND:'Hand', PICK:'Pick'};
+var active = {k:new Set(), e:new Set(), i:new Set()};
+var query = '';
+var listEl = document.getElementById('list');
+var shownEl = document.getElementById('shown');
+
+function esc(s){ return String(s).replace(/[&<>"]/g, function(c){
+  return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+
+document.getElementById('now').innerHTML = NOW.map(function(r){
+  return '<li><b>' + esc(r[0]) + '.</b> ' + esc(r[1]) + '</li>'; }).join('');
+document.getElementById('fixed').innerHTML = FIXED.map(function(r){
+  return '<li><b>' + esc(r[0]) + '.</b> ' + esc(r[1]) + '</li>'; }).join('');
+document.getElementById('crit').innerHTML = CRIT.map(function(r){
+  return '<tr><td>' + esc(r.k) + '</td><td>' + r.id + '. ' + esc(r.t) +
+         '</td><td>' + r.n + ' items</td></tr>'; }).join('');
+document.getElementById('seq').innerHTML = SEQ.map(function(r){
+  return '<li><b>' + esc(r[0]) + '.</b> ' + esc(r[1]) + '</li>'; }).join('');
+
+function match(o){
+  if (active.k.size && !active.k.has(o.k)) return false;
+  if (active.e.size && !active.e.has(o.e)) return false;
+  if (active.i.size && !active.i.has(String(o.i))) return false;
+  if (query){
+    var hay = (o.t + ' ' + o.d + ' ' + o.g + ' ' + o.n.join(' ')).toLowerCase();
+    if (hay.indexOf(query) === -1) return false;
+  }
+  return true;
+}
+
+function dots(n){
+  var out = '<span class="dots" title="Impact ' + n + ' of 3">';
+  for (var k = 1; k <= 3; k++) out += '<i class="' + (k <= n ? 'on' : '') + '"></i>';
+  return out + '</span>';
+}
+
+function render(){
+  var html = '', total = 0;
+  for (var ci = 0; ci < CATS.length; ci++){
+    var cat = CATS[ci];
+    var items = DATA.filter(function(o){ return o.c === cat.id && match(o); });
+    if (!items.length) continue;
+    total += items.length;
+    html += '<section id="' + cat.id + '"><div class="sechead"><h2>' + esc(cat.name) +
+            '</h2><span class="n">' + items.length + '</span></div>' +
+            '<p class="blurb">' + esc(cat.blurb) + '</p><ol>';
+    for (var k = 0; k < items.length; k++){
+      var o = items[k];
+      var cls = o.k === 'MAKE' ? 'make' : o.k === 'HAND' ? 'hand' : 'pick';
+      var dep = '';
+      if (o.g) dep += '<span class="gives">gives ' + esc(o.g) + '</span>';
+      if (o.n.length) dep += (dep ? ' · ' : '') + 'needs ' + o.n.map(esc).join(' ');
+      html += '<li class="item"><span class="id">' + o.id + '</span>' +
+              '<span class="t">' + esc(o.t) + '</span>' +
+              '<span class="tags"><span class="tag ' + cls + '">' + KLABEL[o.k] + '</span>' +
+              '<span class="tag e">' + o.e + '</span>' + dots(o.i) + '</span>' +
+              '<span class="d">' + esc(o.d) + '</span>' +
+              (dep ? '<span class="dep">' + dep + '</span>' : '') + '</li>';
+    }
+    html += '</ol></section>';
+  }
+  if (!total) html = '<p class="empty">Nothing matches those filters.</p>';
+  listEl.innerHTML = html;
+  shownEl.textContent = 'Showing ' + total + ' of ' + DATA.length;
+}
+
+var btns = document.querySelectorAll('button.f');
+for (var b = 0; b < btns.length; b++){
+  btns[b].addEventListener('click', function(){
+    var k = this.dataset.k, v = this.dataset.v;
+    if (active[k].has(v)) { active[k].delete(v); this.setAttribute('aria-pressed','false'); }
+    else { active[k].add(v); this.setAttribute('aria-pressed','true'); }
+    render();
+  });
+}
+document.getElementById('q').addEventListener('input', function(){
+  query = this.value.trim().toLowerCase(); render();
+});
+render();
+</script>
+`;
+}
+
+/* ----------------------------------------------------------------- emit -- */
+await mkdir(join(ROOT, 'briefs'), { recursive: true });
+await mkdir(join(ROOT, 'site'), { recursive: true });
+await writeFile(join(ROOT, 'briefs', 'landscape-backlog.md'), markdown() + '\n');
+await writeFile(join(ROOT, 'site', 'landscape.html'), html());
+
+console.log(`landscape: ${D.length} items across ${CATS.length} categories`);
+for (const [id, name] of CATS) console.log(`  ${String(byCat(id).length).padStart(3)}  ${name}`);
+console.log(`\nkind     make ${count((x) => x.k === 'MAKE')} · hand ${count((x) => x.k === 'HAND')} · pick ${count((x) => x.k === 'PICK')}`);
+console.log(`effort   S ${count((x) => x.e === 'S')} · M ${count((x) => x.e === 'M')} · L ${count((x) => x.e === 'L')}`);
+console.log(`impact   3 ${count((x) => x.i === 3)} · 2 ${count((x) => x.i === 2)} · 1 ${count((x) => x.i === 1)}`);
+console.log('\ncritical path:');
+for (const r of CRITICAL.slice(0, 16)) {
+  console.log(`  ${String(r.n).padStart(3)}  ${r.k.padEnd(14)} ${r.x.t}`);
+}
+const unmet = new Set();
+for (const x of D) for (const t of x.n || []) if (!provides.has(t)) unmet.add(t);
+if (unmet.size) console.log(`\nWARNING unmet tokens: ${[...unmet].join(', ')}`);
+const dup = new Map();
+for (const x of D) dup.set(x.t, (dup.get(x.t) || 0) + 1);
+const dupes = [...dup].filter(([, n]) => n > 1);
+if (dupes.length) console.log(`\nWARNING duplicate titles: ${dupes.map(([t]) => t).join(' | ')}`);
+console.log('\nwrote briefs/landscape-backlog.md and site/landscape.html');

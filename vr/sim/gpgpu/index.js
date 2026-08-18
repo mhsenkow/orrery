@@ -112,6 +112,7 @@ export class GpgpuEngine {
     gl.getExtension('EXT_color_buffer_float');
     gl.getExtension('EXT_color_buffer_half_float');
 
+    this.maxTexSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) || 8192;
     this.internalFormat = gl.RGBA32F;
     this.type = gl.FLOAT;
     if (!this._probeFbo()) {
@@ -184,6 +185,10 @@ export class GpgpuEngine {
     const NC = 6 * NF;
     const AW = 6 * N;
     const H = N;
+    if (AW > this.maxTexSize || H > this.maxTexSize) {
+      console.warn(`[gpgpu] atlas ${AW}×${H} exceeds MAX_TEXTURE_SIZE ${this.maxTexSize}`);
+      return null;
+    }
     const nbr = opts.nbr || NBR;
     const dir = opts.dir || DIR;
     const gl = this.gl;
@@ -478,7 +483,7 @@ export class GpgpuEngine {
   syncTick(id, W, uniforms) {
     if (!this.ok || !this.enabled) return false;
     try {
-      if (!this.slots.has(id)) this.createSlot(id, { N: W._simN || DEFAULT_N });
+      if (!this.slots.has(id) && !this.createSlot(id, { N: W._simN || DEFAULT_N })) return false;
       const t = this.stats.ticks;
       const resident = W._gpgpuResident !== false;
       // Full upload every 8 ticks (or when dirty); otherwise sun/geo only so GPU keeps solving

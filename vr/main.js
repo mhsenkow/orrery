@@ -1,11 +1,13 @@
 /** ORRERY main — UI, input, XR, sim loop. */
 
-import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, showErr } from './math.js';
+import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, lookRay, showErr } from './math.js';
 import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
 import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
 import { timePanelState, ruleForEra } from './sim/timePanel.js';
-import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta } from './world.js';
+import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain } from './world.js';
+import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
 import { freshSeed } from './sim/rng.js';
+import { encodeWorldId, decodeWorldId, parseWorldInput, worldIdOf, seedToWords } from './sim/seedword.js';
 import { noteDroppedTicks } from './sim/meta.js';
 import { detectEnding, finaleArtefact, formatFinaleMarkdown } from './sim/finale.js';
 import { currentReveal, advanceReveal, skipReveal, loadRevealProgress, campaignBlurb } from './sim/teach.js';
@@ -19,17 +21,24 @@ import {
   platesPanelChrome, refreshPlatesPanel, bindPlatesPanel, tectonicsAtCell, plateName,
 } from './sim/platesPanel.js';
 import { TOOLS, setTool, activeTool, useToolAt, pickCell, fingerOfGod,
-  beginToolDrag, moveToolDrag, endToolDrag, undoStroke, canUndo,
+  beginToolDrag, moveToolDrag, endToolDrag, undoStroke, redoStroke, canUndo,
+  setCrustOceanic, setPinpoint, setBrushInvert,
   pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild,
   BRUSH, brushKm, brushForTier, previewBrush,
 } from './tools.js';
+import {
+  addPaintLayer, duplicateLayer, removeLayer, moveLayer, setActiveLayer,
+  setLayerVisible, setLayerOpacity, setLayerBlend, setLayerName,
+  setPaintMaskMode, clipLayerToLand, clearLayerMask, flattenLayers,
+  layerPanelState,
+} from './sim/layers.js';
 import { GUILDS, speciesMemoryReadout } from './sim/redox.js';
 import {
   SCENARIOS, startScenario, evaluateScenario, CAMPAIGN, dailySeed,
 } from './sim/god/scenario.js';
 import {
   blankGenesis, PRESETS, applyPreset, randomizeGenesis, rulesetFromGenesis,
-  encodeSeedString, applyGenesisToWorld,
+  decodeSeedString, applyGenesisToWorld, genesisFromPanel,
 } from './sim/god/genesis.js';
 import {
   setTimeRate, TIME_RATES, addBookmark, setLetItRun, shouldHaltFF,
@@ -38,6 +47,10 @@ import {
 import { addToShelf, loadShelf, rankByBiosignature } from './sim/god/shelf.js';
 import { tipForTool, tipForId, SUITE_TIPS, RIBBON_TIPS } from './sim/god/tips.js';
 import { decorateButton, iconSVG, DOCK_TAB_ICONS } from './sim/god/icons.js';
+import {
+  CAM_DIST_MIN, CAM_DIST_MAX, XR_SCALE_MIN, XR_SCALE_MAX,
+  scaleRung, applyScalePreset, eorefById,
+} from './sim/eoref.js';
 import { exportChronicle, currentEraName, whatHappenedHere } from './chronicle.js';
 import { audioInit, audioUpdate, playEvent, audioMute, audioMuted } from './audio.js';
 import { LIFE_CLASSES } from './sim/bio.js';
@@ -86,7 +99,12 @@ const S = {
   camPanY: 0,
   scaleXR: 0.22,
   posXR: [0, 1.18, -0.52],
+  canvasMode: false,
+  landscape: 'auto',
+  lookMode: 'photo',
+  cloudFree: false,
   paused: false,
+  pitchShot: false,
   detail: 0,
   entFade: 0,
   exposure: 1.15,
@@ -130,7 +148,7 @@ const S = {
   _localPatch: null,
   catalogueId: null,
   catFilter: 'all',
-  labDesk: 'all',
+  labDesk: 'station',
   catKind: 'TYPE',
   catQuery: '',
 };
@@ -235,6 +253,131 @@ function panGlobe(dxPx, dyPx) {
 
 function needGeom() { geomDirty = true; }
 
+function afterLayerEdit() {
+  refreshColours(1);
+  needGeom();
+  refreshLayerPanel();
+}
+
+function refreshLayerPanel() {
+  const host = document.getElementById('layerlist');
+  if (!host) return;
+  if (host.contains(document.activeElement) && document.activeElement.classList?.contains('layer-name')) return;
+  const st = layerPanelState(W);
+  if (!st) {
+    host.innerHTML = '<p class="god-note" style="margin:0">Generate a world to get a stack.</p>';
+    return;
+  }
+  const rows = [];
+  rows.push(`<div class="layer-row locked" data-layer="base" role="option">
+    <button type="button" class="layer-eye" data-eye="base" title="Hide generated land">${st.baseVisible ? '◉' : '○'}</button>
+    <span class="layer-name">${st.baseName}</span>
+    <span class="layer-blend">base</span>
+  </div>`);
+  for (const L of st.layers) {
+    rows.push(`<div class="layer-row${L.active ? '' : ''}" data-layer="${L.id}" role="option" aria-selected="${L.active ? 'true' : 'false'}" aria-pressed="${L.active ? 'true' : 'false'}">
+      <button type="button" class="layer-eye" data-eye="${L.id}" title="Hide layer">${L.visible ? '◉' : '○'}</button>
+      <input class="layer-name" data-rename="${L.id}" value="${L.name.replace(/"/g, '&quot;')}" aria-label="Layer name">
+      <span class="layer-blend">${L.blend}${L.hasMask ? ' · mask' : ''}</span>
+    </div>`);
+  }
+  host.innerHTML = rows.join('');
+  const op = document.getElementById('layeropacity');
+  const opv = document.getElementById('layeropacityval');
+  const blend = document.getElementById('layerblend');
+  const paint = document.getElementById('layerpaint');
+  const active = st.layers.find((L) => L.active);
+  if (op && active) {
+    op.value = String(Math.round(active.opacity * 100));
+    if (opv) opv.textContent = `${op.value}%`;
+  }
+  if (blend && active) blend.value = active.blend;
+  if (paint) paint.value = st.paintMask ? 'mask' : 'height';
+}
+
+function bindLayerPanel() {
+  const host = document.getElementById('layerlist');
+  if (!host) return;
+  host.addEventListener('click', (e) => {
+    const eye = e.target.closest('[data-eye]');
+    if (eye) {
+      e.stopPropagation();
+      const id = eye.dataset.eye === 'base' ? 'base' : +eye.dataset.eye;
+      if (id === 'base') {
+        setLayerVisible(W, 'base', !(W.layerStack?.baseVisible !== false));
+      } else {
+        const L = W.layerStack?.layers.find((x) => x.id === id);
+        if (L) setLayerVisible(W, id, !L.visible);
+      }
+      afterLayerEdit();
+      return;
+    }
+    const row = e.target.closest('[data-layer]');
+    if (!row || row.dataset.layer === 'base') return;
+    setActiveLayer(W, +row.dataset.layer);
+    refreshLayerPanel();
+  });
+  host.addEventListener('change', (e) => {
+    const inp = e.target.closest('[data-rename]');
+    if (!inp) return;
+    setLayerName(W, +inp.dataset.rename, inp.value);
+  });
+  document.getElementById('layeradd')?.addEventListener('click', () => {
+    addPaintLayer(W, 'Stroke');
+    afterLayerEdit();
+  });
+  document.getElementById('layerdup')?.addEventListener('click', () => {
+    if (!duplicateLayer(W)) showErr('Layer cap (12) or nothing to copy');
+    else afterLayerEdit();
+  });
+  document.getElementById('layerdel')?.addEventListener('click', () => {
+    if (!removeLayer(W, W.layerStack?.activeId)) showErr('Keep at least one paint layer');
+    else afterLayerEdit();
+  });
+  document.getElementById('layerup')?.addEventListener('click', () => {
+    moveLayer(W, W.layerStack?.activeId, 1);
+    afterLayerEdit();
+  });
+  document.getElementById('layerdown')?.addEventListener('click', () => {
+    moveLayer(W, W.layerStack?.activeId, -1);
+    afterLayerEdit();
+  });
+  document.getElementById('layerflatten')?.addEventListener('click', () => {
+    if (!W.layerStack) return;
+    if (!confirm('Flatten bakes every layer into Land. You cannot undo this.')) return;
+    flattenLayers(W);
+    afterLayerEdit();
+    showErr('Flattened — the stack is Land now');
+  });
+  document.getElementById('layeropacity')?.addEventListener('input', (e) => {
+    const v = (+e.target.value) / 100;
+    const id = W.layerStack?.activeId;
+    if (id) setLayerOpacity(W, id, v);
+    const opv = document.getElementById('layeropacityval');
+    if (opv) opv.textContent = `${e.target.value}%`;
+    refreshColours(1);
+    needGeom();
+  });
+  document.getElementById('layerblend')?.addEventListener('change', (e) => {
+    const id = W.layerStack?.activeId;
+    if (id) setLayerBlend(W, id, e.target.value);
+    afterLayerEdit();
+  });
+  document.getElementById('layerpaint')?.addEventListener('change', (e) => {
+    setPaintMaskMode(W, e.target.value === 'mask');
+    showErr(e.target.value === 'mask' ? 'Raise reveals the mask, Lower conceals' : 'Raise / Lower write height');
+  });
+  document.getElementById('layerclipland')?.addEventListener('click', () => {
+    clipLayerToLand(W);
+    afterLayerEdit();
+  });
+  document.getElementById('layerclearmask')?.addEventListener('click', () => {
+    clearLayerMask(W);
+    afterLayerEdit();
+  });
+  refreshLayerPanel();
+}
+
 function runGenerate(seed, ruleIn) {
   const session = {
     deepTime: W.rule?.deepTime,
@@ -244,6 +387,7 @@ function runGenerate(seed, ruleIn) {
   };
   const rule = mergeRunRule(ruleIn, session);
   generate(seed, rule);
+  W._canvasMode = !!S.canvasMode;
   resetFlow();
   W._gpgpuDirty = true;
   rebuildGeometry();
@@ -259,6 +403,7 @@ function runGenerate(seed, ruleIn) {
   refreshToolGates();
   updateHUD();
   refreshLab();
+  refreshLayerPanel();
   if (TABLE.enabled) syncTableFromShelf(TABLE, W);
 }
 
@@ -279,6 +424,7 @@ function loadTableSlot(slot) {
     showMoment('Orrery', slot.name || 'World', `seed ${meta.seed}`);
     updateHUD();
     refreshLab();
+    refreshLayerPanel();
     return true;
   } catch (e) {
     showErr(String(e.message || e));
@@ -286,12 +432,11 @@ function loadTableSlot(slot) {
   }
 }
 
+const TOOL_BTN_SEL = '#toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsSample button';
+
 function refreshToolGates() {
   const unlocked = toolsUnlocked(W);
-  const buttons = [
-    ...document.getElementById('tools')?.children || [],
-    ...document.getElementById('toolsMore')?.children || [],
-  ];
+  const buttons = document.querySelectorAll(TOOL_BTN_SEL);
   let needInspect = false;
   for (const b of buttons) {
     const id = b.dataset?.id;
@@ -535,11 +680,17 @@ function setupCatalogue() {
 }
 
 function togglePause() {
-  if (S.dayWatch) { setDayWatch(false); return; }
-  S.paused = !S.paused;
+  setPaused(!S.paused);
+}
+
+function setPaused(on) {
+  if (S.dayWatch && on) { setDayWatch(false); return; }
+  S.paused = !!on;
   const b = document.getElementById('pause');
-  b.setAttribute('aria-pressed', S.paused ? 'true' : 'false');
-  b.textContent = S.paused ? 'Resume' : 'Pause';
+  if (b) {
+    b.setAttribute('aria-pressed', S.paused ? 'true' : 'false');
+    b.textContent = S.paused ? 'Resume' : 'Pause';
+  }
   const ribbon = document.getElementById('timeribbon');
   if (ribbon) delete ribbon.dataset.sig;
   updateHUD();
@@ -791,11 +942,20 @@ function updateHUD() {
   const chip = document.getElementById('worldchip');
   if (chip) {
     const mode = R.deepTime ? 'deep time' : (R.tutorial ? 'tutorial' : (S.catalogueId ? 'catalogue' : 'sandbox'));
+    const land = W._landscape && W._landscape !== 'auto' ? landscapeById(W._landscape).name : '';
+    const bits = seedToWords((W.landSeed ?? W.seed) >>> 0);
+    const short = `${bits[0]}-${bits[1]}`;
+    const name = W.worldName || R.name;
     chip.innerHTML = S.catalogueId
       ? `<b>${R.name}</b> <small>#${S.catalogueId} · ${mode} · seed ${W.seed}${R.teqK != null ? ` · ${R.teqK | 0} K` : ''}${R.contested ? ' · contested' : ''}</small>`
-      : `<b>${R.name}</b> <small>${mode} · seed ${W.seed}</small>`;
-    chip.title = 'Open Worlds';
+      : `<b>${name}</b> <small>${land ? `${land} · ` : ''}${short}</small>`;
+    chip.title = S.catalogueId ? 'Open Worlds' : `Open Worlds · ${worldIdOf(W)}`;
     chip.style.cursor = 'pointer';
+  }
+  const landLine = document.getElementById('landmassline');
+  if (landLine && W._landReport) {
+    const r = W._landReport;
+    landLine.textContent = `${r.count} landmasses · ${(r.landFrac * 100).toFixed(0)}% land · largest ${(r.largestShare * 100).toFixed(0)}% · coast ${Math.round(r.coastKm).toLocaleString()} km`;
   }
 
   const insp = document.getElementById('inspect');
@@ -823,7 +983,9 @@ function updateHUD() {
         ? `bound <b>${tec.boundLabel}</b>` +
           (tec.ageMyr != null ? ` · crust age ${tec.ageMyr.toFixed(0)} Myr` : '') + `<br>`
         : '') +
-      `flow ${x.flow.toFixed(2)} · clouds ${(x.clouds ?? 0).toFixed(2)}` +
+      `flow ${x.flow.toFixed(2)} · ground ${(x.groundW ?? 0).toFixed(2)}` +
+      ((x.lake || 0) > 0.05 ? ` · lake ${Number(x.lake).toFixed(2)}` : '') +
+      ` · clouds ${(x.clouds ?? 0).toFixed(2)}` +
       (x.precip != null ? ` · precip ${Number(x.precip).toFixed(2)}` : '') +
       (W.npp ? ` · npp ${W.npp[x.cell].toFixed(2)}` : '') + `<br>` +
       (x.wind != null
@@ -971,8 +1133,10 @@ function update(t) {
   // LOD: surface shows more entities; orbital fades to density field (biome colour)
   if (alt > 0.9) S.entFade *= 0.15;
   else if (alt > 0.5) S.entFade *= 0.55;
-  S.tier = alt > 1.1 ? 'Orbital' : alt > 0.45 ? 'Regional' : alt > 0.16 ? 'Local' : 'Surface';
-  brushForTier(S.tier, S.camDist);
+  S.tier = alt > 8 ? 'Dot' : alt > 1.1 ? 'Orbital' : alt > 0.45 ? 'Regional' : alt > 0.16 ? 'Local' : 'Surface';
+  brushForTier(S.tier === 'Dot' ? 'Orbital' : S.tier, S.camDist);
+  const rungEl = document.getElementById('scalerung');
+  if (rungEl) rungEl.textContent = scaleRung(S.camDist);
 
   // Eye adaptation across scale / terminator (next hdr item)
   const nightish = Math.max(0, Math.min(1, (alt < 0.2 ? 0.15 : 0) + (W.gases?.dust || 0) * 0.3));
@@ -998,6 +1162,7 @@ function update(t) {
         hoverCell: S.localHoverCell,
         simAlpha: S.simAlpha,
         followId: S.follow?.id,
+        net: S.canvasMode,
       });
       const prevFocus = S._localFocus;
       updateLocalHighlight(patch, S.localGlobe);
@@ -1020,7 +1185,7 @@ function update(t) {
     }
   }
 
-  maybeTeachWindow(t);
+  if (!S.pitchShot) maybeTeachWindow(t);
 
   S._fa++;
   if (t - S._ft > 500) {
@@ -1032,26 +1197,31 @@ function update(t) {
 
 function desktopRay(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
-  const x = ((clientX - rect.left) / rect.width) * 2 - 1;
-  const y = -(((clientY - rect.top) / rect.height) * 2 - 1);
+  const ndcX = ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+  const ndcY = -(((clientY - rect.top) / Math.max(1, rect.height)) * 2 - 1);
   const eye = [0, 0.28, S.camDist];
-  const asp = canvas.width / canvas.height;
-  const tan = Math.tan(CAM_FOV / 2);
-  const dir = [x * tan * asp, y * tan + 0.02, -1];
-  const dl = Math.hypot(...dir) || 1;
-  dir[0] /= dl; dir[1] /= dl; dir[2] /= dl;
-  return { eye, dir };
+  const asp = rect.width / Math.max(1, rect.height);
+  return lookRay(ndcX, ndcY, eye, [0, 0, 0], [0, 1, 0], CAM_FOV, asp);
 }
 
 function desktopPick(clientX, clientY) {
-  const { eye, dir } = desktopRay(clientX, clientY);
-  return pickCell(eye, dir, planetPos(), 1, S.q);
+  const { origin, dir } = desktopRay(clientX, clientY);
+  return pickCell(origin, dir, planetPos(), 1, S.q);
+}
+
+let _previewRaf = 0;
+function requestPreview() {
+  if (_previewRaf) return;
+  _previewRaf = requestAnimationFrame(() => {
+    _previewRaf = 0;
+    refreshColours(S.simAlpha ?? 1);
+  });
 }
 
 function desktopTablePick(clientX, clientY) {
   if (!TABLE.enabled) return null;
-  const { eye, dir } = desktopRay(clientX, clientY);
-  return pickTableSlotRay(TABLE, eye, dir, [0, -1.15, 0], 0.38, 0.12);
+  const { origin, dir } = desktopRay(clientX, clientY);
+  return pickTableSlotRay(TABLE, origin, dir, [0, -1.15, 0], 0.38, 0.12);
 }
 
 function onToolResult(res) {
@@ -1066,7 +1236,7 @@ function onToolResult(res) {
   if (res.note && res.ok) showMoment('Orbit', res.note, formatAge(W.ageYr));
   if (res.ok) {
     playEvent(activeTool === 'meteor' ? 'impact' : (activeTool === 'seed' || activeTool === 'seedGuild') ? 'seed' : 'tool', 0.6);
-    const geomTools = new Set(['raise', 'lower', 'meteor', 'buster', 'volcano', 'quake', 'plume', 'lip', 'river', 'ice']);
+    const geomTools = new Set(['raise', 'lower', 'flatten', 'smooth', 'sharpen', 'roughen', 'crust', 'meteor', 'buster', 'volcano', 'quake', 'plume', 'lip', 'river', 'ice']);
     if (geomTools.has(activeTool)) needGeom();
     if (res.cell != null && res.cell >= 0) markTouch(W, res.cell);
     refreshColours(1);
@@ -1079,8 +1249,9 @@ function onToolResult(res) {
   }
   if (res.sample) {
     S.lastSample = res.sample;
-    refreshLab();
     setDockTab('lab');
+    setSuiteDesk('lab', 'station');
+    refreshLab();
   }
   updateHUD();
 }
@@ -1089,15 +1260,17 @@ function showReceiptToast(res) {
   const el = document.getElementById('receipt');
   if (!el) return;
   const last = W.receipts?.[W.receipts.length - 1];
-  if (!last && !res.pay) return;
-  el.innerHTML = last
-    ? `<b>${last.tool}</b> · ${last.expected || last.intent}`
-      + (last.cost ? ` · −${last.cost}` : '')
-      + (res.settling ? `<br><small>settles: ${res.settling}</small>` : '')
-    : (res.pay?.note || '');
+  const said = res.said || res.note;
+  if (!last && !res.pay && !said) return;
+  const title = said || last?.intent || last?.tool || activeTool;
+  const sub = last?.expected && last.expected !== said ? last.expected : '';
+  el.innerHTML = `<b>${title}</b>`
+    + (sub ? `<br><small>${sub}</small>` : '')
+    + (last?.cost ? ` · −${last.cost}` : '')
+    + (res.settling ? `<br><small>settles: ${res.settling}</small>` : '');
   el.classList.add('show');
   clearTimeout(showReceiptToast._t);
-  showReceiptToast._t = setTimeout(() => el.classList.remove('show'), 3200);
+  showReceiptToast._t = setTimeout(() => el.classList.remove('show'), 3800);
 }
 
 function startCommitHold(cell) {
@@ -1134,14 +1307,18 @@ function setupTips() {
   // Play / World / chrome controls by id
   const ids = [
     'guildsel', 'brushmask', 'brushsnap', 'brushhard',
-    'godundo', 'godwatch', 'godbookmark',
+    'godundo', 'godredo', 'godwatch', 'godbookmark',
     'scenariosel', 'scenariostart',
-    'genesisname', 'genesisseed', 'genesispreset',
+    'genesisname', 'genesisseed', 'genesispreset', 'genesisland',
     'genesisrand', 'genesisgo', 'dailyseed', 'godshelf', 'godshare',
     'budget', 'autopilot',
     'pause', 'newseed', 'catbtn', 'catprev', 'catnext', 'worldchip',
     'docktoggle', 'vrbtn',
     'opacity', 'grid', 'xray', 'xrayAmt', 'viewClear', 'viewGhost', 'viewOrbitGuides',
+    'lookPhoto', 'lookDiagram', 'cloudFree', 'canvasmode', 'rerolland', 'landshape', 'landpickbtn',
+    'layeradd', 'layerdup', 'layerdel', 'layerup', 'layerdown', 'layerflatten',
+    'layeropacity', 'layerblend', 'layerpaint', 'layerclipland', 'layerclearmask',
+    'genesisplates', 'genesiswater', 'genesislandfrac',
     'simN', 'globeSubd', 'orreryTable', 'export',
     'labRefresh', 'labPaper', 'labSave', 'labFinale', 'labPng', 'labDual',
     'catsort', 'catcsv',
@@ -1162,12 +1339,12 @@ function setupTips() {
   });
   // Dock tabs — icon stacked above label (Sky metaphor for all)
   const tabTips = {
-    tools: ['Tools', 'The verbs — raise land, seed life, strike, inspect. Select one, then right-click the planet.'],
+    tools: ['Tools', 'The verbs — raise land, seed life, strike. Select one, then right-click the planet. Looking and cores live in Lab.'],
     god: ['Play', 'Aim your tools: which life to plant, brush limits, challenges, and new-world authoring. Time lives on the ribbon.'],
     climate: ['Sky', 'Atmosphere desks: circulation & tides, storm track, coast flood risk, spin A/B compare.'],
     rock: ['Rock', 'Core, plates, boundaries, fire, crust age — interiors drive dynamos and lids.'],
     view: ['View', 'Look, field overlays, x-ray cut, and orbit guides. Overlays live here — Sky/Rock only jump to one.'],
-    lab: ['Lab', 'Instruments: redox tower, Keeling curve, diversity, cores you have taken, transit sketch.'],
+    lab: ['Lab', 'Station first: inspect a cell, take a core. Then the instruments — redox tower, Keeling, diversity, transit.'],
     sandbox: ['World', 'Energy mode, Gaia, resolution, and the archive for this run.'],
   };
   const tabLabels = {
@@ -1186,9 +1363,9 @@ function setupTips() {
   // Suite desk tabs (Play / View / Lab / World / Tools)
   const suiteMeta = {
     tools: {
-      verbs: ['tabtools', 'Verbs'],
-      more: ['more', 'More'],
-      station: ['station', 'Station'],
+      land: ['raise', 'Land'],
+      life: ['seedGuild', 'Life'],
+      strike: ['meteor', 'Strike'],
     },
     god: {
       aim: ['seedGuild', 'Life'],
@@ -1203,6 +1380,7 @@ function setupTips() {
       guides: ['orbitguides', 'Guides'],
     },
     lab: {
+      station: ['station', 'Station'],
       all: ['tablab', 'All'],
       tower: ['o2', 'Tower'],
       curves: ['curves', 'Curves'],
@@ -1233,7 +1411,7 @@ function setupTips() {
 
   // Play / World action icons
   const iconIds = [
-    'godundo', 'godwatch', 'godbookmark',
+    'godundo', 'godredo', 'godwatch', 'godbookmark',
     'scenariostart', 'genesisrand', 'genesisgo', 'dailyseed',
     'godshelf', 'godshare', 'budget', 'autopilot',
   ];
@@ -1299,10 +1477,13 @@ function setSuiteDesk(suite, desk) {
 }
 
 function applyLabFilter() {
-  const desk = S.labDesk || 'all';
+  const desk = S.labDesk || 'station';
+  const stats = document.getElementById('stats');
+  if (stats) stats.hidden = desk !== 'station';
   document.querySelectorAll('#labstats .lab-card').forEach((card) => {
     const cat = card.dataset.labCat || 'notes';
-    card.hidden = desk !== 'all' && cat !== desk;
+    if (desk === 'station') card.hidden = cat !== 'sample';
+    else card.hidden = desk !== 'all' && cat !== desk;
   });
 }
 
@@ -1516,8 +1697,13 @@ function setupGodPanel() {
   });
   document.getElementById('godundo')?.addEventListener('click', () => {
     const r = undoStroke();
-    if (r) { showErr(r.note); refreshColours(1); needGeom(); }
+    if (r) { showErr(r.note); refreshColours(1); needGeom(); refreshLayerPanel(); }
     else showErr('Nothing to undo');
+  });
+  document.getElementById('godredo')?.addEventListener('click', () => {
+    const r = redoStroke();
+    if (r) { showErr(r.note); refreshColours(1); needGeom(); refreshLayerPanel(); }
+    else showErr('Nothing to redo');
   });
   document.getElementById('godbookmark')?.addEventListener('click', () => {
     const b = addBookmark();
@@ -1536,12 +1722,17 @@ function setupGodPanel() {
     showMoment('Shelf', W.worldName || W.rule.name, `${loadShelf().length} worlds saved`);
   });
   document.getElementById('godshare')?.addEventListener('click', () => {
-    const g = W.genesis || blankGenesis();
-    g.seed = W.seed;
-    g.name = W.worldName || W.rule.name;
-    const str = encodeSeedString(g, W.interventionLog || []);
-    navigator.clipboard?.writeText(str);
-    showMoment('Seed string', 'Copied', str.slice(0, 48) + '…');
+    const id = worldIdOf(W);
+    let text = id;
+    try {
+      const u = new URL(location.href);
+      u.searchParams.set('world', id);
+      u.searchParams.delete('seed');
+      u.searchParams.delete('land');
+      text = `${id}\n${u.toString()}`;
+    } catch { /* no location */ }
+    navigator.clipboard?.writeText(text);
+    showMoment('World id', 'Copied', id);
   });
   const mask = document.getElementById('brushmask');
   if (mask) {
@@ -1554,32 +1745,91 @@ function setupGodPanel() {
   document.getElementById('brushhard')?.addEventListener('input', (e) => {
     BRUSH.hardness = (+e.target.value) / 100;
   });
+  const brushSym = document.getElementById('brushsym');
+  if (brushSym) {
+    brushSym.onchange = () => { BRUSH.symmetry = brushSym.value || null; };
+  }
+  bindLayerPanel();
+  const landOpts = LANDSCAPES.map((l) => `<option value="${l.id}">${l.name}</option>`).join('');
+  const landSel = document.getElementById('landshape');
+  const genLandSel = document.getElementById('genesisland');
+  const landBlurb = document.getElementById('landshapeblurb');
+  const syncLandPick = (id, suggestLand = false) => syncLandscapeUi(id, suggestLand);
+  if (landSel) {
+    landSel.innerHTML = landOpts;
+    landSel.value = S.landscape || 'auto';
+    syncLandPick(landSel.value);
+    landSel.addEventListener('change', () => syncLandPick(landSel.value));
+  }
+  if (genLandSel) {
+    genLandSel.innerHTML = landOpts;
+    genLandSel.value = S.landscape || 'auto';
+    genLandSel.addEventListener('change', () => syncLandPick(genLandSel.value, true));
+  }
   const presetSel = document.getElementById('genesispreset');
   if (presetSel) {
     presetSel.innerHTML = '<option value="">— preset —</option>' +
       PRESETS.map((p) => `<option value="${p.id}">${p.name}</option>`).join('');
+    presetSel.addEventListener('change', () => {
+      if (presetSel.value !== 'no-plates') return;
+      const plates = document.getElementById('genesisplates');
+      if (plates) { plates.value = 1; plates.dispatchEvent(new Event('input')); }
+    });
   }
+  const bindRange = (id, valId, fmt, on) => {
+    const el = document.getElementById(id);
+    const lab = document.getElementById(valId);
+    if (!el) return;
+    const sync = () => { if (lab) lab.textContent = fmt(+el.value); on?.(+el.value); };
+    el.addEventListener('input', sync);
+    sync();
+  };
+  bindRange('genesisplates', 'genesisplatesVal', (v) => String(v));
+  bindRange('genesiswater', 'genesiswaterVal', (v) => `${(v / 100).toFixed(2)}×`);
+  bindRange('genesislandfrac', 'genesislandfracVal', (v) => `${v}%`);
   document.getElementById('genesisgo')?.addEventListener('click', () => {
-    let g = blankGenesis();
-    g.name = document.getElementById('genesisname')?.value || 'Unnamed';
-    g.seed = (+document.getElementById('genesisseed')?.value) || freshSeed();
-    const pid = presetSel?.value;
-    if (pid) applyPreset(g, pid);
+    if (!confirmLeaveLand()) return;
+    const base = W.rule || RULESETS[0];
+    const g = genesisFromPanel(document);
+    g.rulesetId = base.id || 'terra';
+    if (!g.name) g.name = nameWorld(g.seed, g.landscape);
     const rule = rulesetFromGenesis(g);
     runGenerate(g.seed, rule);
+    syncLandscapeUi(g.landscape);
     applyGenesisToWorld(W, g);
     S.genesis = g;
-    showMoment('Genesis', g.name, `seed ${g.seed}`);
+    const seedEl = document.getElementById('genesisseed');
+    if (seedEl) seedEl.value = g.seedLabel || encodeWorldId(g.seed, g.landscape);
+    rememberWorldId(worldIdOf(W));
+    refreshGenesisReport(g);
+    applyOverlayChoice('plates');
+    showMoment('Genesis', g.name, genesisSummary(g, W));
   });
   document.getElementById('genesisrand')?.addEventListener('click', () => {
     const g = randomizeGenesis({ habitable: true });
     document.getElementById('genesisname').value = g.name;
-    document.getElementById('genesisseed').value = g.seed;
+    document.getElementById('genesisseed').value = encodeWorldId(g.seed, g.landscape);
+    if (genLandSel) genLandSel.value = g.landscape;
+    const plates = document.getElementById('genesisplates');
+    const water = document.getElementById('genesiswater');
+    const landf = document.getElementById('genesislandfrac');
+    if (plates) { plates.value = g.nPlates; plates.dispatchEvent(new Event('input')); }
+    if (water) { water.value = Math.round(g.waterInventory * 100); water.dispatchEvent(new Event('input')); }
+    if (landf) { landf.value = Math.round((g.landFrac ?? g.continentFrac) * 100); landf.dispatchEvent(new Event('input')); }
   });
   document.getElementById('dailyseed')?.addEventListener('click', () => {
-    const seed = dailySeed();
-    runGenerate(seed, W.rule);
-    showMoment('Daily world', formatAge(W.ageYr), `seed ${seed}`);
+    if (!confirmLeaveLand()) return;
+    const g = genesisFromPanel(document);
+    g.seed = dailySeed();
+    g.rulesetId = W.rule?.id || 'terra';
+    const rule = rulesetFromGenesis(g);
+    runGenerate(g.seed, rule);
+    applyGenesisToWorld(W, g);
+    S.genesis = g;
+    syncLandscapeUi(g.landscape);
+    rememberWorldId(worldIdOf(W));
+    refreshGenesisReport(g);
+    showMoment('Daily world', g.name, genesisSummary(g));
   });
 }
 
@@ -1624,14 +1874,14 @@ function refreshLab() {
 
   let sampleCard = '';
   if (S.lastSample?.layers) {
-    sampleCard = card('curves', 'core', 'Core sample',
+    sampleCard = card('sample', 'core', 'Core sample',
       `${coreStrataSVG(S.lastSample.layers)}
       <div class="lab-meta">cell <b>${S.lastSample.cell}</b> · ${S.lastSample.biome}
       ${S.lastSample.proxies ? ` · δ¹³C <b>${S.lastSample.proxies.d13C.toFixed(1)}</b> · pH <b>${S.lastSample.proxies.pH.toFixed(2)}</b>` : ''}
       </div>`);
   } else if (S.lastSample?.samples) {
     const ppm = S.lastSample.samples.map((s) => s.co2 * 1e6);
-    sampleCard = card('curves', 'icecore', 'Ice core',
+    sampleCard = card('sample', 'icecore', 'Ice core',
       `${chartAreaSVG(ppm, { id: 'ice', color: '#9fc0ff', label: ' ppm', digits: 0 })}
       <div class="lab-meta">${S.lastSample.note || ''}</div>`);
   }
@@ -1767,6 +2017,8 @@ function announceNewMoments() {
   }
 }
 
+let _pitchHoldMoment = false;
+
 function showMoment(kicker, title, sub, rgb = null) {
   const el = document.getElementById('moment');
   if (!el) return;
@@ -1785,7 +2037,7 @@ function showMoment(kicker, title, sub, rgb = null) {
   }
   el.classList.add('show');
   clearTimeout(_momentTimer);
-  _momentTimer = setTimeout(() => el.classList.remove('show'), 4200);
+  if (!_pitchHoldMoment) _momentTimer = setTimeout(() => el.classList.remove('show'), 4200);
 }
 
 function resetMomentAnnouncer() {
@@ -1825,6 +2077,209 @@ function maybeTeachWindow(t) {
   refreshColours(1);
 }
 
+function syncLandscapeUi(id, suggestLand = false) {
+  S.landscape = id;
+  for (const elId of ['landshape', 'genesisland']) {
+    const el = document.getElementById(elId);
+    if (el) el.value = id;
+  }
+  const landBlurb = document.getElementById('landshapeblurb');
+  if (landBlurb) landBlurb.textContent = landscapeById(id).blurb;
+  if (suggestLand) {
+    const ls = landscapeById(id);
+    if (ls.land != null) {
+      const landf = document.getElementById('genesislandfrac');
+      if (landf) {
+        landf.value = Math.round(ls.land * 100);
+        landf.dispatchEvent(new Event('input'));
+      }
+    }
+  }
+}
+
+/** Openings — hand-checked (seed, archetype) pairs.
+ *  Boot used to be `runGenerate(20260808, RULESETS[0])`: one constant, so every
+ *  first run this project has ever shown was the same planet. A URL `?seed=` or
+ *  `?land=` or `?world=` still pins it exactly, so a shared link is reproducible. */
+const OPENINGS = [
+  { seed: 20260808, landscape: 'auto' },
+  { seed: 1043, landscape: 'shattered' },
+  { seed: 88117, landscape: 'twoworlds' },
+  { seed: 4402, landscape: 'archipelago' },
+  { seed: 71230, landscape: 'pangaea' },
+  { seed: 5150, landscape: 'belt' },
+  { seed: 33871, landscape: 'inland' },
+  { seed: 9004, landscape: 'polar' },
+  { seed: 61207, landscape: 'highland' },
+  { seed: 2718, landscape: 'ridge' },
+];
+
+const WORLD_HIST_KEY = 'orrery-world-ids';
+
+function rememberWorldId(id) {
+  if (!id) return;
+  try {
+    const prev = JSON.parse(localStorage.getItem(WORLD_HIST_KEY) || '[]');
+    const next = [id, ...prev.filter((x) => x !== id)].slice(0, 12);
+    localStorage.setItem(WORLD_HIST_KEY, JSON.stringify(next));
+  } catch { /* private mode */ }
+}
+
+function worldHistory() {
+  try { return JSON.parse(localStorage.getItem(WORLD_HIST_KEY) || '[]'); }
+  catch { return []; }
+}
+
+function confirmLeaveLand() {
+  if (!W._sculpted) return true;
+  return typeof confirm === 'function'
+    ? confirm('This world has carved land that is not in the seed. Leave it?')
+    : true;
+}
+
+function genesisSummary(g, Wref = W) {
+  const rep = Wref._landReport;
+  const n = Wref.plates?.length || g.nPlates;
+  const land = rep ? `${(rep.landFrac * 100).toFixed(0)}% land · ${rep.count} masses` : '';
+  return `${landscapeById(g.landscape).name} · ${n} plates · ${land}`;
+}
+
+function refreshGenesisReport(g) {
+  const el = document.getElementById('genesisreport');
+  if (!el || !W._landReport) return;
+  const rep = W._landReport;
+  const n = W.plates?.length || g.nPlates;
+  const seedNote = g.seedLabel ? `"${g.seedLabel}" → ${g.seed}` : String(g.seed);
+  el.textContent = `Built ${landscapeById(g.landscape).name} · ${n} plates · `
+    + `water ${(g.waterInventory || 1).toFixed(2)}× · `
+    + `${(rep.landFrac * 100).toFixed(0)}% land (${rep.count} masses) · seed ${seedNote}`;
+}
+
+function readUrlOpening() {
+  let q = null;
+  try { q = new URLSearchParams(location.search); } catch { return null; }
+  const world = q.get('world');
+  if (world) {
+    const d = decodeWorldId(world) || parseWorldInput(world);
+    if (d?.seed != null) {
+      return { seed: d.seed, landscape: d.landscape || 'auto', pinned: true };
+    }
+  }
+  const urlSeed = parseInt(q.get('seed') || '', 10);
+  const urlLand = q.get('land');
+  if (Number.isFinite(urlSeed) || urlLand) {
+    return {
+      seed: Number.isFinite(urlSeed) ? urlSeed >>> 0 : freshSeed(),
+      landscape: urlLand && landscapeById(urlLand).id === urlLand ? urlLand : 'auto',
+      pinned: true,
+    };
+  }
+  return null;
+}
+
+function pickOpening() {
+  const pinned = readUrlOpening();
+  if (pinned) return pinned;
+  const weighted = OPENINGS.filter((o) => o.landscape !== 'auto');
+  const pool = weighted.length ? weighted.concat(OPENINGS) : OPENINGS;
+  return { ...pool[(Math.random() * pool.length) | 0], pinned: false };
+}
+
+function applyOpening(opening, opts = {}) {
+  const base = opts.rule || W.rule || RULESETS[0];
+  const g = genesisFromPanel(document);
+  g.seed = opening.seed;
+  g.landscape = opening.landscape;
+  g.rulesetId = base.id || 'terra';
+  if (!g.name) g.name = opening.name || nameWorld(g.seed, g.landscape);
+  const rule = rulesetFromGenesis(g);
+  S.landscape = opening.landscape;
+  runGenerate(opening.seed, rule);
+  W.worldName = g.name;
+  applyGenesisToWorld(W, g);
+  S.genesis = g;
+  rememberWorldId(worldIdOf(W));
+  syncLandscapeUi(g.landscape);
+  const seedEl = document.getElementById('genesisseed');
+  if (seedEl) seedEl.value = encodeWorldId(opening.seed, opening.landscape);
+  refreshGenesisReport(g);
+  updateHUD();
+}
+
+function pickerCandidates(current) {
+  const out = [];
+  const seen = new Set();
+  const add = (seed, landscape) => {
+    const id = encodeWorldId(seed, landscape);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({ seed, landscape, id, name: nameWorld(seed, landscape) });
+  };
+  if (current) add(current.seed, current.landscape);
+  for (const o of OPENINGS) add(o.seed, o.landscape);
+  const extras = ['shattered', 'twoworlds', 'archipelago', 'inland', 'highland', 'ridge', 'pangaea'];
+  let n = 0;
+  while (out.length < 9 && n < 24) {
+    add(freshSeed(), extras[n % extras.length]);
+    n++;
+  }
+  return out.slice(0, 9);
+}
+
+function closeLandPicker() {
+  document.getElementById('landpick')?.classList.remove('open');
+}
+
+function openLandPicker(opts = {}) {
+  const panel = document.getElementById('landpick');
+  const grid = document.getElementById('landpickgrid');
+  const foot = document.getElementById('landpickfoot');
+  if (!panel || !grid) return;
+  const current = {
+    seed: (W.landSeed ?? W.seed) >>> 0,
+    landscape: W._landscape || S.landscape || 'auto',
+  };
+  const cards = pickerCandidates(current);
+  grid.innerHTML = '';
+  for (const c of cards) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lp-card';
+    b.setAttribute('aria-pressed', c.seed === current.seed && c.landscape === current.landscape ? 'true' : 'false');
+    const cvs = document.createElement('canvas');
+    cvs.width = 160; cvs.height = 160;
+    drawLandscapeThumb(cvs.getContext('2d'), c.seed, c.landscape, 160);
+    const meta = document.createElement('div');
+    meta.className = 'lp-meta';
+    const idBits = c.id.split('.');
+    const shortId = idBits[0].split('-').slice(0, 2).join('-') + (idBits[1] ? ` · ${idBits[1]}` : '');
+    meta.innerHTML = `<div class="lp-name">${c.name}</div><div class="lp-id" title="${c.id}">${shortId}</div>`;
+    b.append(cvs, meta);
+    b.addEventListener('click', () => {
+      if (!confirmLeaveLand()) return;
+      applyOpening(c, { rule: W.rule });
+      closeLandPicker();
+      setPaused(true);
+      showMoment('Starting world', c.name, genesisSummary(S.genesis || { landscape: c.landscape, nPlates: W.rule?.nPlates }));
+    });
+    grid.appendChild(b);
+  }
+  const hist = worldHistory();
+  if (foot) {
+  if (foot) {
+    const recent = hist.slice(0, 3).map((id) => {
+      const p = id.split('.');
+      return p[0].split('-').slice(0, 2).join('-') + (p[1] ? `.${p[1]}` : '');
+    });
+    foot.textContent = recent.length
+      ? `Recent: ${recent.join(' · ')}`
+      : 'The id under a globe is what you send.';
+  }
+  }
+  panel.classList.add('open');
+  if (opts.pause) setPaused(true);
+}
+
 /* ---------- boot UI ---------- */
 export function boot() {
   const cvs = document.getElementById('c');
@@ -1849,12 +2304,35 @@ export function boot() {
   setupTips();
   setupReveal();
 
-  const PRIMARY_TOOLS = new Set(['inspect', 'core', 'icecore', 'solar', 'seedGuild', 'raise', 'lower', 'meteor', 'co2', 'albedo']);
-  const toolsEl = document.getElementById('tools');
-  const toolsMore = document.getElementById('toolsMore');
+  const TOOL_DESK = {
+    land: 'land',
+    life: 'life',
+    dis: 'strike',
+    clim: 'strike',
+  };
+  const deskEls = {
+    land: document.getElementById('toolsLand'),
+    life: document.getElementById('toolsLife'),
+    strike: document.getElementById('toolsStrike'),
+    clim: document.getElementById('toolsClimate'),
+    see: document.getElementById('toolsSample'),
+  };
   const syncToolPress = () => {
-    const all = [...(toolsEl?.children || []), ...(toolsMore?.children || [])];
-    all.forEach((x) => x.setAttribute('aria-pressed', x.dataset.id === activeTool ? 'true' : 'false'));
+    document.querySelectorAll(TOOL_BTN_SEL)
+      .forEach((x) => x.setAttribute('aria-pressed', x.dataset.id === activeTool ? 'true' : 'false'));
+  };
+  const adoptTool = (t) => {
+    setTool(t.id);
+    syncToolPress();
+    if (t.group === 'see') {
+      // Inspect is also spin-the-globe — don't yank the dock open.
+      if (t.id !== 'inspect') {
+        setDockTab('lab');
+        setSuiteDesk('lab', 'station');
+      }
+      return;
+    }
+    setSuiteDesk('tools', TOOL_DESK[t.group] || 'land');
   };
   TOOLS.forEach((t) => {
     const b = document.createElement('button');
@@ -1863,7 +2341,7 @@ export function boot() {
     const tip = tipForTool(t.id);
     const meta = [
       t.key ? `Key ${t.key.toUpperCase()}` : null,
-      t.drag ? 'Right-drag to stroke' : null,
+      t.drag ? 'Drag to stroke' : (t.group === 'clim' ? 'Whole planet' : 'Click the planet'),
       t.irreversible ? 'Hold to commit' : null,
       t.cost ? `Listed cost ~${t.cost}` : 'Free',
     ].filter(Boolean).join(' · ');
@@ -1871,12 +2349,13 @@ export function boot() {
     else b.title = meta;
     b.onclick = () => {
       if (toolsUnlocked(W)[t.id] === false) return;
-      setTool(t.id); syncToolPress();
-      if (!PRIMARY_TOOLS.has(t.id)) setSuiteDesk('tools', 'more');
-      else setSuiteDesk('tools', 'verbs');
+      adoptTool(t);
     };
     if (t.id === 'inspect') b.setAttribute('aria-pressed', 'true');
-    (PRIMARY_TOOLS.has(t.id) ? toolsEl : toolsMore)?.appendChild(b);
+    const host = t.group === 'clim' ? deskEls.clim
+      : t.group === 'see' ? deskEls.see
+      : deskEls[TOOL_DESK[t.group] || 'land'];
+    host?.appendChild(b);
   });
 
   const viewOverlays = document.getElementById('viewOverlays');
@@ -1939,7 +2418,20 @@ export function boot() {
   }
 
   document.getElementById('pause').onclick = togglePause;
-  document.getElementById('newseed').onclick = () => runGenerate(freshSeed(), W.rule);
+  document.getElementById('newseed').onclick = () => {
+    if (!confirmLeaveLand()) return;
+    const g = genesisFromPanel(document);
+    g.seed = freshSeed();
+    g.rulesetId = W.rule?.id || 'terra';
+    const rule = rulesetFromGenesis(g);
+    runGenerate(g.seed, rule);
+    applyGenesisToWorld(W, g);
+    S.genesis = g;
+    syncLandscapeUi(g.landscape);
+    rememberWorldId(worldIdOf(W));
+    refreshGenesisReport(g);
+    showMoment('Reseed', g.name, genesisSummary(g));
+  };
   document.getElementById('budget').onclick = () => {
     const modes = [SCARCITY.free, SCARCITY.observe, SCARCITY.budgeted];
     const cur = W.scarcityMode || (W.budgetMode ? SCARCITY.budgeted : SCARCITY.free);
@@ -1978,7 +2470,8 @@ export function boot() {
       const eff = effectiveGlobeSubd(n);
       const quads = (6 * globeN() * globeN()).toLocaleString();
       const cap = eff < parseInt(subdEl?.value || '2', 10) ? ` · mesh capped at ${eff}×` : '';
-      showMoment('Resolution', `N=${n}`, `~${cellKm(n)} km/cell · ${quads} quads${cap}`);
+      const pace = n >= 384 ? ' · ticks will drop to hold the frame' : n >= 256 ? ' · heavy CPU' : '';
+      showMoment('Resolution', `N=${n}`, `~${cellKm(n)} km/cell · ${(6 * n * n).toLocaleString()} cells · ${quads} quads${cap}${pace}`);
     } catch (err) {
       showErr(String(err.message || err));
     }
@@ -2114,6 +2607,91 @@ export function boot() {
     opacityEl.value = '40';
     syncView();
   });
+  const applyViewScale = (id) => {
+    const p = applyScalePreset(S, id);
+    if (!p) return;
+    if (id === 'iss') S.localRadius = Math.max(S.localRadius, 12);
+    document.querySelectorAll('#viewScale [data-scale]').forEach((b) => {
+      b.setAttribute('aria-pressed', b.dataset.scale === id ? 'true' : 'false');
+    });
+    const rung = document.getElementById('scalerung');
+    if (rung) rung.textContent = scaleRung(S.camDist);
+  };
+  document.getElementById('viewScale')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-scale]');
+    if (b) applyViewScale(b.dataset.scale);
+  });
+  const showEoref = (id) => {
+    const ref = eorefById(id);
+    const box = document.getElementById('eoref');
+    const img = document.getElementById('eorefImg');
+    const cap = document.getElementById('eorefCap');
+    if (!box || !img) return;
+    img.src = ref.url;
+    img.alt = `${ref.label} — ${ref.credit}`;
+    if (cap) cap.textContent = `${ref.label} · ${ref.credit}. ${ref.note}`;
+    box.classList.add('on');
+    if (ref.preset) applyViewScale(ref.preset);
+  };
+  const hideEoref = () => {
+    const box = document.getElementById('eoref');
+    if (!box) return;
+    box.classList.remove('on');
+  };
+  document.getElementById('viewEoref')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-eoref]');
+    if (b) showEoref(b.dataset.eoref);
+  });
+  document.getElementById('eorefHide')?.addEventListener('click', hideEoref);
+  document.getElementById('eorefClose')?.addEventListener('click', hideEoref);
+  const syncLook = () => {
+    document.getElementById('lookPhoto')?.setAttribute('aria-pressed', S.lookMode === 'photo' ? 'true' : 'false');
+    document.getElementById('lookDiagram')?.setAttribute('aria-pressed', S.lookMode === 'diagram' ? 'true' : 'false');
+    document.getElementById('cloudFree')?.setAttribute('aria-pressed', S.cloudFree ? 'true' : 'false');
+  };
+  document.getElementById('lookPhoto')?.addEventListener('click', () => { S.lookMode = 'photo'; syncLook(); });
+  document.getElementById('lookDiagram')?.addEventListener('click', () => { S.lookMode = 'diagram'; syncLook(); });
+  document.getElementById('cloudFree')?.addEventListener('click', () => { S.cloudFree = !S.cloudFree; syncLook(); });
+  syncLook();
+  const canvasBtn = document.getElementById('canvasmode');
+  const syncCanvas = () => {
+    W._canvasMode = !!S.canvasMode;
+    canvasBtn?.setAttribute('aria-pressed', S.canvasMode ? 'true' : 'false');
+  };
+  canvasBtn?.addEventListener('click', () => {
+    S.canvasMode = !S.canvasMode;
+    syncCanvas();
+    if (S.canvasMode) {
+      applyOverlayChoice('crust');
+      setTool('raise');
+      setSuiteDesk('tools', 'land');
+      document.querySelectorAll(TOOL_BTN_SEL).forEach((x) => {
+        x.setAttribute('aria-pressed', x.dataset.id === 'raise' ? 'true' : 'false');
+      });
+      S.localExpanded = true;
+      syncLocalLayout?.();
+      showErr('Canvas: cube net on the map. Left-drag to paint. Plates frozen.');
+    } else {
+      showErr('Canvas off — geology ticks again.');
+    }
+  });
+  document.getElementById('rerolland')?.addEventListener('click', () => {
+    if (W.rule) W.rule.landscape = S.landscape || 'auto';
+    const r = rerollTerrain();
+    if (r?.ok) {
+      refreshColours(1);
+      needGeom();
+      const rep = r.report;
+      showErr(rep
+        ? `New continents · ${rep.count} landmasses · ${(rep.landFrac * 100).toFixed(0)}% land`
+        : 'Same climate, new continents.');
+      rememberWorldId(worldIdOf(W));
+      updateHUD();
+      refreshLayerPanel();
+    } else showErr(r?.note || 'Could not reroll land');
+  });
+  document.getElementById('landpickbtn')?.addEventListener('click', () => openLandPicker());
+  document.getElementById('landpickclose')?.addEventListener('click', () => closeLandPicker());
   syncView();
 
   const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
@@ -2273,15 +2851,29 @@ export function boot() {
     if (localLegend) {
       const n = Math.max(1, patch?.status?.nCells || 1);
       const shares = patch?.status?.shares || {};
+      const ranked = patch?.status?.census?.ranked || [];
+      const rankOf = Object.fromEntries(ranked.map((e, i) => [e.id, i]));
+      const hasCensus = !!(patch?.status?.census && !patch?.status?.net);
       for (const el of localLegend.children) {
         const k = el.dataset.key;
         const on = hoverKey && k === hoverKey;
-        el.classList.toggle('on', !!on);
-        el.classList.toggle('dim', !!(hoverKey && !on));
         const share = (shares[k] || 0) / n;
+        const pct = Math.round(share * 100);
+        const present = pct >= 1;
+        el.hidden = hasCensus && !present && !on;
+        el.style.order = String(rankOf[k] ?? 99);
+        el.classList.toggle('on', !!on);
+        el.classList.toggle('dim', !!(hoverKey && !on && present));
         el.style.setProperty('--share', share.toFixed(3));
-        const tip = el.dataset.tip || el.title;
-        el.title = share > 0.03 ? `${tip} · ${Math.round(share * 100)}% of this window` : tip;
+        let num = el.querySelector('.leg-n');
+        if (!num) {
+          num = document.createElement('span');
+          num.className = 'leg-n';
+          el.appendChild(num);
+        }
+        num.textContent = present ? `${pct}%` : '';
+        const tip = el.dataset.tip || k;
+        el.title = present ? `${tip} · ${pct}% of this window` : tip;
       }
     }
     if (localStatus && patch?.status) {
@@ -2289,6 +2881,7 @@ export function boot() {
       const bit = (k, v) =>
         `<span class="st" data-k="${k}"><em>${k}</em><b>${v}</b></span>`;
       localStatus.innerHTML = [
+        st.census?.line ? bit('in', st.census.line) : '',
         bit('here', st.place || (st.pinned ? 'pinned' : 'live')),
         !st.pinned && st.seek === 'life' ? bit('track', st.why || 'life') : '',
         st.scaleKm ? bit('view', `~${st.scaleKm} km`) : bit('view', `${st.side}×${st.side}`),
@@ -2299,6 +2892,7 @@ export function boot() {
         S.follow?.name ? bit('who', S.follow.name + (S.follow.behav ? ' · ' + S.follow.behav : '')) : '',
       ].filter(Boolean).join('');
       localStatus.title = [
+        st.census?.line ? `In view: ${st.census.line}` : '',
         st.place,
         st.pinned ? 'Pinned' : (st.seek === 'life' ? (st.why ? `Touring ${st.why}` : 'Hunting recent life') : 'Live focus'),
         `Cell ${st.cell}`,
@@ -2401,7 +2995,8 @@ export function boot() {
   };
   const stepLocalZoom = (dir) => {
     const i = LOCAL_RADII.indexOf(S.localRadius);
-    const ni = Math.max(0, Math.min(LOCAL_RADII.length - 1, (i < 0 ? 2 : i) + dir));
+    const fallback = Math.max(0, LOCAL_RADII.indexOf(8));
+    const ni = Math.max(0, Math.min(LOCAL_RADII.length - 1, (i < 0 ? fallback : i) + dir));
     if (LOCAL_RADII[ni] === S.localRadius) return;
     S.localRadius = LOCAL_RADII[ni];
     syncSegPressed('localRadius', () => S.localRadius);
@@ -2448,14 +3043,30 @@ export function boot() {
   localCvs.addEventListener('contextmenu', (e) => e.preventDefault());
   localCvs.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    if (e.button === 2 || (e.altKey && activeTool !== 'inspect')) {
-      const rect = localCvs.getBoundingClientRect();
-      const c = hoverCellAt(S._localPatch, e.clientX - rect.left, e.clientY - rect.top);
-      if (c >= 0) {
-        onToolResult(useToolAt(c));
-        return;
+    const rect = localCvs.getBoundingClientRect();
+    const cssX = e.clientX - rect.left;
+    const cssY = e.clientY - rect.top;
+    const c = hoverCellAt(S._localPatch, cssX, cssY);
+    const tool = TOOLS.find((t) => t.id === activeTool);
+    const paint = S.canvasMode || e.button === 2 || (e.altKey && activeTool !== 'inspect');
+    if (paint && c >= 0) {
+      setPinpoint(true);
+      setCrustOceanic(activeTool === 'crust' && e.shiftKey);
+      setBrushInvert(e.altKey && (activeTool === 'raise' || activeTool === 'lower'));
+      if (tool?.drag) {
+        const r = beginToolDrag(c);
+        if (r?.ok) {
+          S.toolDrag = true;
+          localDrag = { paint: true, x: e.clientX, y: e.clientY, moved: false };
+          localCvs.setPointerCapture(e.pointerId);
+          onToolResult(r);
+          return;
+        }
       }
+      onToolResult(useToolAt(c, { oceanic: e.shiftKey }));
+      return;
     }
+    if (S.canvasMode) return;
     localCvs.setPointerCapture(e.pointerId);
     localCvs.style.cursor = 'grabbing';
     const base = S.localPin >= 0 ? S.localPin : S._localFocus;
@@ -2473,7 +3084,18 @@ export function boot() {
       if (!S.localLegendLock) {
         S.localHoverKey = c >= 0 ? legendKeyAt(W, c) : null;
       }
+      if (activeTool !== 'inspect') {
+        setPinpoint(true);
+        if (c >= 0) previewBrush(c);
+        else { BRUSH.preview = []; BRUSH.previewCenter = -1; }
+      }
       localCvs.style.cursor = beingAtLocalPixel(S._localPatch, cssX, cssY) ? 'pointer' : 'crosshair';
+      return;
+    }
+    if (localDrag.paint) {
+      const c = hoverCellAt(S._localPatch, cssX, cssY);
+      S.localHoverCell = c;
+      if (c >= 0 && S.toolDrag) moveToolDrag(c);
       return;
     }
     const dx = e.clientX - localDrag.x;
@@ -2503,6 +3125,14 @@ export function boot() {
   const endLocalDrag = (e) => {
     if (!localDrag) return;
     localCvs.style.cursor = 'crosshair';
+    if (localDrag.paint) {
+      if (S.toolDrag) endToolDrag();
+      S.toolDrag = false;
+      setBrushInvert(false);
+      localDrag = null;
+      refreshColours(1);
+      return;
+    }
     if (!localDrag.moved) {
       const rect = localCvs.getBoundingClientRect();
       const cssX = e.clientX - rect.left;
@@ -2572,17 +3202,20 @@ export function boot() {
           velocity: 0.7 + (W.rngGod?.() ?? 0.5) * 0.5,
           angle: 30 + (W.rngGod?.() ?? 0.5) * 50,
         }));
-      } else if (e.altKey) {
+      } else if (e.altKey && (activeTool === 'inspect' || !TOOLS.find((t) => t.id === activeTool)?.drag)) {
         fingerOfGod(cell, e.shiftKey ? 'delete' : 'boost');
         playEvent('seed', 0.5);
       } else {
         const tool = TOOLS.find((t) => t.id === activeTool);
+        setPinpoint(false);
+        setBrushInvert(e.altKey && (activeTool === 'raise' || activeTool === 'lower'));
         if (tool?.drag && cell >= 0) {
+          setCrustOceanic(activeTool === 'crust' && e.shiftKey);
           const r = beginToolDrag(cell);
           if (r?.ok) { S.toolDrag = true; canvas.setPointerCapture(e.pointerId); }
-          else onToolResult(r || useToolAt(cell));
+          else onToolResult(r || useToolAt(cell, { oceanic: e.shiftKey }));
         } else {
-          onToolResult(useToolAt(cell));
+          onToolResult(useToolAt(cell, { oceanic: e.shiftKey }));
         }
       }
       return;
@@ -2594,7 +3227,7 @@ export function boot() {
     canvas.setPointerCapture(e.pointerId);
   });
   canvas.addEventListener('pointerup', (e) => {
-    if (S.toolDrag) { endToolDrag(); S.toolDrag = false; refreshColours(1); }
+    if (S.toolDrag) { endToolDrag(); S.toolDrag = false; setBrushInvert(false); refreshColours(1); }
     if (S.commitHold) cancelCommitHold(false);
     if (panning) {
       panning = false;
@@ -2634,12 +3267,17 @@ export function boot() {
       return;
     }
     if (!dragging) {
-      // Brush preview on hover for sculpt tools
+      setPinpoint(false);
+      const cell = desktopPick(e.clientX, e.clientY);
+      setLocalHover(cell);
       const tool = TOOLS.find((t) => t.id === activeTool);
-      if (tool?.drag || tool?.id === 'seedGuild') {
-        const cell = desktopPick(e.clientX, e.clientY);
-        if (cell >= 0) previewBrush(cell);
+      if (cell >= 0 && (tool?.drag || tool?.group === 'dis' || tool?.id === 'seedGuild' || tool?.id === 'seed')) {
+        previewBrush(cell);
+      } else {
+        BRUSH.preview = [];
+        BRUSH.previewCenter = -1;
       }
+      requestPreview();
       return;
     }
     const dx = (e.clientX - lastX) / 220, dy = (e.clientY - lastY) / 220;
@@ -2661,7 +3299,7 @@ export function boot() {
   });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    S.camDist = clamp(S.camDist * (1 + Math.sign(e.deltaY) * 0.09), 1.06, 6.5);
+    S.camDist = clamp(S.camDist * (1 + Math.sign(e.deltaY) * (S.camDist > 8 ? 0.14 : 0.09)), CAM_DIST_MIN, CAM_DIST_MAX);
   }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -2701,8 +3339,8 @@ export function boot() {
     }
     else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      const r = undoStroke();
-      if (r) { showErr(r.note); refreshColours(1); needGeom(); }
+      const r = e.shiftKey ? redoStroke() : undoStroke();
+      if (r) { showErr(r.note); refreshColours(1); needGeom(); refreshLayerPanel(); }
     }
     else if (e.shiftKey && (e.key === 'm' || e.key === 'M')) {
       e.preventDefault();
@@ -2738,17 +3376,90 @@ export function boot() {
         || TOOLS.find((x) => x.key && x.key.toLowerCase() === e.key.toLowerCase());
       if (t) {
         if (toolsUnlocked(W)[t.id] === false) return;
-        setTool(t.id);
-        syncToolPress();
+        adoptTool(t);
       }
     }
   });
+
+  const findCoastalCell = () => {
+    for (let c = 0; c < NC; c++) {
+      if (W.h[c] < W.seaLevel) continue;
+      for (let k = 0; k < 4; k++) {
+        if (W.h[NBR[c * 4 + k]] < W.seaLevel) return c;
+      }
+    }
+    return 0;
+  };
+
+  const applyPitchShot = (id) => {
+    S.pitchShot = true;
+    _pitchHoldMoment = true;
+    setPaused(true);
+    closeLandPicker();
+    document.getElementById('catpanel')?.classList.remove('open');
+    document.getElementById('catbtn')?.setAttribute('aria-pressed', 'false');
+    document.getElementById('dock')?.classList.remove('collapsed');
+    document.getElementById('reveal')?.setAttribute('hidden', '');
+    S.localGlobe = 'rim';
+    refreshColours(1);
+    if (id === 'hud') {
+      applyScalePreset(S, 'hold');
+      setDockTab('tools');
+      setSuiteDesk('tools', 'land');
+      showMoment('First occurrence', 'First free oxygen', 'present', momentRGB('firstOxygen'));
+    } else if (id === 'currents') {
+      applyScalePreset(S, 'hold');
+      setDockTab('view');
+      setSuiteDesk('view', 'layers');
+      applyOverlayChoice('current');
+      S.localExpanded = false;
+      S.localSize = LOCAL_SIZES[1];
+      pinLocal(findCoastalCell());
+      syncLocalLayout();
+    } else if (id === 'local') {
+      applyScalePreset(S, 'hold');
+      setDockTab('tools');
+      setSuiteDesk('tools', 'land');
+      applyOverlayChoice('none');
+      S.localExpanded = true;
+      S.localSize = LOCAL_SIZES[2] ?? LOCAL_SIZES[1];
+      pinLocal(findCoastalCell());
+      syncLocalLayout();
+    } else if (id === 'worlds') {
+      applyScalePreset(S, 'hold');
+      setDockTab('tools');
+      setSuiteDesk('tools', 'land');
+      applyOverlayChoice('none');
+      document.getElementById('catpanel')?.classList.add('open');
+      document.getElementById('catbtn')?.setAttribute('aria-pressed', 'true');
+      renderCatalogue();
+    }
+    updateHUD();
+    refreshColours(1);
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      globalThis.__orreryPitchReady = true;
+    }));
+  };
 
   setupXR();
   const bad = validateCatalogueWorlds();
   if (bad.length) console.warn('[orrery] catalogue worlds failed sanitize:', bad);
   else console.log(`[orrery] catalogue · ${CATALOGUE_WORLDS.length} worlds ready`);
-  runGenerate(20260808, RULESETS[0]);
+  const opening = pickOpening();
+  applyOpening(opening, { rule: RULESETS[0] });
+  let pitch = null;
+  try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* ignore */ }
+  if (pitch) applyPitchShot(pitch);
+  else if (!opening.pinned) {
+    setPaused(true);
+    setSuiteDesk('tools', 'land');
+    let showPick = true;
+    try {
+      if (sessionStorage.getItem('orrery-picker-shown')) showPick = false;
+      else sessionStorage.setItem('orrery-picker-shown', '1');
+    } catch { /* private mode — still show */ }
+    if (showPick) openLandPicker({ pause: true });
+  }
   requestAnimationFrame(desktopFrame);
   const quads = (6 * globeN() * globeN()).toLocaleString();
   console.log(`[orrery] foundations rebuild · ${NC.toLocaleString()} cells · ${quads} globe quads (${effectiveGlobeSubd()}× mesh) · ${(vIdx.length / 3).toLocaleString()} tris`);
@@ -2846,7 +3557,7 @@ function readControllers(frame) {
       });
       if (g.grab) h.grab = true;
       if (g.solarMod != null) W._solarMod = Math.min(W._solarMod ?? 1, g.solarMod);
-      if (g.scaleDelta !== 1) S.scaleXR = clamp(S.scaleXR * g.scaleDelta, 0.07, 0.95);
+      if (g.scaleDelta !== 1) S.scaleXR = clamp(S.scaleXR * g.scaleDelta, XR_SCALE_MIN, XR_SCALE_MAX);
       if (g.aim) h.aim = g.aim;
       if (g.loadPoint && !readControllers._tablePick) {
         const slot = pickTableSlot(TABLE, g.loadPoint, [0, 0, 0], 0.16, 1);
@@ -2895,7 +3606,7 @@ function readControllers(frame) {
 
     if (gp && gp.axes.length >= 4) {
       const ay = gp.axes[3];
-      if (Math.abs(ay) > 0.18) S.scaleXR = clamp(S.scaleXR - ay * 0.006, 0.07, 0.95);
+      if (Math.abs(ay) > 0.18) S.scaleXR = clamp(S.scaleXR - ay * 0.006, XR_SCALE_MIN, XR_SCALE_MAX);
     }
     // Squeeze grip (button 1) uses tool at aim
     if (gp && gp.buttons[1]?.pressed && !readControllers._grip) {
@@ -2929,7 +3640,7 @@ function readControllers(frame) {
     );
     if (readControllers._pinchD) {
       const ratio = d / readControllers._pinchD;
-      S.scaleXR = clamp(S.scaleXR * ratio, 0.07, 0.95);
+      S.scaleXR = clamp(S.scaleXR * ratio, XR_SCALE_MIN, XR_SCALE_MAX);
     }
     readControllers._pinchD = d;
   } else readControllers._pinchD = null;

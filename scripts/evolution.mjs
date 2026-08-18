@@ -531,7 +531,8 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <p class="nav"><a href="./">Pitch</a> · <a href="backlog.html">Systems backlog</a> ·
   <a href="worlds.html">Worlds</a> · <a href="godgame.html">God layer</a> ·
   <a href="next.html">Next 200</a> ·
-  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> · <a href="currents.html">Currents</a> · <a href="../vr/">Prototype</a></p>
+  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> · <a href="currents.html">Currents</a> ·
+  <a href="realism.html">Realism</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>200<small>15 categories</small></dd></div>
     <div><dt>Axis</dt><dd>${count((x) => x.x === 'SIM')} / ${count((x) => x.x === 'EYE')}<small>sim · eye (+${count((x) => x.x === 'BOTH')} both)</small></dd></div>

@@ -21,7 +21,7 @@ export const OVERLAYS = [
   { id: 'tide', label: 'Tide range', icon: 'moon', tip: 'Spring–neap tidal range. Needs a moon; solar-only worlds stay faint.' },
   { id: 'intertidal', label: 'Intertidal', icon: 'flats', tip: 'Ground that wets and dries with the tide — the strip life actually meets twice a day.' },
   { id: 'storm', label: 'Storms', icon: 'stormdesk', tip: 'Teal = basins that can organise. Bright cores = named cyclones (eye is dimmer). Gold trail = track. Orange coast = surge. Empty still means something — the basins.' },
-  { id: 'vent', label: 'Ice vents', icon: 'plume', tip: 'Warm cracks in an ice shell. Life on ice-ocean moons lives here, not on the surface.' },
+  { id: 'vent', label: 'Vents', icon: 'plume', tip: 'Hydrothermal heat — mid-ocean ridges, ice-shell cracks, Io paterae. Life that needs vents lives here.' },
   { id: 'lid', label: 'Ice lid', icon: 'ice', tip: 'Ice-shell thickness / stagnant lid. Darker where the crust of ice is thicker.' },
   { id: 'plates', label: 'Plates', icon: 'plate', tip: 'Named tectonic plates. Colour is identity, not height.' },
   { id: 'bounds', label: 'Boundaries', icon: 'quake', tip: 'Divergent (rift), convergent (trench/orogen), transform. Reclassifies when you steer a pole.' },
@@ -31,7 +31,7 @@ export const OVERLAYS = [
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'wind', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
-  'plates', 'bounds', 'crust', 'crustAge',
+  'plates', 'bounds', 'crust', 'crustAge', 'vent',
   'tide', 'storm', 'npp', 'guild',
 ];
 
@@ -109,8 +109,12 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       const f = W.flow?.[c] || 0;
       const lk = W.lake?.[c] || 0;
       if (W.h[c] >= W.seaLevel) {
-        const k = Math.min(1, Math.log1p(f * 800) * 0.35 + lk);
-        r = 12 + k * 30; g = 40 + k * 90; b = 60 + k * 140;
+        const k = Math.min(1, Math.log1p(f) / Math.log1p(16) + lk * 0.7);
+        if (k > 0.1) {
+          r = (r * (1 - k) + 16 * k) | 0;
+          g = (g * (1 - k) + 46 * k) | 0;
+          b = (b * (1 - k) + 70 * k) | 0;
+        }
       } else {
         r = (r * 0.25) | 0; g = (g * 0.28) | 0; b = (b * 0.32) | 0;
       }
@@ -178,7 +182,7 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
         b = Math.max(30, b - surge * 50);
       }
     } else if (mode === 'vent') {
-      const v = W.shellVent?.[c] || 0;
+      const v = Math.max(W.shellVent?.[c] || 0, W.hydrotherm?.[c] || 0);
       r = 40 + v * 200; g = 30 + v * 80; b = 20 + v * 40;
       if (v < 0.08) { r *= 0.35; g *= 0.4; b *= 0.5; }
     } else if (mode === 'lid') {

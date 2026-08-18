@@ -5,12 +5,19 @@ import { NC, AREA, DIR, NBR, setResolution, N as SIM_N } from './sphere.js';
 import { RULESETS } from './rulesets.js';
 import { createChronicle, logEvent, maybeNameEra } from './chronicle.js';
 import { generateTectonics, tectonicsTick, erosionTick } from './sim/tectonics.js';
+import { planetGeoTick } from './sim/planetTick.js';
 import { hydroTick, tsunamiTick, liquidWaterOk, startTsunami } from './sim/hydro.js';
 import { atmoTick, atmoMetaTick } from './sim/atmo.js';
 import { bioTick, seedLife, LIFE_CLASSES } from './sim/bio.js';
 import { gaiaTick } from './sim/gaia.js';
 import { fitSeaLevel, seedPolarIce, seedEarthBiosphere, primeEarthMoisture } from './sim/earth.js';
 import { refineEarthHypsometry } from './sim/earthTerrain.js';
+import { refinePlanetHypsometry } from './sim/planetTerrain.js';
+import { applyLandscape, landmassReport, nameWorld } from './sim/landscapes.js';
+import { encodeWorldId } from './sim/seedword.js';
+import {
+  initLayerStack, captureBase, absorbSimDelta, packLayerStack, unpackLayerStack,
+} from './sim/layers.js';
 import {
   initDeepTime, advanceClock, hadeanTick, formatAge, maybeCaptureMoment,
 } from './sim/time.js';
@@ -52,7 +59,7 @@ export function reallocateWorldFields(target = W) {
     'oceanU', 'oceanV', 'waveHt', 'lava', 'mixDepth', 'groundW',
     'mantleU', 'mantleV', 'dynTopo',
     '_t', '_m', '_l', '_h', '_adv', 'prevTemp', 'prevLife', 'prevIce',
-    'macroDens', 'cladeCount',
+    'macroDens', 'cladeCount', 'hydrotherm',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
@@ -74,6 +81,7 @@ export function reallocateWorldFields(target = W) {
   target._iso0 = null;
   target._mantle = null;
   target._dyn0 = null;
+  target.layerStack = null;
   target._ensoIndex = 0;
   target._thermoclineTilt = 0;
   target._walkerSST = 0;
@@ -142,6 +150,8 @@ function attachRng(seed) {
 export function generate(seed, ruleIn) {
   const rule = cloneRuleForRun(ruleIn);
   W.seed = seed;
+  W.landSeed = seed;
+  W._sculpted = false;
   W.rule = rule;
   reallocateWorldFields(W);
   attachRng(seed);
@@ -263,6 +273,10 @@ export function generate(seed, ruleIn) {
   W.moonIllum = undefined;
   W._windRegime = undefined;
   W._itczLat = 0;
+  W._lidHeat = 0.35;
+  W._ioBurial = 0;
+  W._venusOverturns = 0;
+  if (W.hydrotherm) W.hydrotherm.fill(0);
 
   // Interior before tectonics — vigor & dynamo shape the plates
   applyInterior(W, rule, rule._catalogueItem || null);
@@ -274,8 +288,19 @@ export function generate(seed, ruleIn) {
   initMantle(W, seed);
   W._seaBase = null;
   W.seaLevel = -0.05 + rule.totalWater * 0.42;
-  if (rule.targetLandFrac != null) fitSeaLevel(W, rule.targetLandFrac);
+  // Archetype decides where the continents are; the ruleset still owns the rest
+  const ls = applyLandscape(W, seed, rule.landscape, rule);
+  const targetLand = rule.targetLandFrac ?? ls?.land ?? 0.29;
+  if (targetLand != null) fitSeaLevel(W, targetLand);
+  const waterK = rule._genesisWater ?? 1;
+  if (Math.abs(waterK - 1) > 0.02) {
+    W.seaLevel += (waterK - 1) * 0.045;
+    W.seaLevel = clamp(W.seaLevel, -0.55, 0.85);
+    W._seaBase = W.seaLevel;
+  }
   if (rule.earthLike) refineEarthHypsometry(W, seed, rule);
+  else if (!rule.iceShell && !rule.daisyworld) refinePlanetHypsometry(W, seed, rule);
+  if (ls?.relief) W._reliefScale = ls.relief;
 
   for (let c = 0; c < NC; c++) {
     const lat = Math.abs(DIR[c * 3 + 1]);
@@ -296,26 +321,49 @@ export function generate(seed, ruleIn) {
   }
   geostrophicWind(W);
 
-  // Climate warmup — Hadean is playable when deepTime, not a silent skip
+  // Climate warmup. Ice albedo is off during spin-up so a fine grid cannot
+  // snowball before heat has mixed: neighbour diffusion is per-cell, so the
+  // same 24 ticks reach ~a hemisphere at N=32 and ~two cells at N=128.
+  // High N keeps CPU climate (GPGPU advection is too weak to replace mix) and
+  // skips ocean/tectonics so generate time stays in seconds, not minutes.
   const deepOpen = rule.deepTime || (!rule.earthLike && !rule.daisyworld && !rule.airless);
+  W._spinup = true;
+  W._gpgpuOff = true;
+  W._pauseBio = true;
   if (deepOpen && W.ageYr < 0.5e9) {
-    W._pauseBio = true;
     hadeanTick(W, chronLog);
     for (let i = 0; i < 8; i++) {
       simTick(true);
       hadeanTick(W, null);
     }
-    W._pauseBio = false;
   } else {
-    W._pauseBio = true;
-    const warm = rule.daisyworld ? 10 : (rule.earthLike ? 24 : 16);
-    for (let i = 0; i < warm; i++) simTick(true);
-    W._pauseBio = false;
+    const base = rule.daisyworld ? 10 : (rule.earthLike ? 24 : 16);
+    const warm = rule.daisyworld ? base : Math.min(256, Math.round(base * Math.max(1, SIM_N / 32)));
+    // N≥192: climate-only mix. Full simTick at those sizes is minutes of ocean/bio
+    // before the world even appears; golden tests stay on N=32/64 simTick path.
+    if (SIM_N >= 192) {
+      for (let i = 0; i < warm; i++) {
+        geostrophicWind(W);
+        atmoTick(W, _sunDir);
+      }
+    } else {
+      for (let i = 0; i < warm; i++) simTick(true);
+    }
   }
+  W._spinup = false;
+  W._gpgpuOff = false;
+  W._pauseBio = false;
 
-  if (rule.targetLandFrac != null) {
-    fitSeaLevel(W, rule.targetLandFrac);
+  if (targetLand != null) {
+    fitSeaLevel(W, targetLand);
     if (rule.earthLike) seedPolarIce(W, rule);
+  } else if (rule.earthLike) {
+    seedPolarIce(W, rule);
+  }
+  if (rule.earthLike && !rule.deepTime) {
+    W._pauseBio = true;
+    for (let i = 0; i < 4; i++) simTick(true);
+    W._pauseBio = false;
   }
 
   if (!rule.daisyworld && !rule.earthLike) {
@@ -379,16 +427,27 @@ export function generate(seed, ruleIn) {
 
   W._waterMass0 = null;
   hydroTick(W);
-  if (rule.targetLandFrac != null) {
-    fitSeaLevel(W, rule.targetLandFrac);
+  if (targetLand != null) {
+    fitSeaLevel(W, targetLand);
     if (rule.earthLike) seedPolarIce(W, rule);
     hydroTick(W);
   }
+  // Climate warmup already ran hydro. Two extra ticks grow rivers without
+  // another 8 full-sphere evap/precip/sort passes at generate time.
+  W._hydroDirty = true;
+  hydroTick(W);
+  hydroTick(W);
+  if (targetLand != null) fitSeaLevel(W, targetLand);
   initOcean(W);
   initTides(W);
   initStorms(W);
   if (rule.iceShell) applyIceShell(W, rule);
   W._waterMass0 = W.waterMass;
+
+  W._landscape = ls?.id || rule.landscape || 'auto';
+  W._landReport = landmassReport(W);
+  W.worldName = rule.worldName || nameWorld(seed, W._landscape);
+  initLayerStack(W, { name: W._landscape });
 
   // Refresh planetary means after seeding
   gaiaTick(W, null);
@@ -434,10 +493,11 @@ export function simTick(silent = false) {
     W.season = (W.season || 0) + 0.02 * Math.min(1, (W.dtYr || 200) / 1e4);
   }
 
-  if (!rule.daisyworld && !rule.airless && rate.tectonics) {
+  if (!rule.daisyworld && !rule.airless && rate.tectonics && !W._canvasMode) {
     tectonicsTick(W, W.chron, log);
     erosionTick(W);
   }
+  if (!rule.daisyworld) planetGeoTick(W, log);
   if (!rule.daisyworld) interiorTick(W, log);
   if (!rule.daisyworld && !rule.airless) mantleTick(W);
 
@@ -478,6 +538,7 @@ export function simTick(silent = false) {
   }
   gaiaTick(W, log);
   godTick(W, log);
+  absorbSimDelta(W);
 
   // Conservation check every ~32 ticks (cheap enough, catches silent drift)
   if ((W.year | 0) % 32 === 0) assertBudgets(W);
@@ -506,6 +567,52 @@ export function simTick(silent = false) {
       }
     }
   }
+}
+
+/** Keep gases, life, and the clock — roll a new geography on this world. */
+export function rerollTerrain(Wref = W) {
+  const rule = Wref.rule;
+  if (!rule || rule.daisyworld) return { ok: false, note: 'No land to reroll' };
+  const gases = { ...Wref.gases };
+  const year = Wref.year;
+  const ageYr = Wref.ageYr;
+  const season = Wref.season;
+  const worldSeed = Wref.seed;
+  Wref._landRoll = (Wref._landRoll | 0) + 1;
+  const seed = (worldSeed ^ (Wref._landRoll * 0x9e3779b9)) >>> 0;
+  Wref.landSeed = seed;
+  generateTectonics(Wref, seed, rule);
+  initMantle(Wref, seed);
+  Wref.seaLevel = -0.05 + rule.totalWater * 0.42;
+  const ls = applyLandscape(Wref, seed, rule.landscape, rule);
+  const targetLand = rule.targetLandFrac ?? ls?.land ?? 0.29;
+  if (targetLand != null) fitSeaLevel(Wref, targetLand);
+  const waterK = rule._genesisWater ?? 1;
+  if (Math.abs(waterK - 1) > 0.02) {
+    Wref.seaLevel += (waterK - 1) * 0.045;
+    Wref.seaLevel = clamp(Wref.seaLevel, -0.55, 0.85);
+    Wref._seaBase = Wref.seaLevel;
+  }
+  if (rule.earthLike) refineEarthHypsometry(Wref, seed, rule);
+  else if (!rule.iceShell && !rule.daisyworld) refinePlanetHypsometry(Wref, seed, rule);
+  Object.assign(Wref.gases, gases);
+  Wref.year = year;
+  Wref.ageYr = ageYr;
+  Wref.season = season;
+  Wref.seed = worldSeed;
+  Wref._hydroDirty = true;
+  hydroTick(Wref);
+  hydroTick(Wref);
+  geostrophicWind(Wref);
+  if (rule.iceShell) applyIceShell(Wref, rule);
+  Wref._landscape = ls?.id || rule.landscape || 'auto';
+  Wref._landReport = landmassReport(Wref);
+  captureBase(Wref, { keepPaints: true });
+  Wref._sculpted = !!Wref.layerStack?._hasPaint;
+  const rep = Wref._landReport;
+  chronLog(Wref.year, 'reroll', 0, 1,
+    `Continents rerolled · ${rep.count} landmasses · ${(rep.landFrac * 100).toFixed(0)}% land`);
+  return { ok: true, seed, landSeed: seed, report: rep };
 }
 
 export function applyImpact(cell, power, log = chronLog) {
@@ -537,11 +644,44 @@ export function forkRun(label = 'fork') {
   return { seed: newSeed, ageYr: W.ageYr, ruleId: W.rule.id };
 }
 
-/** Event-log save. Item 196. */
+function packHeights(h) {
+  const buf = new Int16Array(h.length);
+  for (let i = 0; i < h.length; i++) {
+    const v = Math.round(h[i] * 8000);
+    buf[i] = v < -32767 ? -32767 : v > 32767 ? 32767 : v;
+  }
+  const u8 = new Uint8Array(buf.buffer);
+  let s = '';
+  const CH = 0x8000;
+  for (let i = 0; i < u8.length; i += CH) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+  }
+  return btoa(s);
+}
+
+function unpackHeights(b64, into) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const buf = new Int16Array(u8.buffer, u8.byteOffset, (u8.byteLength / 2) | 0);
+  const n = Math.min(into.length, buf.length);
+  for (let i = 0; i < n; i++) into[i] = buf[i] / 8000;
+}
+
+/** Event-log save. Item 196. Version 4 keeps the height layer stack. */
 export function serializeRun() {
+  const land = W._landscape || W.rule?.landscape || 'auto';
+  const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 2,
+    version: 4,
     seed: W.seed,
+    landSeed,
+    landscape: land,
+    worldId: encodeWorldId(landSeed, land),
+    n: SIM_N,
+    seaLevel: W.seaLevel,
+    hB64: packHeights(W.h),
+    layers: packLayerStack(W.layerStack),
     ruleId: W.rule.id,
     deepTime: !!W.rule.deepTime,
     ageYr: W.ageYr,
@@ -567,12 +707,31 @@ export function downloadSave() {
   a.click();
 }
 
-/** Replay from seed + rule (+ optional deepTime). Full field restore is out of scope. */
+/** Replay from seed + rule (+ optional deepTime). Heightfield restored when present. */
 export function loadRunMeta(json) {
   const data = typeof json === 'string' ? JSON.parse(json) : json;
   const base = RULESETS.find((r) => r.id === data.ruleId) || RULESETS[0];
-  const rule = { ...base, deepTime: !!data.deepTime };
-  generate(data.seed || 0, rule);
+  const landscape = data.landscape || 'auto';
+  const rule = { ...base, deepTime: !!data.deepTime, landscape };
+  const seed = (data.landSeed ?? data.seed) || 0;
+  generate(seed, rule);
+  if (data.layers && data.n === SIM_N) {
+    unpackLayerStack(W, data.layers);
+    if (data.seaLevel != null) W.seaLevel = data.seaLevel;
+    W._hydroDirty = true;
+    hydroTick(W);
+    W._landReport = landmassReport(W);
+  } else if (data.hB64 && data.n === SIM_N) {
+    unpackHeights(data.hB64, W.h);
+    if (data.seaLevel != null) W.seaLevel = data.seaLevel;
+    initLayerStack(W, { name: landscape });
+    W._hydroDirty = true;
+    hydroTick(W);
+    W._landReport = landmassReport(W);
+  }
+  if (data.worldName) W.worldName = data.worldName;
+  W.landSeed = (data.landSeed ?? data.seed) || 0;
+  W._landscape = landscape;
   return data;
 }
 

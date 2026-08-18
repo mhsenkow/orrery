@@ -37,6 +37,20 @@
   #c { display:block; width:100%; height:100%; touch-action:none; position:relative; z-index:1; }
   #ui { position:fixed; inset:0; pointer-events:none; z-index:2; }
   #ui.hidden { display:none; }
+  #scalerung {
+    font-size:10px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--dim); padding:2px 8px; border:1px solid var(--line);
+    border-radius:999px; pointer-events:none;
+  }
+  #eoref {
+    display:none; position:absolute; top: calc(62px + var(--safe-t));
+    left: calc(var(--gutter) + var(--safe-l)); width:200px;
+    pointer-events:auto; z-index:4; padding:8px; border-radius:10px;
+    background:var(--panel); border:1px solid var(--line);
+  }
+  #eoref.on { display:block; }
+  #eoref img { width:100%; border-radius:6px; display:block; background:#081018; min-height:120px; }
+  #eoref .eoref-cap { font-size:10px; color:var(--dim); margin:6px 0 4px; line-height:1.4; }
   button { pointer-events:auto; font:inherit; font-size:11.5px; color:var(--text); cursor:pointer;
     background:rgba(255,255,255,.04); border:1px solid var(--line);
     border-radius:8px; padding:6px 9px; touch-action: manipulation;
@@ -259,11 +273,53 @@
   .tools-more.open { display:flex; gap:4px; flex-wrap:wrap; }
   .rules { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px; }
   .rules button { font-size:11px; padding:5px 8px; }
+  .layer-list { display:flex; flex-direction:column; gap:3px; margin:6px 0 8px; }
+  .layer-row {
+    display:flex; align-items:center; gap:6px;
+    padding:4px 6px; border-radius:7px;
+    border:1px solid var(--line); background:rgba(0,0,0,.22);
+    cursor:pointer; text-align:left; width:100%;
+  }
+  .layer-row:hover { border-color:rgba(110,160,255,.35); }
+  .layer-row[aria-pressed="true"] {
+    border-color:rgba(110,160,255,.55); background:rgba(110,160,255,.12);
+  }
+  .layer-row.locked { cursor:default; }
+  .layer-row .layer-eye {
+    width:24px; height:24px; padding:0; flex:0 0 auto; border-radius:6px;
+    font-size:11px; line-height:1;
+  }
+  .layer-row .layer-name {
+    flex:1; min-width:0; background:transparent; border:0; color:inherit;
+    font:inherit; font-size:11px; padding:2px 0;
+  }
+  .layer-row .layer-name:focus { outline:1px solid rgba(110,160,255,.35); border-radius:4px; }
+  .layer-row .layer-blend {
+    font-size:9px; letter-spacing:.04em; text-transform:uppercase; color:var(--dim); flex:0 0 auto;
+  }
   .view-row { display:flex; align-items:center; gap:8px; margin:6px 0; font-size:11px; color:#9aacc4; }
   .view-row label { min-width:52px; letter-spacing:.06em; text-transform:uppercase; font-size:9.5px; color:var(--dim); }
-  .view-row input[type="range"] { flex:1; accent-color:var(--accent); }
+  .view-row input[type="range"] {
+    flex:1; min-width:0; height:14px; margin:0; background:transparent;
+    -webkit-appearance:none; appearance:none; accent-color:var(--accent);
+  }
+  .view-row input[type="range"]::-webkit-slider-runnable-track {
+    height:3px; border-radius:99px; background:rgba(120,160,220,.22);
+  }
+  .view-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance:none; appearance:none;
+    width:12px; height:12px; margin-top:-4.5px;
+    border-radius:50%; background:var(--accent); border:0;
+    box-shadow: 0 0 0 2px rgba(3,5,10,.55);
+  }
+  .view-row input[type="range"]::-moz-range-track {
+    height:3px; border-radius:99px; background:rgba(120,160,220,.22); border:0;
+  }
+  .view-row input[type="range"]::-moz-range-thumb {
+    width:12px; height:12px; border-radius:50%; background:var(--accent); border:0;
+  }
   .view-row input[type="checkbox"] { accent-color:var(--accent); width:13px; height:13px; }
-  .view-row .val { min-width:34px; text-align:right; font-size:11px; color:#cfe0ff; }
+  .view-row .val { min-width:40px; text-align:right; font-size:11px; color:#cfe0ff; }
   .stats {
     margin-top:6px; padding-top:8px; border-top:1px solid var(--line);
     font-size:11px; line-height:1.55; color:#8fa0bd;
@@ -322,6 +378,15 @@
     overflow: auto;
     scrollbar-width: thin;
     padding-right: 2px;
+  }
+  #labStation {
+    flex: 0 0 auto;
+    margin-bottom: 8px;
+  }
+  #labStation .stats {
+    max-height: min(36vh, 280px);
+    overflow: auto;
+    scrollbar-width: thin;
   }
   .lab-card.lab-hero {
     background: linear-gradient(165deg, rgba(20,36,56,.55), rgba(0,0,0,.32));
@@ -514,12 +579,13 @@
   #receipt {
     pointer-events:none; position:absolute; left:50%; bottom:18%; transform:translate(-50%, 12px);
     z-index:7; opacity:0; transition: opacity .4s var(--ease), transform .4s var(--ease);
-    background:rgba(10,14,22,.82); border:1px solid var(--line); border-radius:10px;
-    padding:10px 14px; font-size:12px; color:#c8d6ef; max-width:min(420px, 90vw);
-    backdrop-filter:blur(12px);
+    background:rgba(10,14,22,.88); border:1px solid var(--line); border-radius:10px;
+    padding:12px 16px; font-size:14px; color:#e8eef8; max-width:min(460px, 90vw);
+    backdrop-filter:blur(12px); text-align:center; letter-spacing:.01em;
   }
   #receipt.show { opacity:1; transform:translate(-50%, 0); }
-  #receipt b { color:#9fc0ff; }
+  #receipt b { color:#f0c070; font-weight:600; }
+  #receipt small { color:#9fb0c8; font-size:11px; }
 
   #commitring {
     pointer-events:none; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -575,7 +641,12 @@
     flex:1; width:100%; font:11px inherit; background:#0c1018; color:#c8d6ef;
     border:1px solid var(--line); border-radius:6px; padding:6px; margin-bottom:4px;
   }
-  #pane-god .view-row select { margin-bottom:0; width:auto; }
+  #pane-god .view-row select { margin-bottom:0; width:auto; flex:1; min-width:0; }
+  #genesisreport {
+    margin-top:8px; padding:7px 9px; border-radius:8px;
+    background:rgba(110,160,255,.08); border:1px solid rgba(110,160,255,.18);
+    color:#c5d6f0; font-size:11px; line-height:1.45;
+  }
 
   #catpanel {
     display:none; position:absolute; z-index:6;
@@ -588,6 +659,37 @@
     flex-direction:column; gap:6px; box-shadow: 0 12px 40px rgba(0,0,0,.4);
   }
   #catpanel.open { display:flex; animation: dockIn .4s var(--ease); }
+
+  #landpick {
+    display:none; position:absolute; z-index:8;
+    inset: calc(54px + var(--safe-t)) var(--gutter) auto var(--gutter);
+    max-width: 640px; margin: 0 auto;
+    max-height: calc(100dvh - 80px - var(--safe-t) - var(--safe-b));
+    background:var(--panel); backdrop-filter:blur(18px); border:1px solid var(--line);
+    border-radius:16px; padding:14px 14px 12px; pointer-events:auto;
+    flex-direction:column; gap:10px; box-shadow: 0 16px 48px rgba(0,0,0,.45);
+    overflow:auto;
+  }
+  #landpick.open { display:flex; animation: dockIn .4s var(--ease); }
+  #landpick .lp-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #landpick h1 { font-family: Syne, sans-serif; font-size:15px; margin:0; letter-spacing:.04em; }
+  #landpick .lp-sub { color:var(--dim); font-size:11.5px; margin:4px 0 0; max-width:46ch; line-height:1.45; }
+  #landpickgrid {
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+    gap:10px;
+  }
+  .lp-card {
+    text-align:left; padding:0; overflow:hidden; border-radius:12px;
+    background:rgba(0,0,0,.28); border:1px solid var(--line);
+    transition: border-color .2s var(--ease), transform .2s var(--ease), background .2s var(--ease);
+  }
+  .lp-card:hover { border-color:rgba(110,160,255,.45); transform: translateY(-1px); }
+  .lp-card canvas { display:block; width:100%; height:auto; aspect-ratio:1; background:#060a12; }
+  .lp-card .lp-meta { padding:8px 9px 9px; }
+  .lp-card .lp-name { font-family: Syne, sans-serif; font-size:12px; font-weight:700; }
+  .lp-card .lp-id { font-size:10px; color:var(--dim); letter-spacing:.01em; }
+  .lp-card[aria-pressed="true"] { border-color:var(--accent); background:rgba(42,85,200,.22); }
+  #landpickfoot { font-size:11px; color:var(--dim); margin:0; }
   #catpanel .cat-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   #catpanel h1 { font-family: Syne, sans-serif; font-size:11px; letter-spacing:.2em; text-transform:uppercase; margin:0; color:#9fc0ff; font-weight:700; }
   .cat-nav { display:flex; gap:4px; align-items:center; }
@@ -697,7 +799,7 @@
   #localframetag:hover { background:rgba(110,160,255,.12); color:#e8f0ff; }
   #localbar .seg { display:flex; gap:2px; flex-wrap:nowrap; }
   #localbar .seg button {
-    font-size:9px; padding:0; width:20px; height:20px; min-width:20px; line-height:1;
+    font-size:9px; padding:0; width:18px; height:20px; min-width:18px; line-height:1;
     font-variant-numeric: tabular-nums; color:#c4d2ea;
   }
   #localbar .seg button[aria-pressed="true"] {
@@ -782,26 +884,20 @@
   #locallegend .leg i {
     width:7px; height:7px; border-radius:1.5px; display:block; flex:0 0 auto;
   }
-  /* S only: chips alone, reveal name on the active key */
-  #localpanel[data-frame="S"]:not(.expanded) #locallegend .leg {
-    font-size:0; gap:0; padding:3px; letter-spacing:0;
-  }
-  #localpanel[data-frame="S"]:not(.expanded) #locallegend .leg.on {
-    font-size:8px; gap:3px; padding:1px 4px;
-  }
-  #localpanel[data-frame="S"]:not(.expanded) #locallegend .leg i {
-    width:8px; height:8px;
+  #locallegend .leg[hidden] { display: none !important; }
+    font-variant-numeric: tabular-nums; color:#9fe8c8; font-size:7.5px;
   }
   #localpanel.expanded #locallegend .leg { font-size:9.5px; padding:2px 5px; gap:4px; }
   #localpanel.expanded #locallegend .leg i { width:8px; height:8px; }
+  #localpanel.expanded #locallegend .leg-n { font-size:8.5px; }
   #locallegend .leg.on {
     color:#e8eef8; border-color:rgba(110,160,255,.55); background:rgba(110,160,255,.14);
   }
   #locallegend .leg.dim { opacity:0.28; }
   #localstatus {
-    font-size:9px; color:#b8c8e0; min-height:1.1em; line-height:1.35;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%;
-    display:flex; flex-wrap:nowrap; gap:0 7px; align-items:baseline;
+    font-size:9px; color:#b8c8e0; min-height:1.1em; line-height:1.4;
+    overflow:hidden; max-width:100%;
+    display:flex; flex-wrap:wrap; gap:2px 8px; align-items:baseline;
   }
   #localstatus .st { display:inline-flex; align-items:baseline; gap:3px; min-width:0; }
   #localstatus .st em {
@@ -809,6 +905,8 @@
     color:#6a7a94; flex:0 0 auto;
   }
   #localstatus .st b { font-weight:500; color:#d4e0f4; }
+  #localstatus .st[data-k="in"] { flex:1 1 100%; }
+  #localstatus .st[data-k="in"] b { color:#9fe8c8; font-weight:600; }
   #localstatus .st[data-k="here"] b { color:#e8eef8; font-weight:600; }
   #localstatus .st[data-k="light"] b { color:#ffd080; }
   #localstatus.pinned .st[data-k="here"] b { color:#ffd080; }
@@ -986,12 +1084,13 @@
   <div id="topbar">
     <div class="brand">Orrery</div>
     <div id="worldchip">Earth</div>
+    <div id="scalerung" title="Camera rung">Hold</div>
     <div class="actions">
       <button type="button" id="catprev" class="wide-only" title="Previous world [">‹</button>
       <button type="button" id="catbtn" aria-pressed="false" title="Pick a planet">Worlds</button>
       <button type="button" id="catnext" class="wide-only" title="Next world ]">›</button>
       <button type="button" id="pause" class="wide-only" aria-pressed="false" title="Pause — same as the time ribbon (Space)">Pause</button>
-      <button type="button" id="newseed" title="New terrain, same planet type">Reseed</button>
+      <button type="button" id="newseed" title="New seed — new climate and land">Reseed</button>
       <button type="button" id="docktoggle" aria-expanded="true" aria-controls="dock" title="Toggle dock">Dock</button>
       <button type="button" id="vrbtn" class="wide-only" disabled>VR…</button>
     </div>
@@ -1004,29 +1103,30 @@
       <button type="button" data-tab="climate" aria-pressed="false" title="Atmosphere, storms & coasts">Sky</button>
       <button type="button" data-tab="rock" aria-pressed="false" title="Plates, boundaries & crust">Rock</button>
       <button type="button" data-tab="view" aria-pressed="false" title="Overlays, opacity, x-ray, guides">View</button>
-      <button type="button" data-tab="lab" aria-pressed="false" title="Instruments, cores, curves">Lab</button>
+      <button type="button" data-tab="lab" aria-pressed="false" title="Station, cores, instruments">Lab</button>
       <button type="button" data-tab="sandbox" aria-pressed="false" title="This run: energy, Gaia, resolution">World</button>
     </div>
     <div class="dock-body">
       <div class="dock-pane on" id="pane-tools">
         <div class="suite-desks" role="tablist" aria-label="Tools desks">
-          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="verbs" aria-pressed="true" title="Inspect, seed, raise, strike"></button>
-          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="more" aria-pressed="false" title="Disasters, chemistry, climate brushes"></button>
-          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="station" aria-pressed="false" title="Readouts — not tools"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="land" aria-pressed="true" title="Raise, flatten, rivers, crust"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="life" aria-pressed="false" title="Seed, refuge"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="strike" aria-pressed="false" title="Impacts, eruptions, climate levers"></button>
         </div>
-        <div class="suite-desk on" data-suite-panel="tools" data-desk-panel="verbs">
-          <p class="god-note" style="margin:0 0 8px">Pick a tool, then right-click the planet. Inspect left-drags to spin. Shift-drag parks the globe.</p>
-          <div class="tools" id="tools"></div>
+        <div class="suite-desk on" data-suite-panel="tools" data-desk-panel="land">
+          <p class="god-note" style="margin:0 0 8px">Landscaping. Right-click or drag to paint. <kbd>Q</kbd> looks (spin the globe). Cores and readouts live in Lab.</p>
+          <div class="tools" id="toolsLand"></div>
           <div id="godprice" class="hint-mini" style="margin-top:6px"></div>
         </div>
-        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="more" hidden>
-          <p class="god-note" style="margin:0 0 8px">Disasters, chemistry, climate brushes.</p>
-          <div class="tools" id="toolsMore"></div>
+        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="life" hidden>
+          <p class="god-note" style="margin:0 0 8px">Plant a metabolism or a refuge. Reading a cell is Lab → Station.</p>
+          <div class="tools" id="toolsLife"></div>
         </div>
-        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="station" hidden>
-          <div class="sec-h" data-sec-icon="station">Station</div>
-          <div class="stats" id="stats"></div>
-          <div id="inspect"></div>
+        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="strike" hidden>
+          <p class="god-note" style="margin:0 0 8px">Attacks land on the cell you click. A flash marks the spot.</p>
+          <div class="tools" id="toolsStrike"></div>
+          <p class="god-note" style="margin:12px 0 8px">Whole planet — click anywhere. The toast names what changed.</p>
+          <div class="tools" id="toolsClimate"></div>
         </div>
       </div>
       <div class="dock-pane" id="pane-god">
@@ -1035,7 +1135,7 @@
         </p>
         <div class="suite-desks" role="tablist" aria-label="Play desks">
           <button type="button" class="suite-desk-tab" data-suite="god" data-desk="aim" aria-pressed="true" title="Which life to plant, undo, watch"></button>
-          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="brush" aria-pressed="false" title="Brush mask and edge"></button>
+          <button type="button" class="suite-desk-tab" data-suite="god" data-desk="brush" aria-pressed="false" title="Height layers and brush edge"></button>
           <button type="button" class="suite-desk-tab" data-suite="god" data-desk="challenge" aria-pressed="false" title="Optional goals"></button>
           <button type="button" class="suite-desk-tab" data-suite="god" data-desk="genesis" aria-pressed="false" title="Author a named Earth-variant"></button>
         </div>
@@ -1049,7 +1149,8 @@
             </div>
             <p class="god-note" id="guildhint">Pick Seed guild in Tools, then click the planet.</p>
             <div class="tools god-actions">
-              <button type="button" id="godundo" title="Ctrl+Z — reverts the last stroke, not time">Undo stroke</button>
+              <button type="button" id="godundo" title="Ctrl+Z — reverts the last stroke, not time">Undo</button>
+              <button type="button" id="godredo" title="Ctrl+Shift+Z — redo the stroke">Redo</button>
               <button type="button" id="godwatch" aria-pressed="false" title="Hide UI and just watch">Watch mode</button>
               <button type="button" id="godbookmark" title="Mark this moment">Bookmark</button>
             </div>
@@ -1058,6 +1159,43 @@
         </div>
 
         <div class="suite-desk" data-suite-panel="god" data-desk-panel="brush" hidden>
+          <div class="god-h" data-sec-icon="heightlayer">Height layers</div>
+          <div id="layerlist" class="layer-list" role="listbox" aria-label="Height layers"></div>
+          <div class="tools god-actions">
+            <button type="button" id="layeradd" title="New empty paint layer">New</button>
+            <button type="button" id="layerdup" title="Duplicate the selected layer">Dup</button>
+            <button type="button" id="layerdel" title="Delete the selected paint layer">Del</button>
+            <button type="button" id="layerup" title="Move layer up (composites later)">Up</button>
+            <button type="button" id="layerdown" title="Move layer down">Down</button>
+            <button type="button" id="layerflatten" title="Bake every layer into Land. Cannot undo.">Flatten</button>
+          </div>
+          <div class="view-row">
+            <label for="layeropacity">Opacity</label>
+            <input type="range" id="layeropacity" min="0" max="100" value="100" title="Layer opacity">
+            <span class="val" id="layeropacityval">100%</span>
+          </div>
+          <div class="view-row">
+            <label for="layerblend">Blend</label>
+            <select id="layerblend" title="How this layer sits on the land beneath">
+              <option value="add">add</option>
+              <option value="max">max (raise only)</option>
+              <option value="min">min (carve only)</option>
+              <option value="multiply">multiply</option>
+              <option value="replace">replace</option>
+            </select>
+          </div>
+          <div class="view-row">
+            <label for="layerpaint">Paint</label>
+            <select id="layerpaint" title="Raise/Lower write height, or the layer mask">
+              <option value="height">height</option>
+              <option value="mask">mask</option>
+            </select>
+          </div>
+          <div class="tools god-actions" style="margin-top:4px">
+            <button type="button" id="layerclipland" title="Mask this layer to current land cells">Clip to land</button>
+            <button type="button" id="layerclearmask" title="Remove the mask — layer applies everywhere">Clear mask</button>
+          </div>
+          <p class="god-note">Raise and Lower write the selected layer. Hide it to see the generated land underneath. Flatten bakes the stack into Land and cannot be undone.</p>
           <div class="god-h" data-sec-icon="brush">Brush options</div>
           <div class="view-row">
             <label for="brushmask">Only on</label>
@@ -1086,7 +1224,28 @@
             <label for="brushhard">Edge</label>
             <input type="range" id="brushhard" min="0" max="100" value="35" title="Soft → hard brush">
           </div>
-          <p class="god-note">Right-drag with Raise / Lower / Ice to stroke. Brush size follows zoom.</p>
+          <div class="view-row">
+            <label for="brushsym">Symmetry</label>
+            <select id="brushsym" title="Mirror the stroke">
+              <option value="">off</option>
+              <option value="equator">equator</option>
+              <option value="lat">opposite longitude</option>
+              <option value="great">great circle</option>
+            </select>
+          </div>
+          <p class="god-note">Right-drag with Raise / Lower / Ice to stroke. Alt inverts raise and lower. Brush size follows zoom.</p>
+          <div class="view-row">
+            <label for="landshape">Land shape</label>
+            <select id="landshape" title="The archetype Reroll land builds — where the continents go before isostasy argues"></select>
+          </div>
+          <p class="god-note" id="landshapeblurb">Pick a shape, then Reroll land. Seeds move the coastline; the archetype moves the kind of world.</p>
+          <div class="tools god-actions" style="margin-top:8px">
+            <button type="button" id="canvasmode" aria-pressed="false" title="Freeze tectonics and erosion so you can paint the heightfield">Canvas mode</button>
+            <button type="button" id="rerolland" title="Keep gases and life; roll a new geography">Reroll land</button>
+            <button type="button" id="landpickbtn" title="Choose a starting continent layout">Pick land</button>
+          </div>
+          <p class="god-note" id="landmassline">Landmasses appear here after generate.</p>
+          <p class="god-note">Canvas freezes plates and rivers so a stroke stays. The local map becomes a cube net of the whole sphere. Flatten, Smooth, Sharpen, Roughen, and Crust type are in Tools. Climate still ticks.</p>
         </div>
 
         <div class="suite-desk" data-suite-panel="god" data-desk-panel="challenge" hidden>
@@ -1099,8 +1258,30 @@
         <div class="suite-desk" data-suite-panel="god" data-desk-panel="genesis" hidden>
           <div class="god-h" data-sec-icon="genesis">New world</div>
           <input id="genesisname" placeholder="Name (optional)">
-          <input id="genesisseed" placeholder="Seed number (optional)">
-          <select id="genesispreset"></select>
+          <input id="genesisseed" placeholder="Seed, word-id, or paste a link">
+          <div class="view-row">
+            <label for="genesisland">Shape</label>
+            <select id="genesisland" title="Where the continents start"></select>
+          </div>
+          <div class="view-row">
+            <label for="genesispreset">Preset</label>
+            <select id="genesispreset"></select>
+          </div>
+          <div class="view-row">
+            <label for="genesisplates">Plates</label>
+            <input type="range" id="genesisplates" min="1" max="16" value="12" title="How many tectonic plates. Does not break the continents — land shape still owns the coasts. Create paints the plate map on the globe.">
+            <span class="val" id="genesisplatesVal">12</span>
+          </div>
+          <div class="view-row">
+            <label for="genesiswater">Water</label>
+            <input type="range" id="genesiswater" min="50" max="250" value="100">
+            <span class="val" id="genesiswaterVal">1.00×</span>
+          </div>
+          <div class="view-row">
+            <label for="genesislandfrac">Land</label>
+            <input type="range" id="genesislandfrac" min="10" max="70" value="29">
+            <span class="val" id="genesislandfracVal">29%</span>
+          </div>
           <div class="tools god-actions" style="margin-top:6px">
             <button type="button" id="genesisrand">Random habitable</button>
             <button type="button" id="genesisgo">Create</button>
@@ -1108,9 +1289,10 @@
           </div>
           <div class="tools god-actions" style="margin-top:6px">
             <button type="button" id="godshelf">Save world</button>
-            <button type="button" id="godshare">Copy link-seed</button>
+            <button type="button" id="godshare">Copy world id</button>
           </div>
-          <p class="god-note" style="margin-top:10px">Name, seed, and a what-if — a variant of this type, not a catalogue body.</p>
+          <p class="god-note" style="margin-top:10px">Four words plus a shape — <code>ember-coral-dune-frost.shattered</code> — is a start you can send. A word like <code>caty</code> always hashes to the same seed.</p>
+          <p id="genesisreport">Create to build. This line then reports shape, plates, water, and land %.</p>
         </div>
       </div>
       <div class="dock-pane" id="pane-climate"></div>
@@ -1139,6 +1321,27 @@
             <button type="button" id="viewGhost" title="Fade surface to read overlays">Ghost 40%</button>
           </div>
           <p class="hint-mini">Fade the crust so overlays and clouds read. Ghost 40% is a preset.</p>
+          <div class="sec-h" data-sec-icon="orbitguides">Scale</div>
+          <div class="tools clim-actions" id="viewScale" style="margin-top:4px">
+            <button type="button" data-scale="dot" title="Pale blue dot">Dot</button>
+            <button type="button" data-scale="disc" title="DSCOVR full dayside, sun behind camera">Disc</button>
+            <button type="button" data-scale="hold" title="A globe in the hand">Hold</button>
+            <button type="button" data-scale="iss" title="About 400 km">ISS</button>
+          </div>
+          <p class="hint-mini">One camera. Scroll still works. Disc is the photograph geometry.</p>
+          <div class="sec-h" data-sec-icon="inspect">Photograph</div>
+          <div class="tools clim-actions" id="viewEoref" style="margin-top:4px">
+            <button type="button" data-eoref="marble-west" title="NASA Blue Marble 2002, Africa">Marble</button>
+            <button type="button" data-eoref="dscovr" title="NASA DSCOVR EPIC full disc">DSCOVR</button>
+            <button type="button" id="eorefHide" title="Hide the still">Hide still</button>
+          </div>
+          <p class="hint-mini">NASA public-domain stills beside the disc. The gap is the work.</p>
+          <div class="tools clim-actions" id="viewLook" style="margin-top:8px">
+            <button type="button" id="lookPhoto" aria-pressed="true" title="Photoreal surface colours">Photo</button>
+            <button type="button" id="lookDiagram" aria-pressed="false" title="Climate-coloured diagram">Diagram</button>
+            <button type="button" id="cloudFree" aria-pressed="false" title="Hide the cloud shell">Cloud-free</button>
+          </div>
+          <p class="hint-mini">Diagram is the climate field. Cloud-free is the Blue Marble composite, not a weather day.</p>
         </div>
         <div class="suite-desk" data-suite-panel="view" data-desk-panel="layers" hidden>
           <div class="sec-h" data-sec-icon="survey">Layers</div>
@@ -1171,11 +1374,18 @@
       </div>
       <div class="dock-pane" id="pane-lab">
         <div class="suite-desks" role="tablist" aria-label="Lab desks">
-          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="all" aria-pressed="true" title="All instruments"></button>
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="station" aria-pressed="true" title="Cell readout, cores, globe numbers"></button>
           <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="tower" aria-pressed="false" title="Redox & Gaia"></button>
           <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="curves" aria-pressed="false" title="Time series"></button>
           <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="survey" aria-pressed="false" title="Maps & spectra"></button>
           <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="notes" aria-pressed="false" title="Limits & glossary"></button>
+          <button type="button" class="suite-desk-tab" data-suite="lab" data-desk="all" aria-pressed="false" title="All instruments"></button>
+        </div>
+        <div id="labStation">
+          <p class="god-note" style="margin:0 0 8px">These only read. Click the planet — nothing is sculpted.</p>
+          <div class="tools" id="toolsSample"></div>
+          <div class="stats" id="stats"></div>
+          <div id="inspect"></div>
         </div>
         <div class="tools lab-toolbar">
           <button type="button" id="labRefresh" title="Redraw Lab charts">Refresh</button>
@@ -1202,13 +1412,17 @@
           <div class="dock-foot" style="margin-top:6px;flex-wrap:wrap;gap:8px">
             <label class="hint-mini" style="display:flex;align-items:center;gap:6px;margin:0">
               Sim cells
-              <select id="simN" title="Simulation grid — climate, life, map" aria-label="Sim resolution">
-                <option value="32">N=32 fast</option>
-                <option value="48">N=48</option>
-                <option value="64">N=64</option>
-                <option value="96" selected>N=96 detail</option>
-                <option value="128">N=128 heavy</option>
-                <option value="192">N=192 research</option>
+              <select id="simN" title="Simulation grid — climate, life, map. High N is RAM-cheap; ticks get slower." aria-label="Sim resolution">
+                <option value="32">N=32 ~313 km</option>
+                <option value="48">N=48 ~209 km</option>
+                <option value="64">N=64 ~157 km</option>
+                <option value="96" selected>N=96 ~104 km</option>
+                <option value="128">N=128 ~78 km</option>
+                <option value="192">N=192 ~52 km</option>
+                <option value="256">N=256 ~39 km</option>
+                <option value="384">N=384 ~26 km</option>
+                <option value="512">N=512 ~20 km</option>
+                <option value="768">N=768 ~13 km</option>
               </select>
             </label>
             <label class="hint-mini" style="display:flex;align-items:center;gap:6px;margin:0">
@@ -1221,7 +1435,7 @@
               </select>
             </label>
           </div>
-          <p class="hint-mini">Sim cells regenerate the world. Globe quads are visual only and apply instantly. At N≥128 the mesh auto-caps.</p>
+          <p class="hint-mini">Sim cells regenerate the world (RAM is not the limiter — tick time is). Globe quads are visual only. Mesh auto-caps at ~768 edge.</p>
         </div>
         <div class="suite-desk" data-suite-panel="sandbox" data-desk-panel="archive" hidden>
           <div class="sec-h" data-sec-icon="archive">Archive</div>
@@ -1256,6 +1470,18 @@
   </div>
 
   <div id="timeribbon"></div>
+
+  <div id="landpick" role="dialog" aria-label="Pick a starting world">
+    <div class="lp-head">
+      <div>
+        <h1>Pick a starting world</h1>
+        <p class="lp-sub">Nine continent layouts. Same planet type. The four-word id under each globe is what you send someone.</p>
+      </div>
+      <button type="button" id="landpickclose">Keep this one</button>
+    </div>
+    <div id="landpickgrid"></div>
+    <p id="landpickfoot"></p>
+  </div>
 
   <div id="catpanel">
     <div class="cat-head">
@@ -1295,7 +1521,7 @@
             <button type="button" id="localgrow" aria-label="Grow panel">+</button>
           </div>
           <div class="local-sep" id="localSepZoom" aria-hidden="true"></div>
-          <div class="local-cluster seg" id="localRadius" title="Map zoom · scroll"></div>
+          <div class="local-cluster seg" id="localRadius" title="Map zoom · 5–85 cells across · scroll"></div>
           <div class="local-sep" id="localSepMove" aria-hidden="true"></div>
           <div class="local-cluster" id="localMove" title="Nudge patch"></div>
           <button type="button" class="local-iconbtn" id="localmorebtn" aria-pressed="false" title="More local controls">⋯</button>
@@ -1318,6 +1544,11 @@
     <div id="locallegend"></div>
     <div id="localstatus"></div>
   </div>
+  <div id="eoref">
+    <img id="eorefImg" alt="NASA Earth still">
+    <p class="eoref-cap" id="eorefCap"></p>
+    <button type="button" id="eorefClose">Hide still</button>
+  </div>
 </div>
 <div id="err"></div>
-<script type="module" src="./main.js?v=alive6"></script>
+<script type="module" src="./main.js?v=alive17"></script>

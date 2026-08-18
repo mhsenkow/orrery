@@ -1,7 +1,7 @@
 /** Atmosphere: gases, greenhouse, circulation, clouds, dust, seasons. */
 
 import { clamp, lerp } from '../math.js';
-import { NC, NBR, DIR, AREA } from '../sphere.js';
+import { NC, NBR, DIR, AREA, N as SIM_N } from '../sphere.js';
 import { greenhouseFromGases, totalPressure } from '../rulesets.js';
 import { circumbinaryBeat } from './exophysics.js';
 import { neighbourEN, neighbourMean } from './vecop.js';
@@ -130,7 +130,8 @@ export function cloudsTick(W) {
     const subtropDry = Math.exp(-((abs - 0.38) * (abs - 0.38)) / 0.02);
     const conv = Math.max(0, W.converg?.[c] || 0);
     let form = moist[c] * clamp(1.1 - temp[c], 0, 1) * 0.55 + precip[c] * 0.35;
-    form += itczBand * moist[c] * 0.55 + conv * 0.4;
+    const dash = 0.42 + 0.58 * Math.abs(Math.sin(c * 12.9898 + lat * 9.1));
+    form += itczBand * moist[c] * 0.55 * dash + conv * 0.4;
     form *= 1 - subtropDry * (earth ? 0.7 : 0.55); // horse latitudes clear
     // Midlatitude storm belt — moist + strong wind shear proxy
     const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
@@ -205,8 +206,9 @@ export function atmoTick(W, sunDir) {
     const lat = DIR[c * 3 + 1];
     const absLat = Math.abs(lat);
     const cloudAlb = R.earthLike && !R.deepTime ? 0.2 : 0.28;
+    const iceAlb = W._spinup ? 0 : ice[c];
     const alb = clamp(
-      ice[c] * 0.42 +
+      iceAlb * 0.42 +
       clouds[c] * cloudAlb +
       W.dust[c] * 0.22 +
       (isSea ? 0.06 : 0.18),
@@ -226,7 +228,8 @@ export function atmoTick(W, sunDir) {
     const thermalMass = (isSea ? 0.035 : lerp(0.18, 0.08, clamp(maritime, 0, 1)))
       * (R.surfacePressureBar != null ? clamp(0.4 + Math.log10((R.surfacePressureBar || 1) + 0.01) * 0.35, 0.08, 2.5) : 1);
     // Less poleward heat bleed on Earth so polar cooling sticks
-    const mix = (R.earthLike && !R.deepTime) ? 0.12 + (1 - absLat) * 0.06 : 0.18;
+    const mix0 = (R.earthLike && !R.deepTime) ? 0.12 + (1 - absLat) * 0.06 : 0.18;
+    const mix = mix0 * Math.min(2.5, Math.max(1, SIM_N / 64));
     let t = temp[c] + (eq - temp[c]) * thermalMass + dT * mix;
     if (R.airless || Ptot < 0.01) t = lerp(temp[c], eq, 0.45);
     _t[c] = clamp(t, 0, 1.6);

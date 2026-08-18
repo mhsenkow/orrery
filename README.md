@@ -23,10 +23,12 @@ Embodied god-game prototype: hold a planet, shrink, walk in.
 - [God-game backlog — 200 ways to act like a god](https://mhsenkow.github.io/simearth/site/godgame.html)
 - [The next 200 — what the last two backlogs left behind](https://mhsenkow.github.io/simearth/site/next.html)
 - [Tides & weather — 200 items on the two systems you cannot see](https://mhsenkow.github.io/simearth/site/tides-weather.html)
-- [Geology — 200 items on the mantle, the plates and the rock record](https://mhsenkow.github.io/simearth/site/geology.html)
+- [Geology — 482 items: molding the starting world, then the mantle, the plates, and the geology each active planet actually does](https://mhsenkow.github.io/simearth/site/geology.html)
 - [Real parameters — 500 items to make every world match its measured values](https://mhsenkow.github.io/simearth/site/exoparams.html)
 - [Alive — 300 items on whether it reads as a living world](https://mhsenkow.github.io/simearth/site/living.html)
 - [Currents — 200 items on everything that is supposed to move](https://mhsenkow.github.io/simearth/site/currents.html)
+- [Realism — 800 items on how the globe looks, and how to make it Earth](https://mhsenkow.github.io/simearth/site/realism.html)
+- [Landscape — 400 items on picking, drawing and shaping the land you start with](https://mhsenkow.github.io/simearth/site/landscape.html)
 
 ## Local
 
@@ -39,7 +41,7 @@ WebXR needs HTTPS or localhost. Docs in `briefs/`.
 
 ## Backlogs
 
-All ten backlogs are generated — edit the script, never the output.
+All twelve backlogs are generated — edit the script, never the output.
 
 ```bash
 node scripts/backlog.mjs        # briefs/backlog.md + site/backlog.html
@@ -52,6 +54,9 @@ node scripts/geology.mjs        # briefs/geology-backlog.md + site/geology.html
 node scripts/exoparams.mjs      # briefs/exoparams-backlog.md + site/exoparams.html
 node scripts/living.mjs         # briefs/living-backlog.md + site/living.html
 node scripts/currents.mjs       # briefs/currents-backlog.md + site/currents.html
+node scripts/realism.mjs        # briefs/realism-backlog.md + site/realism.html
+node scripts/landscape.mjs      # briefs/landscape-backlog.md + site/landscape.html
+node scripts/capture-site.mjs # site/img/*.png — needs python3 -m http.server 8765
 ```
 
 ### Hand-written plans (not generated — edit these directly)
@@ -84,6 +89,18 @@ and render the result well enough to believe.
 
 `godgame.mjs` is the player-facing half of that: the manipulation grammar, consequence and
 attribution, the economy of miracles, scenarios, embodiment, and the moral layer.
+
+`landscape.mjs` asks the one question no other backlog asks: does anybody get to decide what
+the land is? Until this pass `boot()` ended in `runGenerate(20260808, RULESETS[0])` — one
+hard-coded integer, so every first run this project has ever shown was the same planet — and a
+seed only ever moved the coastline, never the kind of world: six seeds of Earth all produce one
+supercontinent holding ~98% of the land at a land fraction pinned to 29% by `fitSeaLevel`. The
+hypsometric curve is a step, not a curve; the world you are handed has eight river cells; and
+the ten land tools write straight into `W.h` with no layer, no selection, no preview and no
+redo. This pass ships an openings table, thirteen landscape archetypes in
+[`vr/sim/landscapes.js`](vr/sim/landscapes.js), and four sculpt-tool fixes; the 400 items are the rest
+— a front door with pictures, a curve with a shelf in it, a stroke that is a path, and the layer
+stack 22 other items are waiting on.
 
 `next.mjs` is written against what those two left behind. The simulation and the god layer are
 both built; this pass starts closing the gap on picture, machine, and audience: field textures
@@ -138,12 +155,16 @@ planet** — `computeWinds` prescribes three latitude bands scaled by `1 / rotat
 changes wind *speed* and never the *banding*, because with no pressure field there is nothing for
 the circulation to be a solution to.
 
-`geology.mjs` is a deep dive on the geosphere — the oldest and best-built system in the
-codebase and the one extended least since. Plates get a random Euler pole rather than a
-force, `plates.length` never changes so no ocean basin can close and the Wilson cycle
-cannot run, every boundary is a Voronoi edge, and `rock` is one byte that gets overwritten.
-The two roots are mantle convection and a real rock column; almost everything else is a
-next layer on something that already works.
+`geology.mjs` is a deep dive on the geosphere in three layers. The first is a moment
+before the clock starts — there is still nowhere to stand between "nothing" and "running",
+so the landscape can only be rerolled, never chosen. The second is the rock physics of a
+mobile lid: `plates.length` never changes so no ocean basin can close, every boundary is a
+Voronoi edge, `rock` is one byte, no fault has a trace, no volcano has an edifice, and
+nothing hydrothermal exists. The third is the rest of the solar system.
+`planetKind` now stamps Mars, Venus, Io, the Moon, Mercury and the ice bodies so they no
+longer share a Voronoi Earth; the remaining work is making each of those maps do the
+geology that world actually does — Tharsis reorienting Mars, Venus foundering, Io burying
+itself, Europa cracking on a 3.55-day tide.
 
 `exoparams.mjs` is the largest of the backlogs and the one about honesty. The catalogue names
 120 real bodies; the seed parameter table in that script is now emitted to
@@ -168,6 +189,38 @@ with `computeWinds`, advects with it, and then `world.js` throws it away and cal
 thickening lives only in `generateTectonics`, so two continents can converge for a billion
 years without raising a metre of mountain. Critical path: `basis` → `advect2` → `oceanvel`
 → `gyre`/`moc` → `progatm` → `enso`, with `isostatick`/`orogen`/`magmachem` in parallel.
+
+`realism.mjs` is the rendering pass — the globe, the pixel map, and what has to be true
+underneath for either to read as a place rather than a diagram. It was written by auditing the
+renderer against the running build, and seven faults were found and fixed in the process. The
+largest: `uField0.a` bit-packed sediment into the low nibble and cloud into the high nibble of a
+texture sampled `LINEAR`, so hardware interpolation ran across the nibble boundary and painted a
+tan sediment contour stair-stepping across four kilometres of open ocean at every 1/16 of cloud
+cover — visible as terraced bands over the whole sea on every world. Also fixed: the atmosphere
+shell was never tonemapped and clipped the sunward limb to flat white; the moon was drawn with
+`healthProg`, whose entire fragment shader is `o = vec4(uCol, 0.85)`; the ocean specular was a
+Blinn-Phong lobe that blew out at every sun angle and is now GGX with wind-driven roughness plus a
+Fresnel sky term; the cloud shell sampled coverage nearest-neighbour on a lattice a quarter of the
+grid resolution and displaced it radially, terracing every band edge; and the sea-ice and lightning
+hashes were anchored to the *world* normal, so both patterns swam as the planet turned. The surface
+also gained two octaves of object-space detail — an albedo mottle and a sun-direction relief term,
+faded out by `fwidth` before either period reaches the sampling limit — because a cell is 250 km
+across and there was nothing at all between that and a footprint. Cloud is now 8-bit, and
+precipitation and river discharge reach the surface shader for the first time.
+
+Its critical path: `gputime` and `imgtest` first, because the picture has never been measured and
+has no test; then `seamfix`, `floatfield`, `gpubasis` and `gpucolour`, because the field atlas is
+corrupt in a one-cell band around all twelve cube edges and the picture is currently computed three
+times in three files; then `hdrbuf`, `material`, `lodmesh`.
+
+A second pass of 400 items sits on top of that pipeline and asks a different question: does this
+read as Earth itself, as a modern SimEarth? `uEarth` currently turns the vegetation mix down so the
+result is quieter rather than truer; `seedEarthBiosphere` paints life by latitude belt;
+`calibrate.mjs` asserts climate scalars and has never asserted a colour; `scaleXR` is a joystick
+axis clamped between 0.07 and 0.95. The photograph path is `bluemarble` / `truecolor` / `eoref`
+(dark ocean, dark forest, a shelf of NASA stills), then `limbvol` and `coastline` (the two edges
+that survive a thumbnail), then `phenology`, `lights` and `gaiaface` (the year, the cities, the
+face), then `zoomspan` and `holdfeel` (one descent, a planet you can actually hold).
 
 `worlds.mjs` carries the plan for turning the five invented rulesets into a catalogue
 of real planets and moons. The in-app Worlds drawer lists playable bodies only;

@@ -3,7 +3,7 @@
 
 import { W, chronLog } from '../world.js';
 import { iconSVG } from './god/icons.js';
-import { setPlatePole, placePlume, drawRift, forceOrogeny } from './god/sculpt.js';
+import { setPlatePole, placePlume, drawRift, forceOrogeny, shiftSeaLevel } from './god/sculpt.js';
 import {
   platesDeskSnapshot, tectonicsAtCell, plateName, nudgePlateOmega,
   reclassifyBoundaries, ensurePlateNames,
@@ -115,6 +115,12 @@ export function platesPanelChrome() {
           <button type="button" data-overlay="bounds">${iconSVG('quake')}<span class="btn-label">Bounds</span></button>
         </div>
         <p class="god-note">Young seafloor is warm at ridges; old ocean floor sinks.</p>
+        <div class="view-row" style="margin-top:8px">
+          <label for="rockSea">Sea</label>
+          <input type="range" id="rockSea" min="15" max="85" value="40" step="1">
+          <span class="val" id="rockSeaVal">0.40</span>
+        </div>
+        <p class="god-note">Floods or exposes shelves. Ice budget answers the lever.</p>
       </div>
     </div>
   `;
@@ -280,7 +286,14 @@ function refreshAgeDesk() {
       <div class="clim-fact">Thick crust rides high (isostasy). Oceanic plates are denser and thinner.</div>
       <div class="clim-fact">Seafloor age grows away from ridges — the age overlay paints that gradient.</div>
       <div class="clim-fact">Ore concentrates at arcs, rifts, and ancient shields.</div>
+      <div class="clim-fact">Sea level <b>${W.seaLevel.toFixed(2)}</b> · land fraction follows the lever, not a paint.</div>
     `;
+  }
+  const sea = document.getElementById('rockSea');
+  if (sea && document.activeElement !== sea) {
+    sea.value = String(Math.round(W.seaLevel * 100));
+    const lab = document.getElementById('rockSeaVal');
+    if (lab) lab.textContent = W.seaLevel.toFixed(2);
   }
 }
 
@@ -407,6 +420,15 @@ export function bindPlatesPanel(opts = {}) {
     const btn = e.target.closest('[data-overlay]');
     if (!btn) return;
     paint(btn.dataset.overlay);
+  });
+
+  document.getElementById('rockSea')?.addEventListener('input', () => {
+    const el = document.getElementById('rockSea');
+    const v = (+el.value) / 100;
+    const lab = document.getElementById('rockSeaVal');
+    if (lab) lab.textContent = v.toFixed(2);
+    shiftSeaLevel(v - W.seaLevel);
+    onChange?.('sealevel');
   });
 
   document.getElementById('rockHeat')?.addEventListener('input', () => {

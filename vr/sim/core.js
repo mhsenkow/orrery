@@ -45,7 +45,7 @@ export const INTERIORS = {
   },
   io: {
     coreMassFrac: 0.20, coreRadiusFrac: 0.40, heatFlow: 2.2, conductivity: 0.3,
-    lidMode: 'mobile', note: 'Tidal heat dominates · magma ocean proxy · weak field',
+    lidMode: 'stagnant', note: 'Tidal heat dominates · magma ocean · no plates · paterae',
   },
   gas: {
     coreMassFrac: 0.05, coreRadiusFrac: 0.15, heatFlow: 1.6, conductivity: 1.8,

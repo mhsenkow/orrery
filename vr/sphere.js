@@ -9,7 +9,8 @@ export let NC = 6 * NF;
 export let NV = 6 * (N + 1) * (N + 1);
 export let VPF = (N + 1) * (N + 1);
 
-export const N_ALLOWED = [32, 48, 64, 96, 128, 192];
+/** Face size. RAM is cheap (fields are a few GB at N=768); ticks and GPU atlases are not. */
+export const N_ALLOWED = [32, 48, 64, 96, 128, 192, 256, 384, 512, 768];
 
 /** Bilinear sample of a per-cell field on cube face f at globe grid (gi, gj) / gn. */
 export function sampleFaceField(field, f, gi, gj, gn, n = N) {

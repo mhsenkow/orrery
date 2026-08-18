@@ -428,6 +428,9 @@ li.st-deferred{opacity:.72;}
 :focus-visible{outline:2px solid var(--accent); outline-offset:2px; border-radius:4px;}
 footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
        font:400 12px/1.7 var(--mono); color:var(--faint);}
+.nav{margin-top:20px; font:400 12.5px/1.7 var(--mono); color:var(--faint);}
+.nav a{color:var(--dim); text-decoration:none; border-bottom:1px solid var(--rule);}
+.nav a:hover{color:var(--accent); border-color:var(--accent-line);}
 @media (max-width:640px){
   li{grid-template-columns:30px minmax(0,1fr);}
   li .tags{grid-row:auto; grid-column:2; margin-top:7px;}
@@ -441,6 +444,13 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <div class="eyebrow">Backlog · draft for review</div>
   <h1>200 ways this could be better</h1>
   <p class="sub">The prototype proves the substrate. Foundations rebuild coverage is tracked per item below.</p>
+  <p class="nav"><a href="./">Pitch</a> · <a href="worlds.html">Worlds</a> ·
+  <a href="evolution.html">Evolution</a> ·
+  <a href="godgame.html">God layer</a> · <a href="next.html">The next 200</a> ·
+  <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> ·
+  <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> ·
+  <a href="currents.html">Currents</a> ·
+  <a href="realism.html">Realism</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>${D.length}</dd></div>
     <div><dt>Done</dt><dd>${count(x=>x.st==='done')}<small>in vr/ prototype</small></dd></div>

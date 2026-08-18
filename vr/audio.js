@@ -178,7 +178,7 @@ export function audioUpdate(focusCell = -1) {
   const wind = Math.min(0.14, 0.02 + (W.meanWind || W.gases?.dust || 0) * 0.15) * silence * windMul;
   windGain.gain.setTargetAtTime(wind, ctx.currentTime, 0.6);
 
-  const river = Math.min(0.06, (W.flow?.[focusCell] || 0) * 12);
+  const river = Math.min(0.06, Math.log1p(W.flow?.[focusCell] || 0) * 0.018);
   const seaState = focusCell >= 0 ? (W.waveHt?.[focusCell] || 0) : 0;
   const ocean = Math.min(0.18, (
     (1 - (W.landFrac || 0.3)) * 0.06

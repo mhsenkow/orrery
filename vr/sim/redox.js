@@ -228,7 +228,12 @@ function guildViable(g, sp, c, W) {
   const maint = (0.04 + Math.max(0, 0.5 - T) * 0.08) * maintScale;
   let energy = g.yield * donor * acc * (0.6 + T * 0.5);
   let ventPenalty = 1;
-  if (g.vent && W.bound[c] !== 0) ventPenalty = 0.15;
+  if (g.vent) {
+    const hot = W.bound[c] === 0
+      || (W.hydrotherm?.[c] || 0) > 0.2
+      || (W.shellVent?.[c] || 0) > 0.2;
+    ventPenalty = hot ? 1 : 0.15;
+  }
   return Math.max(0, energy * ventPenalty - maint);
 }
 

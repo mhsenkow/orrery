@@ -13,6 +13,7 @@ import { getSpriteAtlas, ATLAS_COLS } from './sprites.js';
 import { buildTransmittanceLUT, uploadScatterLUT, buildMultipleScatterLUT, updateScatterLUT } from './sim/scatter.js';
 import { applyOverlay } from './sim/overlay.js';
 import { fillFlowStreaks } from './sim/flowviz.js';
+import { BRUSH } from './sim/god/brush.js';
 import { localSeaLevel, isSubmerged } from './sim/cellSurface.js';
 import { meshForEntity } from './sim/mesh.js';
 import { initGpgpu } from './sim/gpgpu/index.js';
@@ -53,8 +54,8 @@ function upload(b, arr, usage) {
 
 /* ---------- geometry lattice (globe mesh can be finer than sim N) ---------- */
 export const GLOBE_SUBD_ALLOWED = [1, 2, 3, 4];
-/** Cap globe lattice edge — keeps vertex count sane at N=192 × 4×. */
-export const MAX_GN = 384;
+/** Cap globe lattice edge. 768 → ~3.5M verts; RAM is fine, draw cost is the limit. */
+export const MAX_GN = 768;
 export let GLOBE_SUBD = 2;
 let GN = N * GLOBE_SUBD;
 let GNV = 6 * (GN + 1) * (GN + 1);
@@ -69,10 +70,10 @@ export function effectiveGlobeSubd(n = N) {
   return Math.max(1, Math.round(Math.min(n * GLOBE_SUBD, MAX_GN) / n));
 }
 
-/** Clamp globe mesh when sim N is very high. */
+/** Clamp globe mesh when sim N × subd would exceed MAX_GN. */
 export function recommendGlobeSubd(n = N) {
-  if (n >= 192) return 1;
-  if (n >= 128) return 2;
+  if (n * 2 > MAX_GN) return 1;
+  if (n >= 256) return 2;
   if (n >= 96) return 2;
   return GLOBE_SUBD;
 }
@@ -100,8 +101,8 @@ export let vIdx;
 const GUILD_INDEX = Object.fromEntries(GUILDS.map((g, i) => [g.id, i]));
 export let FIELD_W = 6 * N;
 export let FIELD_H = N;
-let fieldTex0 = null, fieldTex1 = null;
-let fieldPix0 = null, fieldPix1 = null;
+let fieldTex0 = null, fieldTex1 = null, fieldTex2 = null;
+let fieldPix0 = null, fieldPix1 = null, fieldPix2 = null;
 let bufFieldUV = null;
 let scatterTex = null;
 let scatterMsTex = null;
@@ -237,11 +238,13 @@ export function remeshPlanet() {
   gl.bufferData(gl.ARRAY_BUFFER, vFieldUV, gl.STATIC_DRAW);
   fieldPix0 = new Uint8Array(FIELD_W * FIELD_H * 4);
   fieldPix1 = new Uint8Array(FIELD_W * FIELD_H * 4);
-  for (const tex of [fieldTex0, fieldTex1]) {
+  fieldPix2 = new Uint8Array(FIELD_W * FIELD_H * 4);
+  for (const tex of [fieldTex0, fieldTex1, fieldTex2]) {
     if (!tex) continue;
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FIELD_W, FIELD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
   }
+  buildCloudMesh();
   rebuildScatterLUTs();
   rebuildGeometry();
   refreshColours(1);
@@ -269,8 +272,11 @@ function buildAtlas() {
 }
 
 /* ---------- programs / buffers ---------- */
-let planetProg, atmoProg, cloudProg, entProg, meshProg, starProg, flatProg, healthProg;
-let buf, atlasTex, SPH_COUNT = 0, GRID_COUNT = 0, CELL_GRID_COUNT = 0, NSTAR = 1400;
+let planetProg, atmoProg, cloudProg, entProg, meshProg, starProg, flatProg, healthProg, bodyProg;
+let buf, atlasTex, SPH_COUNT = 0, GRID_COUNT = 0, CELL_GRID_COUNT = 0, NSTAR = 1400, CLOUD_COUNT = 0;
+/** Shared exposure — the surface, the shell and the moon must agree or the
+ *  limb clips to white where two differently-scaled images overlap. */
+let _exposure = 1;
 const MVP = m4(), MODEL = m4(), NRM = new Float32Array(9), TMP = m4();
 let _cellGrid = null;
 let _localRim = null;
@@ -368,17 +374,20 @@ export function initGL(cvs) {
   planetProg = prog(V_HEAD + `
 in vec3 aPos; in vec3 aNrm; in vec4 aDat; in vec2 aFieldUV;
 uniform mat4 uMVP, uModel; uniform mat3 uNrmMat;
-out vec3 vN; out vec4 vD; out vec3 vW; out vec2 vFUV;
+out vec3 vN; out vec4 vD; out vec3 vW; out vec2 vFUV; out vec3 vObj;
 void main(){
   vN = normalize(uNrmMat*aNrm);
   vD = aDat; vW = (uModel*vec4(aPos,1.0)).xyz; vFUV = aFieldUV;
+  vObj = normalize(aPos);
   gl_Position = uMVP*vec4(aPos,1.0);
 }`, F_HEAD + `
-in vec3 vN; in vec4 vD; in vec3 vW; in vec2 vFUV;
+in vec3 vN; in vec4 vD; in vec3 vW; in vec2 vFUV; in vec3 vObj;
 uniform vec3 uSun, uCam, uAtmo; uniform float uDetail, uAtmoK, uNight, uDaisy, uOpacity, uXRay, uEarth;
 uniform float uOzone, uAerosol, uMag, uTime, uHaze, uExposure, uMoon;
-uniform float uStorm, uCloudShadow, uMagTilt;
-uniform sampler2D uField0; uniform sampler2D uField1; uniform sampler2D uScatter; uniform sampler2D uScatterMs;
+uniform float uStorm, uCloudShadow, uMagTilt; uniform float uGrain;
+uniform float uLook, uCloudFree;
+uniform sampler2D uField0; uniform sampler2D uField1; uniform sampler2D uField2;
+uniform sampler2D uScatter; uniform sampler2D uScatterMs;
 out vec4 o;
 vec3 climate(float t){
   vec3 a=vec3(0.12,0.18,0.48), b=vec3(0.18,0.48,0.68), c=vec3(0.26,0.58,0.36);
@@ -392,6 +401,42 @@ vec3 tonemap(vec3 x){
   const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
   return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
 }
+/* --- sub-cell surface detail -------------------------------------------
+   A sim cell is ~250 km across. Between orbital distance and standing on a
+   coast there are four decades of scale with nothing in them, so the surface
+   reads as a smooth gradient rather than ground. These give it texture that
+   is stable under rotation (object space) and fades out before it aliases. */
+float h31(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453123); }
+float vnoise(vec3 p){
+  vec3 i=floor(p), f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  float n00=mix(h31(i+vec3(0,0,0)),h31(i+vec3(1,0,0)),f.x);
+  float n10=mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x);
+  float n01=mix(h31(i+vec3(0,0,1)),h31(i+vec3(1,0,1)),f.x);
+  float n11=mix(h31(i+vec3(0,1,1)),h31(i+vec3(1,1,1)),f.x);
+  return mix(mix(n00,n10,f.y), mix(n01,n11,f.y), f.z);
+}
+float fbm3(vec3 p){
+  float s=0.0, a=0.5, w=0.0;
+  for(int i=0;i<3;i++){ s+=a*vnoise(p); w+=a; p=p*2.07+vec3(11.3,7.7,3.1); a*=0.42; }
+  return s/w;
+}
+/* Directional relief without a normal map. Screen-space derivatives of a value
+   noise are the obvious way to bump a normal and they are the wrong way here:
+   the step is a pixel, the height is unitless, and the resulting perturbation
+   scales with zoom — which turns ground texture into per-pixel speckle. Sample
+   the same field once more, one half-period along the sun's tangential
+   direction, and use the finite difference as a slope. One extra fbm call,
+   stable at every distance, and it swings correctly as the terminator moves. */
+float sunRelief(vec3 obj, vec3 N, vec3 L, float freq, float h0){
+  vec3 t = L - N * dot(L, N);
+  float tl = length(t);
+  if (tl < 1e-4) return 0.0;
+  t /= tl;
+  float eps = 0.5 / freq;
+  float h1 = fbm3(normalize(obj + t * eps) * freq);
+  return clamp((h1 - h0) * 3.0, -1.0, 1.0) * tl;
+}
 void main(){
   vec3 N=normalize(vN); vec3 V=normalize(uCam-vW);
   float facing = max(dot(N, V), 0.0);
@@ -399,22 +444,51 @@ void main(){
   // Field textures — life/ice/moist/(sed+cloud packed) + npp/guild/height/wind
   vec4 F0 = texture(uField0, vFUV);
   vec4 F1 = texture(uField1, vFUV);
+  vec4 F2 = texture(uField2, vFUV);
   float lifeF = F0.r;
   float iceF = F0.g;
   float moistF = F0.b;
-  float packedSA = F0.a * 255.0;
-  float sedF = mod(packedSA, 16.0) / 15.0;
-  float cloudF = floor(packedSA / 16.0) / 15.0;
+  /* Cloud and sediment used to share one byte, four bits each, in a texture
+     sampled LINEAR — so hardware interpolation across a cloud step carried into
+     the sediment nibble and painted a tan contour line on the open ocean at
+     every 1/16 of cloud cover. They are separate channels now, at full depth. */
+  float cloudF = F0.a;
+  float sedF = F2.r;
+  float interF = F2.g;
+  float precipF = F2.b;
+  float flowF = F2.a;
   float nppF = F1.r;
   float guildF = F1.g;
   float heightF = F1.b; // 0 deep ocean → 1 high land
   float windF = F1.a;
-  float waterMask = 1.0 - smoothstep(0.42, 0.55, heightF);
+  /* Detail level of service: one object-space unit is one planet radius, so
+     px below is how much of the planet a screen pixel covers. Detail is faded out
+     before its period drops under ~2 px, which is what stops the noise from
+     boiling when the globe is held at arm's length. */
+  const float MID_F = 26.0, FINE_F = 130.0;
+  float px = max(length(fwidth(vObj)), 1e-6);
+  /* Fade a layer out well before one of its periods drops to a pixel — a noise
+     octave near the Nyquist limit is speckle, not ground. */
+  float midFade  = uGrain * (1.0 - smoothstep(0.06, 0.20, px * MID_F));
+  float fineFade = uGrain * (1.0 - smoothstep(0.06, 0.20, px * FINE_F));
+  float detFine = 0.5, detMid = 0.5;
+  if (midFade > 0.004) detMid = fbm3(vObj * MID_F);
+  if (fineFade > 0.004) detFine = fbm3(vObj * FINE_F + vec3(19.0, 4.0, 31.0));
+  float grain = (detMid - 0.5) * midFade * 0.8 + (detFine - 0.5) * fineFade * 0.45;
+  /* Fractal coast: a cell is ~250 km, so the shoreline is a step unless we
+     nick the heightfield with object-space noise at the waterline only. */
+  float hCoast = heightF + (detMid - 0.5) * 0.055 * midFade
+    + (detFine - 0.5) * 0.018 * fineFade;
+  float waterMask = 1.0 - smoothstep(0.485, 0.538, hCoast);
   float landMask = 1.0 - waterMask;
   // Intertidal coast band — real field + soft shoreline
-  float interF = sedF; // packed with intertidal emphasis near coast
-  float interBand = smoothstep(0.35, 0.55, heightF) * smoothstep(0.62, 0.48, heightF);
+  float interBand = smoothstep(0.35, 0.55, hCoast) * smoothstep(0.62, 0.48, hCoast);
   interBand = max(interBand * (0.35 + moistF), interF * landMask * 1.2);
+  /* Ground is rough, canopy is soft-lumpy, ice is ridged, open water is not
+     bumped at all — the wave normal is the specular lobe's job, not this. */
+  float reliefAmt = (landMask * 0.30 + iceF * 0.18) * midFade;
+  float slopeLit = reliefAmt > 0.004
+    ? sunRelief(vObj, N, normalize(uSun), MID_F, detMid) * reliefAmt : 0.0;
   vec3 biome=vD.rgb;
   float greenDom = biome.g - max(biome.r, biome.b);
   float vegFallback = smoothstep(0.08, 0.35, greenDom) * smoothstep(0.35, 0.7, biome.g);
@@ -427,16 +501,28 @@ void main(){
   float lifeShow = max(lifeGreen, daisyBW * uDaisy + daisyBW * (1.0 - uDaisy) * 0.5);
   float show = max(uDetail, max(lifeShow, uDaisy * 0.92));
   show = max(show, uEarth * 0.82);
+  show *= 1.0 - uLook * 0.62;
   vec3 base=mix(climate(vD.a), biome, show);
+  grain *= 1.0 - uLook;
+  /* Mottle the albedo, not just the shading: bare ground gets the most, canopy
+     gets a hue break rather than a value break, water gets almost none. */
+  float bare = landMask * (1.0 - lifeGreen * 0.8) * (1.0 - iceF);
+  base *= 1.0 + grain * (0.10 * bare + 0.05 * landMask * lifeGreen + 0.02 * iceF);
+  base *= mix(vec3(1.0), vec3(1.030, 0.995, 0.955), clamp(grain * 2.2, 0.0, 1.0) * bare);
+  base *= mix(vec3(1.0), vec3(0.970, 1.015, 0.980), clamp(-grain * 2.2, 0.0, 1.0) * landMask);
   // Guild pigment bias — retinal / cyanobacteria / sulfur diverge
   vec3 guildTint = mix(vec3(0.2, 0.55, 0.25), vec3(0.45, 0.15, 0.55), smoothstep(0.2, 0.8, guildF));
   guildTint = mix(guildTint, vec3(0.55, 0.45, 0.12), smoothstep(0.55, 0.95, guildF));
-  base = mix(base, guildTint, lifeGreen * landMask * 0.35 * (1.0 - uDaisy));
+  base = mix(base, guildTint, lifeGreen * landMask * mix(0.28, 0.06, uEarth) * (1.0 - uDaisy));
   float nl=max(dot(N,uSun),0.0);
   float wrap=max(dot(N,uSun)*0.5+0.5,0.0);
   float ambient = 0.14 + 0.10*wrap*wrap;
   float key = pow(nl, 1.15) * 1.05;
   float fill = pow(wrap, 2.0) * 0.22;
+  // Slopes facing the sun brighten, slopes facing away fall into their own
+  // shadow — strongest at low sun, exactly like real relief.
+  key *= 1.0 + slopeLit * 0.30 * (1.0 - nl * 0.55);
+  ambient *= 1.0 - max(0.0, -slopeLit) * 0.10;
   // PBR-ish roughness by surface type
   float rough = mix(0.85, 0.08, waterMask * (1.0 - iceF));
   rough = mix(rough, 0.55, landMask * lifeGreen); // canopy softer
@@ -445,30 +531,72 @@ void main(){
   float gloss = mix(8.0, 96.0, 1.0 - rough) * mix(1.0, 0.35, clamp(windF * 1.4, 0.0, 1.0));
   gloss = max(6.0, gloss);
   vec3 H = normalize(uSun + V);
-  float spec = pow(max(dot(N, H), 0.0), gloss) * waterish * (1.0 - rough);
-  float specWide = pow(max(dot(N, H), 0.0), max(6.0, gloss * 0.2)) * waterish * (0.15 + windF * 0.4);
+  /* Sun glint as a GGX lobe whose roughness is the mean square wave slope.
+     A Blinn-Phong lobe wide enough to survive a calm sea blew out to a white
+     blob at every sun angle; this is narrow when the water is glassy and opens
+     into a real glitter path as the wind picks up. */
+  float wr = clamp(0.055 + windF * 0.34, 0.035, 0.55);
+  float aa = wr * wr;
+  float ndh = max(dot(N, H), 0.0);
+  float dGGX = (aa * aa) / max(3.14159 * pow(ndh * ndh * (aa * aa - 1.0) + 1.0, 2.0), 1e-5);
+  float ndv = max(dot(N, V), 1e-3);
+  float ndl = max(dot(N, uSun), 0.0);
+  float kg = aa * 0.5;
+  float vis = (ndv / (ndv * (1.0 - kg) + kg)) * (ndl / (ndl * (1.0 - kg) + kg));
+  float fres = 0.02 + 0.98 * pow(1.0 - max(dot(H, V), 0.0), 5.0);
+  float glint = clamp(dGGX * vis * fres / (4.0 * ndv * max(ndl, 1e-3)) * ndl, 0.0, 4.5);
+  /* Broad sheen off wind-roughened water — the part you see away from the
+     glitter path itself, kept an order of magnitude below the lobe. */
+  float sheen = pow(max(dot(N, H), 0.0), max(6.0, gloss * 0.2)) * (0.06 + windF * 0.16);
   vec3 col = base * (ambient + key + fill);
-  col += vec3(0.95, 0.97, 1.0) * (spec * 0.9 + specWide);
+  col += vec3(0.98, 0.98, 1.0) * (glint * 0.85 + sheen) * waterish;
+  /* Fresnel sky reflection: water gets brighter and bluer at grazing angles,
+     which is most of why a real ocean is not a flat tinted disc. */
+  float wFres = 0.02 + 0.98 * pow(1.0 - ndv, 5.0);
+  col = mix(col, col * 0.72 + uAtmo * (0.30 + 0.45 * ndl), waterish * wFres * 0.75);
   col += vec3(0.02,0.04,0.08)*(1.0-nl);
-  // Sea-ice mosaic — floes + dark leads
-  float floe = fract(sin(dot(N.xy, vec2(12.9898,78.233))) * 43758.5453);
-  float lead = smoothstep(0.62, 0.78, floe) * iceF * waterMask;
+  // Sea-ice mosaic — floes + dark leads. Object space: the pack does not swim
+  // across the ocean when the planet spins.
+  float floe = fbm3(vObj * 90.0 + vec3(5.0, 2.0, 8.0));
+  float lead = smoothstep(0.545, 0.60, floe) * iceF * waterMask;
+  float ridge = smoothstep(0.60, 0.78, floe) * iceF;
   col = mix(col, vec3(0.82, 0.88, 0.95), iceF * (1.0 - lead * 0.85));
   col = mix(col, vec3(0.08, 0.18, 0.28), lead * 0.7);
+  col += vec3(0.10, 0.11, 0.13) * ridge * (0.3 + 0.7 * nl); // pressure ridges catch the light
   // Intertidal ochre / wet sand
   col = mix(col, vec3(0.58, 0.44, 0.28), interBand * 0.55);
   // Whitecaps from wind field
   col = mix(col, vec3(0.92, 0.94, 0.98), waterish * pow(clamp(windF, 0.0, 1.0), 3.0) * 0.45);
-  // Local cloud shadows — denser when coverage high
+  // Local cloud shadows — denser when coverage high. cloudF arrives quantised
+  // to 16 levels; break the terracing with noise at the quantisation step.
+  cloudF = clamp(cloudF + (fbm3(vObj * 34.0 + vec3(2.0, 9.0, 4.0)) - 0.5) * 0.14 * midFade, 0.0, 1.0);
+  cloudF *= 1.0 - uCloudFree;
   col *= 1.0 - cloudF * waterMask * 0.16 - cloudF * landMask * 0.38 * (0.4+0.6*nl);
   col *= 1.0 - cloudF * cloudF * 0.18 * (0.3 + 0.7 * nl);
   // Valley darkening from height field
   col *= 1.0 - (1.0 - heightF) * landMask * pow(1.0 - nl, 1.4) * 0.14;
-  col = mix(col, vec3(0.72, 0.55, 0.28), sedF * waterMask * 0.35);
+  /* Suspended sediment is visible in shallow water and nowhere else — you do
+     not see the abyssal plain from orbit. Gate the plume on depth so a shelf
+     turbidity field stops painting contours across four kilometres of water. */
+  float shallow = smoothstep(0.30, 0.48, heightF);
+  col = mix(col, vec3(0.72, 0.55, 0.28), sedF * waterMask * shallow * 0.55);
   col = mix(col, vec3(0.12, 0.45, 0.22), nppF * waterMask * 0.4 * (1.0 - iceF));
-  float pop = lifeGreen * (1.0 - uEarth * 0.65);
-  col += vec3(0.08,0.38,0.10)*pop*(0.25+0.75*nl);
-  col = mix(col, biome * (0.52 + 0.72*nl), lifeGreen * mix(0.58, 0.30, uEarth));
+  /* Rain darkens and desaturates the ground it is falling on. */
+  float wet = precipF * landMask * (1.0 - iceF);
+  col *= 1.0 - wet * 0.22;
+  col = mix(col, vec3(dot(col, vec3(0.299, 0.587, 0.114))), wet * 0.18);
+  /* Rivers: discharge drives opacity, not coverage. Far from the camera only
+     the Amazon-class trunks remain; closer in, tributaries fade in. Groundwater
+     never reaches this channel. */
+  float riverFar = smoothstep(0.78, 0.97, flowF);
+  float riverNear = smoothstep(0.66, 0.92, flowF);
+  float river = mix(riverFar, riverNear, fineFade) * landMask * (1.0 - iceF);
+  float riverAmt = river * (0.4 + 0.6 * flowF);
+  col = mix(col, vec3(0.20, 0.34, 0.46), riverAmt * 0.30);
+  col += vec3(0.28, 0.38, 0.46) * riverAmt * pow(max(dot(N, H), 0.0), 48.0) * 0.35;
+  float pop = lifeGreen;
+  col += vec3(0.04,0.14,0.06)*pop*(0.12+0.45*nl)*(1.0 - uEarth * 0.75);
+  col = mix(col, biome * (0.38 + 0.62*nl), lifeGreen * mix(0.48, 0.78, uEarth));
   col = mix(col, biome * (0.22 + 1.1*nl), daisyBW * max(uDaisy, 0.35));
   float night = pow(1.0-nl, 3.2);
   col += vec3(0.05, 0.65, 0.42) * uNight * night * max(lifeGreen, lifeF * waterMask) * 0.7;
@@ -482,10 +610,10 @@ void main(){
   float termBand = exp(-pow(nl - 0.05, 2.0) * 40.0);
   // Lightning gated by local storm (cloud × precip) — flashes where storms are
   float stormLocal = cloudF * max(moistF, 0.35) * max(uStorm, 0.15);
-  float stormFlash = step(0.988, fract(sin(dot(N.xy * 40.0 + cloudF * 9.0, vec2(12.9898,78.233)) + uTime*41.0)*43758.5453));
+  float stormFlash = step(0.988, fract(sin(dot(vObj.xy * 40.0 + cloudF * 9.0, vec2(12.9898,78.233)) + uTime*41.0)*43758.5453));
   col += vec3(0.8, 0.88, 1.0) * stormFlash * stormLocal * (night + termBand*0.55) * 2.0;
-  float rim=pow(1.0-max(dot(N,V),0.0), 2.6);
-  float rim2=pow(1.0-max(dot(N,V),0.0), 5.0);
+  float rim=pow(1.0-max(dot(N,V),0.0), 4.2);
+  float rim2=pow(1.0-max(dot(N,V),0.0), 7.0);
   // Bruneton-ish transmittance + multiple scatter
   float muV = max(dot(N,V), 0.0);
   float muS = max(dot(N,uSun), 0.0);
@@ -499,11 +627,11 @@ void main(){
   float msW = uAtmoK * (0.45 + 0.55 * (1.0 - muS) * (0.5 + 0.5 * rim));
   atmoCol += MS * msW;
   float sunEdge = pow(max(dot(V,-uSun),0.0), 5.0);
-  vec3 ray = atmoCol * rim * uAtmoK * (0.15+0.85*nl) * 1.15;
+  vec3 ray = atmoCol * rim * uAtmoK * (0.12+0.78*nl) * 0.85;
   // Ozone Chappuis along long slant — deepen blue at twilight
   ray = mix(ray, vec3(0.05, 0.12, 0.55) * rim2, uOzone * (1.0 - muS) * 0.5);
-  vec3 mie = vec3(1.0,0.82,0.55) * sunEdge * rim * (0.35 + uAerosol * 1.2) * uAtmoK;
-  vec3 crep = vec3(1.0, 0.55, 0.25) * termBand * rim2 * uAtmoK * 0.45;
+  vec3 mie = vec3(1.0,0.82,0.55) * sunEdge * rim * (0.28 + uAerosol * 1.0) * uAtmoK;
+  vec3 crep = vec3(1.0, 0.55, 0.25) * termBand * rim2 * uAtmoK * 0.35;
   // Inscatter wash from MS on the surface itself (soft sky light)
   col += MS * uAtmoK * (0.08 + 0.12 * wrap) * (1.0 - waterish * 0.3);
   col += ray + mie + crep;
@@ -517,8 +645,11 @@ void main(){
   float aurPulse = 0.65 + 0.35 * sin(uTime * 2.1 + N.x * 12.0);
   col += vec3(0.2, 0.95, 0.55) * oval * night * aurPulse * 0.55;
   col += vec3(0.55, 0.25, 0.95) * oval * night * (1.0-aurPulse) * 0.25 * uMag;
+  float dusk = exp(-pow(nl - 0.03, 2.0) * 85.0);
+  col = mix(col, col * vec3(1.45, 0.70, 0.32), dusk * landMask * (1.0 - iceF) * 0.5);
   float term = smoothstep(-0.18 - uAerosol * 0.25, 0.22 + uAtmoK * 0.12, nl);
   col *= 0.42 + 0.58 * term;
+  col *= 1.0 + uLook * 0.12;
   col = tonemap(col * uExposure);
   o=vec4(col, uOpacity);
 }`);
@@ -530,16 +661,28 @@ void main(){ vN=normalize(uNrmMat*aPos); vW=(uModel*vec4(aPos,1.0)).xyz; gl_Posi
 `, F_HEAD + `
 in vec3 vN; in vec3 vW;
 uniform vec3 uSun, uCam, uAtmo; uniform float uAtmoK, uOzone, uAerosol, uMag, uTime;
+uniform float uExposure;
 out vec4 o;
+vec3 tonemap(vec3 x){
+  const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
+}
 void main(){
   vec3 N=normalize(vN), V=normalize(uCam-vW);
-  float f=pow(1.0-abs(dot(N,V)), 2.8);
-  float f2=pow(1.0-abs(dot(N,V)), 5.5);
+  /* The limb term is the optical depth through the shell. A high exponent
+     keeps Earth a thin blue line; a hazy world (Venus, Titan) keeps a fat
+     cream crescent. The hairline term is the last pixel of the disc. */
+  float graze = 1.0 - abs(dot(N,V));
+  float tight = mix(5.8, 2.5, smoothstep(1.05, 1.75, uAtmoK));
+  float f=pow(graze, tight);
+  float f2=pow(graze, tight + 3.0);
+  float hair=pow(graze, 11.0);
   float lit=clamp(dot(N,uSun)*0.55+0.45,0.0,1.0);
   float mie=pow(max(dot(V,-uSun),0.0),5.5);
   vec3 atmo = mix(uAtmo, vec3(0.05,0.12,0.55), uOzone*0.5);
   atmo = mix(atmo, vec3(0.9,0.4,0.15), uAerosol*0.45);
-  vec3 col=atmo*f*lit*uAtmoK*1.05 + vec3(1.0,0.72,0.42)*mie*f*0.55*uAtmoK;
+  vec3 col=atmo*f*lit*uAtmoK*0.7 + vec3(1.0,0.72,0.42)*mie*f*0.38*uAtmoK;
+  col += atmo * hair * (1.5 + 0.8 * (1.0 - lit)) * uAtmoK;
   // Outer glow / limb airglow
   col += vec3(0.2,0.55,0.4)*f2*(1.0-lit)*uAtmoK*0.4;
   // Aurora contribution on shell
@@ -547,7 +690,13 @@ void main(){
   float oval=exp(-pow(magLat-0.72,2.0)*70.0)*uMag;
   float pulse=0.6+0.4*sin(uTime*2.0+N.x*10.0);
   col += vec3(0.25,1.0,0.55)*oval*(1.0-lit)*pulse*0.7;
-  o=vec4(col,1.0);
+  /* The shell used to be added, raw and unbounded, on top of a surface that had
+     already been tonemapped — which is why the sunward limb clipped to white.
+     Run it through the same curve and the same exposure, then premultiply so the
+     additive blend carries a real coverage rather than a constant alpha of 1. */
+  vec3 mapped = tonemap(col * uExposure);
+  float a = clamp(max(mapped.r, max(mapped.g, mapped.b)), 0.0, 1.0);
+  o=vec4(mapped * a, a);
 }`);
 
   cloudProg = prog(V_HEAD + `
@@ -556,8 +705,11 @@ uniform mat4 uMVP, uModel; uniform float uTime;
 out float vC; out float vType; out vec3 vN; out vec3 vW;
 void main(){
   float typ = smoothstep(0.15, 0.45, aCov) + smoothstep(0.55, 0.85, aCov);
-  float lift = mix(0.012, 0.042, smoothstep(0.25, 0.9, aCov));
-  float boil = aCov > 0.55 ? 0.008*sin(uTime*0.7 + aPos.x*18.0 + aPos.z*14.0) : 0.0;
+  /* A large coverage-driven lift turns every band edge into a visible ledge on
+     the limb. Keep the deck shallow and let the towers come from convection
+     depth (typ), which varies smoothly, rather than from coverage itself. */
+  float lift = 0.014 + 0.016 * smoothstep(0.35, 1.6, typ);
+  float boil = typ > 1.1 ? 0.005*sin(uTime*0.7 + aPos.x*18.0 + aPos.z*14.0) : 0.0;
   vec3 p=normalize(aPos)*(1.0+lift+boil);
   vN=normalize(aPos); vW=(uModel*vec4(p,1.0)).xyz; vC=aCov; vType=typ;
   gl_Position=uMVP*vec4(p,1.0);
@@ -596,8 +748,8 @@ void main(){
   float nl=max(dot(N,L),0.0);
   float a=smoothstep(0.03,0.48,dens)*mix(0.38,0.95,smoothstep(0.0,2.0,vType));
   float rim=pow(1.0-max(dot(N,V),0.0), 2.6);
-  vec3 cold=vec3(0.68,0.76,0.92);
-  vec3 warm=vec3(1.0,0.96,0.9);
+  vec3 cold=vec3(0.58,0.66,0.80);
+  vec3 warm=vec3(0.92,0.90,0.86);
   vec3 body=mix(cold, warm, clamp(vType*0.5,0.0,1.0));
   vec3 shade = body * (0.28 + light * 0.5 + nl * 0.22);
   shade += vec3(1.0,0.9,0.75) * rim * nl * 0.4;
@@ -680,12 +832,75 @@ void main(){ gl_Position=uMVP*vec4(aPos*uScale,1.0); }
 `, F_HEAD + `
 uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
 
+  /* Small airless bodies — the moon was drawn with the flat health shader, so
+     it read as a beige sticker pinned to the sky. This is the same sphere with
+     a terminator, limb darkening, maria and craters. */
+  bodyProg = prog(V_HEAD + `
+in vec3 aPos; uniform mat4 uMVP; uniform mat4 uModel;
+out vec3 vN; out vec3 vW; out vec3 vObj;
+void main(){
+  vN = normalize(aPos); vObj = normalize(aPos);
+  vW = (uModel*vec4(aPos,1.0)).xyz;
+  gl_Position = uMVP*vec4(aPos,1.0);
+}
+`, F_HEAD + `
+in vec3 vN; in vec3 vW; in vec3 vObj;
+uniform vec3 uCol; uniform vec3 uSun; uniform vec3 uCam;
+uniform float uShine; uniform float uRough; uniform float uSeed; uniform float uExposure;
+out vec4 o;
+float bh(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453123); }
+float bn(vec3 p){
+  vec3 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
+  float n00=mix(bh(i+vec3(0,0,0)),bh(i+vec3(1,0,0)),f.x);
+  float n10=mix(bh(i+vec3(0,1,0)),bh(i+vec3(1,1,0)),f.x);
+  float n01=mix(bh(i+vec3(0,0,1)),bh(i+vec3(1,0,1)),f.x);
+  float n11=mix(bh(i+vec3(0,1,1)),bh(i+vec3(1,1,1)),f.x);
+  return mix(mix(n00,n10,f.y), mix(n01,n11,f.y), f.z);
+}
+float bfbm(vec3 p){ float a=0.5,s=0.0; for(int i=0;i<4;i++){ s+=a*bn(p); p=p*2.11+vec3(3.7,1.9,8.3); a*=0.5; } return s; }
+vec3 tonemap(vec3 x){
+  const float a=2.51,b=0.03,c=2.43,d=0.59,e=0.14;
+  return clamp((x*(a*x+b))/(x*(c*x+d)+e),0.0,1.0);
+}
+void main(){
+  vec3 N=normalize(vN), V=normalize(uCam-vW), L=normalize(uSun);
+  vec3 q = vObj*4.0 + uSeed;
+  float maria = smoothstep(0.46, 0.62, bfbm(q));            // dark basaltic plains
+  float regolith = bfbm(q*9.0);                              // broad brightness mottle
+  float craters = bfbm(q*34.0);
+  vec3 alb = mix(uCol, uCol*0.56, maria*0.85);
+  alb *= 0.86 + regolith*0.30;
+  // Crater relief via surface-gradient bump — rims catch the low sun.
+  vec3 tg = L - N*dot(L, N);
+  float tl = length(tg);
+  float slope = 0.0;
+  if (tl > 1e-4) {
+    tg /= tl;
+    float e = 0.5/34.0;
+    slope = clamp((bfbm(normalize(vObj + tg*e)*4.0*34.0 + uSeed) - craters) * 3.0, -1.0, 1.0) * tl;
+  }
+  float nl = max(dot(N, L), 0.0) * (1.0 + slope * 0.9);
+  nl = max(nl, 0.0);
+  // Airless regolith backscatters: nearly flat across the disc, then a hard
+  // terminator. Lommel-Seeliger rather than Lambert.
+  float nv = max(dot(N, V), 1e-3);
+  float ls = nl / max(nl + nv, 1e-3);
+  float lit = mix(nl, ls*1.55, 1.0 - uRough);
+  // Opposition surge — the full moon is disproportionately bright.
+  float opp = pow(max(dot(V, L), 0.0), 24.0) * 0.35;
+  vec3 col = alb * (lit + opp) * uShine;
+  col += alb * 0.055 * uShine;                                // earthshine floor
+  col *= 1.0 - pow(1.0 - nv, 3.0) * 0.28;                     // limb darkening
+  o = vec4(tonemap(col*uExposure), 1.0);
+}`);
+
   buf = {
     pos: gl.createBuffer(), nrm: gl.createBuffer(), dat: gl.createBuffer(), idx: gl.createBuffer(),
     fieldUV: gl.createBuffer(),
     inst: gl.createBuffer(), quad: gl.createBuffer(),
     star: gl.createBuffer(), starMag: gl.createBuffer(),
     sph: gl.createBuffer(), sphIdx: gl.createBuffer(), grid: gl.createBuffer(),
+    cloudIdx: gl.createBuffer(),
     cellGrid: gl.createBuffer(),
     localRim: gl.createBuffer(),
     flowStreaks: gl.createBuffer(),
@@ -703,9 +918,11 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
   // gbuf field atlases: 6N × N RGBA8
   fieldPix0 = new Uint8Array(FIELD_W * FIELD_H * 4);
   fieldPix1 = new Uint8Array(FIELD_W * FIELD_H * 4);
+  fieldPix2 = new Uint8Array(FIELD_W * FIELD_H * 4);
   fieldTex0 = gl.createTexture();
   fieldTex1 = gl.createTexture();
-  for (const tex of [fieldTex0, fieldTex1]) {
+  fieldTex2 = gl.createTexture();
+  for (const tex of [fieldTex0, fieldTex1, fieldTex2]) {
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, FIELD_W, FIELD_H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
@@ -758,14 +975,9 @@ uniform vec3 uCol; out vec4 o; void main(){ o=vec4(uCol,0.85); }`);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(ix), gl.STATIC_DRAW);
     SPH_COUNT = ix.length;
-    // cloud mesh uses same positions; coverage per vertex from nearest cell
-    const cov = new Float32Array(vp.length / 3);
-    upload(buf.cloud, new Float32Array(vp));
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloudCov);
-    gl.bufferData(gl.ARRAY_BUFFER, cov.byteLength, gl.DYNAMIC_DRAW);
-    buf._cloudCov = cov;
-    buf._cloudPos = new Float32Array(vp);
   })();
+
+  buildCloudMesh();
 
   (function () {
     // Deterministic starfield (seeded) — next backlog det
@@ -963,6 +1175,12 @@ export function refreshColours(alpha = 1) {
   const R = W.rule;
   const pigment = W.dominantPigment;
   const season = W.season || 0;
+  const preview = BRUSH.preview;
+  const previewSet = preview?.length ? new Set(preview) : null;
+  const now = (typeof performance !== 'undefined') ? performance.now() : 0;
+  const dt = Math.min(0.08, (now - (refreshColours._t || now)) / 1000);
+  refreshColours._t = now;
+  const strokeFade = Math.exp(-3.2 * dt);
   for (let c = 0; c < NC; c++) {
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
@@ -973,9 +1191,9 @@ export function refreshColours(alpha = 1) {
     if (isSubmerged(W, c)) {
       const d = clamp((sea - W.h[c]) * 1.9, 0, 1);
       const deep = [
-        lerp(48, 22, d),
-        lerp(100, 45, d),
-        lerp(155, 75, d),
+        lerp(16, 4, d),
+        lerp(32, 8, d),
+        lerp(48, 14, d),
       ];
       const base = R.ocean(1 - d);
       col = ice > 0.5 ? [222, 234, 246] : [
@@ -992,7 +1210,7 @@ export function refreshColours(alpha = 1) {
           col = [222, 234, 246];
         }
       } else if (ice >= 0.85) {
-        col = [230, 238, 248];
+        col = [248, 251, 255];
       }
       // Whitecaps / wind roughness — storm brightens the sea
       const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
@@ -1031,6 +1249,15 @@ export function refreshColours(alpha = 1) {
         const k = clamp(sed, 0, 1) * 0.45;
         col = [lerp(col[0], 180, k), lerp(col[1], 140, k), lerp(col[2], 70, k)];
       }
+      // Tropical carbonate shelves — turquoise, not the open-ocean navy.
+      if (d < 0.22 && ice < 0.2 && npp < 0.28 && temp > 0.48) {
+        const tk = (1 - d / 0.22) * 0.55;
+        col = [
+          lerp(col[0], 36, tk),
+          lerp(col[1], 178, tk),
+          lerp(col[2], 186, tk),
+        ];
+      }
       // Phytoplankton / reef — guild-tinted
       const bloom = Math.max(life * (W.h[c] < sea && (sea - W.h[c]) < 0.14 ? 1 : 0.35), W.reef[c]);
       if (bloom > 0.12) {
@@ -1047,8 +1274,8 @@ export function refreshColours(alpha = 1) {
         }
       }
       // Sediment plumes at river mouths. Item 146.
-      if (W.flow?.[c] > 0.25 && (sea - W.h[c]) < 0.08) {
-        const k = clamp(W.flow[c], 0, 1) * 0.5;
+      if (W.flow?.[c] > 0.8 && (sea - W.h[c]) < 0.08) {
+        const k = Math.min(0.42, Math.log1p(W.flow[c]) * 0.12);
         col = [lerp(col[0], 190, k), lerp(col[1], 150, k), lerp(col[2], 80, k)];
       }
       // Storm field / surge — named cyclones read as bright rain + muddy surge
@@ -1091,7 +1318,15 @@ export function refreshColours(alpha = 1) {
       }
     } else {
       const e = (W.h[c] - sea) / (1 - sea + 1e-6);
-      const extra = R.daisyworld ? { black: W.blackDaisy[c], white: W.whiteDaisy[c] } : null;
+      const extra = {
+        black: R.daisyworld ? (W.blackDaisy[c] || 0) : 0,
+        white: R.daisyworld ? (W.whiteDaisy[c] || 0) : 0,
+        lava: W.lava?.[c] || 0,
+        vent: W.shellVent?.[c] || 0,
+        rock: W.rock?.[c] || 0,
+        dust: W.dust?.[c] || 0,
+        lat: Math.abs(DIR[c * 3 + 1]),
+      };
       col = R.land(temp, W.moist[c], life, e, ice, extra);
       // Intertidal ochre — coast that breathes with the presentation tide
       if (inter > 0.08) {
@@ -1112,22 +1347,22 @@ export function refreshColours(alpha = 1) {
         const k = Math.min(0.4, autumn * 0.45) * Math.min(1, life * 2);
         col = [lerp(col[0], 196, k), lerp(col[1], 108, k), lerp(col[2], 40, k)];
       }
-      // Water on land — drip/sheet/stream/river/lake, same ladder as the map
+      // Surface water only — groundwater is not a colour. Streams stay off the
+      // vertex bake (they are lines on the map / a shader trunk) so continents
+      // do not go blue from D8 pile-up.
       const wet = waterStage(c);
       if (wet.stage === 'lake' && ice < 0.55) {
-        const lk = 0.45 + wet.amount * 0.4;
-        col = [lerp(col[0], 12, lk), lerp(col[1], 44, lk), lerp(col[2], 70, lk)];
-      } else if ((wet.stage === 'river' || wet.stage === 'stream') && ice < 0.55) {
-        const fk = wet.stage === 'river'
-          ? Math.min(0.55, wet.amount * 0.95)
-          : Math.min(0.28, wet.amount * 0.7);
-        col = [lerp(col[0], 16, fk), lerp(col[1], 48, fk), lerp(col[2], 72, fk)];
+        const lk = Math.min(0.62, 0.28 + wet.amount * 0.38);
+        col = [lerp(col[0], 14, lk), lerp(col[1], 42, lk), lerp(col[2], 66, lk)];
+      } else if (wet.stage === 'river' && ice < 0.55) {
+        const fk = Math.min(0.32, wet.amount * 0.42);
+        col = [lerp(col[0], 18, fk), lerp(col[1], 46, fk), lerp(col[2], 68, fk)];
       } else if (wet.stage === 'pond' && ice < 0.5) {
-        const pk = wet.amount * 0.55;
-        col = [lerp(col[0], 22, pk), lerp(col[1], 58, pk), lerp(col[2], 78, pk)];
+        const pk = wet.amount * 0.28;
+        col = [lerp(col[0], 24, pk), lerp(col[1], 54, pk), lerp(col[2], 72, pk)];
       } else if ((wet.stage === 'sheet' || wet.stage === 'drip') && ice < 0.45) {
-        const sk = wet.stage === 'drip' ? wet.amount * 0.12 : wet.amount * 0.32;
-        col = [col[0] * (1 - sk), col[1] * (1 - sk * 0.88), col[2] * (1 - sk * 0.55)];
+        const sk = wet.stage === 'drip' ? wet.amount * 0.08 : wet.amount * 0.16;
+        col = [col[0] * (1 - sk), col[1] * (1 - sk * 0.88), col[2] * (1 - sk * 0.5)];
       }
       // Convergent boundaries sit in a slight shadow — plates made this relief
       if (W.bound?.[c] === 1 && ice < 0.4) {
@@ -1252,12 +1487,27 @@ export function refreshColours(alpha = 1) {
         ];
       }
     }
+    if (W.albedoPaint?.[c] > 0.04) {
+      const a = clamp(W.albedoPaint[c], 0, 1) * 0.7;
+      col = [lerp(col[0], 236, a), lerp(col[1], 232, a), lerp(col[2], 220, a)];
+    }
     if (_localHover >= 0 && c === _localHover) {
       col = [
         lerp(col[0], 255, 0.38),
         lerp(col[1], 236, 0.28),
         lerp(col[2], 160, 0.16),
       ];
+    }
+    const stroke = W.strokeMark?.[c] || 0;
+    if (stroke > 0.03) {
+      const k = stroke * 0.72;
+      col = [lerp(col[0], 255, k), lerp(col[1], 210, k), lerp(col[2], 70, k)];
+      W.strokeMark[c] = stroke * strokeFade;
+    }
+    if (BRUSH.previewCenter === c) {
+      col = [lerp(col[0], 255, 0.62), lerp(col[1], 228, 0.45), lerp(col[2], 80, 0.28)];
+    } else if (previewSet?.has(c)) {
+      col = [lerp(col[0], 255, 0.32), lerp(col[1], 214, 0.24), lerp(col[2], 70, 0.14)];
     }
     // Lab redox-tower hover — light up matching guild cells
     if (_guildHL && W.guildDens?.[_guildHL]) {
@@ -1290,14 +1540,50 @@ export function refreshColours(alpha = 1) {
     uploadFieldTextures(alpha);
   }
   if (buf._cloudCov) {
-    const pos = buf._cloudPos;
-    for (let i = 0; i < buf._cloudCov.length; i++) {
-      const c = dirToCell(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
-      buf._cloudCov[i] = W.clouds[c];
+    /* Coverage was read with dirToCell — nearest neighbour, on a shell only a
+     * quarter of the grid's resolution — so a latitudinal cloud band became a
+     * staircase of hard terraces with a visible silhouette ledge wherever the
+     * radial lift stepped. Bilinear on a matched-resolution lattice instead. */
+    const cov = buf._cloudCov, f = buf._cloudFace, gi = buf._cloudGI, gj = buf._cloudGJ;
+    const gn = buf._cloudGN;
+    for (let i = 0; i < cov.length; i++) {
+      cov[i] = sampleFaceField(W.clouds, f[i], gi[i], gj[i], gn);
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloudCov);
-    gl.bufferSubData(gl.ARRAY_BUFFER, 0, buf._cloudCov);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, cov);
   }
+}
+
+/** Cloud shell lattice — its own mesh so the cheap sphere stays cheap. */
+function buildCloudMesh() {
+  const M = Math.max(16, Math.min(96, N));
+  const vp = [], ix = [], p = [0, 0, 0];
+  const face = [], gi = [], gj = [];
+  for (let f = 0; f < 6; f++) for (let j = 0; j <= M; j++) for (let i = 0; i <= M; i++) {
+    facePoint(f, warp(i / M * 2 - 1), warp(j / M * 2 - 1), p);
+    vp.push(p[0], p[1], p[2]);
+    face.push(f); gi.push(i); gj.push(j);
+  }
+  const per = (M + 1) * (M + 1);
+  for (let f = 0; f < 6; f++) {
+    const o = f * per;
+    for (let j = 0; j < M; j++) for (let i = 0; i < M; i++) {
+      const a = o + j * (M + 1) + i, b = a + 1, c = a + (M + 1), d = c + 1;
+      ix.push(a, c, b, b, c, d);
+    }
+  }
+  upload(buf.cloud, new Float32Array(vp));
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.cloudIdx);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint32Array(ix), gl.STATIC_DRAW);
+  CLOUD_COUNT = ix.length;
+  const cov = new Float32Array(vp.length / 3);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloudCov);
+  gl.bufferData(gl.ARRAY_BUFFER, cov.byteLength, gl.DYNAMIC_DRAW);
+  buf._cloudCov = cov;
+  buf._cloudFace = Uint8Array.from(face);
+  buf._cloudGI = Uint16Array.from(gi);
+  buf._cloudGJ = Uint16Array.from(gj);
+  buf._cloudGN = M;
 }
 
 export function uploadEntities() {
@@ -1394,6 +1680,8 @@ function bindPlanetAttribs(p) {
 /** Pack sim fields into GPU atlases. Next backlog item 1 (gbuf). */
 export function uploadFieldTextures(alpha = 1) {
   if (!gl || !fieldTex0 || !fieldPix0) return;
+  // Discharge is heavy-tailed. Log-compress so trunks read and headwaters do not.
+  const flowNorm = 1 / Math.log1p(18);
   for (let c = 0; c < NC; c++) {
     const f = (c / NF) | 0;
     const rem = c - f * NF;
@@ -1406,10 +1694,11 @@ export function uploadFieldTextures(alpha = 1) {
     fieldPix0[px + 1] = clamp(ice, 0, 1) * 255;
     fieldPix0[px + 2] = clamp(W.moist[c] || 0, 0, 1) * 255;
     // Pack max(sediment, intertidal) + clouds — coast reads without overlay
-    const sed = Math.max(W.sediment?.[c] || 0, W.intertidal?.[c] || 0);
-    const sedQ = Math.min(15, (clamp(sed, 0, 1) * 15) | 0);
-    const cldQ = Math.min(15, (clamp(W.clouds?.[c] || 0, 0, 1) * 15) | 0);
-    fieldPix0[px + 3] = sedQ + cldQ * 16;
+    fieldPix0[px + 3] = clamp(W.clouds?.[c] || 0, 0, 1) * 255;
+    fieldPix2[px] = clamp(W.sediment?.[c] || 0, 0, 1) * 255;
+    fieldPix2[px + 1] = clamp(W.intertidal?.[c] || 0, 0, 1) * 255;
+    fieldPix2[px + 2] = clamp((W.precip?.[c] || 0) * 18, 0, 1) * 255;
+    fieldPix2[px + 3] = clamp(Math.log1p(W.flow?.[c] || 0) * flowNorm, 0, 1) * 255;
 
     const guild = dominantGuildAt(W, c);
     const gi = guild != null ? (GUILD_INDEX[guild] ?? 0) : 0;
@@ -1426,6 +1715,22 @@ export function uploadFieldTextures(alpha = 1) {
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix0);
   gl.bindTexture(gl.TEXTURE_2D, fieldTex1);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix1);
+  gl.bindTexture(gl.TEXTURE_2D, fieldTex2);
+  gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix2);
+}
+
+/** Atmosphere shell in planet-radii. Earth scale height / radius is ~0.0013;
+ *  a visible limb is a few scale heights. Venus/Titan stay a fat cream. */
+function atmoShellMul(R) {
+  const k = R?.atmoStrength || 0;
+  if (k < 0.12 || R?.airless) return 1.002;
+  if (k > 1.45) return 1.022;
+  return 1.008;
+}
+function cloudShellMul(R) {
+  const k = R?.atmoStrength || 0;
+  if (k > 1.45) return 1.012;
+  return 1.0045;
 }
 
 export function drawScene(proj, view, camPos, inXR, S, hands) {
@@ -1543,6 +1848,8 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   }
   gl.uniform1f(planetProg.u.uDaisy, R.daisyworld ? 1 : 0);
   gl.uniform1f(planetProg.u.uEarth, R.earthLike ? 1 : 0);
+  if (planetProg.u.uLook) gl.uniform1f(planetProg.u.uLook, S.lookMode === 'diagram' ? 1 : 0);
+  if (planetProg.u.uCloudFree) gl.uniform1f(planetProg.u.uCloudFree, S.cloudFree ? 1 : 0);
   gl.uniform1f(planetProg.u.uOpacity, opacity);
   gl.uniform1f(planetProg.u.uXRay, xray);
   if (planetProg.u.uOzone) gl.uniform1f(planetProg.u.uOzone, W.ozone || 0);
@@ -1558,7 +1865,13 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   // Physical-ish exposure from insolation (hdr lite) + eye adaptation
   const baseExpo = clamp(0.85 + Math.log2(Math.max(0.05, W.solar || 1)) * 0.12, 0.55, 1.85);
   const adapt = S.exposure != null ? S.exposure : baseExpo;
-  if (planetProg.u.uExposure) gl.uniform1f(planetProg.u.uExposure, adapt * 1.15);
+  _exposure = adapt * (R.earthLike ? 1.28 : 1.12);
+  if (planetProg.u.uExposure) gl.uniform1f(planetProg.u.uExposure, _exposure);
+  // Sub-cell surface grain: off in XR (fill-rate) and off when the user has
+  // asked for reduced motion, since the fine octave shimmers on a spinning globe.
+  if (planetProg.u.uGrain) {
+    gl.uniform1f(planetProg.u.uGrain, inXR ? 0.55 : (S.grain != null ? S.grain : 1));
+  }
   // Storm + cloud shadow uniforms — count convective cells
   let storm = 0, cloudMean = 0, cn = 0;
   if (W.clouds && W.precip) {
@@ -1592,6 +1905,11 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       gl.activeTexture(gl.TEXTURE4);
       gl.bindTexture(gl.TEXTURE_2D, scatterMsTex);
       gl.uniform1i(planetProg.u.uScatterMs, 4);
+    }
+    if (planetProg.u.uField2 && fieldTex2) {
+      gl.activeTexture(gl.TEXTURE5);
+      gl.bindTexture(gl.TEXTURE_2D, fieldTex2);
+      gl.uniform1i(planetProg.u.uField2, 5);
     }
     gl.activeTexture(gl.TEXTURE0);
   }
@@ -1689,8 +2007,8 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   }
 
   /* clouds */
-  if (R.atmoStrength > 0.2) {
-    m4trs(TMP, S.q, px, py, pz, scale * 1.02);
+  if (R.atmoStrength > 0.2 && !S.cloudFree) {
+    m4trs(TMP, S.q, px, py, pz, scale * cloudShellMul(R));
     const mv = m4mul(m4(), view, TMP), mvp = m4mul(m4(), proj, mv);
     gl.useProgram(cloudProg);
     gl.uniformMatrix4fv(cloudProg.u.uMVP, false, mvp);
@@ -1706,8 +2024,8 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 1, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
-    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.cloudIdx);
+    gl.drawElements(gl.TRIANGLES, CLOUD_COUNT, gl.UNSIGNED_INT, 0);
     gl.depthMask(true); gl.disable(gl.BLEND);
     disableAll();
   }
@@ -1747,8 +2065,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
 
   /* atmosphere */
   if (R.atmoStrength > 0.05) {
-    m4trs(TMP, S.q, px, py, pz, scale * 1.055);
-    m3fromM4rot(NRM, TMP, 1 / (scale * 1.055));
+    const atmoMul = atmoShellMul(R);
+    m4trs(TMP, S.q, px, py, pz, scale * atmoMul);
+    m3fromM4rot(NRM, TMP, 1 / (scale * atmoMul));
     const mv = m4mul(m4(), view, TMP), mvp = m4mul(m4(), proj, mv);
     gl.useProgram(atmoProg);
     gl.uniformMatrix4fv(atmoProg.u.uMVP, false, mvp);
@@ -1767,6 +2086,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       gl.uniform1f(atmoProg.u.uMag, mag);
     }
     if (atmoProg.u.uTime) gl.uniform1f(atmoProg.u.uTime, (S._t || 0) * 0.001);
+    if (atmoProg.u.uExposure) gl.uniform1f(atmoProg.u.uExposure, _exposure);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
     l = gl.getAttribLocation(atmoProg, 'aPos');
     gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
@@ -1850,15 +2170,23 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       ? clamp(W.moonIllum, 0.06, 1)
       : clamp(0.5 + 0.5 * sunDot, 0.06, 1);
     const earthshine = 0.1 + (W.iceFrac || 0) * 0.08 + (W.meanLife || 0) * 0.04;
-    const shade = lit * 0.88 + earthshine * (1 - lit);
     // Warm crescent rim when nearly new
     const warm = lit < 0.35 ? 1.08 : 1;
-    gl.useProgram(healthProg);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
-    gl.uniform1f(healthProg.u.uScale, 1);
-    gl.uniform3fv(healthProg.u.uCol, [0.72 * shade * warm, 0.68 * shade, 0.58 * shade]);
+    /* The phase now comes out of the geometry — the sun direction crosses a real
+     * lit sphere — so uShine only carries albedo and earthshine, not the phase. */
+    const albedo = W.moon.albedo != null ? clamp(W.moon.albedo * 5.5, 0.35, 1.6) : 1;
+    gl.useProgram(bodyProg);
+    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(bodyProg.u.uModel, false, TMP);
+    gl.uniform3fv(bodyProg.u.uSun, sun);
+    gl.uniform3fv(bodyProg.u.uCam, camPos);
+    gl.uniform3fv(bodyProg.u.uCol, [0.70 * warm, 0.665, 0.60]);
+    gl.uniform1f(bodyProg.u.uShine, (0.92 + earthshine) * albedo);
+    gl.uniform1f(bodyProg.u.uRough, 0.25);
+    gl.uniform1f(bodyProg.u.uSeed, (W.moon.seed || 3.7) % 17);
+    gl.uniform1f(bodyProg.u.uExposure, _exposure);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(healthProg, 'aPos');
+    l = gl.getAttribLocation(bodyProg, 'aPos');
     gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.enable(gl.DEPTH_TEST);

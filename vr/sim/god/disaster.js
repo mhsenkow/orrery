@@ -9,6 +9,7 @@ import { noteImpact } from '../extinction.js';
 import { paintBrush, beginStroke } from './brush.js';
 import { issueReceipt, causalChain } from './receipt.js';
 import { rngOf } from '../rng.js';
+import { addBaseHeight } from '../layers.js';
 
 /** Parameterised impactor. Item 72. */
 export function strikeImpact(cell, opts = {}) {
@@ -34,7 +35,7 @@ export function strikeImpact(cell, opts = {}) {
     // Prefer downrange hemisphere for ejecta
     const down = DIR[c * 3] * ex + DIR[c * 3 + 1] * ey + DIR[c * 3 + 2] * ez;
     if (down > 0) f *= 1 + 0.5 * down;
-    W.h[c] -= power * 0.1 * f;
+    addBaseHeight(W, c, -power * 0.1 * f);
     W.temp[c] = Math.min(1.5, W.temp[c] + power * 0.25 * f);
     W.life[c] *= 1 - 0.75 * f;
     W.dust[c] = Math.min(1, W.dust[c] + power * 0.35 * f);
@@ -247,7 +248,7 @@ export function theiaImpact(cell, commit = false) {
   }
   beginStroke(['h', 'life', 'temp']);
   for (let c = 0; c < NC; c++) {
-    W.h[c] -= 0.25 + rngOf(W, 'rngGod')() * 0.35;
+    addBaseHeight(W, c, -(0.25 + rngOf(W, 'rngGod')() * 0.35));
     W.life[c] = 0;
     W.temp[c] = 1.45;
   }

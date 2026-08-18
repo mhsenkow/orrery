@@ -15,26 +15,26 @@ let _seedPhase = 0;
 
 const GROUND = {
   tundra: [142, 148, 140],
-  boreal: [58, 86, 66],
-  tempDeciduous: [86, 112, 62],
-  tempRainforest: [42, 92, 58],
-  grassland: [126, 138, 68],
+  boreal: [22, 40, 32],
+  tempDeciduous: [36, 58, 28],
+  tempRainforest: [18, 48, 30],
+  grassland: [92, 102, 48],
   desert: [184, 148, 96],
   savanna: [150, 132, 72],
-  tropSeasonal: [62, 118, 58],
-  tropRainforest: [28, 88, 48],
-  ice: [216, 228, 240],
-  reef: [26, 118, 124],
-  upwelling: [22, 86, 108],
-  gyre: [28, 72, 108],
+  tropSeasonal: [28, 58, 28],
+  tropRainforest: [14, 36, 22],
+  ice: [228, 236, 246],
+  reef: [18, 72, 78],
+  upwelling: [12, 48, 68],
+  gyre: [10, 32, 58],
   vent: [72, 58, 64],
-  deep: [14, 32, 52],
+  deep: [6, 14, 24],
 };
 
 const SEA = [
-  [42, 106, 138], // shallows
-  [26, 74, 108],
-  [18, 40, 60],
+  [18, 48, 68], // shallows
+  [10, 28, 48],
+  [5, 12, 22],
 ];
 
 export function presentAdvance(dt) {
@@ -232,62 +232,64 @@ export function lerpLife(c, alpha = 1) {
 }
 
 /**
- * How much water is sitting on this cell — drip → sheet → stream → river → lake → ocean.
- * Presentation only; hydro still owns the fields.
+ * Surface water the eye should see. `flow` is discharge (how much is moving),
+ * `lake` is ponded volume, `groundW` is underground and is not a river.
+ * Amount is 0–1 opacity/brightness from that quantity — not a binary wash.
  */
 export function waterStage(c) {
   const precip = W.precip?.[c] || 0;
-  const moist = W.moist?.[c] || 0;
   const flow = W.flow?.[c] || 0;
   const lake = W.lake?.[c] || 0;
   const ice = W.ice?.[c] || 0;
-  if (c < 0) return { stage: 'dry', amount: 0, precip, flow, lake: 0 };
+  const ground = W.groundW?.[c] || 0;
+  if (c < 0) return { stage: 'dry', amount: 0, precip, flow, lake: 0, ground };
   if (isSubmerged(W, c)) {
     const depth = Math.max(0, -cellElev(W, c));
     return {
       stage: 'ocean',
       amount: Math.min(1, 0.18 + depth * 3.4),
-      precip, flow, lake: 0, depth,
+      precip, flow, lake: 0, depth, ground,
     };
   }
-  if (ice > 0.55) return { stage: 'ice', amount: ice, precip, flow, lake };
+  if (ice > 0.55) return { stage: 'ice', amount: ice, precip, flow, lake, ground };
   if (lake > 0.5) {
     return {
       stage: 'lake',
-      amount: Math.min(1, 0.52 + Math.log1p(flow * 220) * 0.16 + moist * 0.18),
-      precip, flow, lake,
+      amount: Math.min(1, 0.48 + Math.log1p(flow) * 0.14 + lake * 0.35),
+      precip, flow, lake, ground,
     };
   }
-  if (flow > 0.016) {
+  // Trunks only — D8 accumulation used to light up every cell past 0.016.
+  if (flow > 2.4) {
     return {
       stage: 'river',
-      amount: Math.min(1, Math.log1p(flow * 900) * 0.2),
-      precip, flow, lake,
+      amount: Math.min(1, 0.22 + Math.log1p(flow) * 0.18),
+      precip, flow, lake, ground,
     };
   }
-  if (flow > 0.0014) {
+  if (flow > 0.55) {
     return {
       stage: 'stream',
-      amount: Math.min(0.58, Math.log1p(flow * 1600) * 0.15),
-      precip, flow, lake,
+      amount: Math.min(0.55, 0.12 + Math.log1p(flow) * 0.12),
+      precip, flow, lake, ground,
     };
   }
-  if (moist > 0.62 && flow < 0.004) {
+  if (lake > 0.22) {
     return {
       stage: 'pond',
-      amount: Math.min(0.48, (moist - 0.52) * 1.5 + precip * 0.28),
-      precip, flow, lake,
+      amount: Math.min(0.42, lake * 0.7 + precip * 0.15),
+      precip, flow, lake, ground,
     };
   }
-  if (moist > 0.46 || precip > 0.11) {
+  if (precip > 0.22) {
     return {
       stage: 'sheet',
-      amount: Math.min(0.34, moist * 0.22 + precip * 0.5),
-      precip, flow, lake,
+      amount: Math.min(0.22, precip * 0.35),
+      precip, flow, lake, ground,
     };
   }
-  if (precip > 0.045) return { stage: 'drip', amount: precip, precip, flow, lake };
-  return { stage: 'dry', amount: 0, precip, flow, lake };
+  if (precip > 0.09) return { stage: 'drip', amount: precip * 0.45, precip, flow, lake, ground };
+  return { stage: 'dry', amount: 0, precip, flow, lake, ground };
 }
 
 /**
@@ -299,7 +301,7 @@ export function describeCell(c, alpha = 1) {
     return {
       sea: false, depth: 0, ice: 0, life: 0, moist: 0, build: 0,
       biome: '', rgb: [10, 12, 18], material: 'void', wetness: 0, cover: 0,
-      water: { stage: 'dry', amount: 0, precip: 0, flow: 0, lake: 0 },
+      water: { stage: 'dry', amount: 0, precip: 0, flow: 0, lake: 0, ground: 0 },
     };
   }
   const sea = isSubmerged(W, c);
@@ -429,7 +431,12 @@ export function placeSentence(c) {
     const cur = currentSentence(W, c);
     if (cur) bits.push(cur);
     if ((W.waveHt?.[c] || 0) > 0.5) bits.push('a heavy sea');
-    if (d.life > 0.15) bits.push(label);
+    if (d.life > 0.15) {
+      const landClass = /mammal|reptile|amphibian|arthropod|multicellular/.test(label);
+      if (d.reef > 0.2 && landClass) { /* reef already said the cover */ }
+      else if (landClass) bits.push(d.guild || 'plankton');
+      else bits.push(label);
+    }
   } else {
     const wet = d.moist < 0.18 ? 'dry' : d.moist > 0.55 ? 'wet' : null;
     const ice = d.ice > 0.45 ? 'icebound' : null;

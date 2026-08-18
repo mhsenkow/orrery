@@ -1,15 +1,17 @@
 /** God tools & disasters — brush, receipts, thermo, guilds, sculpt, climate. */
 
-import { clamp } from './math.js';
-import { NC, DIR, dirToCell, cellKm } from './sphere.js';
+import { clamp, vnoise } from './math.js';
+import { NC, DIR, NBR, dirToCell, cellKm } from './sphere.js';
 import { W, applyImpact, chronLog, seedLife } from './world.js';
 import { injectGas } from './sim/atmo.js';
 import { startTsunami } from './sim/hydro.js';
 import { coreSample, iceCore } from './sim/instruments.js';
 import {
-  BRUSH, paintBrush, beginStroke, undoStroke, canUndo,
+  BRUSH, paintBrush, beginStroke, undoStroke, redoStroke, canUndo, canRedo,
   startDrag, continueDrag, endDrag, isDragging, previewBrush, brushKm, brushForTier,
+  setPinpoint, setBrushInvert, brushInvert,
 } from './sim/god/brush.js';
+import { addHeight, setHeight, addMask } from './sim/layers.js';
 import { issueReceipt, forecastAct, causalChain } from './sim/god/receipt.js';
 import { tryPay, pricePreview, setScarcityMode, SCARCITY } from './sim/god/economy.js';
 import {
@@ -19,6 +21,7 @@ import {
 import {
   thickenCrust, thinCrust, paintCrustType, setPlatePole, placePlume,
   carveRiver, setGateway, shiftSeaLevel, stampTerrain, paintSoil, drawRift, forceOrogeny,
+  flattenTerrain, smoothTerrain, sharpenTerrain, roughenTerrain,
 } from './sim/god/sculpt.js';
 import {
   setOrbit, injectAerosol, paintAlbedo, setSolarShade, seedClouds,
@@ -29,6 +32,7 @@ import {
   releasePathogen, theiaImpact,
 } from './sim/god/disaster.js';
 import { seedStorm } from './sim/storms.js';
+import { paintEdifice } from './sim/planetTick.js';
 
 export const TOOLS = [
   { id: 'inspect', name: 'Inspect', key: 'q', cost: 0, group: 'see' },
@@ -39,6 +43,11 @@ export const TOOLS = [
   { id: 'refuge', name: 'Refuge', key: '', cost: 14, group: 'life' },
   { id: 'raise', name: 'Thicken crust', key: 'e', cost: 22, group: 'land', drag: true },
   { id: 'lower', name: 'Thin crust', key: 'f', cost: 18, group: 'land', drag: true },
+  { id: 'flatten', name: 'Flatten', key: '', cost: 8, group: 'land', drag: true },
+  { id: 'smooth', name: 'Smooth', key: '', cost: 6, group: 'land', drag: true },
+  { id: 'sharpen', name: 'Sharpen', key: '', cost: 7, group: 'land', drag: true },
+  { id: 'roughen', name: 'Roughen', key: '', cost: 6, group: 'land', drag: true },
+  { id: 'crust', name: 'Crust type', key: '', cost: 16, group: 'land', drag: true },
   { id: 'plume', name: 'Mantle plume', key: '', cost: 28, group: 'land' },
   { id: 'plate', name: 'Plate pole', key: '', cost: 45, group: 'land' },
   { id: 'river', name: 'Carve river', key: '', cost: 8, group: 'land', drag: true },
@@ -62,12 +71,14 @@ export const TOOLS = [
 ];
 
 export let activeTool = 'inspect';
+let _crustOceanic = false;
+export function setCrustOceanic(v) { _crustOceanic = !!v; }
 export function setTool(id) {
   activeTool = id;
   forecastAct(id, 0);
 }
 
-export { BRUSH, brushKm, brushForTier, previewBrush, undoStroke, canUndo, paintBrush };
+export { BRUSH, brushKm, brushForTier, previewBrush, undoStroke, redoStroke, canUndo, canRedo, paintBrush, setPinpoint, setBrushInvert };
 export { pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild };
 
 /** Ray–sphere hit → cell index, or -1. */
@@ -110,7 +121,7 @@ export function beginToolDrag(cell) {
   const gate = payOrFail(tool.id, 0.5);
   if (gate.error) return gate;
 
-  const apply = dragApplier(tool.id);
+  const apply = dragApplier(tool.id, cell);
   if (!apply) return null;
   const r = startDrag(cell, apply, dragFields(tool.id));
   return { ok: true, tool: tool.id, drag: true, brush: r, pay: gate.pay };
@@ -129,26 +140,77 @@ export function endToolDrag() {
     tool: activeTool,
     cell: d.last,
     intent: `Drag ${activeTool}`,
-    expected: `${d.cells} cells stroked · ${brushKm().toFixed(0)} km brush`,
+    expected: `${d.cells} cells · ${(d.areaKm2 || 0).toFixed(0)} km² · ${brushKm().toFixed(0)} km brush`,
+    units: 'km²',
   });
-  return { ok: true, cells: d.cells };
+  return { ok: true, cells: d.cells, areaKm2: d.areaKm2 };
 }
 
-function dragApplier(id) {
-  if (id === 'raise') return (c, f) => { W.crust[c] = Math.min(1.8, W.crust[c] + 0.03 * f); W.h[c] = Math.min(1.3, W.h[c] + 0.02 * f); };
-  if (id === 'lower') return (c, f) => { W.crust[c] = Math.max(0.05, W.crust[c] - 0.03 * f); W.h[c] = Math.max(-1.2, W.h[c] - 0.025 * f); };
+function dragApplier(id, origin = 0) {
+  let tool = id;
+  if (brushInvert()) {
+    if (tool === 'raise') tool = 'lower';
+    else if (tool === 'lower') tool = 'raise';
+  }
+  if (W.layerStack?.paintMask && (tool === 'raise' || tool === 'lower')) {
+    return (c, f) => addMask(W, c, tool === 'raise' ? 0.22 * f : -0.22 * f);
+  }
+  if (tool === 'raise') return (c, f) => { W.crust[c] = Math.min(1.8, W.crust[c] + 0.06 * f); addHeight(W, c, 0.08 * f); };
+  if (tool === 'lower') return (c, f) => { W.crust[c] = Math.max(0.05, W.crust[c] - 0.06 * f); addHeight(W, c, -0.09 * f); };
+  if (id === 'flatten') {
+    const target = W.h[origin];
+    return (c, f) => { addHeight(W, c, (target - W.h[c]) * 0.45 * f); };
+  }
+  if (id === 'smooth') return (c, f) => {
+    let s = W.h[c], n = 1;
+    for (let k = 0; k < 4; k++) {
+      const nb = NBR[c * 4 + k];
+      if (nb < 0) continue;
+      s += W.h[nb]; n++;
+    }
+    addHeight(W, c, (s / n - W.h[c]) * 0.5 * f);
+  };
+  if (id === 'sharpen') return (c, f) => {
+    let s = W.h[c], n = 1;
+    for (let k = 0; k < 4; k++) {
+      const nb = NBR[c * 4 + k];
+      if (nb < 0) continue;
+      s += W.h[nb]; n++;
+    }
+    const mean = s / n;
+    setHeight(W, c, mean + (W.h[c] - mean) * (1 + 0.55 * f));
+  };
+  if (id === 'roughen') return (c, f) => {
+    const seed = (W.seed ^ 0x524f5547) >>> 0;
+    const n = vnoise(DIR[c * 3] * 46, DIR[c * 3 + 1] * 46, DIR[c * 3 + 2] * 46, seed) * 2 - 1;
+    addHeight(W, c, n * 0.035 * f);
+  };
+  if (id === 'crust') return (c, f) => {
+    if (f < 0.3) return;
+    if (!W.crustType) W.crustType = new Uint8Array(NC);
+    if (_crustOceanic) {
+      W.crustType[c] = 1;
+      W.crust[c] = Math.min(W.crust[c], 0.28);
+    } else {
+      W.crustType[c] = 0;
+      W.crust[c] = Math.max(W.crust[c], 0.5);
+      if (W.h[c] < W.seaLevel + 0.02) setHeight(W, c, W.seaLevel + 0.02);
+    }
+  };
   if (id === 'ice') return (c, f) => {
     W.temp[c] = Math.max(0, W.temp[c] - 0.15 * f);
     W.iceLand[c] = Math.min(1, W.iceLand[c] + 0.3 * f);
     W.ice[c] = Math.max(W.ice[c], W.iceLand[c]);
   };
   if (id === 'albedo') return (c, f) => { if (!W.albedoPaint) W.albedoPaint = new Float32Array(NC); W.albedoPaint[c] = 0.75; };
-  if (id === 'river') return (c, f) => { W.h[c] -= 0.02 * f; W.flow[c] = Math.max(W.flow[c] || 0, 0.5 * f); };
+  if (id === 'river') return (c, f) => { addHeight(W, c, -0.02 * f); W.flow[c] = Math.max(W.flow[c] || 0, 0.5 * f); };
   return null;
 }
 
 function dragFields(id) {
   if (id === 'raise' || id === 'lower') return ['h', 'crust'];
+  if (id === 'flatten' || id === 'smooth' || id === 'sharpen' || id === 'roughen') return ['h'];
+  if (id === 'crust') return ['h', 'crust'];
   if (id === 'ice') return ['temp', 'ice', 'iceLand'];
   if (id === 'albedo') return ['albedoPaint'];
   return ['h'];
@@ -200,6 +262,7 @@ export function useToolAt(cell, extra = {}) {
       setOrbit({ solar: clamp((W._baseSolar || W.solar) + d, 0.3, 2.0) });
       result.settling = settlingTime('solar');
       result.orbitFlash = true;
+      result.said = `Whole planet: star is now ${W.solar.toFixed(2)}×`;
       break;
     }
     case 'co2':
@@ -211,52 +274,83 @@ export function useToolAt(cell, extra = {}) {
       });
       chronLog(W.year, 'tool', cell, W.gases.CO2, 'CO₂ injection');
       result.settling = settlingTime('co2');
-      // Planet argues. Item 91.
+      result.said = `Whole planet: CO₂ now ${(W.gases.CO2 * 1e6 | 0).toLocaleString()} ppm`;
       W.argueResponses.push({ t: W.ageYr, text: 'Silicate weathering will oppose this CO₂ — on a 10⁵ yr clock.', kind: 'argue' });
       break;
     case 'o2':
       injectGas(W, 'O2', 0.02);
       issueReceipt({ tool: 'o2', cell, intent: 'O₂ injection', expected: `O₂ → ${(W.gases.O2 * 100).toFixed(1)}%` });
       chronLog(W.year, 'tool', cell, W.gases.O2, 'O₂ injection');
+      result.said = `Whole planet: O₂ now ${(W.gases.O2 * 100).toFixed(1)}%`;
       break;
 
     case 'seedGuild': {
       const r = seedGuildAt(cell, extra.guild || selectedGuild);
-      if (r.refused) return { ...r, pay: gate.pay };
-      result = { ...result, ...r };
+      if (r.refused) return { ...r, pay: gate.pay, said: r.note || 'Life refused this cell' };
+      result = { ...result, ...r, said: `Seeded ${r.guild || extra.guild || selectedGuild} here` };
       break;
     }
     case 'seed':
       seedClassAt(cell);
+      result.said = 'A new class took root here';
       break;
     case 'refuge':
       declareRefuge(cell);
+      result.said = 'Refuge declared — extinction skips this cell';
       break;
 
     case 'raise':
-      thickenCrust(cell, 0.05);
+      thickenCrust(cell, 0.12);
+      result.said = 'Mountain growing here';
       break;
     case 'lower':
-      thinCrust(cell, 0.05);
+      thinCrust(cell, 0.12);
+      result.said = 'Basin sinking here';
+      break;
+    case 'flatten':
+      flattenTerrain(cell);
+      result.said = 'Terraced to this height';
+      break;
+    case 'smooth':
+      smoothTerrain(cell);
+      result.said = 'Relief softened';
+      break;
+    case 'sharpen':
+      sharpenTerrain(cell);
+      result.said = 'Ridges steepened';
+      break;
+    case 'roughen':
+      roughenTerrain(cell);
+      result.said = 'Fine relief added';
+      break;
+    case 'crust':
+      paintCrustType(cell, !!extra.oceanic);
+      result.said = extra.oceanic ? 'Oceanic crust — will subduct' : 'Continental crust painted';
       break;
     case 'plume':
       placePlume(cell);
+      result.said = 'Hotspot planted in the mantle — island chain later';
       break;
     case 'plate':
       setPlatePole(cell);
+      result.said = 'This plate’s pole moved — geography will rewrite';
       break;
     case 'river':
       carveRiver(cell);
+      result.said = 'Channel cut — flow will keep or abandon it';
       break;
     case 'albedo':
       paintAlbedo(cell, extra.albedo ?? 0.7);
+      result.said = 'Surface whitened here';
       break;
     case 'shade':
       setSolarShade(extra.fraction ?? Math.min(0.12, (W.solarShade || 0) + 0.02));
       result.orbitFlash = true;
+      result.said = `Whole planet: ${((W.solarShade || 0) * 100).toFixed(0)}% of sunlight blocked`;
       break;
     case 'aerosol':
       injectAerosol(0.04, extra.hemi ?? 0);
+      result.said = 'Whole planet: sulphate haze injected';
       break;
     case 'weather': {
       // Prefer seeding a named storm when conditions allow; else local rain
@@ -276,7 +370,7 @@ export function useToolAt(cell, extra = {}) {
         velocity: extra.velocity ?? (extra.power ?? 0.8),
         density: extra.density ?? 1,
         angle: extra.angle ?? 45,
-      }) };
+      }), said: 'Impact crater here' };
       break;
     case 'ice':
       beginStroke(['temp', 'ice', 'iceLand']);
@@ -288,23 +382,30 @@ export function useToolAt(cell, extra = {}) {
       W.gases.H2O = Math.min(0.2, W.gases.H2O + 0.01);
       issueReceipt({ tool: 'ice', cell, intent: 'Ice meteor', expected: 'Local freeze · H₂O up' });
       chronLog(W.year, 'tool', cell, 1, 'Ice meteor');
+      result.said = 'Ice dumped here — freeze spreading';
       break;
     case 'volcano':
-      W.volcanoes.push({ cell, magma: 1.5, next: 0 });
+      W.volcanoes.push({ cell, magma: 1.5, next: 0, silica: 0.48, vol: 1.2, roof: 0.7, volatiles: 0.3 });
       W.ash[cell] = 1;
+      if (W.lava) W.lava[cell] = Math.min(1, (W.lava[cell] || 0) + 0.85);
+      paintEdifice(W, cell, 1.1, 0.45, false);
       W.gases.sulphate = Math.min(0.3, W.gases.sulphate + 0.04);
       issueReceipt({ tool: 'volcano', cell, intent: 'Forced eruption', expected: 'Ash + sulphate aerosol' });
       chronLog(W.year, 'eruption', cell, 1.5, 'Forced eruption');
+      result.said = 'Eruption — lava shield and ash here';
       break;
     case 'lip':
       placeLIP(cell, extra.durationMyr ?? 1);
       break;
     case 'quake':
       W.strain[cell] = 0;
-      W.h[cell] -= 0.03;
+      W.h[cell] -= 0.12;
       startTsunami(W, cell, 0.7);
+      if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
+      W.strokeMark[cell] = 1;
       issueReceipt({ tool: 'quake', cell, intent: 'Quake', expected: 'Tsunami launched' });
       chronLog(W.year, 'quake', cell, 1, 'Triggered quake');
+      result.said = 'Quake — coast dropped, tsunami running';
       break;
     case 'plague':
       releasePathogen(extra);
@@ -349,6 +450,10 @@ export function useToolAt(cell, extra = {}) {
 
   result.price = pricePreview(tool.id);
   result.forecast = forecastAct(tool.id, cell);
+  if (!result.said) {
+    if (tool.group === 'clim') result.said = 'Whole planet lever applied';
+    else if (result.note) result.said = result.note;
+  }
   return result;
 }
 
@@ -370,6 +475,8 @@ export function inspectCell(cell) {
     age: W.age[cell],
     rock: W.rock[cell],
     flow: W.flow[cell],
+    lake: W.lake?.[cell] || 0,
+    groundW: W.groundW?.[cell] || 0,
     clouds: W.clouds[cell],
     precip: W.precip?.[cell],
     windU: W.windU?.[cell],

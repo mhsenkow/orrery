@@ -13,6 +13,7 @@ import { INTERIORS, dynamoFromInterior, coreDeskSnapshot } from './core.js';
 import { RULESETS } from '../rulesets.js';
 import { DOCK_TAB_ICONS, iconSVG } from './god/icons.js';
 import { W, generate } from '../world.js';
+import { LOCAL_RADII, LOCAL_RADIUS_LABELS } from '../localview.js';
 
 const __dir = dirname(fileURLToPath(import.meta.url));
 const html = readFileSync(join(__dir, '../index.html'), 'utf8');
@@ -31,10 +32,14 @@ console.log('dock / html chrome');
     ok(`pane ${tab}`, html.includes(`id="pane-${tab}"`));
   }
   ok('view layers desk', html.includes('data-desk-panel="layers"') && html.includes('id="viewOverlays"'));
+  ok('height layer panel', html.includes('id="layerlist"') && html.includes('id="layerflatten"') && html.includes('id="layerblend"'));
   ok('view guides desk', html.includes('id="viewOrbitGuides"'));
   ok('world mode strip', html.includes('id="worldModeStrip"'));
   ok('climate pane', html.includes('id="pane-climate"'));
   ok('rock pane', html.includes('id="pane-rock"'));
+  ok('lab station desk', html.includes('data-suite="lab"') && html.includes('data-desk="station"') && html.includes('id="toolsSample"'));
+  ok('lab holds station HUD', html.includes('id="labStation"') && html.includes('id="stats"') && html.includes('id="inspect"'));
+  ok('tools has no station desk', !html.includes('data-suite="tools" data-desk="station"'));
 }
 
 console.log('icons');
@@ -77,6 +82,14 @@ console.log('interior + dynamo');
   ok('earth dynamo finite', Number.isFinite(d) && d > 0);
   const dSlow = dynamoFromInterior(INTERIORS.venus, 243);
   ok('slow spin weakens field', dSlow < d);
+}
+
+console.log('local map zoom');
+{
+  ok('eight zoom rungs', LOCAL_RADII.length === 8 && LOCAL_RADIUS_LABELS.length === 8);
+  ok('close rung is 5 cells', LOCAL_RADII[0] === 2 && LOCAL_RADIUS_LABELS[0] === '5');
+  ok('wide rung is 85 cells', LOCAL_RADII[7] === 42 && LOCAL_RADIUS_LABELS[7] === '85');
+  ok('labels are 2r+1', LOCAL_RADII.every((r, i) => LOCAL_RADIUS_LABELS[i] === String(r * 2 + 1)));
 }
 
 console.log('world boot + snapshots');
