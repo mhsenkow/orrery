@@ -104,15 +104,76 @@ function fetchLength(W, c, u, v) {
   return n;
 }
 
+export function ensoEastness(W, c) {
+  const mid = W._ensoBasinLon;
+  if (mid == null || !(W._ensoBasinN > 12)) return DIR[c * 3];
+  let d = Math.atan2(DIR[c * 3 + 2], DIR[c * 3]) - mid;
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return clamp(d / 1.4, -1, 1);
+}
+
+/** Largest tropical ocean, as a connected component. East/west of its centroid is the ENSO dipole. */
+export function noteTropicalBasin(W, sea = W.seaLevel) {
+  const tick = W.year ?? 0;
+  if (W._ensoBasinTick === tick && W._ensoBasinN != null
+      && Math.abs((W._ensoBasinSea ?? sea) - sea) < 0.01) return;
+  W._ensoBasinTick = tick;
+  W._ensoBasinSea = sea;
+  if (W._ensoSeen?.length !== NC) {
+    W._ensoSeen = new Uint8Array(NC);
+    W._ensoQ = new Int32Array(NC);
+  }
+  const seen = W._ensoSeen;
+  const q = W._ensoQ;
+  seen.fill(0);
+  let bestN = 0, bestLon = 0;
+  const latMax = 0.28;
+  for (let s = 0; s < NC; s++) {
+    if (seen[s]) continue;
+    if (W.h[s] >= sea || Math.abs(DIR[s * 3 + 1]) > latMax) {
+      seen[s] = 1;
+      continue;
+    }
+    let head = 0, tail = 0;
+    q[tail++] = s;
+    seen[s] = 1;
+    let sx = 0, sz = 0, n = 0;
+    while (head < tail) {
+      const c = q[head++];
+      sx += DIR[c * 3];
+      sz += DIR[c * 3 + 2];
+      n++;
+      for (let k = 0; k < 4; k++) {
+        const nb = NBR[c * 4 + k];
+        if (seen[nb]) continue;
+        if (W.h[nb] >= sea || Math.abs(DIR[nb * 3 + 1]) > latMax) {
+          seen[nb] = 1;
+          continue;
+        }
+        seen[nb] = 1;
+        q[tail++] = nb;
+      }
+    }
+    if (n > bestN) {
+      bestN = n;
+      bestLon = Math.atan2(sz, sx);
+    }
+  }
+  W._ensoBasinLon = bestLon;
+  W._ensoBasinN = bestN;
+}
+
 function diagnoseEnso(W, sea, fScale) {
+  noteTropicalBasin(W, sea);
   let westT = 0, eastT = 0, nW = 0, nE = 0, trade = 0, nTr = 0;
   for (let c = 0; c < NC; c++) {
     const lat = DIR[c * 3 + 1];
     if (Math.abs(lat) > 0.22) continue;
-    const x = DIR[c * 3];
     if (W.h[c] >= sea) continue;
-    if (x < -0.18) { westT += W.oceanSurf[c]; nW++; }
-    else if (x > 0.18) { eastT += W.oceanSurf[c]; nE++; }
+    const east = ensoEastness(W, c);
+    if (east < -0.18) { westT += W.oceanSurf[c]; nW++; }
+    else if (east > 0.18) { eastT += W.oceanSurf[c]; nE++; }
     trade += -(W.windU?.[c] || 0);
     nTr++;
   }
@@ -200,7 +261,7 @@ export function oceanTick(W) {
   for (let c = 0; c < NC; c++) {
     if (W.h[c] >= sea) continue;
     const lat = DIR[c * 3 + 1];
-    const x = DIR[c * 3];
+    const east = ensoEastness(W, c);
     const f = lat * fScale;
     const fSafe = f + 0.1 * Math.sign(f || 1);
     const ekE = tauN[c] / fSafe;
@@ -237,7 +298,7 @@ export function oceanTick(W) {
 
     const div = divUV(W.oceanU, W.oceanV, c);
     let up = -div * 1.8 + (Math.abs(lat) < 0.12 ? 0.12 : 0);
-    if (Math.abs(lat) < 0.22 && x > 0.12) up *= 1 - clamp(enso * 0.7, -0.4, 0.85);
+    if (Math.abs(lat) < 0.22 && east > 0.12) up *= 1 - clamp(enso * 0.7, -0.4, 0.85);
     W.upwell[c] = clamp(up, 0, 1);
   }
 
@@ -248,7 +309,7 @@ export function oceanTick(W) {
   for (let c = 0; c < NC; c++) {
     if (W.h[c] >= sea) continue;
     const lat = DIR[c * 3 + 1];
-    const x = DIR[c * 3];
+    const east = ensoEastness(W, c);
     const spd = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
     let mixD = W.mixDepth[c] || 0.35;
     mixD += spd * 0.025;
@@ -257,17 +318,18 @@ export function oceanTick(W) {
     if (dS0 > dD0) mixD += 0.03;
     else mixD *= 0.985;
     if (Math.abs(lat) < 0.25) {
-      mixD += (x < 0 ? tilt : -tilt) * 0.08;
-      mixD += enso * (x > 0 ? 0.12 : -0.06);
+      mixD += (east < 0 ? tilt : -tilt) * 0.08;
+      mixD += enso * (east > 0 ? 0.12 : -0.06);
     }
     mixD = clamp(mixD, 0.12, 1);
     W.mixDepth[c] = mixD;
 
     const couple = 0.09 / (0.35 + mixD);
     W.oceanSurf[c] += (W.temp[c] - W.oceanSurf[c]) * couple;
+    W.oceanSurf[c] -= W.upwell[c] * 0.035;
     if (Math.abs(lat) < 0.22) {
-      if (x > 0.15) W.oceanSurf[c] += enso * 0.01;
-      if (x < -0.15) W.oceanSurf[c] -= enso * 0.007;
+      if (east > 0.15) W.oceanSurf[c] += enso * 0.01;
+      if (east < -0.15) W.oceanSurf[c] -= enso * 0.007;
     }
     const mix = 0.008 + W.upwell[c] * 0.07 * W.conveyor * (1.15 - mixD * 0.4);
     W.oceanSurf[c] = W.oceanSurf[c] * (1 - mix) + W.oceanDeep[c] * mix;
@@ -296,7 +358,7 @@ export function oceanTick(W) {
     } else if (lat > 0.45) nNH++;
     else if (lat < -0.45) nSH++;
 
-    W.temp[c] += (W.oceanSurf[c] - W.temp[c]) * 0.018 * (0.4 + W.conveyor) * clamp(mixD, 0.4, 1.1);
+    W.temp[c] += (W.oceanSurf[c] - W.temp[c]) * 0.024 * (0.4 + W.conveyor) * clamp(mixD, 0.4, 1.1);
 
     if (W.nutrientP && W.upwell[c] > 0.25) {
       W.nutrientP[c] = Math.min(1, (W.nutrientP[c] || 0) + W.upwell[c] * 0.018);

@@ -6,13 +6,21 @@ import { RULESETS } from './rulesets.js';
 import { createChronicle, logEvent, maybeNameEra } from './chronicle.js';
 import { generateTectonics, tectonicsTick, erosionTick } from './sim/tectonics.js';
 import { planetGeoTick } from './sim/planetTick.js';
-import { hydroTick, tsunamiTick, liquidWaterOk, startTsunami } from './sim/hydro.js';
+import { hydroTick, tsunamiTick, liquidWaterOk, startTsunami, primeDrainage } from './sim/hydro.js';
 import { atmoTick, atmoMetaTick } from './sim/atmo.js';
 import { bioTick, seedLife, LIFE_CLASSES } from './sim/bio.js';
 import { gaiaTick } from './sim/gaia.js';
 import { fitSeaLevel, seedPolarIce, seedEarthBiosphere, primeEarthMoisture } from './sim/earth.js';
 import { refineEarthHypsometry } from './sim/earthTerrain.js';
 import { refinePlanetHypsometry } from './sim/planetTerrain.js';
+import { worldAxes } from './sim/worldAxes.js';
+import { cachePlanetKind } from './sim/planetKind.js';
+import { stampSubstrate, packSubstrate, unpackSubstrate } from './sim/substrateField.js';
+import { stampCover } from './sim/cover.js';
+import { noteColumn } from './sim/columnSketch.js';
+import { stampColumn } from './sim/columnField.js';
+import { stampLandforms } from './sim/landform.js';
+import { reliefFromGravity } from './sim/exophysics.js';
 import { applyLandscape, landmassReport, nameWorld } from './sim/landscapes.js';
 import { encodeWorldId } from './sim/seedword.js';
 import {
@@ -23,7 +31,7 @@ import {
 } from './sim/time.js';
 import { createCarbonState, carbonTick, UNIT_MAP } from './sim/carbon.js';
 import { initRedox, redoxTick, seedModernGuilds, initSpeciesFields } from './sim/redox.js';
-import { initEvolution, evolveTick, forkWorldSeed, treeSummary } from './sim/evolve.js';
+import { initEvolution, evolveTick, forkWorldSeed, treeSummary, packTree, unpackTree, seedHoloceneTree } from './sim/evolve.js';
 import { deriveLifeClass, unlockedClassFromPool } from './sim/lifeclass.js';
 import { ecologyTick } from './sim/ecology.js';
 import { extinctionTick, noteImpact } from './sim/extinction.js';
@@ -51,19 +59,24 @@ function u8() { return new Uint8Array(NC); }
 export function reallocateWorldFields(target = W) {
   const keys = [
     'h', 'crust', 'age', 'strain', 'ore', 'sediment', 'ash', 'dust',
+    'frost', 'lag', 'grain',
     'temp', 'moist', 'precip', 'clouds', 'ice', 'iceLand', 'iceSea',
     'flow', 'lake', 'windU', 'windV', 'life', 'soil', 'nutrientN', 'nutrientP',
     'reef', 'build', 'blackDaisy', 'whiteDaisy',
     'press', 'converg', 'tideRange', 'tideHeight', 'intertidal', 'tideWet', 'tideU', 'tideV',
     'stormField', 'surgeField', 'stormTrail',
     'oceanU', 'oceanV', 'waveHt', 'lava', 'mixDepth', 'groundW',
-    'mantleU', 'mantleV', 'dynTopo',
+    'mantleU', 'mantleV', 'dynTopo', 'vapour', 'cont', 'coastDist', 'biomeMix',
     '_t', '_m', '_l', '_h', '_adv', 'prevTemp', 'prevLife', 'prevIce',
-    'macroDens', 'cladeCount', 'hydrotherm',
+    'macroDens', 'cladeCount', 'hydrotherm', 'protoOrg', 'detritus',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
+  target.substrate = u8();
+  target.landform = u8();
   target.lifeClass = u8();
+  target.biome = u8();
+  target.biome2 = u8();
   target.plateId = ibuf();
   target.popId = ibuf();
   target.drainTo = ibuf();
@@ -89,6 +102,7 @@ export function reallocateWorldFields(target = W) {
   target._ensoEvent = null;
   target._drainTick = null;
   target._hydroDirty = true;
+  target._vapourInit = false;
   target._mocSv = 17;
   target._jetLat = 0;
   target._monsoon = 0.5;
@@ -107,8 +121,9 @@ export function changeResolution(n) {
 
 export function createWorld() {
   const W = {
-    h: buf(), crust: buf(), age: buf(), rock: u8(), plateId: ibuf(), bound: new Int8Array(NC),
+    h: buf(), crust: buf(), age: buf(), rock: u8(), substrate: u8(), landform: u8(), plateId: ibuf(), bound: new Int8Array(NC),
     strain: buf(), ore: buf(), sediment: buf(), ash: buf(), dust: buf(),
+    frost: buf(), lag: buf(), grain: buf(),
     temp: buf(), moist: buf(), precip: buf(), clouds: buf(),
     ice: buf(), iceLand: buf(), iceSea: buf(),
     flow: buf(), lake: buf(),
@@ -182,6 +197,70 @@ export function generate(seed, ruleIn) {
   W.traces = null;
   W._speciesScratch = null;
   W.hazeAntiGreenhouse = 0;
+  // Derived biosphere scalars. `bodyScale` in particular survives a run through
+  // `bio.js`'s `W.bodyScale = W.bodyScale || …`, so a second generate in the same
+  // process inherited the previous world's value and the golden hash stopped being
+  // reproducible — a fresh generate and a post-tick generate differed in life,
+  // meanLife, health, resilience, inhabitance, detritus, popId and shannon.
+  W.bodyScale = 1;
+  // Fields that only exist once a tick has run. `generate` has to clear them or a
+  // second generate in the same process inherits the previous world's values, which
+  // is what broke the golden hash: `ecology.js` reads `if (W.photonUsable != null)
+  // npp *= W.photonUsable`, so a fresh run left NPP unscaled and a post-tick run
+  // scaled it, and `life` diverged from there through meanLife, health, resilience,
+  // inhabitance, detritus, popId and shannon.
+  W.photonUsable = null;
+  W.bioRate = null;
+  W.chemoPower = 0;
+  W.terminatorHab = null;
+  W.marineOnly = false;
+  W.sterileWhy = null;
+  W.lifeGrown = 0;
+  W.lifeDied = 0;
+  W.keelingHistory = null;
+  W.latDiversity = null;
+  // `origin.js` guards with `W.vents = W.vents || []` and only seeds when the list is
+  // empty, so without this a second generate inherited the previous planet's vent
+  // field — 173 stale vents on a brand-new world — and `seedVents` forks its RNG from
+  // `W.vents.length`, so the seeding was order-dependent too.
+  W.vents = null;
+  W.originBudget = null;
+  W.originCell = null;
+  // `updateIsoline` reuses the buffer and only writes `coastCount * 3` floats, so the
+  // tail keeps the previous planet's coastline. Harmless to the draw call, which uploads
+  // a subarray, but it is stale world state and it breaks the reset contract.
+  W.coastLine = null;
+  W.coastCount = 0;
+  W._isoTick = -1;
+  W._isoSea = null;
+  // Derived readouts written during a tick. Enumerated by running every playable
+  // ruleset through generate → 40 ticks → generate and diffing the world; the test
+  // `a generate after a run equals a fresh generate` keeps the list honest. Without
+  // them two identical generates of Selene reported habitability 0.5 and then 0.3.
+  W.habitability = null;
+  W.npp = null;
+  W.biomeCounts = null;
+  W.ecotoneFrac = 0;
+  W.herbivore = 0;
+  W.biosphereWatts = 0;
+  W.bioticTerm = 0;
+  W.redQueen = 0;
+  W.oxyInvent = null;
+  W.oxyThresh = null;
+  W.rnaKb = null;
+  W.originReport = null;
+  W.shadowBiosphere = null;
+  W.planetBiochem = null;
+  W._springEvent = false;
+  W._ensoSeen = null;
+  W._ensoQ = null;
+  W._ensoBasinTick = -1;
+  W.morphFirsts = null;
+  W.morphospaceOccupied = 0;
+  W.morphChanged = 0;
+  W.topSense = null;
+  W.senseBands = [];
+  W._morphEnvCache = null;
 
   initDeepTime(W, rule);
 
@@ -246,6 +325,19 @@ export function generate(seed, ruleIn) {
   W.hotspots = null;
   W.volcanoes = [];
   W.ash.fill(0); W.dust.fill(0); W.sediment.fill(0);
+  if (W.frost) W.frost.fill(0);
+  if (W.lag) W.lag.fill(0);
+  if (W.grain) W.grain.fill(0);
+  if (W.landform) W.landform.fill(0);
+  W._landPalette = null;
+  W._landProcesses = null;
+  W._columnRecipe = null;
+  W._atmScale = 1;
+  W._atmFrozenNote = null;
+  W._clathrate = null;
+  W._clathrateNote = null;
+  W._hpIceFloor = false;
+  W._oceanKm = 0;
   W.soil.fill(0); W.reef.fill(0);
   W.blackDaisy.fill(0); W.whiteDaisy.fill(0);
   W.life.fill(0); W.lifeClass.fill(0);
@@ -283,6 +375,12 @@ export function generate(seed, ruleIn) {
   W.rotationPeriod = rule.rotationPeriod ?? W.rotationPeriod;
   // Recompute dynamo with actual spin on W
   applyInterior(W, rule, rule._catalogueItem || null);
+  W._worldAxes = worldAxes(rule);
+  cachePlanetKind(rule, W);
+  if (rule.gravityLocked && Number.isFinite(rule.gravity) && !rule.earthLike) {
+    rule.relief = reliefFromGravity(rule.gravity);
+  }
+  W._nonHydrostatic = !!(W._worldAxes.nonHydrostatic || rule.nonHydrostatic);
 
   generateTectonics(W, seed, rule);
   initMantle(W, seed);
@@ -311,8 +409,7 @@ export function generate(seed, ruleIn) {
   if (rule.earthLike) seedPolarIce(W, rule);
   else {
     for (let c = 0; c < NC; c++) {
-      const lat = Math.abs(DIR[c * 3 + 1]);
-      if (lat > 0.82 && W.temp[c] < rule.freeze + 0.1) {
+      if (W.temp[c] < rule.freeze + 0.08) {
         W.iceLand[c] = W.h[c] >= W.seaLevel ? 0.6 : 0;
         W.iceSea[c] = W.h[c] < W.seaLevel ? 0.7 : 0;
         W.ice[c] = Math.max(W.iceLand[c], W.iceSea[c]);
@@ -403,6 +500,7 @@ export function generate(seed, ruleIn) {
     seedEarthBiosphere(W);
     seedModernGuilds(W);
     initSpeciesFields(W);
+    seedHoloceneTree(W);
     W.unlockedClass = unlockedClassFromPool(W);
     deriveLifeClass(W);
   } else if (!rule.airless) {
@@ -432,16 +530,27 @@ export function generate(seed, ruleIn) {
     if (rule.earthLike) seedPolarIce(W, rule);
     hydroTick(W);
   }
-  // Climate warmup already ran hydro. Two extra ticks grow rivers without
-  // another 8 full-sphere evap/precip/sort passes at generate time.
+  // Climate warmup already ran hydro. Two extra ticks then a dedicated
+  // drainage prime so the opening world has a river network, not eight cells.
   W._hydroDirty = true;
   hydroTick(W);
   hydroTick(W);
+  primeDrainage(W);
   if (targetLand != null) fitSeaLevel(W, targetLand);
   initOcean(W);
   initTides(W);
   initStorms(W);
   if (rule.iceShell) applyIceShell(W, rule);
+  stampSubstrate(W);
+  stampCover(W);
+  noteColumn(W);
+  stampColumn(W);
+  // `initRedox` runs ~260 lines above this, before `applyLandscape` and every
+  // `fitSeaLevel`, so `seedVents` saw provisional terrain — on a fresh process Ares
+  // seeded 0 vents and on a second generate it seeded 8,630 against the previous
+  // planet's coastline. Drop them here, once the terrain is final, and the next
+  // `originTick` reseeds through `initOrigin` against the world that actually exists.
+  W.vents = null;
   W._waterMass0 = W.waterMass;
 
   W._landscape = ls?.id || rule.landscape || 'auto';
@@ -449,8 +558,13 @@ export function generate(seed, ruleIn) {
   W.worldName = rule.worldName || nameWorld(seed, W._landscape);
   initLayerStack(W, { name: W._landscape });
 
+  // Classify biomes once climate + drainage exist, so the opening picture
+  // has membership, not a blank Uint8 field.
+  if (!rule.daisyworld && !rule.airless) ecologyTick(W, null);
+
   // Refresh planetary means after seeding
   gaiaTick(W, null);
+  stampLandforms(W);
 
   chronLog(W.year, 'genesis', 0, 1,
     `${rule.name} forms (seed ${seed}) @ ${formatAge(W.ageYr)}`);
@@ -668,12 +782,12 @@ function unpackHeights(b64, into) {
   for (let i = 0; i < n; i++) into[i] = buf[i] / 8000;
 }
 
-/** Event-log save. Item 196. Version 4 keeps the height layer stack. */
+/** Event-log save. Version 6 keeps the substrate byte. */
 export function serializeRun() {
   const land = W._landscape || W.rule?.landscape || 'auto';
   const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 4,
+    version: 6,
     seed: W.seed,
     landSeed,
     landscape: land,
@@ -681,6 +795,7 @@ export function serializeRun() {
     n: SIM_N,
     seaLevel: W.seaLevel,
     hB64: packHeights(W.h),
+    subB64: packSubstrate(W.substrate),
     layers: packLayerStack(W.layerStack),
     ruleId: W.rule.id,
     deepTime: !!W.rule.deepTime,
@@ -695,6 +810,10 @@ export function serializeRun() {
       || e.kind === 'god')),
     moments: { ...W.moments },
     treeSummary: treeSummary(W.tree),
+    tree: packTree(W.tree),
+    originCell: W.originCell ?? null,
+    planetBiochem: W.planetBiochem || null,
+    originDifficulty: W.originDifficulty ?? 1,
   };
 }
 
@@ -729,9 +848,16 @@ export function loadRunMeta(json) {
     hydroTick(W);
     W._landReport = landmassReport(W);
   }
+  if (data.subB64 && data.n === SIM_N && W.substrate) {
+    unpackSubstrate(data.subB64, W.substrate);
+  }
   if (data.worldName) W.worldName = data.worldName;
   W.landSeed = (data.landSeed ?? data.seed) || 0;
   W._landscape = landscape;
+  if (data.tree) W.tree = unpackTree(data.tree);
+  if (data.planetBiochem) W.planetBiochem = data.planetBiochem;
+  if (data.originCell != null) W.originCell = data.originCell;
+  if (data.originDifficulty != null) W.originDifficulty = data.originDifficulty;
   return data;
 }
 

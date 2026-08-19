@@ -7,9 +7,10 @@ import { NC, DIR } from '../sphere.js';
 import { setOrbit, setMoon } from './god/climate.js';
 import { tideBudget, ROCHE_DISTANCE } from './tides.js';
 import { circulationCellCount, windBandAt } from './wind.js';
-import { synopticChartSVG } from './viz.js';
+import { synopticChartSVG, zonalMeanSVG } from './viz.js';
 import { issueReceipt } from './god/receipt.js';
 import { iconSVG } from './god/icons.js';
+import { livePressureBar } from './substrateField.js';
 import { dynamoFromInterior } from './core.js';
 import {
   seedStorm, steerStorm, stormDeskSnapshot, tropicalFavor, midlatFavor,
@@ -50,10 +51,13 @@ export function climateSnapshot(Wref = W) {
     moonIllum: Wref.moonIllum,
     meanCloud,
     meanWind,
+    rossby: Wref._rossby ?? null,
+    rossbyNote: Wref._rossbyNote || '',
+    tropPole: Wref._tropPole ?? null,
     intertidalPct: (Wref.intertidalFrac || 0) * 100,
     meanPress: meanField(Wref.press),
     teqK: Wref.rule?.teqK ?? null,
-    pressBar: Wref.rule?.surfacePressureBar ?? null,
+    pressBar: livePressureBar(Wref),
     radiusEarth: Wref.rule?.radiusEarth ?? null,
     massEarth: Wref.rule?.massEarth ?? null,
     confidence: Wref.rule?.confidence ?? null,
@@ -71,7 +75,7 @@ export function climateSnapshot(Wref = W) {
     spinNote: cells <= 1
       ? 'Slow rotator — one wide Hadley cell to the pole'
       : cells <= 3
-        ? 'Earth-like three-cell banding'
+        ? 'Earth-like three-cell banding from pressure and spin, not a lookup'
         : cells <= 5
           ? 'Fast spin — extra narrow bands'
           : 'Jovian multi-band regime',
@@ -222,6 +226,8 @@ export function climatePanelChrome() {
         <div class="god-h">${iconSVG('weather')}<span>Synoptic</span></div>
         <div id="climChart"></div>
         <p class="god-note" id="climChartNote">Pressure, wind, ITCZ. Past about two weeks this is not a forecast.</p>
+        <div id="climZonal"></div>
+        <p class="god-note">Zonal-mean temperature (gold), zonal wind (blue), vapour (green). Latitude, not height.</p>
       </div>
 
       <div class="god-block">
@@ -270,6 +276,7 @@ export function climatePanelChrome() {
         <div class="tools clim-overlays" id="climOverlays">
           <button type="button" data-overlay="none">${iconSVG('inspect')}<span class="btn-label">Clear</span></button>
           <button type="button" data-overlay="press">${iconSVG('weather')}<span class="btn-label">Pressure</span></button>
+          <button type="button" data-overlay="vapour">${iconSVG('weather')}<span class="btn-label">Vapour</span></button>
           <button type="button" data-overlay="wind">${iconSVG('spin')}<span class="btn-label">Wind</span></button>
           <button type="button" data-overlay="storm">${iconSVG('stormdesk')}<span class="btn-label">Storms</span></button>
           <button type="button" data-overlay="tide">${iconSVG('moon')}<span class="btn-label">Tide</span></button>
@@ -554,6 +561,7 @@ export function refreshClimatePanel(opts = {}) {
       <div class="clim-chip"><span>Tide</span><b>${snap.tide.phase || '—'}</b></div>
       <div class="clim-chip"><span>Range</span><b>${snap.tide.meanRange}</b></div>
       <div class="clim-chip"><span>Wind</span><b>${snap.regime}</b></div>
+      <div class="clim-chip"><span>Ro</span><b>${snap.rossby != null ? snap.rossby.toFixed(2) : '—'}</b></div>
       <div class="clim-chip"><span>ITCZ</span><b>${snap.itczDeg.toFixed(0)}°</b></div>
       <div class="clim-chip"><span>Moon</span><b>${snap.moonIllum != null ? `${(snap.moonIllum * 100) | 0}%` : '—'}</b></div>
       <div class="clim-chip"><span>Storms</span><b>${W._stormCount || 0}</b></div>
@@ -563,8 +571,12 @@ export function refreshClimatePanel(opts = {}) {
   if (chart && (opts.forceChart || !opts.skipChart)) {
     chart.innerHTML = synopticChartSVG(W, 292, 132);
   }
+  const zonal = document.getElementById('climZonal');
+  if (zonal && (opts.forceChart || !opts.skipChart)) {
+    zonal.innerHTML = zonalMeanSVG(W, 292, 108);
+  }
   const spinNote = document.getElementById('climSpinNote');
-  if (spinNote) spinNote.textContent = snap.spinNote;
+  if (spinNote) spinNote.textContent = snap.rossbyNote || snap.spinNote;
   const tideNote = document.getElementById('climTideNote');
   if (tideNote) {
     tideNote.textContent = `${snap.springNote}` +
@@ -576,6 +588,7 @@ export function refreshClimatePanel(opts = {}) {
     const band = windBandAt(0.2, W._itczLat || 0, snap.cells);
     explain.innerHTML = `
       <div class="clim-fact"><b>${snap.cells}</b> circulation cells / hemisphere · trades near ITCZ read as <b>${band}</b></div>
+      <div class="clim-fact">${snap.rossbyNote || snap.spinNote}${snap.tropPole != null ? ` · tropics−pole ΔT <b>${snap.tropPole.toFixed(2)}</b>` : ''}</div>
       <div class="clim-fact">Cloud cover ~<b>${(snap.meanCloud * 100) | 0}%</b> · mean wind <b>${snap.meanWind.toFixed(2)}</b></div>
       <div class="clim-fact">${snap.moon
         ? `Moon ${snap.moon.mass.toFixed(2)} M @ ${snap.moon.distance.toFixed(2)} · axis ${W.obliquityWander ? 'wanders' : 'stable'}`

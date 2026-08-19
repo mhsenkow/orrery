@@ -1,0 +1,1241 @@
+{
+  "generatedBy": "scripts/worldspace.mjs",
+  "n": 120,
+  "temperateIo": 0,
+  "furnaceMars": 0,
+  "counts": {
+    "earth": 1,
+    "venus": 1,
+    "mars": 1,
+    "mercury": 1,
+    "jupiter": 1,
+    "saturn": 1,
+    "uranus": 1,
+    "neptune": 1,
+    "pluto": 1,
+    "ceres": 1,
+    "eris": 1,
+    "smallbody": 1,
+    "moon": 1,
+    "io": 1,
+    "europa": 1,
+    "ganymede": 1,
+    "callisto": 1,
+    "titan": 1,
+    "enceladus": 1,
+    "triton": 1,
+    "miranda": 1,
+    "iapetus": 1,
+    "mimas": 1,
+    "charon": 1,
+    "uranian": 1,
+    "rhea": 1,
+    "phobos": 1,
+    "generic": 26,
+    "gas": 46,
+    "magma": 18,
+    "airless": 3
+  },
+  "rows": [
+    {
+      "id": 64,
+      "name": "Earth",
+      "cat": "sol",
+      "kind": "earth",
+      "why": "name:earth",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 65,
+      "name": "Venus",
+      "cat": "sol",
+      "kind": "venus",
+      "why": "name:venus",
+      "fingerprint": "g7v4SsS4A3R7",
+      "interior": "stagnant",
+      "volatile": "SO2"
+    },
+    {
+      "id": 66,
+      "name": "Mars",
+      "cat": "sol",
+      "kind": "mars",
+      "why": "name:mars",
+      "fingerprint": "g6v4CsS4A3R7",
+      "interior": "stagnant",
+      "volatile": "CO2"
+    },
+    {
+      "id": 67,
+      "name": "Mercury",
+      "cat": "sol",
+      "kind": "mercury",
+      "why": "name:mercury",
+      "fingerprint": "g6v1WsS5A3R7",
+      "interior": "stagnant",
+      "volatile": "H2O"
+    },
+    {
+      "id": 68,
+      "name": "Jupiter",
+      "cat": "sol",
+      "kind": "jupiter",
+      "why": "name:jupiter",
+      "fingerprint": "g9v9HfS3A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 69,
+      "name": "Saturn",
+      "cat": "sol",
+      "kind": "saturn",
+      "why": "name:saturn",
+      "fingerprint": "g7v9HfS2A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 70,
+      "name": "Uranus",
+      "cat": "sol",
+      "kind": "uranus",
+      "why": "name:uranus",
+      "fingerprint": "g7v8HfS1A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 71,
+      "name": "Neptune",
+      "cat": "sol",
+      "kind": "neptune",
+      "why": "name:neptune",
+      "fingerprint": "g7v8HfS1A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 72,
+      "name": "Pluto",
+      "cat": "sol",
+      "kind": "pluto",
+      "why": "name:pluto",
+      "fingerprint": "g3v4NmS1A3R5",
+      "interior": "mobile",
+      "volatile": "N2"
+    },
+    {
+      "id": 73,
+      "name": "Ceres",
+      "cat": "sol",
+      "kind": "ceres",
+      "why": "name:ceres",
+      "fingerprint": "g2v1WmS3A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 74,
+      "name": "Eris / Sedna",
+      "cat": "sol",
+      "kind": "eris",
+      "why": "name:eris",
+      "fingerprint": "g3v2NmS0A3R5",
+      "interior": "mobile",
+      "volatile": "N2"
+    },
+    {
+      "id": 75,
+      "name": "Arrokoth / Bennu / 67P",
+      "cat": "sol",
+      "kind": "smallbody",
+      "why": "name:smallbody",
+      "fingerprint": "g0v8HfS1A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 76,
+      "name": "Luna",
+      "cat": "moons",
+      "kind": "moon",
+      "why": "name:moon",
+      "fingerprint": "g4v1WsS4A3R7",
+      "interior": "stagnant",
+      "volatile": "H2O"
+    },
+    {
+      "id": 77,
+      "name": "Io",
+      "cat": "moons",
+      "kind": "io",
+      "why": "name:io",
+      "fingerprint": "g5v1ShS3A3R2",
+      "interior": "heatpipe",
+      "volatile": "SO2"
+    },
+    {
+      "id": 78,
+      "name": "Europa",
+      "cat": "moons",
+      "kind": "europa",
+      "why": "name:europa",
+      "fingerprint": "g4v4WiS3A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 79,
+      "name": "Ganymede",
+      "cat": "moons",
+      "kind": "ganymede",
+      "why": "name:ganymede",
+      "fingerprint": "g4v5WiS3A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 80,
+      "name": "Callisto",
+      "cat": "moons",
+      "kind": "callisto",
+      "why": "name:callisto",
+      "fingerprint": "g4v5WiS3A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 81,
+      "name": "Titan",
+      "cat": "moons",
+      "kind": "titan",
+      "why": "name:titan",
+      "fingerprint": "g4v5MiS2A3R6",
+      "interior": "ice",
+      "volatile": "CH4"
+    },
+    {
+      "id": 82,
+      "name": "Enceladus",
+      "cat": "moons",
+      "kind": "enceladus",
+      "why": "name:enceladus",
+      "fingerprint": "g0v1WiS2A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 83,
+      "name": "Triton",
+      "cat": "moons",
+      "kind": "triton",
+      "why": "name:triton",
+      "fingerprint": "g3v4NiS1A3R6",
+      "interior": "ice",
+      "volatile": "N2"
+    },
+    {
+      "id": 84,
+      "name": "Miranda",
+      "cat": "moons",
+      "kind": "miranda",
+      "why": "name:miranda",
+      "fingerprint": "g0v1WiS1A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 85,
+      "name": "Iapetus",
+      "cat": "moons",
+      "kind": "iapetus",
+      "why": "name:iapetus",
+      "fingerprint": "g1v1WiS2A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 86,
+      "name": "Mimas",
+      "cat": "moons",
+      "kind": "mimas",
+      "why": "name:mimas",
+      "fingerprint": "g0v1WiS2A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 87,
+      "name": "Charon",
+      "cat": "moons",
+      "kind": "charon",
+      "why": "name:charon",
+      "fingerprint": "g2v3NiS1A3R6",
+      "interior": "ice",
+      "volatile": "N2"
+    },
+    {
+      "id": 88,
+      "name": "Uranian moons",
+      "cat": "moons",
+      "kind": "uranian",
+      "why": "name:uranian",
+      "fingerprint": "g1v3WiS1A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 89,
+      "name": "Rhea / Dione / Tethys / Hyperion",
+      "cat": "moons",
+      "kind": "rhea",
+      "why": "name:rhea",
+      "fingerprint": "g2v3SiS2A3R6",
+      "interior": "ice",
+      "volatile": "SO2"
+    },
+    {
+      "id": 90,
+      "name": "Phobos / Deimos",
+      "cat": "moons",
+      "kind": "phobos",
+      "why": "name:phobos",
+      "fingerprint": "g0v1WiS4A3R6",
+      "interior": "ice",
+      "volatile": "H2O"
+    },
+    {
+      "id": 91,
+      "name": "TRAPPIST-1 e",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A5R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 92,
+      "name": "TRAPPIST-1 f",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A5R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 93,
+      "name": "TRAPPIST-1 g, h",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A5R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 94,
+      "name": "TRAPPIST-1 d",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v4WmS4A5R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 95,
+      "name": "TRAPPIST-1 b, c",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS5A5R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 96,
+      "name": "TRAPPIST-1 system",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A5R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 97,
+      "name": "Proxima Cen b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 98,
+      "name": "Proxima Cen d",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g6v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 99,
+      "name": "LHS 1140 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 100,
+      "name": "TOI-700 d",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A1R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 101,
+      "name": "TOI-700 e",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A1R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 102,
+      "name": "Teegarden b, c, d",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 103,
+      "name": "Ross 128 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 104,
+      "name": "GJ 273 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 105,
+      "name": "Wolf 1061 c / K2-3 d",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 106,
+      "name": "Gliese 12 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 107,
+      "name": "TOI-715 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v5WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 108,
+      "name": "LP 890-9 c",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 109,
+      "name": "GJ 357 d",
+      "cat": "temperate",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g8v8HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 110,
+      "name": "Kepler-186 f",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 111,
+      "name": "Kepler-442 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 112,
+      "name": "Kepler-452 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 113,
+      "name": "Kepler-1649 c",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 114,
+      "name": "Kepler-62 e, f",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g8v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 115,
+      "name": "Kepler-22 b",
+      "cat": "temperate",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g8v8HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 116,
+      "name": "Kepler-438 b, 1229 b",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g7v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 117,
+      "name": "tau Cet f",
+      "cat": "temperate",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g8v8HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 118,
+      "name": "Kapteyn c",
+      "cat": "temperate",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g8v8HfS3A8R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 119,
+      "name": "Barnard b–e",
+      "cat": "temperate",
+      "kind": "generic",
+      "why": "temperate rocky",
+      "fingerprint": "g6v6WmS4A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 120,
+      "name": "55 Cnc e",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g9v4RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 121,
+      "name": "K2-141 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g9v4RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 122,
+      "name": "CoRoT-7 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g9v4RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 123,
+      "name": "Kepler-10 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v4RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 124,
+      "name": "Kepler-78 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v1RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 125,
+      "name": "GJ 367 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v1RxS7A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 126,
+      "name": "LHS 3844 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v1RxS6A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 127,
+      "name": "GJ 1132 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v1RxS5A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 128,
+      "name": "GJ 486 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v4RxS6A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 129,
+      "name": "HD 219134 b / HD 3167 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v4RxS6A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 130,
+      "name": "K2-137 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g7v1RxS6A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 131,
+      "name": "Kepler-1520 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g5v1RxS7A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 132,
+      "name": "K2-22 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g5v1RxS7A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 133,
+      "name": "TOI-849 b",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g9v4RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 134,
+      "name": "GJ 9827 d",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g7v8RxS6A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 135,
+      "name": "LP 791-18 d",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g7v1RxS4A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 136,
+      "name": "Kepler-36 b, c",
+      "cat": "furnace",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v6RxS6A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 137,
+      "name": "51 Peg b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g6v9HfS7A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 138,
+      "name": "HD 209458 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g7v9HfS7A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 139,
+      "name": "HD 189733 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS7A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 140,
+      "name": "WASP-12 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g7v9RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 141,
+      "name": "WASP-76 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g7v9RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 142,
+      "name": "WASP-121 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g7v9RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 143,
+      "name": "KELT-9 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g8v9RxS9A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 144,
+      "name": "TOI-2109 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g9v9RxS9A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 145,
+      "name": "WASP-33 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g9v9RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 146,
+      "name": "WASP-19 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g8v9RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 147,
+      "name": "WASP-17 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g6v9RxS7A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 148,
+      "name": "TrES-2 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g8v9HfS7A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 149,
+      "name": "Kepler-7 b / HAT-P-7 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g6v9HfS7A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 150,
+      "name": "WASP-127 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g5v9HfS7A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 151,
+      "name": "KELT-1 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "teq/furnace",
+      "fingerprint": "g9v9RxS8A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 152,
+      "name": "GJ 436 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g8v8HfS6A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 153,
+      "name": "GJ 3470 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g7v9HfS6A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 154,
+      "name": "HAT-P-11 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g8v8HfS6A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 155,
+      "name": "LTT 9779 b",
+      "cat": "giant",
+      "kind": "magma",
+      "why": "teq/furnace",
+      "fingerprint": "g8v9RxS7A3R1",
+      "interior": "magma",
+      "volatile": "silicate"
+    },
+    {
+      "id": 156,
+      "name": "GJ 1214 b",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g7v8HfS5A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 157,
+      "name": "K2-18 b / TOI-270 d",
+      "cat": "giant",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g8v8HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 158,
+      "name": "HR 8799",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS4A0R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 159,
+      "name": "beta Pic b, c",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS4A0R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 160,
+      "name": "51 Eri b",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 161,
+      "name": "HIP 65426 b",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS2A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 162,
+      "name": "GJ 504 b / HD 106906 b",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS2A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 163,
+      "name": "AU Mic b",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g7v8HfS5A0R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 164,
+      "name": "V1298 Tau b / K2-33 b",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g7v9HfS6A0R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 166,
+      "name": "HD 80606 b / HD 20782 b / Kepler-1704 b",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 167,
+      "name": "Kepler-11 / Kepler-90",
+      "cat": "arch",
+      "kind": "gas",
+      "why": "sub-Neptune",
+      "fingerprint": "g7v8HfS6A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 168,
+      "name": "Kepler-444 / Kepler-1625 b",
+      "cat": "arch",
+      "kind": "airless",
+      "why": "airless",
+      "fingerprint": "g5v1WsS5A8R7",
+      "interior": "stagnant",
+      "volatile": "H2O"
+    },
+    {
+      "id": 169,
+      "name": "Kepler-16 b",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g8v9HfS3A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 170,
+      "name": "Kepler-47 c, Kepler-1647 b, TOI-1338 b",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g7v9HfS4A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 171,
+      "name": "PSO J318.5-22",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 172,
+      "name": "WISE 0855-0714",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 173,
+      "name": "SIMP J0136 / CFBDSIR 2149",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 174,
+      "name": "OGLE-2016-BLG-1928",
+      "cat": "dark",
+      "kind": "airless",
+      "why": "airless",
+      "fingerprint": "g7v1NmS0A3R6",
+      "interior": "mobile",
+      "volatile": "N2"
+    },
+    {
+      "id": 175,
+      "name": "MOA-2011-BLG-262L b",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 176,
+      "name": "2M1207 b",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 177,
+      "name": "Luhman 16 AB",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 178,
+      "name": "OTS 44",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 179,
+      "name": "WD 1856+534 b",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS3A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 180,
+      "name": "WD J0914+1914",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g8v8HfS5A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 181,
+      "name": "PSR B1257+12 b, c, d",
+      "cat": "dark",
+      "kind": "airless",
+      "why": "airless",
+      "fingerprint": "g8v1WmS0A3R5",
+      "interior": "mobile",
+      "volatile": "H2O"
+    },
+    {
+      "id": 182,
+      "name": "PSR B1620-26 b",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "giant",
+      "fingerprint": "g9v9HfS0A9R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 183,
+      "name": "PSR J1719-1438 b / KOI-55",
+      "cat": "dark",
+      "kind": "gas",
+      "why": "Neptune",
+      "fingerprint": "g9v9HfS0A3R0",
+      "interior": "fluid",
+      "volatile": "H2"
+    },
+    {
+      "id": 184,
+      "name": "OGLE-2005-BLG-390L b",
+      "cat": "dark",
+      "kind": "generic",
+      "why": "unclassified",
+      "fingerprint": "g8v6NmS0A3R5",
+      "interior": "mobile",
+      "volatile": "N2"
+    }
+  ]
+}

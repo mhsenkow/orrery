@@ -507,7 +507,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <a href="worlds.html">Worlds</a> · <a href="evolution.html">Evolution</a> ·
   <a href="godgame.html">God layer</a> · <a href="next.html">Next 200</a> ·
   <a href="geology.html">Geology</a> · <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> · <a href="currents.html">Currents</a> ·
-  <a href="realism.html">Realism</a> · <a href="../vr/">Prototype</a></p>
+  <a href="realism.html">Realism</a> · <a href="life.html">Life</a> · <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>200<small>13 categories</small></dd></div>
     <div><dt>Split</dt><dd>${count((x) => TIDE_CATS.has(x.c))}/${count((x) => !TIDE_CATS.has(x.c))}<small>tides · weather</small></dd></div>

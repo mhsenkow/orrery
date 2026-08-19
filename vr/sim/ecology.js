@@ -3,7 +3,9 @@
 
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
-import { kleiberDensity, TRAITS, nodeOf } from './evolve.js';
+import { kleiberDensity, TRAITS, nodeOf, removeLiving } from './evolve.js';
+import { shannonDiversity } from './lifeGuide.js';
+import { usesWhittakerCover } from './planetKind.js';
 
 export const BIOMES = [
   'tundra', 'boreal', 'tempDeciduous', 'tempRainforest', 'grassland',
@@ -77,26 +79,62 @@ export function computeUpwelling(W) {
 
 /** Whittaker classification. Item 73. */
 export function classifyBiome(t, m, ice, isSea, extras = {}) {
-  if (ice > 0.55) return 'ice';
+  return biomeMembership(t, m, ice, isSea, extras)[0].id;
+}
+
+const LAND_CENTRES = [
+  { id: 'tundra', tC: -12, ppt: 280, ts: 14, ps: 420 },
+  { id: 'boreal', tC: 0, ppt: 650, ts: 8, ps: 480 },
+  { id: 'tempDeciduous', tC: 10, ppt: 950, ts: 8, ps: 450 },
+  { id: 'tempRainforest', tC: 9, ppt: 1900, ts: 8, ps: 700 },
+  { id: 'grassland', tC: 12, ppt: 420, ts: 10, ps: 280 },
+  { id: 'desert', tC: 22, ppt: 90, ts: 14, ps: 180 },
+  { id: 'savanna', tC: 24, ppt: 520, ts: 8, ps: 280 },
+  { id: 'tropSeasonal', tC: 25, ppt: 1400, ts: 7, ps: 500 },
+  { id: 'tropRainforest', tC: 26, ppt: 2500, ts: 7, ps: 900 },
+];
+
+/** Soft membership in Whittaker space. Weights sum to 1. */
+export function biomeMembership(t, m, ice, isSea, extras = {}) {
   if (isSea) {
-    if (extras.vent) return 'vent';
-    if (extras.reef > 0.2) return 'reef';
-    if (extras.upwelling > 0.35) return 'upwelling';
-    if (extras.depth > 0.25) return 'deep';
-    return 'gyre';
+    const scores = [];
+    const reef = extras.reef || 0;
+    const up = extras.upwelling || 0;
+    const depth = extras.depth || 0;
+    if (extras.vent) scores.push({ id: 'vent', s: 4 });
+    if (reef > 0.05) scores.push({ id: 'reef', s: reef * 8 });
+    if (up > 0.12) scores.push({ id: 'upwelling', s: up * 6 });
+    scores.push({ id: 'deep', s: Math.max(0.15, depth * 4) });
+    scores.push({ id: 'gyre', s: 1.1 });
+    return softmaxTop(scores, ice);
   }
   const tC = (t - 0.5) * 80 + 15;
   const ppt = m * 2000;
-  if (tC < -5) return 'tundra';
-  if (tC < 5 && ppt > 400) return 'boreal';
-  if (tC < 5) return 'tundra';
-  if (ppt < 250) return 'desert';
-  if (ppt < 600 && tC > 18) return 'savanna';
-  if (ppt < 600) return 'grassland';
-  if (tC > 20 && ppt > 2000) return 'tropRainforest';
-  if (tC > 20 && ppt > 1000) return 'tropSeasonal';
-  if (ppt > 1500) return 'tempRainforest';
-  return 'tempDeciduous';
+  const scores = LAND_CENTRES.map((row) => {
+    const dt = (tC - row.tC) / row.ts;
+    const dp = (ppt - row.ppt) / row.ps;
+    return { id: row.id, s: Math.exp(-0.5 * (dt * dt + dp * dp)) };
+  });
+  for (const s of scores) s.s = Math.pow(Math.max(s.s, 1e-12), 1.8);
+  return softmaxTop(scores, ice);
+}
+
+function softmaxTop(scores, ice) {
+  if (ice > 0.25) scores.push({ id: 'ice', s: Math.pow(clamp((ice - 0.25) / 0.45, 0, 1), 1.4) * 6 });
+  let sum = 0;
+  for (const s of scores) sum += s.s;
+  if (!(sum > 0)) return [{ id: scores[0]?.id || 'gyre', w: 1 }];
+  scores.sort((a, b) => b.s - a.s);
+  const out = [];
+  let wsum = 0;
+  for (let i = 0; i < Math.min(3, scores.length); i++) {
+    const w = scores[i].s / sum;
+    if (w < 0.04 && i > 0) break;
+    out.push({ id: scores[i].id, w });
+    wsum += w;
+  }
+  for (const o of out) o.w /= wsum || 1;
+  return out;
 }
 
 export function ecologyTick(W, chronLog) {
@@ -106,25 +144,34 @@ export function ecologyTick(W, chronLog) {
   nppField(W);
 
   if (!W.biome) W.biome = new Uint8Array(NC);
+  if (!W.biome2 || W.biome2.length !== NC) W.biome2 = new Uint8Array(NC);
+  if (!W.biomeMix || W.biomeMix.length !== NC) W.biomeMix = new Float32Array(NC);
   let landLife = 0, landN = 0;
   const counts = Object.create(null);
+  const whittaker = usesWhittakerCover(W._planetKind, W);
 
   for (let c = 0; c < NC; c++) {
     const isSea = W.h[c] < W.seaLevel;
-    const b = classifyBiome(W.temp[c], W.moist[c], W.ice[c], isSea, {
-      reef: W.reef[c],
-      upwelling: W.upwell?.[c] || W.upwelling?.[c] || 0,
-      depth: isSea ? W.seaLevel - W.h[c] : 0,
-      vent: W.bound[c] === 0 && isSea,
-    });
-    W.biome[c] = BIOMES.indexOf(b);
-    counts[b] = (counts[b] || 0) + 1;
-
-    // Altitudinal zonation: lapse cools high land. Item 82 — already in atmo;
-    // reclassify peaks toward tundra/boreal when elev high & moist.
-    if (!isSea && W.h[c] > W.seaLevel + 0.35 && W.temp[c] < 0.4) {
-      W.biome[c] = BIOMES.indexOf(W.moist[c] > 0.25 ? 'boreal' : 'tundra');
+    let mem;
+    if (whittaker) {
+      mem = biomeMembership(W.temp[c], W.moist[c], W.ice[c], isSea, {
+        reef: W.reef[c],
+        upwelling: W.upwell?.[c] || W.upwelling?.[c] || 0,
+        depth: isSea ? W.seaLevel - W.h[c] : 0,
+        vent: W.bound[c] === 0 && isSea,
+      });
+      if (!isSea && W.h[c] > W.seaLevel + 0.35 && W.temp[c] < 0.4) {
+        const alpine = W.moist[c] > 0.25 ? 'boreal' : 'tundra';
+        mem = [{ id: alpine, w: 0.7 }, { id: mem[0].id, w: 0.3 }];
+      }
+    } else {
+      mem = [{ id: W.ice[c] > 0.55 ? 'ice' : (isSea ? 'deep' : 'desert'), w: 1 }];
     }
+    const b = mem[0].id;
+    W.biome[c] = BIOMES.indexOf(b);
+    W.biome2[c] = BIOMES.indexOf(mem[1]?.id || b);
+    W.biomeMix[c] = mem[0].w;
+    counts[b] = (counts[b] || 0) + 1;
 
     if (!isSea) {
       landN++;
@@ -132,15 +179,23 @@ export function ecologyTick(W, chronLog) {
     }
 
     // Ecosystem engineers. Item 70.
-    if (b === 'reef' && W.life[c] > 0.2) {
+    if (whittaker && b === 'reef' && W.life[c] > 0.2) {
       W.h[c] = Math.min(W.seaLevel - 0.01, W.h[c] + 0.00002);
     }
-    if (!isSea && W.life[c] > 0.5 && W.transitions?.landPlants) {
+    if (whittaker && !isSea && W.life[c] > 0.5 && W.transitions?.landPlants) {
       W.soil[c] = clamp(W.soil[c] + 0.002, 0, 1);
     }
   }
   W.landLifeFrac = landN ? landLife / landN : 0;
   W.biomeCounts = counts;
+  let ecoN = 0;
+  if (landN) {
+    for (let c = 0; c < NC; c++) {
+      if (W.h[c] < W.seaLevel) continue;
+      if ((W.biomeMix[c] || 1) < 0.7) ecoN++;
+    }
+  }
+  W.ecotoneFrac = landN ? ecoN / landN : 0;
 
   // Trophic pyramid from transfer efficiency ~10%. Item 60.
   const nppMean = meanNpp(W);
@@ -151,9 +206,16 @@ export function ecologyTick(W, chronLog) {
   W.trophic.decomp = nppMean * 0.3;
   W.herbivore = clamp(W.trophic.herb * 2, 0.01, 1);
   W.carnivore = clamp(W.trophic.carn * 4, 0.01, 0.8);
+  W.biosphereWatts = nppMean * 1.2e14; // order-of-magnitude Earth NPP ~ 100 TW. provenance: fitted scale
 
   // Food-web link sketch from lineages. Item 61.
-  updateFoodWeb(W);
+  updateFoodWeb(W, chronLog);
+  W.shannon = shannonDiversity(W);
+  if (!W.detritus || W.detritus.length !== NC) W.detritus = new Float32Array(NC);
+  for (let c = 0; c < NC; c++) {
+    const rain = (W.life[c] || 0) * 0.012 + (W.npp?.[c] || 0) * 0.008;
+    W.detritus[c] = clamp((W.detritus[c] || 0) * 0.97 + rain, 0, 1);
+  }
 
   // Biome bistability forest/savanna. Item 85.
   for (let c = 0; c < NC; c++) {
@@ -203,26 +265,80 @@ function meanNpp(W) {
   return aSum > 0 ? s / aSum : 0;
 }
 
-function updateFoodWeb(W) {
+export function updateFoodWeb(W, chronLog) {
   W.foodWeb = W.foodWeb || { links: [] };
   if (!W.tree?.living?.length) return;
   const nodes = W.tree.living.map((id) => nodeOf(W.tree, id)).filter(Boolean);
   const links = [];
+  for (const n of nodes) {
+    n.diet = [];
+    n.preyAvail = 0;
+    n.predation = 0;
+    n.compete = 0;
+  }
   for (const a of nodes) {
+    const ta = a.traits[TRAITS.trophic];
+    const ma = a.traits[TRAITS.bodyMass];
+    const prey = [];
     for (const b of nodes) {
       if (a.id === b.id) continue;
-      const ta = a.traits[TRAITS.trophic];
       const tb = b.traits[TRAITS.trophic];
-      const ma = a.traits[TRAITS.bodyMass];
       const mb = b.traits[TRAITS.bodyMass];
-      // Predator larger than prey, higher trophic
-      if (ta > tb + 0.15 && ma > mb - 0.1) {
-        const wgt = 0.1 * (1 - Math.abs(ma - mb - 0.2));
-        if (wgt > 0.02) links.push({ pred: a.id, prey: b.id, w: wgt });
+      const chirA = a.genome?.biochem?.chirality;
+      const chirB = b.genome?.biochem?.chirality;
+      if (chirA && chirB && chirA !== chirB && chirA !== 'racemic' && chirB !== 'racemic') continue;
+      if (Math.abs(ta - tb) < 0.08) {
+        a.compete += 0.04 * Math.min(1, (b.pop || 1) / Math.max(1, a.pop || 1));
+      }
+      if (ta > tb + 0.12 && ma > mb - 0.15 && ma < mb + 0.55) {
+        const wgt = 0.12 * (1 - Math.abs(ma - mb - 0.2));
+        if (wgt > 0.02) {
+          prey.push({ id: b.id, w: wgt });
+          links.push({ pred: a.id, prey: b.id, w: wgt });
+        }
       }
     }
+    prey.sort((x, y) => y.w - x.w);
+    a.diet = prey.slice(0, 3).map((p) => p.id);
+    a.preyAvail = prey.slice(0, 3).reduce((s, p) => s + p.w, 0);
+  }
+  for (const L of links) {
+    const prey = nodeOf(W.tree, L.prey);
+    if (prey) prey.predation = (prey.predation || 0) + L.w;
   }
   W.foodWeb.links = links.slice(0, 200);
+  // Lotka–Volterra on census: predators eat, prey shrink. provenance: fitted
+  const dt = Math.min(1, (W.dtYr || 200) / 1e6);
+  for (const n of nodes) {
+    const K = Math.max(10, (n.pop || 1) * kleiberDensity(n.traits[TRAITS.bodyMass]) * 50);
+    const N = n.censusPop || n.pop || 1;
+    const grow = 0.08 * dt * N * (1 - N / K);
+    const eaten = (n.predation || 0) * 0.15 * dt * N;
+    const fed = (n.preyAvail || 0) * 0.08 * dt * N;
+    n.censusPop = Math.max(0, N + grow - eaten + fed);
+  }
+  W.redQueen = nodes.some((n) => (n.predation || 0) > 0.05 || (n.preyAvail || 0) > 0.05);
+
+  // Trophic collapse: a lineage eaten below minimum viable census is gone.
+  // Cheap — already walked living; skip LUCA so the tree cannot be emptied.
+  const lucaId = W.lucaId;
+  for (const n of nodes) {
+    if (n.id === lucaId || n.death != null) continue;
+    const mvp = 2;
+    const collapsed = n.censusPop < mvp && (n.pop || 0) <= 2 && (n.predation || 0) > 0.08;
+    if (collapsed) {
+      n._webDebt = (n._webDebt || 0) + dt;
+      if (n._webDebt > 1) {
+        n.death = W.ageYr;
+        n.extReason = 'trophic collapse';
+        removeLiving(W.tree, n.id);
+        W.tree.extinctions.push({ id: n.id, name: n.name, t: W.ageYr, reason: 'foodweb' });
+        if (chronLog) chronLog(W.year, 'extinction', n.cells?.[0] ?? 0, 1, `Eaten out: ${n.name}`);
+      }
+    } else {
+      n._webDebt = 0;
+    }
+  }
 }
 
 function scoreHabitability(W) {

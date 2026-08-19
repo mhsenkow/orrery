@@ -1,5 +1,7 @@
 /** Rich instrument visuals — charts, towers, spectra as SVG. */
 
+import { DIR } from '../sphere.js';
+
 const GUILD_SHORT = {
   fermenter: 'ferment',
   methanogen: 'methano',
@@ -250,10 +252,13 @@ export function coreStrataSVG(layers, w = 280, h = 110) {
   const lh = (h - 8) / n;
   let y = 4;
   const blocks = layers.map((l) => {
-    const col = colors[l.name] || '#6a7080';
+    const col = Array.isArray(l.rgb)
+      ? `rgb(${l.rgb[0]},${l.rgb[1]},${l.rgb[2]})`
+      : (colors[l.name] || '#6a7080');
+    const label = l.note ? `${l.name} · ${l.note}` : l.name;
     const el = `<g>
       <rect x="8" y="${y}" width="${w - 16}" height="${lh - 2}" rx="3" fill="${col}" fill-opacity="0.85"/>
-      <text x="14" y="${y + lh * 0.62}" fill="#f0f4fa" font-size="8" font-family="ui-monospace,monospace">${l.name}</text>
+      <text x="14" y="${y + lh * 0.62}" fill="#f0f4fa" font-size="8" font-family="ui-monospace,monospace">${label}</text>
     </g>`;
     y += lh;
     return el;
@@ -366,6 +371,55 @@ export function synopticChartSVG(W, w = 300, h = 160) {
     <line x1="4" y1="${itczY.toFixed(1)}" x2="${w - 4}" y2="${itczY.toFixed(1)}" stroke="#f0c060" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.9"/>
     <text x="${w - 36}" y="${(itczY - 3).toFixed(1)}" fill="#f0c060" font-size="8">ITCZ</text>
     ${barbs}
+  </svg>`;
+}
+
+/** 18-bin zonal-mean temperature, zonal wind and vapour vs latitude. */
+export function zonalMeanSVG(W, w = 292, h = 108) {
+  if (!W?.temp) {
+    return `<svg class="chart" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+      <text x="10" y="${h / 2}" fill="#5a6a82" font-size="11">no fields yet</text></svg>`;
+  }
+  const n = 18;
+  const tS = new Float64Array(n), uS = new Float64Array(n), vS = new Float64Array(n), cS = new Float64Array(n);
+  const NC = W.temp.length;
+  for (let c = 0; c < NC; c++) {
+    const b = Math.max(0, Math.min(n - 1, (((DIR[c * 3 + 1] + 1) * 0.5) * n) | 0));
+    tS[b] += W.temp[c];
+    uS[b] += W.windU?.[c] || 0;
+    vS[b] += W.vapour?.[c] || W.moist?.[c] || 0;
+    cS[b] += 1;
+  }
+  const t = [], u = [], vap = [];
+  for (let i = 0; i < n; i++) {
+    const d = cS[i] || 1;
+    t.push(tS[i] / d);
+    u.push(uS[i] / d);
+    vap.push(vS[i] / d);
+  }
+  const padL = 28, padR = 8, padT = 16, padB = 14;
+  const iw = w - padL - padR, ih = h - padT - padB;
+  const line = (arr, lo, hi, color) => {
+    const span = hi - lo || 1;
+    const pts = arr.map((v, i) => {
+      const x = padL + (i / (n - 1)) * iw;
+      const y = padT + ih - ((v - lo) / span) * ih;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<polyline fill="none" stroke="${color}" stroke-width="1.6" points="${pts}"/>`;
+  };
+  const tMin = Math.min(...t), tMax = Math.max(...t);
+  const uAbs = Math.max(0.2, ...u.map(Math.abs));
+  const vMax = Math.max(0.01, ...vap);
+  return `<svg class="chart" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <rect width="${w}" height="${h}" fill="#0c121c"/>
+    <text x="8" y="11" fill="#8aa0c0" font-size="9">zonal mean · T · u · vapour</text>
+    ${line(t, tMin, tMax, '#e4b86a')}
+    ${line(u.map((x) => (x + uAbs) / (2 * uAbs)), 0, 1, '#6ea0ff')}
+    ${line(vap.map((x) => x / vMax), 0, 1, '#6fd6a4')}
+    <text x="${padL}" y="${h - 3}" fill="#5a6a82" font-size="8">S</text>
+    <text x="${w / 2}" y="${h - 3}" fill="#5a6a82" font-size="8">eq</text>
+    <text x="${w - padR}" y="${h - 3}" fill="#5a6a82" font-size="8" text-anchor="end">N</text>
   </svg>`;
 }
 

@@ -4,13 +4,14 @@
 
 import { clamp } from '../math.js';
 import { NC, NBR, AREA } from '../sphere.js';
+import { isGasKind } from './planetKind.js';
 
 const DIV = 0;
 
 export function planetGeoTick(W, log) {
   if (W._canvasMode) return;
   const kind = W._planetKind;
-  if (!kind || kind === 'earth' || kind === 'daisy' || kind === 'gas') {
+  if (!kind || kind === 'earth' || kind === 'daisy' || isGasKind(kind)) {
     hydrothermalTick(W);
     return;
   }

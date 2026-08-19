@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "why": "What sits on the substrate. Grain size is a field; these rows hold the laboratory / spacecraft albedos that field lerps between. tag is measured / fitted / invented for the row as a whole.",
+  "tags": ["measured", "fitted", "invented"],
+  "kinds": [
+    {
+      "id": "none",
+      "label": "bare",
+      "albedoFine": 0.12,
+      "albedoCoarse": 0.12,
+      "rgb": [48, 46, 52],
+      "tag": "fitted",
+      "why": "No cover. The substrate row shows through.",
+      "cite": "row albedo from substrates.json"
+    },
+    {
+      "id": "frost",
+      "label": "frost",
+      "albedoFine": 0.90,
+      "albedoCoarse": 0.38,
+      "rgb": [230, 240, 252],
+      "tag": "measured",
+      "why": "Fresh fine frost is near 0.9; coarsened old ice can drop below 0.4. Grain is the difference between Enceladus and dirty snow.",
+      "cite": "Wiscombe and Warren 1980; Warren 1982 snow albedo"
+    },
+    {
+      "id": "dust",
+      "label": "dust",
+      "albedoFine": 0.25,
+      "albedoCoarse": 0.18,
+      "rgb": [186, 142, 96],
+      "tag": "fitted",
+      "why": "Settled lofted dust. Mars-coloured; not a dust budget.",
+      "cite": "Wolff et al. Mars dust optical properties, fitted to 0.25"
+    },
+    {
+      "id": "lag",
+      "label": "lag",
+      "albedoFine": 0.12,
+      "albedoCoarse": 0.08,
+      "rgb": [92, 74, 58],
+      "tag": "fitted",
+      "why": "Involatile residue left when frost retreats. Darkens the cell until new frost buries it.",
+      "cite": "Cometary lag crust analogue; albedo invented"
+    },
+    {
+      "id": "tholin",
+      "label": "tholin",
+      "albedoFine": 0.05,
+      "albedoCoarse": 0.04,
+      "rgb": [150, 90, 50],
+      "tag": "measured",
+      "why": "Photochemical goo. Titan dunes, Pluto Cthulhu, Iapetus Cassini Regio.",
+      "cite": "Cruikshank et al. tholin optical constants; geometric albedo ~0.05"
+    },
+    {
+      "id": "sulfur",
+      "label": "sulfur",
+      "albedoFine": 0.55,
+      "albedoCoarse": 0.35,
+      "rgb": [230, 210, 70],
+      "tag": "fitted",
+      "why": "Io's yellow. Overlay rgb shifts with cell T (allotropes); the photograph globe stays kind-keyed.",
+      "cite": "Nash and Fanale 1977 sulfur allotropes on Io"
+    },
+    {
+      "id": "evaporite",
+      "label": "evaporite",
+      "albedoFine": 0.72,
+      "albedoCoarse": 0.55,
+      "rgb": [220, 214, 200],
+      "tag": "measured",
+      "why": "Ceres Occator bright spots are sodium carbonate. A bright salt with a subsurface source.",
+      "cite": "De Sanctis et al. 2016 Occator carbonates"
+    },
+    {
+      "id": "regolith",
+      "label": "regolith",
+      "albedoFine": 0.18,
+      "albedoCoarse": 0.10,
+      "rgb": [140, 132, 124],
+      "tag": "fitted",
+      "why": "Gardened airless soil. Space weathering darkens it with cell age.",
+      "cite": "Pieters and Noble 2016 space weathering"
+    },
+    {
+      "id": "ray",
+      "label": "ejecta",
+      "albedoFine": 0.40,
+      "albedoCoarse": 0.14,
+      "rgb": [210, 206, 198],
+      "tag": "fitted",
+      "why": "Fresh crater rays are bright fines on top of the surface. They fade by space weathering, not by topography.",
+      "cite": "Lunar ray albedo; fade is fitted"
+    },
+    {
+      "id": "mat",
+      "label": "microbial mat",
+      "albedoFine": 0.08,
+      "albedoCoarse": 0.08,
+      "rgb": [70, 90, 60],
+      "tag": "invented",
+      "why": "Pigmented cover before plants. Two billion years of Earth looked like this; non-Whittaker worlds with life use it.",
+      "cite": "invented; no Solar System analogue on the globe"
+    },
+    {
+      "id": "biome",
+      "label": "vegetation",
+      "albedoFine": 0.15,
+      "albedoCoarse": 0.12,
+      "rgb": [70, 140, 80],
+      "tag": "fitted",
+      "why": "Whittaker plant cover. One case of the general cover model, not a separate engine.",
+      "cite": "Earth canopy albedo ~0.15, fitted"
+    }
+  ]
+}

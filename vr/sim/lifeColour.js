@@ -4,6 +4,8 @@
 import { GUILDS } from './redox.js';
 import { LIFE_CLASSES } from './bio.js';
 import { BIOMES } from './ecology.js';
+import { usesWhittakerCover } from './planetKind.js';
+import { surfaceKeyAt, planetCoverEntries } from './planetLook.js';
 
 /** Stable clade tint from lineage id (golden-ratio hash). */
 export function cladeRGB(id) {
@@ -156,50 +158,242 @@ export function lifeLabel(W, c) {
   return cls || guild || 'life';
 }
 
-export function legendEntries() {
+const GUILD_SHORT = {
+  fermenter: 'ferment', methanogen: 'methane', sulfateReducer: 'SO₄ red',
+  ironReducer: 'Fe red', anammox: 'anammox', denitrifier: 'denitr',
+  methanotroph: 'CH₄ ox', ironOxidizer: 'Fe ox', photoferrotroph: 'photoFe',
+  purpleSulfur: 'purple', greenSulfur: 'green S', cyanobacteria: 'cyano',
+  aerobe: 'aerobe', nFixer: 'N-fix', nitrifier: 'nitrif',
+  decomposer: 'decomp', chemolithotroph: 'litho',
+};
+
+const MAT_GUILDS = new Set([
+  'cyanobacteria', 'purpleSulfur', 'greenSulfur', 'photoferrotroph',
+  'chemolithotroph', 'methanogen', 'ironOxidizer',
+]);
+
+function chem(s) {
+  return String(s)
+    .replace(/orgC/g, 'org C')
+    .replace(/H2O/g, 'H₂O').replace(/H2S/g, 'H₂S').replace(/H2/g, 'H₂')
+    .replace(/CO2/g, 'CO₂').replace(/O2/g, 'O₂').replace(/CH4/g, 'CH₄')
+    .replace(/SO4/g, 'SO₄').replace(/NO3/g, 'NO₃').replace(/NO2/g, 'NO₂')
+    .replace(/NH4/g, 'NH₄').replace(/N2/g, 'N₂')
+    .replace(/Fe3/g, 'Fe³⁺').replace(/Fe2/g, 'Fe²⁺');
+}
+
+function guildWhy(g) {
+  const pair = g.acceptor === 'none' ? `${chem(g.donor)} (fermentation)` : `${chem(g.donor)} → ${chem(g.acceptor)}`;
+  const extra = g.oxygenic ? ' Oxygenic — free O₂.' : g.vent ? ' Vent specialist.' : g.nFix ? ' Pays the N₂ bill.' : g.makes ? ` Makes ${chem(g.makes)}.` : '';
+  return `${pair}.${extra} Same palette as Seed guild.`;
+}
+
+const SEA_RGB = { shallows: [18, 48, 68], shelf: [10, 28, 48], ocean: [26, 74, 108] };
+const GROUND_RGB = {
+  tundra: [142, 148, 140], boreal: [22, 40, 32],
+  tropRainforest: [14, 36, 22], vent: [72, 58, 64],
+  upwelling: [12, 48, 68], gyre: [10, 32, 58], deep: [6, 14, 24],
+};
+
+function coverEntries(W) {
+  const kind = W?._planetKind;
+  if (!usesWhittakerCover(kind, W)) return planetCoverEntries(kind);
+  return earthCoverEntries();
+}
+
+function earthCoverEntries() {
   return [
-    { id: 'canopy', label: 'canopy', rgb: CLASS_RGB[2] },
-    { id: 'grass', label: 'grass', rgb: BIOME_LIFE.grassland },
-    { id: 'cyanobacteria', label: 'cyano', rgb: GUILD_RGB.cyanobacteria },
-    { id: 'purpleSulfur', label: 'purple', rgb: GUILD_RGB.purpleSulfur },
-    { id: 'reef', label: 'reef', rgb: [30, 190, 170] },
-    { id: 'ocean', label: 'ocean', rgb: [26, 74, 108] },
-    { id: 'barren', label: 'barren', rgb: [106, 100, 88] },
-    { id: 'savanna', label: 'savanna', rgb: BIOME_LIFE.savanna || [130, 140, 45] },
-    { id: 'desert', label: 'desert', rgb: BIOME_LIFE.desert },
-    { id: 'ice', label: 'ice', rgb: [216, 228, 240] },
-    { id: 'fauna', label: 'fauna', rgb: CLASS_RGB[7] },
-    { id: 'settler', label: 'settler', rgb: KIND_RGB[5] },
+    { id: 'canopy', label: 'canopy', rgb: CLASS_RGB[2],
+      tip: 'Closed plant cover',
+      why: 'Forest or any land cell whose biomass reads as a canopy rather than grass. Darker albedo.' },
+    { id: 'rain', label: 'rain', rgb: BIOME_LIFE.tropRainforest,
+      tip: 'Rainforest',
+      why: 'Closed wet canopy — tropical or temperate rainforest. Darker than deciduous cover.' },
+    { id: 'boreal', label: 'boreal', rgb: BIOME_LIFE.boreal,
+      tip: 'Boreal',
+      why: 'Cold-forest cover. Needle canopy, dark, slow.' },
+    { id: 'tundra', label: 'tundra', rgb: GROUND_RGB.tundra,
+      tip: 'Tundra',
+      why: 'Low plant cover above the tree line. Not ice — just too cold for a canopy.' },
+    { id: 'grass', label: 'grass', rgb: BIOME_LIFE.grassland,
+      tip: 'Grassland',
+      why: 'Open photosynthetic cover. Wet enough for plants, not a closed canopy.' },
+    { id: 'savanna', label: 'savanna', rgb: BIOME_LIFE.savanna || [130, 140, 45],
+      tip: 'Savanna',
+      why: 'Grass–tree bistability. Wet enough for trees, dry enough that grass can hold.' },
+    { id: 'desert', label: 'desert', rgb: BIOME_LIFE.desert,
+      tip: 'Desert',
+      why: 'Moisture below the plant gate. Sand and rock — not empty of all life.' },
+    { id: 'barren', label: 'barren', rgb: [106, 100, 88],
+      tip: 'Barren rock / soil',
+      why: 'Land with too little life to paint. Rock, soil, recently sterilised ground.' },
+    { id: 'ice', label: 'ice', rgb: [216, 228, 240],
+      tip: 'Ice / snow',
+      why: 'Ice or snow cover above ~0.45. Albedo, not habitat.' },
+    { id: 'shallows', label: 'shallows', rgb: SEA_RGB.shallows,
+      tip: 'Shallows',
+      why: 'Lit water over a shelf. The square is the photic sea, not the abyss.' },
+    { id: 'shelf', label: 'shelf', rgb: SEA_RGB.shelf,
+      tip: 'Shelf',
+      why: 'Deeper than the shallows, still a shelf. Light falling, not gone.' },
+    { id: 'ocean', label: 'ocean', rgb: SEA_RGB.ocean,
+      tip: 'Open ocean',
+      why: 'Open water without a named mat. The square is the sea surface.' },
+    { id: 'deep', label: 'deep', rgb: GROUND_RGB.deep,
+      tip: 'Deep ocean',
+      why: 'Aphotic water. If anything lives here it is not painted as a bloom.' },
+    { id: 'gyre', label: 'gyre', rgb: GROUND_RGB.gyre,
+      tip: 'Gyre',
+      why: 'Ocean desert — the spinning basin where nutrients do not return.' },
+    { id: 'upwelling', label: 'upwell', rgb: GROUND_RGB.upwelling,
+      tip: 'Upwelling',
+      why: 'Nutrient-rich water rising. Productive coasts, not the same as a reef.' },
+    { id: 'vent', label: 'vent', rgb: GROUND_RGB.vent,
+      tip: 'Vent field',
+      why: 'Hydrothermal heat. Chemolithotrophs live here; the square is the chimney, not the biome around it.' },
+    { id: 'reef', label: 'reef', rgb: [30, 190, 170],
+      tip: 'Reef',
+      why: 'Shallow photic carbonate builders. Warm, lit, not too deep.' },
+    { id: 'fauna', label: 'fauna', rgb: CLASS_RGB[7],
+      tip: 'Fauna',
+      why: 'Macroscopic animals on land. The square follows that lineage’s own body, not a planet-wide ladder.' },
+    { id: 'settler', label: 'settler', rgb: KIND_RGB[5],
+      tip: 'Settlements',
+      why: 'Built land. Cities and farms that raise the surface above the cover beneath.' },
+  ];
+}
+
+function guildEntries() {
+  return GUILDS.map((g) => ({
+    id: g.id,
+    label: GUILD_SHORT[g.id] || g.id.slice(0, 8),
+    rgb: g.color,
+    tip: g.id.replace(/([A-Z])/g, ' $1').replace(/^./, (c) => c.toUpperCase()),
+    why: guildWhy(g),
+  }));
+}
+
+export function legendEntries(W) {
+  return coverEntries(W).concat(guildEntries());
+}
+
+export function legendMarks() {
+  return [
+    { id: 'focus', label: 'focus', rgb: [232, 200, 120], swatch: 'frame',
+      tip: 'Gold frame on the watched cell',
+      why: 'Gold inner frame. The cell this patch is looking at — the crosshair, not a biome.' },
+    { id: 'hole', label: 'corner hole', rgb: [8, 10, 16], swatch: 'hole',
+      tip: 'Cube-sphere corner the unwrap cannot fill',
+      why: 'Dark square with a tan edge. A cube-sphere corner the flat unwrap cannot fill. Not ocean — empty.' },
+    { id: 'daisyBlack', label: 'black daisy', rgb: KIND_RGB[12],
+      tip: 'Black daisies',
+      why: 'Daisyworld. Dark albedo, warms the cell. A tutorial metabolism, not a guild.' },
+    { id: 'daisyWhite', label: 'white daisy', rgb: KIND_RGB[13],
+      tip: 'White daisies',
+      why: 'Daisyworld. Light albedo, cools the cell. The pair is the lesson.' },
+    { id: 'stromatolite', label: 'strom', rgb: [110, 130, 90],
+      tip: 'Stromatolites',
+      why: 'Layered microbial mounds stamped on the square. A structure, not a cover class.' },
+  ];
+}
+
+function bodyEntries() {
+  return [
+    { id: 'bodies', label: 'bodies', rgb: KIND_RGB[2], swatch: 'dot',
+      tip: 'Open morphospace',
+      why: 'Sprites on the square are genomes from the open morphospace — symmetry, organs, receptor bands — not sixteen stamps. A pentaradial body is five of whatever it has. 1.6×10²⁸ distinguishable plans; this planet visits a handful.' },
+    { id: 'pigmentRetinal', label: 'retinal', rgb: [180, 50, 140],
+      tip: 'Retinal pigment',
+      why: 'Planet-wide purple. Bacteriorhodopsin / retinal, not chlorophyll. An Archean ocean can be this colour.' },
+    { id: 'pigmentBchl', label: 'BChl', rgb: [120, 45, 110],
+      tip: 'Bacteriochlorophyll',
+      why: 'Anoxygenic green/purple. The phototrophs that do not split water.' },
+    { id: 'pigmentChla', label: 'Chl a', rgb: [30, 120, 70],
+      tip: 'Chlorophyll a',
+      why: 'Oxygenic green. The pigment of the guild that invents free O₂.' },
+  ];
+}
+
+/** Full map-square glossary — cover, the redox tower, grammar bodies, marks. */
+export function legendGlossary(W) {
+  const kind = W?._planetKind;
+  const alien = !usesWhittakerCover(kind, W);
+  return [
+    {
+      id: 'cover', title: alien ? 'Surface' : 'Cover', highlight: true,
+      blurb: alien
+        ? `This world’s own ground — not Whittaker biomes. ${kind} squares are geology and ices, the same paint the globe uses.`
+        : 'The square fill: ice, rock, water, Whittaker plant cover, built land. Same cell on every world.',
+      entries: coverEntries(W),
+    },
+    {
+      id: 'guild', title: 'Metabolisms', highlight: true, grid: 'guilds',
+      blurb: 'The universal system. Colour is which redox couple won the cell — not a kingdom, not an Earth biome. Seventeen guilds; Seed guild and the Guild overlay use this palette.',
+      entries: guildEntries(),
+    },
+    {
+      id: 'bodies', title: 'Bodies', highlight: true, grid: 'marks',
+      blurb: 'Drawn on top of the square when you zoom in. The grammar, not the cover.',
+      entries: bodyEntries(),
+    },
+    {
+      id: 'marks', title: 'Marks', highlight: true, grid: 'marks',
+      blurb: 'Frames and tutorial overlays. Not biomes.',
+      entries: legendMarks(),
+    },
   ];
 }
 
 /** Which legend key a cell maps to (for hover ↔ key). */
 export function legendKeyAt(W, c) {
   if (c < 0) return null;
+  if (!usesWhittakerCover(W._planetKind, W)) return surfaceKeyAt(W, c);
   if (W.ice[c] > 0.45) return 'ice';
+  if ((W.blackDaisy?.[c] || 0) > 0.15) return 'daisyBlack';
+  if ((W.whiteDaisy?.[c] || 0) > 0.15) return 'daisyWhite';
   if (W.h[c] < W.seaLevel) {
     if ((W.reef?.[c] || 0) > 0.2) return 'reef';
     const g = dominantGuildAt(W, c);
-    if (g === 'cyanobacteria') return 'cyanobacteria';
-    if (g === 'purpleSulfur') return 'purpleSulfur';
-    if ((W.life[c] || 0) > 0.12) return g === 'greenSulfur' ? 'cyanobacteria' : 'ocean';
+    if (g) return g;
+    const biome = W.biome ? BIOMES[W.biome[c]] : null;
+    if (biome === 'vent' || biome === 'upwelling' || biome === 'gyre' || biome === 'deep') return biome;
+    const depth = (W.seaLevel - W.h[c]) || 0;
+    if (depth < 0.06) return 'shallows';
+    if (depth < 0.15) return 'shelf';
     return 'ocean';
   }
   if ((W.build?.[c] || 0) > 0.15) return 'settler';
   const life = W.life[c] || 0;
   if (life > 0.08) {
     const g = dominantGuildAt(W, c);
-    if (g === 'cyanobacteria') return 'cyanobacteria';
-    if (g === 'purpleSulfur') return 'purpleSulfur';
+    if (g && ((W.unlockedClass || 0) < 2 || (W.lifeClass[c] || 0) < 2 || MAT_GUILDS.has(g))) return g;
     const biome = W.biome ? BIOMES[W.biome[c]] : null;
     if (biome === 'grassland' || biome === 'savanna') return biome === 'savanna' ? 'savanna' : 'grass';
+    if (biome === 'tundra' || biome === 'boreal') return biome;
+    if (biome === 'tropRainforest' || biome === 'tempRainforest') return 'rain';
     if ((W.unlockedClass || 0) >= 2 && (W.lifeClass[c] || 0) >= 3) return 'fauna';
     return 'canopy';
   }
   const biome = W.biome ? BIOMES[W.biome[c]] : null;
   if (biome === 'desert') return 'desert';
   if (biome === 'savanna' || biome === 'grassland') return biome === 'savanna' ? 'savanna' : 'grass';
+  if (biome === 'tundra' || biome === 'boreal') return biome;
   return 'barren';
+}
+
+/** Hover a glossary row → which cells stay lit. Cover, guild, daisy, pigment. */
+export function cellMatchesLegend(W, c, key) {
+  if (!key || c < 0) return false;
+  if (legendKeyAt(W, c) === key) return true;
+  if (dominantGuildAt(W, c) === key) return true;
+  if (key === 'daisyBlack') return (W.blackDaisy?.[c] || 0) > 0.1;
+  if (key === 'daisyWhite') return (W.whiteDaisy?.[c] || 0) > 0.1;
+  if (key === 'stromatolite') return (W.stromatolite?.[c] || 0) > 0.15;
+  if (key === 'bodies') return (W.life[c] || 0) > 0.08 || !!dominantGuildAt(W, c);
+  if (key === 'pigmentRetinal') return W.dominantPigment === 'retinal';
+  if (key === 'pigmentBchl') return W.dominantPigment === 'bchl';
+  if (key === 'pigmentChla') return W.dominantPigment === 'chla' || !W.dominantPigment;
+  return false;
 }
 
 export { GUILD_RGB };

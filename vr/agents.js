@@ -8,12 +8,13 @@ import { W } from './world.js';
 import { logEvent } from './chronicle.js';
 import { KIND_RGB, cladeRGB } from './sim/lifeColour.js';
 import { rngOf } from './sim/rng.js';
-import { bodyPlanFromTraits, passesSilhouette } from './sim/morphology.js';
+import { bodyPlanFromTraits, passesSilhouette, planOf } from './sim/morphology.js';
 import { lineageAt, cellLifeSignal } from './sim/evolve.js';
 import { isSubmerged, isLand, localSeaLevel } from './sim/cellSurface.js';
 import { isModernEarth } from './sim/ruleMode.js';
 import { settleCities } from './sim/city.js';
 import { presentTime, noteWear, isOutNow } from './sim/present.js';
+import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
 export const MAX_ENT = 1400;
 export const ENT = {
@@ -81,12 +82,14 @@ function writeEnt(n, c, kind, rng) {
   if (W.tree?.living?.length) {
     node = lineageAt(W, c);
     if (node?.traits) {
-      plan = bodyPlanFromTraits(node.traits, {
+      // Genome first — the body on screen is expressed from the lineage's own modules,
+      // and falls back to the trait shim only for a node that predates the grammar.
+      plan = planOf(node, {
         O2: W.gases?.O2 ?? 0.21,
         gravity: W.rule?.gravity ?? 1,
       });
       if (!passesSilhouette(plan)) plan = null;
-      else kind = plan.spriteKind ?? kind;
+      else kind = morphTileOf(plan) ?? plan.spriteKind ?? kind;
     }
   }
   const base = kind === 7 ? 0.036 : kind === 5 ? 0.02 : kind <= 2 ? 0.013 : 0.015;
@@ -133,6 +136,7 @@ function writeEnt(n, c, kind, rng) {
 }
 
 export function respawnEntities() {
+  resetMorphAtlas();
   const rng = rngOf(W, 'rngAgents');
   let n = 0;
   const living = [];
@@ -408,7 +412,7 @@ export function agentsTick() {
       ENT.data[i * 8 + 4] = kind;
       if (destNode?.id !== prevPopId && destNode?.traits) {
         const env = { O2: W.gases?.O2 ?? 0.21, gravity: W.rule?.gravity ?? 1 };
-        const newPlan = bodyPlanFromTraits(destNode.traits, env);
+        const newPlan = planOf(destNode, env);
         if (passesSilhouette(newPlan)) {
           m.plan = newPlan;
           m.stride = newPlan.stride || 1;

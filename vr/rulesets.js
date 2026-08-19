@@ -182,14 +182,14 @@ export const RULESETS = [
   },
 ];
 
-export function greenhouseFromGases(g, rule) {
+export function greenhouseFromGases(g, rule, liveP) {
   const co2 = Math.max(1e-6, g.CO2);
   const ch4 = Math.max(0, g.CH4);
   const h2o = Math.max(0, g.H2O);
   const dust = Math.max(0, g.dust + g.sulphate * 2);
   let gh = 0.04 * Math.log1p(co2 * 40) + 0.08 * Math.log1p(ch4 * 80) + 0.12 * h2o - 0.18 * dust
     + (rule?.ghBias || 0);
-  const P = rule?.surfacePressureBar;
+  const P = liveP != null && Number.isFinite(liveP) ? liveP : rule?.surfacePressureBar;
   if (P != null && Number.isFinite(P)) {
     if (P > 2) gh += 0.28 * Math.log10(P); // Venus-scale column
     else if (P < 0.05) gh *= Math.max(0.04, P / 0.05); // Mars-thin

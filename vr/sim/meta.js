@@ -4,6 +4,7 @@
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { TRAITS, nodeOf } from './evolve.js';
+import { transferOrgan } from './genome.js';
 
 /** Record fossils when lineages die in depositing cells. Item 177. */
 export function recordFossil(W, node, cell, reason = 'burial') {
@@ -37,17 +38,17 @@ export function horizontalGeneTransfer(W, chronLog) {
   const a = microbes[(rng() * microbes.length) | 0];
   const b = microbes[(rng() * microbes.length) | 0];
   if (a.id === b.id) return;
-  // Metabolic trait market — swap pigment / O2 affinity / defence
-  const keys = [TRAITS.pigment, TRAITS.o2Affinity, TRAITS.defence, TRAITS.desiccation];
-  const k = keys[(rng() * keys.length) | 0];
-  const cost = Math.abs(a.traits[TRAITS.bodyMass] - b.traits[TRAITS.bodyMass]);
-  if (rng() < 0.5 + cost) {
+  const dist = Math.abs((a.traits[TRAITS.bodyMass] || 0) - (b.traits[TRAITS.bodyMass] || 0));
+  if (rng() > 0.55 - dist) {
+    const keys = [TRAITS.pigment, TRAITS.o2Affinity, TRAITS.defence, TRAITS.desiccation];
+    const k = keys[(rng() * keys.length) | 0];
     const tmp = a.traits[k];
     a.traits[k] = b.traits[k];
     b.traits[k] = tmp;
-    if (chronLog && rng() < 0.3) {
-      chronLog(W.year, 'hgt', 0, k, `HGT: ${a.name} ↔ ${b.name}`);
-    }
+  }
+  if (a.genome && b.genome && rng() < 0.55) transferOrgan(a.genome, b.genome, rng);
+  if (chronLog && rng() < 0.3) {
+    chronLog(W.year, 'hgt', 0, 1, `HGT: ${a.name} ↔ ${b.name}`);
   }
 }
 

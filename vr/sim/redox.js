@@ -5,6 +5,10 @@ import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { maybeCaptureMoment } from './time.js';
 import { isModernEarth } from './ruleMode.js';
+import { rngOf } from './rng.js';
+import {
+  initOrigin, originTick, bioRateScale, tempKOf, solventOf, diagnoseOriginFailure,
+} from './origin.js';
 
 /**
  * Guilds ordered by approximate reduction potential / energy yield.
@@ -24,7 +28,8 @@ export const GUILDS = [
   { id: 'greenSulfur', donor: 'H2S', acceptor: 'light', yield: 0.26, pigment: 'bchl', color: [40, 90, 50] },
   { id: 'cyanobacteria', donor: 'H2O', acceptor: 'light', yield: 0.55, pigment: 'chla', color: [30, 120, 70], oxygenic: true },
   { id: 'aerobe', donor: 'orgC', acceptor: 'O2', yield: 1.0, pigment: null, color: [50, 100, 60] },
-  { id: 'nFixer', donor: 'N2', acceptor: 'ATP', yield: 0.1, pigment: null, color: [45, 85, 55] },
+  // 16 ATP/N2 and O2-poisoned — yield is the leftover after that bill. provenance: measured-shape
+  { id: 'nFixer', donor: 'N2', acceptor: 'ATP', yield: 0.04, pigment: null, color: [45, 85, 55], nFix: true },
   { id: 'nitrifier', donor: 'NH4', acceptor: 'O2', yield: 0.15, pigment: null, color: [70, 90, 50] },
   { id: 'decomposer', donor: 'lignin', acceptor: 'O2', yield: 0.2, pigment: null, color: [90, 70, 40] },
   { id: 'chemolithotroph', donor: 'H2', acceptor: 'CO2', yield: 0.1, pigment: null, color: [55, 55, 50], vent: true },
@@ -87,8 +92,10 @@ export function initRedox(W) {
   W.stromatolite = new Float32Array(NC);
   W.bifRock = new Float32Array(NC); // banded iron formation deposit
   W.matCover = new Float32Array(NC);
+  W.detritus = new Float32Array(NC);
   W.modulePool = new Set();
   W.transitionAge = {};
+  initOrigin(W);
   W.transitions = {
     abiogenesis: false,
     rnaWorld: false,
@@ -142,7 +149,9 @@ function speciesEquilibrium(W, c) {
     ? Math.max(0, 1 - (seaLevel - h[c]) * 8) * Math.max(0.1, temp[c])
     : Math.max(0.15, temp[c]);
   const eq = {};
-  eq.H2 = isSea ? 0.02 : 0.001;
+  // Serpentinisation: olivine + water → H2. provenance: measured-shape
+  const ultra = (W.rock?.[c] === 0) ? 1 : 0.25;
+  eq.H2 = isSea ? 0.02 * (0.6 + ultra) : 0.001;
   // provenance: fitted — anoxygenic photosynthesis viable on lit shelves (yield 0.28, maint 0.04)
   eq.H2S = (shallow && lit > 0.5) ? 0.22 : (isSea ? 0.03 : 0.002);
   eq.Fe2 = isSea ? (W.fe2Ocean || 0.3) : 0.01;
@@ -221,12 +230,18 @@ function guildViable(g, sp, c, W) {
   const acc = g.acceptor === 'none' ? 1 : (sp[g.acceptor]?.[c] ?? 0);
   if (donor < 0.01 || acc < 0.01) return 0;
 
-  if (g.id === 'nFixer' && sp.O2[c] > 0.05) return donor * acc * 0.05;
+  // Nitrogenase is poisoned by oxygen and costs 16 ATP/N2. provenance: measured
+  if (g.nFix && (sp.O2[c] || 0) > 0.05) return donor * acc * 0.02;
 
   const T = W.temp[c];
+  const TK = tempKOf(W, c);
+  const rate = bioRateScale(TK, W.solvent || solventOf(W.rule));
   const maintScale = MAINT_SCALE[g.id] ?? 1;
   const maint = (0.04 + Math.max(0, 0.5 - T) * 0.08) * maintScale;
-  let energy = g.yield * donor * acc * (0.6 + T * 0.5);
+  // ΔG sketch: yield × Q, Q from concentrations already on the cell. provenance: fitted
+  const Q = Math.max(1e-4, donor * acc);
+  let energy = g.yield * Q * (0.6 + T * 0.5) * rate;
+  if (g.nFix) energy *= 0.45; // ATP bill
   let ventPenalty = 1;
   if (g.vent) {
     const hot = W.bound[c] === 0
@@ -249,7 +264,7 @@ export function redoxTick(W, chronLog) {
   const dt = dtRelax;
   const roll = rng || (() => 0.5);
 
-  // Contigent inventions
+  originTick(W, chronLog);
   maybeInvent(W, chronLog, roll);
 
   const means = {};
@@ -258,6 +273,7 @@ export function redoxTick(W, chronLog) {
   let photosynthProxy = 0;
   let ch4Prod = 0;
   let totalLife = 0;
+  let produced = 0, died = 0;
 
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
@@ -276,13 +292,20 @@ export function redoxTick(W, chronLog) {
         fit *= 0.3 + syn * 2;
       }
 
-      const growth = fit * 0.15 * dt;
+      // Logistic colonisation: a viable guild must be able to grow from a seed.
+      // The old `+ fit*0.15*dt − 0.02*dt` was net-negative for every anoxygenic
+      // phototroph (fit ≈ 0.02), which is why meanLife fell for 3 Gyr.
+      // provenance: fitted
       const neigh = Math.max(
         guildDens[g.id][NBR[c * 4]], guildDens[g.id][NBR[c * 4 + 1]],
         guildDens[g.id][NBR[c * 4 + 2]], guildDens[g.id][NBR[c * 4 + 3]]
       );
       let d = guildDens[g.id][c];
-      d = clamp(d + growth + neigh * fit * 0.04 * dt - 0.02 * dt, 0, 1);
+      const colonise = (0.07 + d * 0.55 + neigh * 0.12) * fit * dt;
+      const death = (0.006 + (fit <= 0 ? 0.1 : 0)) * d * dt;
+      d = clamp(d + colonise - death, 0, 1);
+      produced += colonise * AREA[c];
+      died += death * AREA[c];
       guildDens[g.id][c] = d;
       means[g.id] += d * AREA[c];
       cellBio += d * g.yield;
@@ -337,17 +360,23 @@ export function redoxTick(W, chronLog) {
     const arrhenius = Math.exp(0.65 * (W.temp[c] - 0.5));
     cellBio *= clamp(0.5 + arrhenius * 0.5, 0.3, 2);
 
-    const target = clamp(cellBio * 0.45 + W.matCover[c] * 0.3, 0, 1);
+    const target = clamp(cellBio * 0.55 + W.matCover[c] * 0.35, 0, 1);
     if (modern) {
       // Holocene Earth: bio.js + seedEarth own life[]; redox only tracks guilds + chemistry
       species.orgC[c] = clamp(life[c] * 0.4 + species.orgC[c] * 0.92, 0, 1);
       totalLife += life[c] * AREA[c];
     } else if (W.transitions.abiogenesis) {
-      life[c] = lerpLife(life[c], target, 0.22 * dt);
+      const before = life[c];
+      life[c] = lerpLife(life[c], target, clamp(0.28 * dt, 0, 0.6));
+      if (life[c] > before) produced += (life[c] - before) * AREA[c];
+      else died += (before - life[c]) * AREA[c];
       totalLife += life[c] * AREA[c];
     } else {
       life[c] *= Math.max(0, 1 - 0.01 * dt);
       totalLife += life[c] * AREA[c];
+    }
+    if (W.detritus) {
+      W.detritus[c] = clamp((W.detritus[c] || 0) * 0.92 + life[c] * 0.04, 0, 1);
     }
   }
 
@@ -379,6 +408,21 @@ export function redoxTick(W, chronLog) {
 
   W.meanLife = totalLife / NC;
   W.dominantPigment = dominantPigment(W);
+  W.originBudget = {
+    produced,
+    respired: died,
+    buried: (W.carbon?.burialFlux || 0),
+    clamped: 0,
+    net: produced - died,
+  };
+  W.sterileWhy = W.transitions?.abiogenesis ? null : diagnoseOriginFailure(W);
+
+  // Oxygenic guilds leak O₂ once invented — burial still owns the long-term rise.
+  const cyano = W.guilds.cyanobacteria || 0;
+  if (W.transitions.oxygenicPhotosynthesis && cyano > 0.01 && !modern) {
+    const leak = cyano * 0.0008 * dt;
+    gases.O2 = clamp(gases.O2 + leak, 0, 0.4);
+  }
 }
 
 function lerpLife(a, b, t) {
@@ -416,54 +460,51 @@ function litShelfFraction(W) {
   return total > 0 ? lit / total : 0;
 }
 
+/** Integrated oxygenic-invention progress per tick.
+ *  Fitted so anoxygenic shelf mats invent ~2.4–3.0 Ga, not in the first 200 Myr. */
+export function oxygenicClockStep(pre, shelf, dt) {
+  return (pre * 0.25 + 0.00008) * (0.04 + Math.max(0, shelf)) * Math.max(0, dt);
+}
+
 function maybeInvent(W, chronLog, roll) {
   const T = W.transitions;
   const dt = Math.min(2, (W.dtYr || 200) / 1e6);
-  const ma = (4.567e9 - W.ageYr) / 1e6;
 
-  // Abiogenesis — probabilistic. Item 30.
+  // Abiogenesis is owned by originTick (rate × surface × inventory). This branch
+  // only still plants modern Earth, which never runs the Hadean clock.
   if (!T.abiogenesis) {
-    let chance = 0;
-    for (let c = 0; c < NC; c++) {
-      if (W.bound[c] !== 0) continue;
-      if (W.h[c] >= W.seaLevel) continue;
-      const t = W.temp[c];
-      if (t > 0.35 && t < 0.95) chance += 0.00002 * dt;
-    }
     if (isModernEarth(W.rule)) {
-      T.abiogenesis = true; // modern Earth already has life
-    } else if (roll() < chance || (ma < 4000 && ma > 3500 && roll() < 0.08 * dt) || (ma < 3800 && roll() < 0.03 * dt)) {
       T.abiogenesis = true;
-      // Seed chemolithotrophs at vents. Item 16.
-      for (let c = 0; c < NC; c++) {
-        if (W.bound[c] === 0 && W.h[c] < W.seaLevel) {
-          W.guildDens.chemolithotroph[c] = 0.4;
-          W.guildDens.methanogen[c] = 0.25;
-          W.guildDens.fermenter[c] = 0.3;
-          W.life[c] = Math.max(W.life[c], 0.35);
-        }
-      }
-      if (chronLog) chronLog(W.year, 'origin', 0, 1, 'Abiogenesis');
-      maybeCaptureMoment(W, 'firstCell', 'First cell');
       T.luca = true;
       T.rnaWorld = true;
     }
     return;
   }
 
-  // Oxygenic photosynthesis — state-gated, not date-gated. Item 19.
-  // dt=2 (Archean cap) → p_pre=0.0008×2=0.0016/tick, p_nopre=0.00005×2=0.0001/tick.
-  // Over N≈2500 Archean ticks: P(pre)=1-(1-0.0016)^2500≈0.98; P(nopre)=1-(1-0.0001)^2500≈0.22.
-  // Shape: pre>0.02 → 16× base rate; without precursors invention stays unlikely (~10–25%).
+  // Oxygenic photosynthesis — accumulated invention clock, not a Bernoulli roll.
+  // Two photosystems had to sit in one cell; anoxygenic mats are the precursor stock.
+  // Fitted so a typical Earth-like with shelf phototrophs crosses ~2.4–3.0 Ga.
   if (!T.oxygenicPhotosynthesis && T.abiogenesis) {
-    const pre = (W.guilds.purpleSulfur || 0) + (W.guilds.greenSulfur || 0);
+    const pre = (W.guilds.purpleSulfur || 0) + (W.guilds.greenSulfur || 0)
+      + (W.guilds.photoferrotroph || 0);
     const shelf = litShelfFraction(W);
-    // pre>0.006 → 16× rate (fitted: purpleSulfur ~0.008 viable on shelves)
-    const p = pre > 0.006 ? 0.0008 * dt : 0.00005 * dt;
     if (isModernEarth(W.rule)) {
       markTransition(W, 'oxygenicPhotosynthesis', chronLog, 'Oxygenic photosynthesis invented');
-    } else if (pre > 0.005 && shelf > 0.06 && roll() < p) {
-      markTransition(W, 'oxygenicPhotosynthesis', chronLog, 'Oxygenic photosynthesis invented');
+    } else {
+      if (W.oxyThresh == null) {
+        W.oxyThresh = 0.9 + rngOf(W, 'rngBio')() * 0.5; // 0.9–1.4. provenance: invented jitter
+      }
+      W.oxyInvent = (W.oxyInvent || 0) + oxygenicClockStep(pre, shelf, dt);
+      if (W.oxyInvent >= W.oxyThresh && pre > 0.004 && shelf > 0.04) {
+        markTransition(W, 'oxygenicPhotosynthesis', chronLog, 'Oxygenic photosynthesis invented');
+        for (let c = 0; c < NC; c++) {
+          const anox = (W.guildDens.purpleSulfur[c] || 0) + (W.guildDens.greenSulfur[c] || 0)
+            + (W.guildDens.photoferrotroph[c] || 0);
+          if (anox > 0.04) {
+            W.guildDens.cyanobacteria[c] = Math.max(W.guildDens.cyanobacteria[c], 0.1);
+          }
+        }
+      }
     }
   }
 

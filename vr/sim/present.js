@@ -8,6 +8,7 @@ import { BIOMES } from './ecology.js';
 import { lifeRGB, oceanLifeRGB, lifeLabel, dominantGuildAt, GUILD_RGB } from './lifeColour.js';
 import { isSubmerged, cellElev } from './cellSurface.js';
 import { currentSentence } from './ocean.js';
+import { usesWhittakerCover } from './planetKind.js';
 
 let _t = 0;
 let _reduced = false;
@@ -315,10 +316,50 @@ export function describeCell(c, alpha = 1) {
   const ash = W.ash?.[c] || 0;
   const precip = W.precip?.[c] || 0;
   const reef = W.reef?.[c] || 0;
+  const kind = W._planetKind;
+  const look = !usesWhittakerCover(kind, W);
 
   let rgb;
   let material = 'soil';
-  if (sea) {
+  if (look) {
+    const extra = {
+      lava: W.lava?.[c] || 0,
+      vent: W.shellVent?.[c] || 0,
+      rock: W.rock?.[c] || 0,
+      dust,
+      lat: Math.abs(DIR[c * 3 + 1]),
+      x: DIR[c * 3],
+      y: DIR[c * 3 + 1],
+      z: DIR[c * 3 + 2],
+    };
+    const R = W.rule || {};
+    if (sea) {
+      material = kind === 'titan' ? 'methane' : (ice > 0.4 ? 'seaice' : 'ocean');
+      const d = Math.min(1, depth * 1.9);
+      rgb = (typeof R.ocean === 'function' ? R.ocean(1 - d, extra) : [20, 28, 40]).slice();
+      const bloom = Math.max(life, reef);
+      if (bloom > 0.12) {
+        const live = oceanLifeRGB(W, c, Math.min(1, bloom));
+        if (live) {
+          rgb = [
+            lerp(rgb[0], live[0], 0.45),
+            lerp(rgb[1], live[1], 0.45),
+            lerp(rgb[2], live[2], 0.45),
+          ];
+        }
+      }
+    } else {
+      const e = (W.h[c] - (W.seaLevel || 0)) / (1 - (W.seaLevel || 0) + 1e-6);
+      rgb = (typeof R.land === 'function' ? R.land(W.temp[c], moist, life, e, ice, extra) : [120, 110, 100]).slice();
+      material = ice > 0.55 ? 'snow' : 'rock';
+      const live = lifeRGB(W, c, life);
+      if (live && life > 0.12 && (W._iceShell || kind === 'titan' || dominantGuildAt(W, c))) {
+        const k = Math.min(0.55, (life - 0.12) * 0.8);
+        rgb = [lerp(rgb[0], live[0], k), lerp(rgb[1], live[1], k), lerp(rgb[2], live[2], k)];
+        material = 'cover';
+      }
+    }
+  } else if (sea) {
     material = ice > 0.4 ? 'seaice' : depth < 0.06 ? 'shallows' : depth < 0.15 ? 'shelf' : 'ocean';
     const bloom = Math.max(life, reef);
     if (bloom > 0.12) rgb = oceanLifeRGB(W, c, Math.min(1, bloom)).slice();
@@ -342,6 +383,18 @@ export function describeCell(c, alpha = 1) {
       else material = 'soil';
     }
   }
+  if (look) {
+    const frost = W.frost?.[c] || 0;
+    if (frost > 0.06 && rgb) {
+      const k = Math.min(1, frost) * 0.85;
+      rgb = [lerp(rgb[0], 235, k), lerp(rgb[1], 242, k), lerp(rgb[2], 250, k)];
+      material = 'frost';
+    } else if ((W.lag?.[c] || 0) > 0.15 && rgb) {
+      const k = Math.min(1, W.lag[c]) * 0.7;
+      rgb = [lerp(rgb[0], 50, k), lerp(rgb[1], 38, k), lerp(rgb[2], 32, k)];
+      material = 'lag';
+    }
+  }
   if (dust > 0.12) {
     const k = Math.min(0.55, dust * 0.6);
     rgb = [lerp(rgb[0], 180, k), lerp(rgb[1], 140, k), lerp(rgb[2], 90, k)];
@@ -350,7 +403,7 @@ export function describeCell(c, alpha = 1) {
     const k = Math.min(0.5, ash * 0.55);
     rgb = [lerp(rgb[0], 55, k), lerp(rgb[1], 52, k), lerp(rgb[2], 48, k)];
   }
-  if (!sea && ice < 0.4) {
+  if (!look && !sea && ice < 0.4) {
     const ph = seasonAt(c);
     if (ph.autumn > 0.28 && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest')) {
       const k = Math.min(0.48, ph.autumn * 0.55) * Math.min(1, life * 2.2);
@@ -438,11 +491,18 @@ export function placeSentence(c) {
       else bits.push(label);
     }
   } else {
-    const wet = d.moist < 0.18 ? 'dry' : d.moist > 0.55 ? 'wet' : null;
-    const ice = d.ice > 0.45 ? 'icebound' : null;
     const biome = d.biome && d.biome !== 'ice' ? d.biome.replace(/([A-Z])/g, ' $1').toLowerCase() : null;
-    const head = [ice, wet, biome].filter(Boolean).join(' ');
-    if (head) bits.push(head);
+    const kind = W._planetKind;
+    if (!usesWhittakerCover(kind, W)) {
+      if (d.ice > 0.55 && kind !== 'europa' && kind !== 'enceladus' && kind !== 'titan') bits.push('icebound');
+      else if (d.material === 'methane') bits.push('a methane lake');
+      else bits.push(kind || 'this ground');
+    } else {
+      const wet = d.moist < 0.18 ? 'dry' : d.moist > 0.55 ? 'wet' : null;
+      const ice = d.ice > 0.45 ? 'icebound' : null;
+      const head = [ice, wet, biome].filter(Boolean).join(' ');
+      if (head) bits.push(head);
+    }
     if (label && label !== 'barren') bits.push(label);
     if (d.build > 0.55) bits.push('a town');
     else if (d.build > 0.25) bits.push('a village');

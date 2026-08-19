@@ -6,6 +6,7 @@ import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { TRAITS, nodeOf, removeLiving } from './evolve.js';
 import { recordFossil } from './meta.js';
 import { isDeepTimeEarth } from './ruleMode.js';
+import { steriliseOrigin } from './origin.js';
 
 export function extinctionTick(W, chronLog) {
   if (W.rule.daisyworld || !W.tree) return;
@@ -174,14 +175,19 @@ function pulseKill(W, frac, label, chronLog) {
     for (const id of [...W.tree.living]) {
       const n = nodeOf(W.tree, id);
       if (!n) continue;
-      const risk = n.traits[4] * 0.5 + n.traits[7] * 0.5;
-      if (rng() < frac * risk) {
+      const mass = n.traits[TRAITS.bodyMass] ?? n.traits[4] ?? 0.5;
+      const trop = n.traits[TRAITS.trophic] ?? n.traits[7] ?? 0.3;
+      const def = n.traits[TRAITS.defence] ?? 0.3;
+      const sessile = n.genome?.plan?.sessile;
+      let p = frac * (0.35 + mass * 0.4 + trop * 0.35);
+      if (sessile) p *= 0.72;
+      p *= 1.15 - def * 0.4;
+      if (rng() < p) {
         n.death = W.ageYr;
         n.extReason = label;
         removeLiving(W.tree, id);
         W.tree.extinctions.push({ id, name: n.name, t: W.ageYr, reason: label });
         for (const c of n.cells || []) recordFossil(W, n, c, label);
-        // Eulogy for designed / protected lineages
         if (n.playerSeeded || n.refuge) {
           W._lastEulogy = `${n.name || 'A lineage'} lasted until ${label}. What it left is in the rock.`;
         }
@@ -194,4 +200,5 @@ function pulseKill(W, frac, label, chronLog) {
 /** Hook large impacts toward K–Pg logic. */
 export function noteImpact(W, power) {
   if (power > 0.85) W._chicxulub = true;
+  if (power > 0.95) steriliseOrigin(W);
 }

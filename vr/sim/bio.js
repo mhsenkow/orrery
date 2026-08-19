@@ -40,6 +40,11 @@ export function carryingCapacity(W, c) {
 export function bioTick(W, chronLog) {
   const R = W.rule;
   if (R.daisyworld) return daisyTick(W, chronLog);
+  if (R.airless) {
+    if (W.life) W.life.fill(0);
+    W.meanLife = 0;
+    return;
+  }
 
   // When redox is active, it owns most of life[]; this pass applies
   // morphology envelopes, soil, reefs, and plague on top.
@@ -76,7 +81,13 @@ export function bioTick(W, chronLog) {
     const maxL = Math.min(1, (cap + 0.1) * seaCap) * (aridGate ? 1 : 0);
 
     if (useRedox) {
-      _l[c] = clamp(life[c], 0, maxL > 0.05 ? Math.max(maxL, life[c] * 0.9) : life[c] * 0.95);
+      // Deep-time redox owns life[]; do not 5%-decay the deep ocean every tick.
+      // Morphology envelopes still cap absurd blooms on land.
+      if (W.rule?.deepTime) {
+        _l[c] = isSea ? life[c] : clamp(life[c], 0, Math.max(maxL, life[c] * 0.98));
+      } else {
+        _l[c] = clamp(life[c], 0, maxL > 0.05 ? Math.max(maxL, life[c] * 0.9) : life[c] * 0.95);
+      }
       const bio = _l[c] * AREA[c];
       // provenance: fitted — residual gas coupling; burial owns O₂ in carbon.js
       photosynth += bio * 0.00000002;
@@ -102,7 +113,10 @@ export function bioTick(W, chronLog) {
     if (!isSea) {
       W.soil[c] = clamp(W.soil[c] + life[c] * 0.004 - (1 - moist[c]) * 0.001, 0, 1);
       W.nutrientN[c] = clamp(0.35 + W.soil[c] * 0.4 + W.sediment[c] * 0.3 + (W.bound[c] === 1 ? 0.2 : 0), 0, 1);
-      W.nutrientP[c] = clamp(0.3 + W.ore[c] * 0.3 + W.sediment[c] * 0.4, 0, 1);
+      // Phosphorus: continental weathering minus burial. provenance: fitted-shape
+      const weather = (1 - moist[c]) * 0.05 + W.ore[c] * 0.25 + W.sediment[c] * 0.2;
+      const bury = life[c] * 0.08;
+      W.nutrientP[c] = clamp(0.18 + weather - bury + (W.bound[c] === 1 ? 0.12 : 0), 0, 1);
       if (_l[c] > 0.5 && moist[c] > 0.18) {
         moist[c] = Math.min(0.75, moist[c] + 0.012);
       }

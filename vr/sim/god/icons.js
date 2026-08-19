@@ -51,6 +51,7 @@ const PATHS = {
   godff: 'M4 4v8l5-4-5-4zm6 0v8h1.5V4H10z',
   godwatch: 'M2 8h3l1.5-3L9 12l1.5-4H14',
   godbookmark: 'M5 2.5h6v11l-3-2-3 2v-11z',
+  godcull: 'M3 13h10L9.5 6 8 9 6.5 6 3 13zM8 3v2M4 8h8',
   scenariostart: 'M4 3.5v9l9-4.5-9-4.5z',
   genesisgo: 'M3 8h7M8 4l4 4-4 4M3 12h4',
   genesisrand: 'M5 4h2.5a3 3 0 0 1 0 6H7M11 12H8.5a3 3 0 0 1 0-6H9M10 3.5l1.5 1.5L10 6.5M6 9.5 4.5 11 6 12.5',

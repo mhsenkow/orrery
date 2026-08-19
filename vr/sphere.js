@@ -12,21 +12,47 @@ export let VPF = (N + 1) * (N + 1);
 /** Face size. RAM is cheap (fields are a few GB at N=768); ticks and GPU atlases are not. */
 export const N_ALLOWED = [32, 48, 64, 96, 128, 192, 256, 384, 512, 768];
 
-/** Bilinear sample of a per-cell field on cube face f at globe grid (gi, gj) / gn. */
+const _cellAtP = [0, 0, 0];
+
+/** Cell on face (f, i, j). i/j may be outside [0, n); steps off the face
+ *  through facePoint + dirToCell the same way buildNeighbours does. */
+export function cellAt(f, i, j, n = N) {
+  if (i >= 0 && i < n && j >= 0 && j < n) return f * n * n + j * n + i;
+  const s = (i + 0.5) / n * 2 - 1;
+  const t = (j + 0.5) / n * 2 - 1;
+  facePoint(f, Math.tan(clamp(s, -1.5, 1.5) * TAU4), Math.tan(clamp(t, -1.5, 1.5) * TAU4), _cellAtP);
+  return dirToCell(_cellAtP[0], _cellAtP[1], _cellAtP[2], n);
+}
+
+/** Bilinear sample of a per-cell field on cube face f at globe grid (gi, gj) / gn.
+ *  Cell-centred: vertices on a face edge blend the neighbouring face, not a clamp. */
 export function sampleFaceField(field, f, gi, gj, gn, n = N) {
-  const ci = (gi / gn) * n;
-  const cj = (gj / gn) * n;
+  const ci = (gi / gn) * n - 0.5;
+  const cj = (gj / gn) * n - 0.5;
   const i0 = Math.floor(ci);
   const j0 = Math.floor(cj);
   const fu = ci - i0;
   const fv = cj - j0;
-  const i1 = Math.min(i0 + 1, n - 1);
-  const j1 = Math.min(j0 + 1, n - 1);
-  const at = (i, j) => field[f * n * n + clamp(j, 0, n - 1) * n + clamp(i, 0, n - 1)];
-  const h00 = at(i0, j0);
-  const h10 = at(i1, j0);
-  const h01 = at(i0, j1);
-  const h11 = at(i1, j1);
+  const h00 = field[cellAt(f, i0, j0, n)];
+  const h10 = field[cellAt(f, i0 + 1, j0, n)];
+  const h01 = field[cellAt(f, i0, j0 + 1, n)];
+  const h11 = field[cellAt(f, i0 + 1, j0 + 1, n)];
+  return lerp(lerp(h00, h10, fu), lerp(h01, h11, fu), fv);
+}
+
+/** Bilinear sample of a per-cell field at an arbitrary unit direction. */
+export function sampleSphere(field, x, y, z, n = N) {
+  const { f, su, sv } = dirToFaceUV(x, y, z);
+  const ci = (su + 1) * 0.5 * n - 0.5;
+  const cj = (sv + 1) * 0.5 * n - 0.5;
+  const i0 = Math.floor(ci);
+  const j0 = Math.floor(cj);
+  const fu = ci - i0;
+  const fv = cj - j0;
+  const h00 = field[cellAt(f, i0, j0, n)];
+  const h10 = field[cellAt(f, i0 + 1, j0, n)];
+  const h01 = field[cellAt(f, i0, j0 + 1, n)];
+  const h11 = field[cellAt(f, i0 + 1, j0 + 1, n)];
   return lerp(lerp(h00, h10, fu), lerp(h01, h11, fu), fv);
 }
 
@@ -54,7 +80,7 @@ export function facePoint(f, u, v, o) {
   return o;
 }
 
-export function dirToCell(x, y, z, n = N) {
+export function dirToFaceUV(x, y, z) {
   const ax = Math.abs(x), ay = Math.abs(y), az = Math.abs(z);
   let f, u, v;
   if (ax >= ay && ax >= az) {
@@ -67,11 +93,14 @@ export function dirToCell(x, y, z, n = N) {
     if (z > 0) { f = 4; u = x / az; v = y / az; }
     else { f = 5; u = -x / az; v = y / az; }
   }
-  const su = Math.atan(u) / TAU4, sv = Math.atan(v) / TAU4;
-  const nf = n * n;
+  return { f, su: Math.atan(u) / TAU4, sv: Math.atan(v) / TAU4 };
+}
+
+export function dirToCell(x, y, z, n = N) {
+  const { f, su, sv } = dirToFaceUV(x, y, z);
   const i = clamp(Math.floor((su + 1) * 0.5 * n), 0, n - 1);
   const j = clamp(Math.floor((sv + 1) * 0.5 * n), 0, n - 1);
-  return f * nf + j * n + i;
+  return f * n * n + j * n + i;
 }
 
 function buildNeighbours() {
@@ -207,6 +236,11 @@ export function setResolution(n) {
 }
 
 /** ~km across a cell at Earth radius. */
+export function cellSizeKm(n = N) {
+  return 40075 / (n * 4);
+}
+
+/** ~km across a cell at Earth radius, as a display string. */
 export function cellKm(n = N) {
-  return (40075 / (n * 4)).toFixed(0); // rough equator / (4N) faces
+  return cellSizeKm(n).toFixed(0);
 }

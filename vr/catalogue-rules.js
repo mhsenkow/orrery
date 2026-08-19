@@ -375,7 +375,12 @@ export function rulesetFromCatalogue(item) {
       base.obliquity = 0;
     }
   }
-  if (needs.has('iceshell')) base.iceShell = true;
+  if (needs.has('iceshell')) {
+    const teq = record?.teq?.v ?? base.teqK;
+    // Temperate "iceshell" tags mean a water layer, not Europa. Only freeze
+    // the lid when the world is actually cold or is an outer-system body.
+    if (!(teq > 180) || item.c === 'moons' || item.c === 'sol') base.iceShell = true;
+  }
   if (/titan/i.test(name)) base.methaneSolvent = true;
   if (/venus/i.test(name)) base.aerialBio = true;
   if (/mars/i.test(name)) base.obliquityWander = true;

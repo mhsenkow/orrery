@@ -188,6 +188,10 @@ export const PLAY_TIPS = {
     title: 'Start challenge',
     body: 'Reseeds into that scenario’s world and objective. Scoring reports what the world became, not a leaderboard points total.',
   },
+  lessonchip: {
+    title: 'Lesson',
+    body: 'The Solar System is the tutorial. Click to start or resume the next hunt — rust on Mars, sulfur on Io, a crack on Europa, methane rain on Titan.',
+  },
   genesisname: {
     title: 'World name',
     body: 'Travels into the chronicle and exports. Turns “the simulation” into your planet.',

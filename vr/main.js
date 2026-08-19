@@ -7,10 +7,24 @@ import { timePanelState, ruleForEra } from './sim/timePanel.js';
 import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain } from './world.js';
 import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
 import { freshSeed } from './sim/rng.js';
+import { describeGenome } from './sim/genome.js';
+import { solventBlurb, speciesPage, layoutTree, treeToSvg, explainCreature } from './sim/lifeGuide.js';
+import { lineageAt } from './sim/evolve.js';
 import { encodeWorldId, decodeWorldId, parseWorldInput, worldIdOf, seedToWords } from './sim/seedword.js';
+import { formatAxesLine, formatAxesExtras } from './sim/worldAxes.js';
+import { describeSubstrate, cycleMaterial, formatLiquidWindow, phaseAtCell, livePressureBar } from './sim/substrateField.js';
+import { formatCover, formatLivePressure } from './sim/cover.js';
+import { formatColumn } from './sim/columnSketch.js';
+import { formatColumnAt } from './sim/columnField.js';
+import { landformAt, explainForm, formatPalette } from './sim/landform.js';
 import { noteDroppedTicks } from './sim/meta.js';
 import { detectEnding, finaleArtefact, formatFinaleMarkdown } from './sim/finale.js';
-import { currentReveal, advanceReveal, skipReveal, loadRevealProgress, campaignBlurb } from './sim/teach.js';
+import {
+  skipReveal, campaignBlurb,
+  LESSONS, DOOR_IDS, loadLessonProgress, lessonById, setCurrentLesson,
+  completeLesson, lessonDone, shouldOfferDoor, nextIncompleteLesson,
+  lessonChipLabel, huntMatches,
+} from './sim/teach.js?v=24';
 import { cityLights } from './sim/city.js';
 import { ENT, respawnEntities, agentsTick, followTarget, presentAgents } from './agents.js';
 import { initGL, gl, canvas, rebuildGeometry, refreshColours, uploadEntities, drawScene, vIdx, updateLocalHighlight, setGuildHighlight, setLocalHover, setOverlayMode, remeshPlanet, rebuildScatterLUTs, setGlobeSubd, GLOBE_SUBD, GLOBE_SUBD_ALLOWED, globeN, globeVertexCount, recommendGlobeSubd, effectiveGlobeSubd } from './render.js';
@@ -20,11 +34,12 @@ import {
 import {
   platesPanelChrome, refreshPlatesPanel, bindPlatesPanel, tectonicsAtCell, plateName,
 } from './sim/platesPanel.js';
-import { TOOLS, setTool, activeTool, useToolAt, pickCell, fingerOfGod,
+import { TOOLS, setTool, activeTool, useToolAt, inspectCell, pickCell, fingerOfGod,
   beginToolDrag, moveToolDrag, endToolDrag, undoStroke, redoStroke, canUndo,
   setCrustOceanic, setPinpoint, setBrushInvert,
   pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild,
   BRUSH, brushKm, brushForTier, previewBrush,
+  cullClade,
 } from './tools.js';
 import {
   addPaintLayer, duplicateLayer, removeLayer, moveLayer, setActiveLayer,
@@ -64,7 +79,7 @@ import {
   diversityStripSVG, synopticChartSVG,
 } from './sim/viz.js';
 import { windBandAt } from './sim/wind.js';
-import { momentRGB, legendEntries, legendKeyAt } from './sim/lifeColour.js';
+import { momentRGB, legendEntries, legendKeyAt, legendGlossary } from './sim/lifeColour.js';
 import {
   drawLocalView, layoutLocalPanel, stepFocus, hoverCellAt, beingAtLocalPixel,
   LOCAL_SIZES, LOCAL_SIZE_LABELS, LOCAL_SNAPS, LOCAL_GLOBE, LOCAL_RADII, LOCAL_RADIUS_LABELS,
@@ -127,7 +142,7 @@ const S = {
   grid: 0,
   localSize: 200,
   localSnap: 'br',
-  localGlobe: 'both',
+  localGlobe: 'rim',
   localRadius: 8,
   localPin: -1,       // >=0 pins the local window; -1 = auto-track
   localSeek: 'life',  // stay = hold densest; life = jump to recent growth
@@ -155,6 +170,7 @@ const S = {
 
 /** Updated when Local panel chrome is wired; called each frame. */
 let syncLocalChrome = () => {};
+let applyLocalLayout = () => {};
 
 const tmpQ = new Float32Array(4);
 const _faceDir = [0, 0, 0];
@@ -770,6 +786,41 @@ function bindTimeRibbon() {
   });
 }
 
+/** The most populous living body, described from its own genome, plus the sense this
+ *  world actually delivers. Nothing here is a lookup — every word is expressed. */
+function dominantBodyLine() {
+  const tr = W.tree;
+  if (!tr?.living?.length) return '';
+  let best = null;
+  for (const id of tr.living) {
+    const n = tr.byId.get(id);
+    if (n?.genome && (!best || n.pop > best.pop)) best = n;
+  }
+  if (!best) return '';
+  const body = describeGenome(best.genome);
+  const pen = best.morphMult != null && best.morphMult < 0.95
+    ? ` <span style="color:#e0a060" title="${(best.morphWhy || []).join('; ')}">×${best.morphMult.toFixed(2)}</span>`
+    : '';
+  const sense = W.topSense ? ` · best sense <b>${W.topSense}</b>` : '';
+  return `<span style="color:#9fd6b4">${best.name}</span>: ${body}${pen}${sense}<br>`;
+}
+
+function speciesInspectHTML(cell) {
+  const node = lineageAt(W, cell);
+  if (!node) {
+    if (W.originCell === cell) return `<br><span style="color:#c8b56f">origin site</span>`;
+    return '';
+  }
+  const page = speciesPage(W, node);
+  if (!page) return '';
+  const why = explainCreature(W, node);
+  return `<br><span style="color:#9fd6b4"><b>${page.name}</b> · ${page.body}</span><br>` +
+    `census ~<b>${page.census | 0}</b> · Ne <b>${page.Ne | 0}</b> · range <b>${((page.rangeKm2 / 1e3) | 0)}</b>k km²` +
+    (page.diet?.length ? ` · eats ${page.diet.join(', ')}` : '') + `<br>` +
+    (page.card?.lines?.slice(0, 3).map((l) => `<span style="color:#8aa0bc">${l}</span>`).join('<br>') || '') +
+    (why ? `<br>${why}` : '');
+}
+
 function updateHUD() {
   if (xrSession) return;
   const R = W.rule;
@@ -821,6 +872,10 @@ function updateHUD() {
     ? `${ics.eon}${ics.period && ics.period !== '—' ? ' · ' + ics.period : ''}`
     : '';
   const tree = treeSummary(W.tree);
+  const chem = solventBlurb(W);
+  const originLine = W.originCell != null && W.transitions?.abiogenesis
+    ? `origin cell <b>${W.originCell}</b>` + (W.originBudget ? ` · budget ${(W.originBudget.produced || 0).toExponential(1)}` : '')
+    : '';
   const proxy = W.carbon
     ? `δ¹³C <b>${W.carbon.d13C.toFixed(1)}</b> · pH <b>${W.carbon.surfacePH.toFixed(2)}</b><br>`
     : '';
@@ -865,7 +920,7 @@ function updateHUD() {
     `state <b>${W.state}</b> · health <b>${(W.health * 100) | 0}%</b>` +
     ` · hab <b>${((W.habitability || 0) * 100) | 0}</b>/<b>${((W.inhabitance || 0) * 100) | 0}</b>${bioSig}<br>` +
     `T <b>${tStr}</b> · sea <b>${W.seaLevel.toFixed(3)}</b>` +
-    (R.surfacePressureBar != null ? ` · <b>${R.surfacePressureBar}</b> bar` : '') +
+    (R.surfacePressureBar != null ? ` · <b>${formatLivePressure(W)}</b>` : '') +
     (R.densityPhrase ? `<br>${R.densityPhrase}` : '') +
     (R.orbitalPeriodDays != null
       ? `<br>year <b>${Number(R.orbitalPeriodDays.toPrecision(4))}</b> d` +
@@ -876,12 +931,18 @@ function updateHUD() {
     `land <b>${pc(land)}</b> · ice <b>${pc(W.iceFrac * NC)}</b><br>` +
     bioLine +
     sterile +
+    (chem ? `<span style="color:#9fd6b4">${chem}</span><br>` : '') +
+    (originLine ? `<span style="color:#c8b56f">${originLine}</span><br>` : '') +
     `CO₂ <b>${co2Str}</b> O₂ <b>${(g.O2 * 100).toFixed(1)}%</b>` +
     (g.CH4 > 1e-5 ? ` CH₄ <b>${(g.CH4 * 1e6).toFixed(0)} ppm</b>` : '') + `<br>` +
     proxy +
     (tree.total
-      ? `clades <b>${tree.living}</b> living / <b>${tree.total}</b> · extinct <b>${tree.extinct}</b><br>`
+      ? `clades <b>${tree.living}</b> living / <b>${tree.total}</b> · extinct <b>${tree.extinct}</b>` +
+        (tree.maxDepth ? ` · depth <b>${tree.maxDepth}</b>` : '') +
+        (W.morphospaceOccupied ? ` · bodies <b>${W.morphospaceOccupied}</b>` : '') +
+        (W.shannon ? ` · H′ <b>${W.shannon.toFixed(2)}</b>` : '') + `<br>`
       : '') +
+    dominantBodyLine() +
     (W.budgetMode || W.scarcityMode === 'observe' || W.scarcityMode === 'budgeted'
       ? `energy <b>${W.energy.toFixed(0)}</b>${W.energyDebt ? ` · debt <b>${W.energyDebt | 0}</b>` : ''} · `
       : '') +
@@ -946,10 +1007,18 @@ function updateHUD() {
     const bits = seedToWords((W.landSeed ?? W.seed) >>> 0);
     const short = `${bits[0]}-${bits[1]}`;
     const name = W.worldName || R.name;
+    const kindBit = W._planetKind && W._planetKind !== 'earth'
+      ? ` · ${W._planetKind}${W._planetKindWhy ? ` (${W._planetKindWhy})` : ''}`
+      : '';
+    const shapeBit = W._nonHydrostatic ? ' · not round' : '';
+    const ax = W._worldAxes;
     chip.innerHTML = S.catalogueId
-      ? `<b>${R.name}</b> <small>#${S.catalogueId} · ${mode} · seed ${W.seed}${R.teqK != null ? ` · ${R.teqK | 0} K` : ''}${R.contested ? ' · contested' : ''}</small>`
-      : `<b>${name}</b> <small>${land ? `${land} · ` : ''}${short}</small>`;
-    chip.title = S.catalogueId ? 'Open Worlds' : `Open Worlds · ${worldIdOf(W)}`;
+      ? `<b>${R.name}</b> <small>#${S.catalogueId} · ${mode} · seed ${W.seed}${R.teqK != null ? ` · ${R.teqK | 0} K` : ''}${kindBit}${shapeBit}${R.contested ? ' · contested' : ''}</small>`
+      : `<b>${name}</b> <small>${land ? `${land} · ` : ''}${short}${kindBit}${shapeBit}</small>`;
+    chip.title = [
+      S.catalogueId ? 'Open Worlds' : `Open Worlds · ${worldIdOf(W)}`,
+      ax ? [formatAxesLine(ax), formatAxesExtras(ax), ax.fingerprint].filter(Boolean).join(' · ') : '',
+    ].filter(Boolean).join('\n');
     chip.style.cursor = 'pointer';
   }
   const landLine = document.getElementById('landmassline');
@@ -957,10 +1026,24 @@ function updateHUD() {
     const r = W._landReport;
     landLine.textContent = `${r.count} landmasses · ${(r.landFrac * 100).toFixed(0)}% land · largest ${(r.largestShare * 100).toFixed(0)}% · coast ${Math.round(r.coastKm).toLocaleString()} km`;
   }
+  const axLine = document.getElementById('axesline');
+  if (axLine) {
+    axLine.textContent = W._worldAxes
+      ? [formatAxesLine(W._worldAxes), formatAxesExtras(W._worldAxes),
+        formatLiquidWindow(cycleMaterial(W), livePressureBar(W)),
+        formatLivePressure(W),
+        formatColumn(W),
+        formatPalette(W),
+        W._worldAxes.fingerprint].filter(Boolean).join(' · ')
+      : '';
+  }
 
   const insp = document.getElementById('inspect');
   if (!insp) return;
-  if (S.inspect) {
+  if (S.inspect?.cell != null && S.inspect.h == null) {
+    S.inspect = { ...inspectCell(S.inspect.cell), ...S.inspect };
+  }
+  if (S.inspect && S.inspect.h != null) {
     const x = S.inspect;
     insp.style.display = 'block';
     const biome = W.biome ? BIOMES[W.biome[x.cell]] : '—';
@@ -971,6 +1054,30 @@ function updateHUD() {
       `<b>${here || 'Cell ' + x.cell}</b><br>` +
       `<span style="color:#8aa0bc">${biome} · cell ${x.cell}</span><br>` +
       `elev ${x.h.toFixed(2)} · T ${x.temp.toFixed(2)} · moist ${x.moist.toFixed(2)}<br>` +
+      (W.substrate ? `substrate <b>${describeSubstrate(W, x.cell)}</b>` : '') +
+      (W.substrate ? ` · ${phaseAtCell(W, x.cell)}<br>` : '') +
+      (() => {
+        const cov = formatCover(W, x.cell);
+        return cov ? `cover <b>${cov}</b><br>` : '';
+      })() +
+      (() => {
+        const f = landformAt(W, x.cell);
+        if (!f) return '';
+        return `form <b>${explainForm(f)}</b><br>`
+          + `<span style="color:#8aa0bc">${f.why}</span><br>`;
+      })() +
+      (() => {
+        const mat = cycleMaterial(W);
+        const win = mat ? formatLiquidWindow(mat, livePressureBar(W)) : '';
+        const p = !W.rule?.earthLike && W._atmScale != null && Math.abs(W._atmScale - 1) > 0.02
+          ? formatLivePressure(W) : '';
+        const line = [win, p].filter(Boolean).join(' · ');
+        const col = formatColumnAt(W, x.cell) || formatColumn(W);
+        const extra = W.grain?.[x.cell] > 0.04 && (W.frost?.[x.cell] || 0) > 0.08
+          ? `grain ${W.grain[x.cell].toFixed(2)}` : '';
+        const bits = [line, col, extra].filter(Boolean).join(' · ');
+        return bits ? `<span style="color:#9fc0ff">${bits}</span><br>` : '';
+      })() +
       `life ${x.life.toFixed(2)} (${LIFE_CLASSES[x.lifeClass]?.id || '—'}) · ice ${x.ice.toFixed(2)}<br>` +
       (guild ? `guild <b>${guild}</b><br>` : '') +
       `build ${(x.build || 0).toFixed(2)} · plate <b>${tec?.name || x.plate}</b>` +
@@ -1021,7 +1128,8 @@ function updateHUD() {
           ((W.surgeField?.[x.cell] || 0) > 0.005 ? ` · surge ${(W.surgeField[x.cell] || 0).toFixed(3)}` : '') + `<br>`
         : '') +
       (x.seedOk === false ? `<span style="color:#e08060">seed refuses: ${(x.seedWhy || []).join('; ')}</span>` : '') +
-      (x.biomeGap?.gaps?.length ? `<br><span style="color:#c4a060">biome gap: ${x.biomeGap.gaps.join('; ')}</span>` : '');
+      (x.biomeGap?.gaps?.length ? `<br><span style="color:#c4a060">biome gap: ${x.biomeGap.gaps.join('; ')}</span>` : '') +
+      speciesInspectHTML(x.cell);
     const hist = whatHappenedHere(W.chron, x.cell, 2);
     if (hist.length) {
       insp.innerHTML += '<br><span style="color:#9fc0ff">Here:</span> ' +
@@ -1182,10 +1290,11 @@ function update(t) {
         refreshColours(1);
       }
       maybeDayMoment(S._localFocus);
+      checkLessonProgress();
     }
   }
 
-  if (!S.pitchShot) maybeTeachWindow(t);
+  if (!S.pitchShot && !doorIsOpen()) maybeTeachWindow(t);
 
   S._fa++;
   if (t - S._ft > 500) {
@@ -1246,6 +1355,8 @@ function onToolResult(res) {
     S.inspect = res;
     S.localPin = res.cell;
     requestFace(res.cell);
+    setDockTab('lab');
+    setSuiteDesk('lab', 'station');
   }
   if (res.sample) {
     S.lastSample = res.sample;
@@ -1307,8 +1418,8 @@ function setupTips() {
   // Play / World / chrome controls by id
   const ids = [
     'guildsel', 'brushmask', 'brushsnap', 'brushhard',
-    'godundo', 'godredo', 'godwatch', 'godbookmark',
-    'scenariosel', 'scenariostart',
+    'godundo', 'godredo', 'godcull', 'godwatch', 'godbookmark',
+    'scenariosel', 'scenariostart', 'lessonchip',
     'genesisname', 'genesisseed', 'genesispreset', 'genesisland',
     'genesisrand', 'genesisgo', 'dailyseed', 'godshelf', 'godshare',
     'budget', 'autopilot',
@@ -1318,7 +1429,7 @@ function setupTips() {
     'lookPhoto', 'lookDiagram', 'cloudFree', 'canvasmode', 'rerolland', 'landshape', 'landpickbtn',
     'layeradd', 'layerdup', 'layerdel', 'layerup', 'layerdown', 'layerflatten',
     'layeropacity', 'layerblend', 'layerpaint', 'layerclipland', 'layerclearmask',
-    'genesisplates', 'genesiswater', 'genesislandfrac',
+    'genesisplates', 'genesiswater', 'genesislandfrac', 'genesissolvent', 'genesischirality', 'genesisorigindiff', 'origindiff',
     'simN', 'globeSubd', 'orreryTable', 'export',
     'labRefresh', 'labPaper', 'labSave', 'labFinale', 'labPng', 'labDual',
     'catsort', 'catcsv',
@@ -1411,7 +1522,7 @@ function setupTips() {
 
   // Play / World action icons
   const iconIds = [
-    'godundo', 'godredo', 'godwatch', 'godbookmark',
+    'godundo', 'godredo', 'godcull', 'godwatch', 'godbookmark',
     'scenariostart', 'genesisrand', 'genesisgo', 'dailyseed',
     'godshelf', 'godshare', 'budget', 'autopilot',
   ];
@@ -1576,37 +1687,226 @@ function hideTip() {
   tip.hidden = true;
 }
 
+function doorIsOpen() {
+  return document.getElementById('door')?.classList.contains('open');
+}
+
+function closeDoor() {
+  document.getElementById('door')?.classList.remove('open');
+}
+
+function catalogueBodyNamed(name) {
+  return CATALOGUE_WORLDS.find((x) => x.b === name) || null;
+}
+
+function paintLessonChip() {
+  const el = document.getElementById('lessonchip');
+  if (!el) return;
+  const p = loadLessonProgress();
+  const next = nextIncompleteLesson(p);
+  if (!p.seenDoor && !p.current) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.textContent = lessonChipLabel(p);
+  el.title = next ? next.body : 'The Solar System is the tutorial. Play → Challenge has the rest.';
+}
+
+function paintCampaignTrack() {
+  const track = document.getElementById('campaigntrack');
+  if (!track) return;
+  const p = loadLessonProgress();
+  track.innerHTML = '';
+  const addRow = (id, title, meta, on, done, start) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'camp-row' + (on ? ' on' : '') + (done ? ' done' : '');
+    b.innerHTML = `<span class="ck">${done ? '✓' : '○'}</span><span class="ct">${title}</span><span class="cm">${meta}</span>`;
+    b.addEventListener('click', start);
+    track.appendChild(b);
+  };
+  for (const lesson of LESSONS) {
+    addRow(
+      lesson.id,
+      lesson.title,
+      lesson.kicker,
+      p.current === lesson.id,
+      !!p.done[lesson.id],
+      () => startLesson(lesson.id),
+    );
+  }
+  for (const id of CAMPAIGN) {
+    if (LESSONS.some((l) => l.scenario === id)) continue;
+    const s = SCENARIOS.find((x) => x.id === id);
+    if (!s) continue;
+    addRow(id, s.title, 'Challenge', false, false, () => beginScenario(id, { moment: true }));
+  }
+}
+
+function finishLesson(id, foundKey = null) {
+  const lesson = lessonById(id);
+  if (!lesson || lessonDone(id)) return;
+  const nextP = completeLesson(id);
+  S.lessonId = nextP.current;
+  const nxt = lessonById(nextP.current) || nextIncompleteLesson(nextP);
+  const found = foundKey
+    ? `Found ${foundKey}.`
+    : (lesson.winHint || '');
+  const sub = nxt
+    ? `${found ? `${found} ` : ''}Next: ${nxt.title}`
+    : (found || 'The Solar System was the tutorial.');
+  showMoment('Lesson', lesson.title, sub);
+  playEvent('quiet', 0.7);
+  paintLessonChip();
+  paintCampaignTrack();
+}
+
+function beginScenario(id, opts = {}) {
+  const s = SCENARIOS.find((x) => x.id === id);
+  if (!s) return null;
+  const rule = mergeRunRule(RULESETS.find((r) => r.id === s.ruleId) || W.rule, {
+    deepTime: !!s.deepTime,
+    startAgeGa: s.startAgeGa,
+  });
+  runGenerate(W.seed ^ 0x51, rule);
+  startScenario(id);
+  S._lessonStartedAt = performance.now();
+  if (opts.moment !== false) showMoment('Scenario', s.title, s.objective);
+  updateHUD();
+  return s;
+}
+
+function startLesson(id) {
+  const lesson = lessonById(id);
+  if (!lesson) return;
+  closeDoor();
+  closeLandPicker();
+  skipReveal();
+  document.getElementById('reveal')?.setAttribute('hidden', '');
+  setCurrentLesson(id);
+  S.lessonId = id;
+  S._lessonStartedAt = performance.now();
+  S._lessonFailNoted = false;
+  if (lesson.catalogue) {
+    const item = catalogueBodyNamed(lesson.catalogue);
+    if (item) loadCatalogueItem(item);
+    applyScalePreset(S, 'hold');
+    S.localExpanded = true;
+    applyLocalLayout();
+    setPaused(true);
+    _taughtAlive = true;
+    showMoment(lesson.kicker || 'Tour', lesson.title, lesson.body);
+  } else if (lesson.scenario) {
+    beginScenario(lesson.scenario, { moment: false });
+    _taughtAlive = true;
+    setPaused(lesson.id === 'crisis');
+    if (lesson.id === 'crisis') {
+      setDockTab('tools');
+      setSuiteDesk('tools', 'strike');
+    }
+    showMoment(lesson.kicker || 'Lesson', lesson.title, lesson.body);
+  } else {
+    setPaused(true);
+    applyScalePreset(S, 'hold');
+    finishLesson(id);
+    return;
+  }
+  paintLessonChip();
+  paintCampaignTrack();
+}
+
+function openDoor() {
+  const panel = document.getElementById('door');
+  const grid = document.getElementById('doorgrid');
+  if (!panel || !grid) return;
+  closeLandPicker();
+  closeLocalKey();
+  grid.innerHTML = '';
+  for (const id of DOOR_IDS) {
+    const lesson = lessonById(id);
+    if (!lesson) continue;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'door-card';
+    b.innerHTML = `<div class="dk">${lesson.kicker}</div><div class="dt">${lesson.title}</div><div class="db">${lesson.body}</div>`;
+    b.addEventListener('click', () => startLesson(id));
+    grid.appendChild(b);
+  }
+  skipReveal();
+  document.getElementById('reveal')?.setAttribute('hidden', '');
+  panel.classList.add('open');
+}
+
+function lessonWorldReady(lesson) {
+  if (!lesson) return false;
+  if (lesson.catalogue) {
+    const item = catalogueBodyNamed(lesson.catalogue);
+    return !!(item && S.catalogueId === item.id);
+  }
+  if (lesson.scenario) return W.scenarioId === lesson.scenario;
+  return true;
+}
+
+function onLessonChip() {
+  const p = loadLessonProgress();
+  const cur = lessonById(p.current);
+  const next = (!cur || lessonDone(cur.id, p)) ? nextIncompleteLesson(p) : cur;
+  if (!next) {
+    setDockTab('god');
+    setSuiteDesk('god', 'challenge');
+    showMoment('Tour', 'The Solar System is the tutorial', 'Challenges live in Play.');
+    return;
+  }
+  if (p.current === next.id && !lessonDone(next.id, p) && lessonWorldReady(next)) {
+    showMoment(next.kicker || 'Lesson', next.title, next.body);
+    return;
+  }
+  startLesson(next.id);
+}
+
+function checkLessonProgress() {
+  const id = S.lessonId;
+  if (!id || doorIsOpen()) return;
+  const lesson = lessonById(id);
+  if (!lesson || lessonDone(id)) return;
+  if (lesson.hunt) {
+    const hover = S.localHoverKey;
+    const cellKey = S.localHoverCell >= 0 ? legendKeyAt(W, S.localHoverCell) : null;
+    const hit = [hover, cellKey].find((k) => huntMatches(k, lesson));
+    if (hit) finishLesson(lesson.id, hit);
+    return;
+  }
+  if (lesson.scenario === 'daisy-tutorial') {
+    const report = evaluateScenario(W);
+    if (report?.regulated && (performance.now() - (S._lessonStartedAt || 0)) > 3500) {
+      finishLesson(lesson.id);
+    }
+    return;
+  }
+  if (lesson.scenario === 'save-snowball') {
+    const report = evaluateScenario(W);
+    if (report?.failed) {
+      if (!S._lessonFailNoted) {
+        S._lessonFailNoted = true;
+        showMoment('Ended', report.ending?.title || 'The run ended', report.ending?.epitaph || '');
+      }
+      return;
+    }
+    if (report?.broken) finishLesson(lesson.id);
+  }
+}
+
 function setupReveal() {
   const el = document.getElementById('reveal');
-  if (!el) return;
-  let progress = loadRevealProgress();
-  const paint = () => {
-    const step = currentReveal(progress);
-    if (!step) { el.hidden = true; return; }
-    el.hidden = false;
-    el.querySelector('.rv-kicker').textContent = `Step ${(progress.step || 0) + 1} of 6`;
-    el.querySelector('.rv-title').textContent = step.title;
-    el.querySelector('.rv-body').textContent = step.body;
-    el.querySelector('#revealnext').textContent = step.action || 'Continue';
-  };
-  paint();
-  document.getElementById('revealnext')?.addEventListener('click', () => {
-    progress = advanceReveal(progress);
-    paint();
-    playEvent('quiet', 0.5);
-  });
-  document.getElementById('revealskip')?.addEventListener('click', () => {
-    progress = skipReveal();
-    paint();
-  });
-  // Enrich scenario dropdown with campaign blurbs
-  const sel = document.getElementById('scenariosel');
-  if (sel) {
-    [...sel.options].forEach((o) => {
-      const blurb = campaignBlurb(o.value);
-      if (blurb && blurb !== o.value) o.title = blurb;
-    });
-  }
+  if (el) el.hidden = true;
+  skipReveal();
+  document.getElementById('reveal')?.setAttribute('hidden', '');
+  S.lessonId = loadLessonProgress().current;
+  document.getElementById('doorskip')?.addEventListener('click', () => startLesson('hold-earth'));
+  document.getElementById('lessonchip')?.addEventListener('click', onLessonChip);
+  paintCampaignTrack();
+  paintLessonChip();
 }
 
 function setupClimatePanel() {
@@ -1684,16 +1984,7 @@ function setupGodPanel() {
   }
   document.getElementById('scenariostart')?.addEventListener('click', () => {
     const id = document.getElementById('scenariosel')?.value;
-    const s = SCENARIOS.find((x) => x.id === id);
-    if (!s) return;
-    const rule = mergeRunRule(RULESETS.find((r) => r.id === s.ruleId) || W.rule, {
-      deepTime: !!s.deepTime,
-      startAgeGa: s.startAgeGa,
-    });
-    runGenerate(W.seed ^ 0x51, rule);
-    startScenario(id);
-    showMoment('Scenario', s.title, s.objective);
-    updateHUD();
+    beginScenario(id, { moment: true });
   });
   document.getElementById('godundo')?.addEventListener('click', () => {
     const r = undoStroke();
@@ -1787,6 +2078,22 @@ function setupGodPanel() {
   bindRange('genesisplates', 'genesisplatesVal', (v) => String(v));
   bindRange('genesiswater', 'genesiswaterVal', (v) => `${(v / 100).toFixed(2)}×`);
   bindRange('genesislandfrac', 'genesislandfracVal', (v) => `${v}%`);
+  bindRange('genesisorigindiff', 'genesisorigindiffVal', (v) => `${(+v).toFixed(1)}×`);
+  bindRange('origindiff', 'origindiffVal', (v) => {
+    W.originDifficulty = +v;
+    if (W.rule) W.rule.originDifficulty = +v;
+    return `${(+v).toFixed(1)}×`;
+  });
+  document.getElementById('godcull')?.addEventListener('click', () => {
+    let best = null;
+    for (const id of W.tree?.living || []) {
+      const n = W.tree.byId.get(id);
+      if (n && (!best || (n.pop || 0) > (best.pop || 0))) best = n;
+    }
+    if (!best) { showMoment('Cull', 'Nothing living', 'No lineage to remove.'); return; }
+    const r = cullClade(best.id);
+    showMoment('Cull', r.name || best.name, r.ok ? `${r.killed || 0} cells cleared` : (r.note || 'failed'));
+  });
   document.getElementById('genesisgo')?.addEventListener('click', () => {
     if (!confirmLeaveLand()) return;
     const base = W.rule || RULESETS[0];
@@ -1911,6 +2218,11 @@ function refreshLab() {
       (W.endemicCount ? ` · endemic <b>${W.endemicCount}</b>` : '') +
       (ldg ? ` · LDG Δ<b>${ldg.gradient}</b>` : '') +
       ` · Earth curve in grey</div>`) +
+    card('survey', 'seed', 'Tree',
+      `${treeToSvg(layoutTree(W.tree, 280, 140)) || '<div class="lab-meta">No phylogeny yet.</div>'}` +
+      `<div class="lab-meta">depth <b>${treeSummary(W.tree).maxDepth || 0}</b> · ${phy.living} living` +
+      (W.foodWeb?.links?.length ? ` · ${W.foodWeb.links.length} trophic links` : '') +
+      `</div>`) +
     card('survey', 'survey', 'Whittaker space',
       `${whitakerSVG(whit)}
       <div class="lab-meta">${whit.length} of ${NC} cells (~250 km each) in temperature–rainfall space</div>`) +
@@ -2049,6 +2361,7 @@ let _taughtAlive = false;
 let _teachT0 = 0;
 function maybeTeachWindow(t) {
   if (_taughtAlive) return;
+  if (doorIsOpen()) { _teachT0 = 0; return; }
   if (!_teachT0) _teachT0 = t || 0;
   if ((t || 0) - _teachT0 < 1100) return;
   _taughtAlive = true;
@@ -2070,7 +2383,7 @@ function maybeTeachWindow(t) {
   if (best < 0) return;
   if (S.localSeek !== 'life') S.localPin = best;
   else S.localPin = -1;
-  S.localGlobe = 'both';
+  S.localGlobe = 'rim';
   if (S.localRadius < 8) S.localRadius = 8;
   requestFace(best);
   showMoment('The window', 'This patch is the rim on the globe.', 'Click a being to follow · Shift+D watches a day');
@@ -2230,11 +2543,108 @@ function closeLandPicker() {
   document.getElementById('landpick')?.classList.remove('open');
 }
 
+function localKeyOpen() {
+  return document.getElementById('localkey')?.classList.contains('open');
+}
+
+function closeLocalKey() {
+  const panel = document.getElementById('localkey');
+  if (!panel?.classList.contains('open')) return;
+  panel.classList.remove('open');
+  document.getElementById('localkeybtn')?.setAttribute('aria-pressed', 'false');
+  S.localLegendLock = null;
+}
+
+function openLocalKey(focusId = null) {
+  const panel = document.getElementById('localkey');
+  const list = document.getElementById('localkeylist');
+  const sub = document.getElementById('localkeysub');
+  if (!panel || !list) return;
+  closeLandPicker();
+  if (sub) {
+    sub.textContent = `Each square is one sim cell (~${cellKm(N)} km). Colour is cover, or the metabolism that won it. Sprites on top are genomes from an open morphospace — not sixteen stamps.`;
+  }
+  const highlightable = new Set();
+  for (const sec of legendGlossary(W)) {
+    if (sec.highlight === false) continue;
+    for (const e of sec.entries) highlightable.add(e.id);
+  }
+  const highlight = (focusId && highlightable.has(focusId)) ? focusId : null;
+  if (highlight) {
+    S.localLegendLock = highlight;
+    S.localHoverKey = highlight;
+  }
+  list.innerHTML = '';
+  const addSec = (title, blurb) => {
+    const h = document.createElement('div');
+    h.className = 'lk-sec';
+    h.textContent = title;
+    list.appendChild(h);
+    if (blurb) {
+      const p = document.createElement('p');
+      p.className = 'lk-blurb';
+      p.textContent = blurb;
+      list.appendChild(p);
+    }
+  };
+  const addGrid = (className) => {
+    const g = document.createElement('div');
+    g.className = 'lk-grid' + (className ? ` ${className}` : '');
+    list.appendChild(g);
+    return g;
+  };
+  const addRow = (parent, e) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'lk-row';
+    b.dataset.key = e.id;
+    const sw = document.createElement('i');
+    sw.className = 'lk-swatch' + (e.swatch ? ` ${e.swatch}` : '');
+    if (!e.swatch || e.swatch === 'dot') {
+      sw.style.background = `rgb(${e.rgb[0]},${e.rgb[1]},${e.rgb[2]})`;
+    }
+    const body = document.createElement('div');
+    body.innerHTML = `<div class="lk-name">${e.tip || e.label}</div><div class="lk-why">${e.why || ''}</div>`;
+    b.append(sw, body);
+    b.addEventListener('pointerenter', () => {
+      S.localLegendLock = e.id;
+      S.localHoverKey = e.id;
+      for (const row of list.querySelectorAll('.lk-row')) {
+        row.classList.toggle('on', row.dataset.key === e.id);
+      }
+    });
+    b.addEventListener('pointerleave', () => {
+      if (S.localLegendLock === e.id) S.localLegendLock = null;
+    });
+    b.addEventListener('click', () => {
+      S.localLegendLock = e.id;
+      S.localHoverKey = e.id;
+    });
+    parent.appendChild(b);
+  };
+  for (const sec of legendGlossary(W)) {
+    addSec(sec.title, sec.blurb);
+    const grid = addGrid(sec.grid || '');
+    for (const e of sec.entries) addRow(grid, e);
+  }
+  for (const row of list.querySelectorAll('.lk-row')) {
+    row.classList.toggle('on', !!highlight && row.dataset.key === highlight);
+  }
+  panel.classList.add('open');
+  document.getElementById('localkeybtn')?.setAttribute('aria-pressed', 'true');
+  if (highlight) {
+    list.querySelector(`.lk-row[data-key="${highlight}"]`)?.scrollIntoView({ block: 'nearest' });
+  } else {
+    list.scrollTop = 0;
+  }
+}
+
 function openLandPicker(opts = {}) {
   const panel = document.getElementById('landpick');
   const grid = document.getElementById('landpickgrid');
   const foot = document.getElementById('landpickfoot');
   if (!panel || !grid) return;
+  closeLocalKey();
   const current = {
     seed: (W.landSeed ?? W.seed) >>> 0,
     landscape: W._landscape || S.landscape || 'auto',
@@ -2692,6 +3102,11 @@ export function boot() {
   });
   document.getElementById('landpickbtn')?.addEventListener('click', () => openLandPicker());
   document.getElementById('landpickclose')?.addEventListener('click', () => closeLandPicker());
+  document.getElementById('localkeybtn')?.addEventListener('click', () => {
+    if (localKeyOpen()) closeLocalKey();
+    else openLocalKey();
+  });
+  document.getElementById('localkeyclose')?.addEventListener('click', () => closeLocalKey());
   syncView();
 
   const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
@@ -2743,6 +3158,7 @@ export function boot() {
     placeLocalBarOverflow();
     requestAnimationFrame(() => placeLocalBarOverflow());
   };
+  applyLocalLayout = syncLocalLayout;
   /** Park bar controls into ⋯ when the panel is too narrow; restore when it grows. */
   const placeLocalBarOverflow = () => {
     const tools = document.querySelector('#localbar .local-tools');
@@ -2812,42 +3228,37 @@ export function boot() {
     syncLocalLayout();
   };
   if (localLegend) {
-    localLegend.innerHTML = '';
-    const LEGEND_TIP = {
-      canopy: 'Canopy / complex plant cover',
-      grass: 'Grassland',
-      cyanobacteria: 'Cyanobacteria',
-      purpleSulfur: 'Purple sulfur bacteria',
-      reef: 'Reef',
-      ocean: 'Open ocean',
-      barren: 'Barren rock / soil',
-      savanna: 'Savanna',
-      desert: 'Desert',
-      ice: 'Ice / snow',
-      fauna: 'Fauna',
-      settler: 'Settlements',
+    let legendKind = null;
+    const fillLocalLegend = () => {
+      const kind = W._planetKind || 'earth';
+      if (kind === legendKind && localLegend.children.length) return;
+      legendKind = kind;
+      localLegend.innerHTML = '';
+      for (const e of legendEntries(W)) {
+        const el = document.createElement('span');
+        el.className = 'leg';
+        el.dataset.key = e.id;
+        el.dataset.tip = e.tip || e.label;
+        el.title = el.dataset.tip;
+        const sw = document.createElement('i');
+        sw.style.background = `rgb(${e.rgb[0]},${e.rgb[1]},${e.rgb[2]})`;
+        el.appendChild(sw);
+        el.appendChild(document.createTextNode(e.label));
+        el.addEventListener('pointerenter', () => {
+          S.localLegendLock = e.id;
+          S.localHoverKey = e.id;
+        });
+        el.addEventListener('pointerleave', () => {
+          if (localKeyOpen()) return;
+          if (S.localLegendLock === e.id) S.localLegendLock = null;
+        });
+        el.addEventListener('click', () => openLocalKey(e.id));
+        localLegend.appendChild(el);
+      }
     };
-    for (const e of legendEntries()) {
-      const el = document.createElement('span');
-      el.className = 'leg';
-      el.dataset.key = e.id;
-      el.dataset.tip = LEGEND_TIP[e.id] || e.label;
-      el.title = el.dataset.tip;
-      const sw = document.createElement('i');
-      sw.style.background = `rgb(${e.rgb[0]},${e.rgb[1]},${e.rgb[2]})`;
-      el.appendChild(sw);
-      el.appendChild(document.createTextNode(e.label));
-      el.addEventListener('pointerenter', () => {
-        S.localLegendLock = e.id;
-        S.localHoverKey = e.id;
-      });
-      el.addEventListener('pointerleave', () => {
-        if (S.localLegendLock === e.id) S.localLegendLock = null;
-      });
-      localLegend.appendChild(el);
-    }
-  }
-  syncLocalChrome = (patch, hoverKey) => {
+    fillLocalLegend();
+    syncLocalChrome = (patch, hoverKey) => {
+    fillLocalLegend();
     if (localLegend) {
       const n = Math.max(1, patch?.status?.nCells || 1);
       const shares = patch?.status?.shares || {};
@@ -2921,6 +3332,7 @@ export function boot() {
       }
     }
   };
+  }
   mkSeg('localSnap', LOCAL_SNAPS, ['TL', 'TR', 'BL', 'BR'],
     () => S.localSnap,
     (v) => { S.localSnap = v; syncLocalLayout(); });
@@ -3144,7 +3556,13 @@ export function boot() {
         showErr(who.name ? `Following ${who.name}` : 'Following');
       } else {
         const c = hoverCellAt(S._localPatch, cssX, cssY);
-        if (c >= 0) pinLocal(c);
+        if (c >= 0) {
+          pinLocal(c);
+          if (activeTool === 'inspect') {
+            S.inspect = inspectCell(c);
+            updateHUD();
+          }
+        }
       }
     }
     localDrag = null;
@@ -3238,12 +3656,10 @@ export function boot() {
       if (dist < 6) {
         const cell = desktopPick(e.clientX, e.clientY);
         if (cell != null && cell >= 0) {
-          if (S.localSeek === 'life') {
-            S.inspect = { cell };
-            requestFace(cell);
-          } else {
-            pinLocal(cell);
-          }
+          pinLocal(cell);
+          onToolResult(useToolAt(cell));
+          setDockTab('lab');
+          setSuiteDesk('lab', 'station');
         }
       }
     }
@@ -3306,6 +3722,14 @@ export function boot() {
   addEventListener('keydown', (e) => {
     audioInit();
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+    if (e.key === 'Escape' && doorIsOpen()) {
+      startLesson('hold-earth');
+      return;
+    }
+    if (e.key === 'Escape' && localKeyOpen()) {
+      closeLocalKey();
+      return;
+    }
     if (e.key === 'Escape' && S.localExpanded) {
       stepLocalFrame(-1);
       return;
@@ -3396,6 +3820,7 @@ export function boot() {
     _pitchHoldMoment = true;
     setPaused(true);
     closeLandPicker();
+    closeDoor();
     document.getElementById('catpanel')?.classList.remove('open');
     document.getElementById('catbtn')?.setAttribute('aria-pressed', 'false');
     document.getElementById('dock')?.classList.remove('collapsed');
@@ -3450,15 +3875,11 @@ export function boot() {
   let pitch = null;
   try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* ignore */ }
   if (pitch) applyPitchShot(pitch);
-  else if (!opening.pinned) {
+  else if (!opening.pinned && shouldOfferDoor()) {
     setPaused(true);
     setSuiteDesk('tools', 'land');
-    let showPick = true;
-    try {
-      if (sessionStorage.getItem('orrery-picker-shown')) showPick = false;
-      else sessionStorage.setItem('orrery-picker-shown', '1');
-    } catch { /* private mode — still show */ }
-    if (showPick) openLandPicker({ pause: true });
+    skipReveal();
+    openDoor();
   }
   requestAnimationFrame(desktopFrame);
   const quads = (6 * globeN() * globeN()).toLocaleString();

@@ -1,18 +1,20 @@
 /** WebGL2 rendering: planet, atmosphere, clouds, extruded entities. */
 
 import { m4, m4ident, m4mul, m4trs, m3fromM4rot, clamp, lerp } from './math.js';
-import { N, NF, NC, VPF, warp, facePoint, dirToCell, sampleFaceField, DIR, NBR } from './sphere.js';
+import { N, NF, NC, warp, facePoint, dirToCell, sampleFaceField, cellAt, DIR, NBR, cellSizeKm } from './sphere.js';
 import { W } from './world.js';
 import { ENT, MAX_ENT } from './agents.js';
 import { showErr } from './math.js';
 import { lifeRGB, oceanLifeRGB, GUILD_RGB, dominantGuildAt } from './sim/lifeColour.js';
 import { GUILDS } from './sim/redox.js';
 import { BIOMES } from './sim/ecology.js';
-import { GROUND, presentTime, tidePhase, waterStage } from './sim/present.js';
-import { getSpriteAtlas, ATLAS_COLS } from './sprites.js';
+import { GROUND, presentTime, tidePhase, waterStage, hash01 } from './sim/present.js';
+import { usesWhittakerCover } from './sim/planetKind.js';
+import { getSpriteAtlas, ATLAS_COLS, morphAtlasDirty } from './sprites.js';
 import { buildTransmittanceLUT, uploadScatterLUT, buildMultipleScatterLUT, updateScatterLUT } from './sim/scatter.js';
 import { applyOverlay } from './sim/overlay.js';
 import { fillFlowStreaks } from './sim/flowviz.js';
+import { updateIsoline, fillRiverLines } from './sim/isoline.js';
 import { BRUSH } from './sim/god/brush.js';
 import { localSeaLevel, isSubmerged } from './sim/cellSurface.js';
 import { meshForEntity } from './sim/mesh.js';
@@ -99,8 +101,10 @@ let vGridJ = new Uint16Array(GNV);
 export let vIdx;
 
 const GUILD_INDEX = Object.fromEntries(GUILDS.map((g, i) => [g.id, i]));
-export let FIELD_W = 6 * N;
-export let FIELD_H = N;
+/** Guttered atlas: each face is (N+2)×(N+2) so LINEAR never blends across a seam. */
+export let FACE_STRIDE = N + 2;
+export let FIELD_W = 6 * FACE_STRIDE;
+export let FIELD_H = N + 2;
 let fieldTex0 = null, fieldTex1 = null, fieldTex2 = null;
 let fieldPix0 = null, fieldPix1 = null, fieldPix2 = null;
 let bufFieldUV = null;
@@ -112,8 +116,28 @@ export function setOverlayMode(m) { overlayMode = m || 'none'; }
 
 let _flowBuf = null;
 let FLOW_COUNT = 0;
+let COAST_COUNT = 0;
+let RIVER_LINE_COUNT = 0;
+let _isoBufTick = -1;
+let _riverScratch = null;
 
 let weldGroups = [];
+
+function u8round(x) {
+  return x < 0 ? 0 : x > 255 ? 255 : (x + 0.5) | 0;
+}
+
+const BAYER4 = [
+  0, 8, 2, 10,
+  12, 4, 14, 6,
+  3, 11, 1, 9,
+  15, 7, 13, 5,
+];
+
+function ditherU8(x, k) {
+  const d = (BAYER4[((vGridJ[k] & 3) << 2) | (vGridI[k] & 3)] + 0.5) / 16 - 0.5;
+  return u8round(x + d);
+}
 
 function bindVertexMix() {
   vMix0 = new Float32Array(GNV);
@@ -126,22 +150,16 @@ function bindVertexMix() {
   vMixC3 = new Uint32Array(GNV);
   for (let k = 0; k < GNV; k++) {
     const f = vFace[k], gi = vGridI[k], gj = vGridJ[k];
-    const ci = (gi / GN) * N;
-    const cj = (gj / GN) * N;
+    const ci = (gi / GN) * N - 0.5;
+    const cj = (gj / GN) * N - 0.5;
     const i0 = Math.floor(ci);
     const j0 = Math.floor(cj);
     const fu = ci - i0;
     const fv = cj - j0;
-    const i1 = Math.min(i0 + 1, N - 1);
-    const j1 = Math.min(j0 + 1, N - 1);
-    const j0c = clamp(j0, 0, N - 1);
-    const j1c = clamp(j1, 0, N - 1);
-    const i0c = clamp(i0, 0, N - 1);
-    const i1c = clamp(i1, 0, N - 1);
-    vMixC0[k] = f * NF + j0c * N + i0c;
-    vMixC1[k] = f * NF + j0c * N + i1c;
-    vMixC2[k] = f * NF + j1c * N + i0c;
-    vMixC3[k] = f * NF + j1c * N + i1c;
+    vMixC0[k] = cellAt(f, i0, j0);
+    vMixC1[k] = cellAt(f, i0 + 1, j0);
+    vMixC2[k] = cellAt(f, i0, j0 + 1);
+    vMixC3[k] = cellAt(f, i0 + 1, j0 + 1);
     vMix0[k] = (1 - fu) * (1 - fv);
     vMix1[k] = fu * (1 - fv);
     vMix2[k] = (1 - fu) * fv;
@@ -157,10 +175,10 @@ function spreadVertexDat() {
     const b2 = vMixC2[k] << 2;
     const b3 = vMixC3[k] << 2;
     const w0 = vMix0[k], w1 = vMix1[k], w2 = vMix2[k], w3 = vMix3[k];
-    vDat[o] = (w0 * _cellDat[b0] + w1 * _cellDat[b1] + w2 * _cellDat[b2] + w3 * _cellDat[b3]) | 0;
-    vDat[o + 1] = (w0 * _cellDat[b0 + 1] + w1 * _cellDat[b1 + 1] + w2 * _cellDat[b2 + 1] + w3 * _cellDat[b3 + 1]) | 0;
-    vDat[o + 2] = (w0 * _cellDat[b0 + 2] + w1 * _cellDat[b1 + 2] + w2 * _cellDat[b2 + 2] + w3 * _cellDat[b3 + 2]) | 0;
-    vDat[o + 3] = (w0 * _cellDat[b0 + 3] + w1 * _cellDat[b1 + 3] + w2 * _cellDat[b2 + 3] + w3 * _cellDat[b3 + 3]) | 0;
+    vDat[o] = ditherU8(w0 * _cellDat[b0] + w1 * _cellDat[b1] + w2 * _cellDat[b2] + w3 * _cellDat[b3], k);
+    vDat[o + 1] = ditherU8(w0 * _cellDat[b0 + 1] + w1 * _cellDat[b1 + 1] + w2 * _cellDat[b2 + 1] + w3 * _cellDat[b3 + 1], k);
+    vDat[o + 2] = ditherU8(w0 * _cellDat[b0 + 2] + w1 * _cellDat[b1 + 2] + w2 * _cellDat[b2 + 2] + w3 * _cellDat[b3 + 2], k);
+    vDat[o + 3] = ditherU8(w0 * _cellDat[b0 + 3] + w1 * _cellDat[b1 + 3] + w2 * _cellDat[b2 + 3] + w3 * _cellDat[b3 + 3], k);
   }
 }
 
@@ -178,8 +196,9 @@ function buildLatticeArrays() {
   vFace = new Uint8Array(GNV);
   vGridI = new Uint16Array(GNV);
   vGridJ = new Uint16Array(GNV);
-  FIELD_W = 6 * N;
-  FIELD_H = N;
+  FIELD_W = 6 * (N + 2);
+  FIELD_H = N + 2;
+  FACE_STRIDE = N + 2;
   const p = [0, 0, 0];
   let k = 0;
   for (let f = 0; f < 6; f++) for (let j = 0; j <= GN; j++) for (let i = 0; i <= GN; i++, k++) {
@@ -193,8 +212,8 @@ function buildLatticeArrays() {
     vCell[k] = c;
     const ci = (i / GN) * N;
     const cj = (j / GN) * N;
-    vFieldUV[k * 2] = (f * N + ci + 0.5) / FIELD_W;
-    vFieldUV[k * 2 + 1] = (cj + 0.5) / FIELD_H;
+    vFieldUV[k * 2] = (f * FACE_STRIDE + 1 + ci) / FIELD_W;
+    vFieldUV[k * 2 + 1] = (1 + cj) / FIELD_H;
   }
   const idx = new Uint32Array(6 * GN * GN * 6);
   let m = 0;
@@ -282,12 +301,40 @@ let _cellGrid = null;
 let _localRim = null;
 let LOCAL_RIM_COUNT = 0;
 let _localSet = null;
+let _localDist = null;
 let _localFocus = -1;
 let _localHover = -1;
 let _localWash = false;
 let _localRimOn = false;
 let _localKey = '';
 let _guildHL = null;
+const WASH_FEATHER_KM = 150;
+
+function paintLocalDist(set) {
+  if (!_localDist || _localDist.length !== NC) _localDist = new Float32Array(NC);
+  _localDist.fill(1e6);
+  if (!set || !set.size) return;
+  const q = [];
+  for (const c of set) {
+    _localDist[c] = 0;
+    q.push(c);
+  }
+  const km = cellSizeKm();
+  const cap = WASH_FEATHER_KM + km;
+  for (let qi = 0; qi < q.length; qi++) {
+    const c = q[qi];
+    const d = _localDist[c];
+    if (d >= cap) continue;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      const nd = d + km;
+      if (nd < _localDist[n]) {
+        _localDist[n] = nd;
+        q.push(n);
+      }
+    }
+  }
+}
 let ORBIT_AXIS_COUNT = 0;
 let ORBIT_EQ_COUNT = 0;
 let ORBIT_ECL_COUNT = 0;
@@ -387,6 +434,7 @@ uniform float uOzone, uAerosol, uMag, uTime, uHaze, uExposure, uMoon;
 uniform float uStorm, uCloudShadow, uMagTilt; uniform float uGrain;
 uniform float uLook, uCloudFree;
 uniform sampler2D uField0; uniform sampler2D uField1; uniform sampler2D uField2;
+uniform vec2 uAtlasSize;
 uniform sampler2D uScatter; uniform sampler2D uScatterMs;
 out vec4 o;
 vec3 climate(float t){
@@ -458,7 +506,9 @@ void main(){
   float precipF = F2.b;
   float flowF = F2.a;
   float nppF = F1.r;
-  float guildF = F1.g;
+  /* Guild is a category. Snap to the texel so LINEAR never invents a metabolism. */
+  vec2 guildUV = (floor(vFUV * uAtlasSize) + 0.5) / uAtlasSize;
+  float guildF = texture(uField1, guildUV).g;
   float heightF = F1.b; // 0 deep ocean → 1 high land
   float windF = F1.a;
   /* Detail level of service: one object-space unit is one planet radius, so
@@ -479,7 +529,8 @@ void main(){
      nick the heightfield with object-space noise at the waterline only. */
   float hCoast = heightF + (detMid - 0.5) * 0.055 * midFade
     + (detFine - 0.5) * 0.018 * fineFade;
-  float waterMask = 1.0 - smoothstep(0.485, 0.538, hCoast);
+  float hw = max(fwidth(hCoast) * 1.25, 0.006);
+  float waterMask = 1.0 - smoothstep(0.5 - hw, 0.5 + hw, hCoast);
   float landMask = 1.0 - waterMask;
   // Intertidal coast band — real field + soft shoreline
   float interBand = smoothstep(0.35, 0.55, hCoast) * smoothstep(0.62, 0.48, hCoast);
@@ -903,6 +954,8 @@ void main(){
     cloudIdx: gl.createBuffer(),
     cellGrid: gl.createBuffer(),
     localRim: gl.createBuffer(),
+    coastLine: gl.createBuffer(),
+    riverLine: gl.createBuffer(),
     flowStreaks: gl.createBuffer(),
     cloud: gl.createBuffer(), cloudCov: gl.createBuffer(),
   };
@@ -915,7 +968,7 @@ void main(){
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.inst);
   gl.bufferData(gl.ARRAY_BUFFER, ENT.data.byteLength, gl.DYNAMIC_DRAW);
 
-  // gbuf field atlases: 6N × N RGBA8
+  // gbuf field atlases: 6×(N+2) × (N+2) RGBA8, one-texel gutters per face
   fieldPix0 = new Uint8Array(FIELD_W * FIELD_H * 4);
   fieldPix1 = new Uint8Array(FIELD_W * FIELD_H * 4);
   fieldPix2 = new Uint8Array(FIELD_W * FIELD_H * 4);
@@ -1120,6 +1173,8 @@ export function updateLocalHighlight(patch, mode = 'off') {
   _localWash = wantWash;
   _localRimOn = wantRim;
   _localSet = wantWash || wantRim ? (patch?.cellSet || null) : null;
+  if (_localSet) paintLocalDist(_localSet);
+  else if (_localDist) _localDist.fill(1e6);
   _localFocus = patch?.focus ?? -1;
   if (patch?.hoverCell != null) _localHover = patch.hoverCell | 0;
 
@@ -1171,7 +1226,104 @@ export function updateLocalHighlight(patch, mode = 'off') {
   }
 }
 
+function syncIsolines() {
+  if (!gl || !buf?.coastLine) return;
+  if (!W.coastLine && W.h && W.seaLevel != null) updateIsoline(W);
+  const tick = W._isoTick ?? 0;
+  if (tick !== _isoBufTick) {
+    COAST_COUNT = W.coastCount || 0;
+    if (COAST_COUNT > 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.coastLine);
+      gl.bufferData(gl.ARRAY_BUFFER, W.coastLine.subarray(0, COAST_COUNT * 3), gl.DYNAMIC_DRAW);
+    }
+    _isoBufTick = tick;
+  }
+  if (!_riverScratch) _riverScratch = new Float32Array(4000 * 6);
+  RIVER_LINE_COUNT = fillRiverLines(W, _riverScratch, 3500);
+  if (RIVER_LINE_COUNT > 0 && buf.riverLine) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.riverLine);
+    gl.bufferData(gl.ARRAY_BUFFER, _riverScratch.subarray(0, RIVER_LINE_COUNT * 3), gl.DYNAMIC_DRAW);
+  }
+}
+
+/** Optical-ish two-scale depth so the abyss keeps a gradient past the shelf. */
+function oceanDepth01(depth) {
+  const z = Math.max(0, depth);
+  const shelf = 1 - Math.exp(-z * 6.5);
+  const deep = Math.log1p(z * 4.2) / Math.log1p(5.04);
+  return clamp(shelf * 0.62 + deep * 0.38, 0, 1);
+}
+
+/** Overlay ink composites over terrain colour. Never mutates the rest of the globe. */
+function applyInk(dat, previewSet, strokeFade) {
+  const wantWash = _localWash && _localDist;
+  const wantHover = _localHover >= 0;
+  const wantGuild = !!( _guildHL && W.guildDens?.[_guildHL]);
+  const wantPreview = !!(BRUSH.previewCenter >= 0 || previewSet);
+  if (!wantWash && !wantHover && !wantGuild && !wantPreview && !W.strokeMark) return;
+  for (let c = 0; c < NC; c++) {
+    const o = c << 2;
+    let r = dat[o], g = dat[o + 1], b = dat[o + 2];
+    if (wantWash) {
+      const d = _localDist[c];
+      let k = 0;
+      if (d <= 0) k = c === _localFocus ? 0.14 : 0.07;
+      else if (d < WASH_FEATHER_KM) k = 0.07 * (1 - d / WASH_FEATHER_KM);
+      if (k > 0.002) {
+        r = lerp(r, 255, k);
+        g = lerp(g, 248, k);
+        b = lerp(b, 236, k * 0.8);
+      }
+    }
+    if (wantHover && c === _localHover) {
+      r = lerp(r, 255, 0.38);
+      g = lerp(g, 236, 0.28);
+      b = lerp(b, 160, 0.16);
+    }
+    const stroke = W.strokeMark?.[c] || 0;
+    if (stroke > 0.03) {
+      const k = stroke * 0.72;
+      r = lerp(r, 255, k);
+      g = lerp(g, 210, k);
+      b = lerp(b, 70, k);
+      W.strokeMark[c] = stroke * strokeFade;
+    }
+    if (BRUSH.previewCenter === c) {
+      r = lerp(r, 255, 0.62);
+      g = lerp(g, 228, 0.45);
+      b = lerp(b, 80, 0.28);
+    } else if (previewSet?.has(c)) {
+      r = lerp(r, 255, 0.32);
+      g = lerp(g, 214, 0.24);
+      b = lerp(b, 70, 0.14);
+    }
+    if (wantGuild) {
+      const dens = W.guildDens[_guildHL][c] || 0;
+      const rgb = GUILD_RGB[_guildHL];
+      if (dens > 0.06 && rgb) {
+        const k = 0.35 + dens * 0.55;
+        r = lerp(r, rgb[0], k);
+        g = lerp(g, rgb[1], k);
+        b = lerp(b, rgb[2], k);
+      } else {
+        r = lerp(r, 18, 0.55);
+        g = lerp(g, 22, 0.55);
+        b = lerp(b, 28, 0.55);
+      }
+    }
+    dat[o] = u8round(r);
+    dat[o + 1] = u8round(g);
+    dat[o + 2] = u8round(b);
+  }
+}
+
 export function refreshColours(alpha = 1) {
+  /* Compositing order (load-bearing):
+   *  1. substrate — ocean / land / ice / lava / ash / sulfur / dust
+   *  2. cover — vegetation, guild, biome membership, wetness
+   *  3. transients — foam, storm, snowball, greenhouse, albedo paint
+   *  4. ink — overlay, local wash (inside only, feathered), hover, stroke, brush
+   * Terrain is written to _cellDat; ink composites after; spreadVertexDat bilinearises. */
   const R = W.rule;
   const pigment = W.dominantPigment;
   const season = W.season || 0;
@@ -1189,7 +1341,7 @@ export function refreshColours(alpha = 1) {
     const inter = W.intertidal?.[c] || 0;
     let col;
     if (isSubmerged(W, c)) {
-      const d = clamp((sea - W.h[c]) * 1.9, 0, 1);
+      const d = oceanDepth01(sea - W.h[c]);
       const deep = [
         lerp(16, 4, d),
         lerp(32, 8, d),
@@ -1203,7 +1355,7 @@ export function refreshColours(alpha = 1) {
       ];
       // Sea ice leads / polynyas — not a flat white sheet. Item 142.
       if (ice > 0.35 && ice < 0.85) {
-        const lead = (Math.sin(c * 12.9898) * 43758.5453) % 1;
+        const lead = hash01((DIR[c * 3] * 4096) | 0, ((DIR[c * 3 + 1] * 4096) | 0) ^ 0x11fe);
         if (lead > 0.7) {
           col = [lerp(col[0], 40, 0.55), lerp(col[1], 90, 0.55), lerp(col[2], 140, 0.55)];
         } else {
@@ -1326,6 +1478,9 @@ export function refreshColours(alpha = 1) {
         rock: W.rock?.[c] || 0,
         dust: W.dust?.[c] || 0,
         lat: Math.abs(DIR[c * 3 + 1]),
+        x: DIR[c * 3],
+        y: DIR[c * 3 + 1],
+        z: DIR[c * 3 + 2],
       };
       col = R.land(temp, W.moist[c], life, e, ice, extra);
       // Intertidal ochre — coast that breathes with the presentation tide
@@ -1337,12 +1492,27 @@ export function refreshColours(alpha = 1) {
       }
       const biome = W.biome ? BIOMES[W.biome[c]] : '';
       const gnd = biome && GROUND[biome];
-      if (gnd && ice < 0.45) {
+      if (gnd && ice < 0.45 && usesWhittakerCover(W._planetKind, W)) {
+        let gr = gnd[0], gg = gnd[1], gb = gnd[2];
+        const w1 = W.biomeMix?.[c];
+        const b2 = W.biome2 != null ? BIOMES[W.biome2[c]] : null;
+        const g2 = b2 && GROUND[b2];
+        if (g2 && w1 < 0.92) {
+          const w2 = 1 - w1;
+          gr = gr * w1 + g2[0] * w2;
+          gg = gg * w1 + g2[1] * w2;
+          gb = gb * w1 + g2[2] * w2;
+        }
         const k = life > 0.12 ? 0.16 : 0.34;
-        col = [lerp(col[0], gnd[0], k), lerp(col[1], gnd[1], k), lerp(col[2], gnd[2], k)];
+        col = [lerp(col[0], gr, k), lerp(col[1], gg, k), lerp(col[2], gb, k)];
+      }
+      const cd = W.coastDist?.[c];
+      if (cd != null && cd >= 0 && cd < 160 && ice < 0.4) {
+        const k = (1 - cd / 160) * 0.18;
+        col = [lerp(col[0], 194, k), lerp(col[1], 168, k), lerp(col[2], 118, k)];
       }
       const autumn = Math.max(0, -Math.sin(season) * DIR[c * 3 + 1]);
-      if (autumn > 0.3 && life > 0.1 && ice < 0.45
+      if (autumn > 0.3 && life > 0.1 && ice < 0.45 && usesWhittakerCover(W._planetKind, W)
         && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest')) {
         const k = Math.min(0.4, autumn * 0.45) * Math.min(1, life * 2);
         col = [lerp(col[0], 196, k), lerp(col[1], 108, k), lerp(col[2], 40, k)];
@@ -1470,72 +1640,25 @@ export function refreshColours(alpha = 1) {
       const d = W.dust[c];
       col = [lerp(col[0], 180, d), lerp(col[1], 140, d), lerp(col[2], 90, d)];
     }
-    if (_localWash && _localSet) {
-      if (_localSet.has(c)) {
-        const k = c === _localFocus ? 0.14 : 0.07;
-        col = [
-          lerp(col[0], 255, k),
-          lerp(col[1], 248, k),
-          lerp(col[2], 236, k * 0.8),
-        ];
-      } else {
-        const g = (col[0] + col[1] + col[2]) / 3;
-        col = [
-          lerp(col[0], g * 0.7, 0.46),
-          lerp(col[1], g * 0.7, 0.46),
-          lerp(col[2], g * 0.78, 0.46),
-        ];
-      }
-    }
     if (W.albedoPaint?.[c] > 0.04) {
       const a = clamp(W.albedoPaint[c], 0, 1) * 0.7;
       col = [lerp(col[0], 236, a), lerp(col[1], 232, a), lerp(col[2], 220, a)];
     }
-    if (_localHover >= 0 && c === _localHover) {
-      col = [
-        lerp(col[0], 255, 0.38),
-        lerp(col[1], 236, 0.28),
-        lerp(col[2], 160, 0.16),
-      ];
-    }
-    const stroke = W.strokeMark?.[c] || 0;
-    if (stroke > 0.03) {
-      const k = stroke * 0.72;
-      col = [lerp(col[0], 255, k), lerp(col[1], 210, k), lerp(col[2], 70, k)];
-      W.strokeMark[c] = stroke * strokeFade;
-    }
-    if (BRUSH.previewCenter === c) {
-      col = [lerp(col[0], 255, 0.62), lerp(col[1], 228, 0.45), lerp(col[2], 80, 0.28)];
-    } else if (previewSet?.has(c)) {
-      col = [lerp(col[0], 255, 0.32), lerp(col[1], 214, 0.24), lerp(col[2], 70, 0.14)];
-    }
-    // Lab redox-tower hover — light up matching guild cells
-    if (_guildHL && W.guildDens?.[_guildHL]) {
-      const dens = W.guildDens[_guildHL][c] || 0;
-      const rgb = GUILD_RGB[_guildHL];
-      if (dens > 0.06 && rgb) {
-        const k = 0.35 + dens * 0.55;
-        col = [
-          lerp(col[0], rgb[0], k),
-          lerp(col[1], rgb[1], k),
-          lerp(col[2], rgb[2], k),
-        ];
-      } else {
-        col = [
-          lerp(col[0], 18, 0.55),
-          lerp(col[1], 22, 0.55),
-          lerp(col[2], 28, 0.55),
-        ];
-      }
+    if (!isSubmerged(W, c) && (W.moist[c] || 0) > 0.45 && ice < 0.35) {
+      const wk = clamp((W.moist[c] - 0.45) / 0.55, 0, 1) * 0.16;
+      col = [col[0] * (1 - wk), col[1] * (1 - wk), col[2] * (1 - wk * 0.7)];
     }
     const o = c << 2;
-    _cellDat[o] = col[0] | 0; _cellDat[o + 1] = col[1] | 0; _cellDat[o + 2] = col[2] | 0;
-    _cellDat[o + 3] = clamp(temp, 0, 1) * 255 | 0;
+    _cellDat[o] = u8round(col[0]);
+    _cellDat[o + 1] = u8round(col[1]);
+    _cellDat[o + 2] = u8round(col[2]);
+    _cellDat[o + 3] = u8round(clamp(temp, 0, 1) * 255);
   }
+  if (overlayMode && overlayMode !== 'none') applyOverlay(W, _cellDat, null, NC, overlayMode);
+  applyInk(_cellDat, previewSet, strokeFade);
   spreadVertexDat();
   if (gl) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.dat);
-    if (overlayMode && overlayMode !== 'none') applyOverlay(W, vDat, vCell, GNV, overlayMode);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, vDat);
     uploadFieldTextures(alpha);
   }
@@ -1588,6 +1711,11 @@ function buildCloudMesh() {
 
 export function uploadEntities() {
   if (!gl) return;
+  if (morphAtlasDirty() && atlasTex) {
+    gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, getSpriteAtlas());
+    gl.generateMipmap(gl.TEXTURE_2D);
+  }
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.inst);
   gl.bufferSubData(gl.ARRAY_BUFFER, 0, ENT.data.subarray(0, ENT.n * 8));
 }
@@ -1677,7 +1805,38 @@ function bindPlanetAttribs(p) {
   }
 }
 
-/** Pack sim fields into GPU atlases. Next backlog item 1 (gbuf). */
+/** Atlas texel for face f, cell (i,j). i/j in [-1, N] include the 1-texel gutter. */
+function atlasOffset(f, i, j) {
+  return ((j + 1) * FIELD_W + f * FACE_STRIDE + (i + 1)) * 4;
+}
+
+function fillAtlasGutters(pix) {
+  for (let f = 0; f < 6; f++) {
+    for (let j = -1; j <= N; j++) {
+      for (let i = -1; i <= N; i++) {
+        if (i >= 0 && i < N && j >= 0 && j < N) continue;
+        const src = cellAt(f, i, j);
+        const sf = (src / NF) | 0;
+        const rem = src - sf * NF;
+        const sj = (rem / N) | 0;
+        const si = rem - sj * N;
+        const dst = atlasOffset(f, i, j);
+        const spx = atlasOffset(sf, si, sj);
+        pix[dst] = pix[spx];
+        pix[dst + 1] = pix[spx + 1];
+        pix[dst + 2] = pix[spx + 2];
+        pix[dst + 3] = pix[spx + 3];
+      }
+    }
+  }
+}
+
+/** Pack sim fields into GPU atlases.
+ *  tex0: life, ice, moist, cloud
+ *  tex1: npp, guild-index (nearest in shader), height, sea-state
+ *  tex2: sediment, intertidal, precip×18, log-discharge
+ *  Each face is padded by 1 texel of true neighbours so LINEAR does not blend
+ *  the last column of face f with the first of face f+1. */
 export function uploadFieldTextures(alpha = 1) {
   if (!gl || !fieldTex0 || !fieldPix0) return;
   // Discharge is heavy-tailed. Log-compress so trunks read and headwaters do not.
@@ -1687,13 +1846,12 @@ export function uploadFieldTextures(alpha = 1) {
     const rem = c - f * NF;
     const j = (rem / N) | 0;
     const i = rem - j * N;
-    const px = (j * FIELD_W + f * N + i) * 4;
+    const px = atlasOffset(f, i, j);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
     const ice = lerp(W.prevIce[c], W.ice[c], alpha);
     fieldPix0[px] = clamp(life, 0, 1) * 255;
     fieldPix0[px + 1] = clamp(ice, 0, 1) * 255;
     fieldPix0[px + 2] = clamp(W.moist[c] || 0, 0, 1) * 255;
-    // Pack max(sediment, intertidal) + clouds — coast reads without overlay
     fieldPix0[px + 3] = clamp(W.clouds?.[c] || 0, 0, 1) * 255;
     fieldPix2[px] = clamp(W.sediment?.[c] || 0, 0, 1) * 255;
     fieldPix2[px + 1] = clamp(W.intertidal?.[c] || 0, 0, 1) * 255;
@@ -1711,6 +1869,9 @@ export function uploadFieldTextures(alpha = 1) {
     fieldPix1[px + 2] = hs * 255;
     fieldPix1[px + 3] = clamp(seaState, 0, 1) * 255;
   }
+  fillAtlasGutters(fieldPix0);
+  fillAtlasGutters(fieldPix1);
+  fillAtlasGutters(fieldPix2);
   gl.bindTexture(gl.TEXTURE_2D, fieldTex0);
   gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, FIELD_W, FIELD_H, gl.RGBA, gl.UNSIGNED_BYTE, fieldPix0);
   gl.bindTexture(gl.TEXTURE_2D, fieldTex1);
@@ -1896,6 +2057,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, fieldTex1);
     gl.uniform1i(planetProg.u.uField1, 2);
+    if (planetProg.u.uAtlasSize) gl.uniform2f(planetProg.u.uAtlasSize, FIELD_W, FIELD_H);
     if (planetProg.u.uScatter && scatterTex) {
       gl.activeTexture(gl.TEXTURE3);
       gl.bindTexture(gl.TEXTURE_2D, scatterTex);
@@ -1941,6 +2103,33 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     gl.drawArrays(gl.LINES, 0, CELL_GRID_COUNT);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+    disableAll();
+  }
+
+  /* sea-level isoline + drain-tree rivers */
+  syncIsolines();
+  if (COAST_COUNT > 0 || RIVER_LINE_COUNT > 0) {
+    gl.useProgram(flatProg);
+    gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.depthMask(false);
+    l = gl.getAttribLocation(flatProg, 'aPos');
+    gl.enableVertexAttribArray(l);
+    if (COAST_COUNT > 0) {
+      gl.uniform4f(flatProg.u.uCol, 0.06, 0.12, 0.20, 0.55);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.coastLine);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.lineWidth?.(1.4);
+      gl.drawArrays(gl.LINES, 0, COAST_COUNT);
+    }
+    if (RIVER_LINE_COUNT > 0) {
+      gl.uniform4f(flatProg.u.uCol, 0.14, 0.28, 0.42, 0.42);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.riverLine);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.lineWidth?.(1.2);
+      gl.drawArrays(gl.LINES, 0, RIVER_LINE_COUNT);
+    }
     gl.depthMask(true); gl.disable(gl.BLEND);
     disableAll();
   }

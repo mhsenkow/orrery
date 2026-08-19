@@ -1,0 +1,258 @@
+{
+  "$comment": "Receptor modalities and the physics that decides which of them a given planet can evolve. Every band carries the numbers the viability test needs; nothing here is switched on by name.",
+  "version": 1,
+  "constants": {
+    "planck_eVs": 4.135667696e-15,
+    "c_m_s": 299792458.0,
+    "kB_eV_K": 8.617333262e-05,
+    "photoisomerisation_eV": 1.5,
+    "$why_photoisomerisation": "11-cis retinal isomerises at about 1.5 eV. Below that no pigment-based photoreceptor can work at all, whatever the animal wants, because the photon cannot do the chemistry.",
+    "detectableSNR": 5,
+    "humanAcuity_rad": 0.0003
+  },
+  "bands": [
+    {
+      "id": "gamma",
+      "lamMinNm": 0.001,
+      "lamMaxNm": 0.01,
+      "detector": "ionisation",
+      "why": "Ionising. A detector is a damage counter, not an eye. Only worth anything on a world with a real radiation flux \u2014 which is exactly where radiotrophy shows up too.",
+      "needsMedium": [
+        "any"
+      ],
+      "imaging": false,
+      "utility": 0.15
+    },
+    {
+      "id": "uvc",
+      "lamMinNm": 100,
+      "lamMaxNm": 280,
+      "detector": "pigment",
+      "why": "Sterilising. Reaches the ground only without ozone, and a receptor here is a warning organ.",
+      "needsMedium": [
+        "air",
+        "vacuum"
+      ],
+      "imaging": true,
+      "utility": 0.5
+    },
+    {
+      "id": "uvb",
+      "lamMinNm": 280,
+      "lamMaxNm": 315,
+      "detector": "pigment",
+      "needsMedium": [
+        "air",
+        "water"
+      ],
+      "imaging": true,
+      "why": "Bee-visible band. Present on any world with a hot star and a thin ozone column.",
+      "utility": 0.7
+    },
+    {
+      "id": "violetBlue",
+      "lamMinNm": 380,
+      "lamMaxNm": 500,
+      "detector": "pigment",
+      "needsMedium": [
+        "air",
+        "water"
+      ],
+      "imaging": true,
+      "why": "Penetrates seawater furthest \u2014 which is why deep-sea eyes converge on 480 nm on Earth and why a deep ocean anywhere selects this band.",
+      "utility": 1.0
+    },
+    {
+      "id": "green",
+      "lamMinNm": 500,
+      "lamMaxNm": 580,
+      "detector": "pigment",
+      "needsMedium": [
+        "air",
+        "water"
+      ],
+      "imaging": true,
+      "why": "Peak of a G-star's photon flux at the ground. The default only because the star is the default.",
+      "utility": 1.0
+    },
+    {
+      "id": "red",
+      "lamMinNm": 580,
+      "lamMaxNm": 740,
+      "detector": "pigment",
+      "needsMedium": [
+        "air",
+        "water"
+      ],
+      "imaging": true,
+      "why": "Chlorophyll's red edge sits at the top of this band, so a red-sensitive eye is also a life-detector.",
+      "utility": 1.0
+    },
+    {
+      "id": "nearIR",
+      "lamMinNm": 740,
+      "lamMaxNm": 2500,
+      "detector": "pigment",
+      "needsMedium": [
+        "air",
+        "water"
+      ],
+      "imaging": true,
+      "why": "Where an M dwarf actually puts its photons \u2014 Wien peak for 3000 K is 966 nm. On a red-dwarf world this is the visible band, and a pigment can still just about do the chemistry down to about 1000 nm.",
+      "utility": 0.95
+    },
+    {
+      "id": "midIR",
+      "lamMinNm": 3000,
+      "lamMaxNm": 14000,
+      "detector": "bolometer",
+      "needsMedium": [
+        "air"
+      ],
+      "imaging": true,
+      "why": "Thermal. A photon here carries roughly 0.1 eV, far too little to isomerise a pigment, so this is a heat-difference organ \u2014 a pit, not an eye \u2014 and it is swamped by the animal's own emission unless the aperture is cold or the sensor is differential. Two millikelvin is about the floor a pit organ reaches.",
+      "utility": 0.6
+    },
+    {
+      "id": "farIR",
+      "lamMinNm": 14000,
+      "lamMaxNm": 1000000.0,
+      "detector": "bolometer",
+      "needsMedium": [
+        "air"
+      ],
+      "imaging": false,
+      "why": "Blocked by water vapour on any wet world. Useful only on a dry, cold, thin-atmosphere planet.",
+      "utility": 0.35
+    },
+    {
+      "id": "microwave",
+      "lamMinNm": 1000000.0,
+      "lamMaxNm": 300000000.0,
+      "detector": "antenna",
+      "needsMedium": [
+        "air",
+        "vacuum",
+        "cryobrine"
+      ],
+      "imaging": true,
+      "why": "A 1 mm photon is 1.24 meV \u2014 about 0.05 kT at 300 K, so no chemical receptor can ever register one. Microwave sight is therefore an antenna or a cooled bolometer, and the diffraction limit is brutal: 1.22 lambda over D at 1 mm needs a four-metre aperture to match a human eye. Which means microwave eyes are not impossible, they are a body-size problem \u2014 and a cold, large, radio-quiet world is where they get paid for.",
+      "utility": 0.5
+    },
+    {
+      "id": "radio",
+      "lamMinNm": 300000000.0,
+      "lamMaxNm": 1000000000000.0,
+      "detector": "antenna",
+      "needsMedium": [
+        "air",
+        "vacuum"
+      ],
+      "imaging": false,
+      "why": "Non-imaging at any plausible aperture. Useful for signalling and for sensing a magnetosphere, not for seeing.",
+      "utility": 0.3
+    },
+    {
+      "id": "electric",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "ampullary",
+      "needsMedium": [
+        "water",
+        "cryobrine"
+      ],
+      "imaging": true,
+      "why": "Needs a conducting medium. In seawater a muscle twitch is a microvolt-per-centimetre field at a metre; in air it is nothing. Evolved independently at least eight times on Earth, always in water, and it is the correct answer for a lightless subsurface ocean.",
+      "utility": 0.8
+    },
+    {
+      "id": "magnetic",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "magnetite",
+      "needsMedium": [
+        "any"
+      ],
+      "imaging": false,
+      "why": "Only worth having where there is a field to sense, so a world with no dynamo has no magnetoreception and no long-distance migration built on it.",
+      "utility": 0.3
+    },
+    {
+      "id": "acoustic",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "mechanoreceptor",
+      "needsMedium": [
+        "air",
+        "water",
+        "rock"
+      ],
+      "imaging": true,
+      "why": "Resolution scales with frequency and with the speed of sound in the medium, so a dense hot atmosphere is a better ear than a thin cold one. Echolocation is imaging by this route and it is what you get when the photon budget is zero.",
+      "utility": 0.85
+    },
+    {
+      "id": "chemical",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "chemoreceptor",
+      "needsMedium": [
+        "any"
+      ],
+      "imaging": false,
+      "why": "The oldest sense and the only one available to a cell. Gradient-following in a fluid; range set by diffusion and by advection, so a windy or a current-swept world smells further.",
+      "utility": 0.7
+    },
+    {
+      "id": "pressure",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "lateralLine",
+      "needsMedium": [
+        "water",
+        "cryobrine"
+      ],
+      "imaging": true,
+      "why": "Near-field flow imaging. Free to a body that already has a surface in a fluid, and it works in total darkness at short range.",
+      "utility": 0.7
+    },
+    {
+      "id": "thermalContact",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "thermoreceptor",
+      "needsMedium": [
+        "any"
+      ],
+      "imaging": false,
+      "why": "Ambient temperature, not radiated. Available to anything with a membrane.",
+      "utility": 0.3
+    },
+    {
+      "id": "gravity",
+      "lamMinNm": null,
+      "lamMaxNm": null,
+      "detector": "statocyst",
+      "needsMedium": [
+        "any"
+      ],
+      "imaging": false,
+      "why": "Which way is down. A dense grain in a hair-lined sac \u2014 the cheapest organ in this table, and it does not work in free fall or on a body in orbit.",
+      "utility": 0.25
+    },
+    {
+      "id": "polarisation",
+      "lamMinNm": 380,
+      "lamMaxNm": 740,
+      "detector": "pigment",
+      "needsMedium": [
+        "air",
+        "water"
+      ],
+      "imaging": false,
+      "why": "Sky polarisation gives a compass under overcast, and underwater it gives contrast against transparent prey. Requires an ordered receptor array, so it comes with an imaging eye or not at all.",
+      "utility": 0.45
+    }
+  ],
+  "$utilityNote": "How much of a life a body can run on this sense alone, once it is receiving it. An imaging photon band is 1.0; a gravity sense tells you one thing. provenance: fitted \u2014 it is the ranking that decides which sense a lineage invests in, and it is the one number in this file that is a judgement rather than a measurement."
+}

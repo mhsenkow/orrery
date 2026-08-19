@@ -1,5 +1,7 @@
 /** Shared Path2D sprite atlas — globe billboards + local flat map. */
 
+import { drawCreature, growthSeries } from './sim/creatureDraw.js';
+
 export const SPRITES = [
   [['M28 64 L28 38 L36 38 L36 64 Z', '#6b4a2f'], ['M32 6 C13 6 6 21 6 30 C6 41 17 48 32 48 C47 48 58 41 58 30 C58 21 51 6 32 6 Z', '#3f9450'], ['M32 10 C20 10 14 20 14 27 C14 34 21 39 32 39 Z', '#4fae5f']],
   [['M29 64 L29 50 L35 50 L35 64 Z', '#5a3f28'], ['M32 30 L57 58 L7 58 Z', '#2f7046'], ['M32 16 L52 44 L12 44 Z', '#387f52'], ['M32 3 L47 30 L17 30 Z', '#2f7046']],
@@ -19,14 +21,58 @@ export const SPRITES = [
   /* 15 fish */ [['M8 40 L32 22 L56 40 L32 52 Z', '#4a8ab8'], ['M56 40 L62 36 L62 44 Z', '#4a8ab8']],
 ];
 
-export const ATLAS_COLS = 4;
+export const ATLAS_COLS = 6;
 export const TILE = 128;
+export const MORPH_BASE = SPRITES.length;
+const MORPH_SLOTS = ATLAS_COLS * ATLAS_COLS - MORPH_BASE;
 
 let _atlas = null;
+const _morphKeyToSlot = new Map();
+const _morphPlan = new Map();
+let _morphDirty = false;
+
+function planKey(plan) {
+  return `${plan.silhouette || 'x'}:${plan.limbs | 0}:${plan.symmetryOrder | 0}:${plan.habitat || ''}:${plan.trophic || ''}:${plan.skeleton || ''}`;
+}
+
+/** Assign a stable atlas tile to a unique body plan. Caps at MORPH_SLOTS. */
+export function morphTileOf(plan) {
+  if (!plan?.silhouette) return null;
+  const key = planKey(plan);
+  const hit = _morphKeyToSlot.get(key);
+  if (hit != null) return hit;
+  if (_morphKeyToSlot.size >= MORPH_SLOTS) return null;
+  const slot = MORPH_BASE + _morphKeyToSlot.size;
+  _morphKeyToSlot.set(key, slot);
+  _morphPlan.set(slot, plan);
+  _morphDirty = true;
+  return slot;
+}
+
+export function resetMorphAtlas() {
+  _morphKeyToSlot.clear();
+  _morphPlan.clear();
+  _morphDirty = true;
+}
+
+function stampMorphTiles(g) {
+  if (!_morphDirty || !_morphPlan.size) { _morphDirty = false; return false; }
+  for (const [slot, plan] of _morphPlan) {
+    const tx = (slot % ATLAS_COLS) * TILE;
+    const ty = Math.floor(slot / ATLAS_COLS) * TILE;
+    g.clearRect(tx, ty, TILE, TILE);
+    drawCreature(g, plan, tx + TILE * 0.5, ty + TILE * 0.55, TILE * 0.72);
+  }
+  _morphDirty = false;
+  return true;
+}
 
 /** Build (once) the shared canvas atlas used by WebGL and the local map. */
 export function getSpriteAtlas() {
-  if (_atlas) return _atlas;
+  if (_atlas) {
+    if (_morphDirty) stampMorphTiles(_atlas.getContext('2d'));
+    return _atlas;
+  }
   const cv = document.createElement('canvas');
   cv.width = cv.height = ATLAS_COLS * TILE;
   const g = cv.getContext('2d');
@@ -43,15 +89,22 @@ export function getSpriteAtlas() {
     }
     g.restore();
   });
+  stampMorphTiles(g);
   _atlas = cv;
   return _atlas;
 }
 
-/** Draw sprite `kind` (0–15) centred at (cx,cy) sized to `size` CSS/device pixels.
+/** True if the GPU atlas needs a re-upload this frame. */
+export function morphAtlasDirty() {
+  return _morphDirty;
+}
+
+/** Draw sprite `kind` centred at (cx,cy) sized to `size` CSS/device pixels.
  *  opts.flip mirrors for heading; opts.lean shears into the turn. */
 export function drawSprite(ctx, kind, cx, cy, size, opts = {}) {
   const atlas = getSpriteAtlas();
-  const k = Math.max(0, Math.min(SPRITES.length - 1, kind | 0));
+  const maxTile = ATLAS_COLS * ATLAS_COLS - 1;
+  const k = Math.max(0, Math.min(maxTile, kind | 0));
   const sx = (k % ATLAS_COLS) * TILE;
   const sy = Math.floor(k / ATLAS_COLS) * TILE;
   const s = Math.max(2, size);
@@ -68,3 +121,5 @@ export function drawSprite(ctx, kind, cx, cy, size, opts = {}) {
   ctx.drawImage(atlas, sx, sy, TILE, TILE, -s * 0.5, -s * 0.5, s, s);
   ctx.restore();
 }
+
+export { drawCreature, growthSeries };

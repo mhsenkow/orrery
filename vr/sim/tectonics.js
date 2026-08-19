@@ -5,6 +5,8 @@ import { rngOf } from './rng.js';
 import { naturalizeHypsometry, softenPlateCrust } from './terrainShape.js';
 import { NC, NF, N, NBR, NBR8, DIR, AREA, dirToCell } from '../sphere.js';
 import { paintEdifice } from './planetTick.js';
+import { isGasKind, isIceShellKind } from './planetKind.js';
+import { erodeFactor, slopeCap } from './substrateField.js';
 
 
 const MANTLE_DENS = 3.3;
@@ -553,15 +555,19 @@ export function erosionTick(W) {
   const kind = W._planetKind;
   if (W._canvasMode) return;
   if (kind === 'io' || kind === 'moon' || kind === 'mercury' || kind === 'airless'
-    || kind === 'magma' || kind === 'gas' || kind === 'venus'
-    || (W._iceShell && kind !== 'titan')) return;
+    || kind === 'magma' || isGasKind(kind) || kind === 'venus'
+    || kind === 'iapetus' || kind === 'phobos' || kind === 'smallbody'
+    || kind === 'eris' || kind === 'ceres' || kind === 'charon'
+    || (isIceShellKind(kind) && kind !== 'titan')) return;
   let rate = 1;
   if (kind === 'mars') rate = 0.06;
   else if (kind === 'stagnant' || kind === 'titan') rate = 0.12;
   const { h, flow, moist, seaLevel, sediment } = W;
+  const iceLand = W.iceLand;
   const _h = W._h;
+  _h.set(h);
   for (let c = 0; c < NC; c++) {
-    if (h[c] < seaLevel) { _h[c] = h[c]; continue; }
+    if (h[c] < seaLevel) continue;
     const discharge = flow[c] * (0.3 + moist[c]);
     let maxSlope = 0, sink = c;
     for (let k = 0; k < 4; k++) {
@@ -571,19 +577,41 @@ export function erosionTick(W) {
     }
     const lock = W.erosionLock?.[c];
     const local = lock == null ? 1 : lock;
-    if (local <= 0) { _h[c] = h[c]; continue; }
-    const erode = Math.min(0.004 * rate * local, discharge * maxSlope * maxSlope * 0.15 * rate * local);
+    if (local <= 0) continue;
+    const erodeK = erodeFactor(W, c);
+    const cap = slopeCap(W, c);
+    if (maxSlope > cap && sink !== c) {
+      const excess = (maxSlope - cap) * 0.06 * rate * local;
+      _h[c] -= excess;
+      _h[sink] += excess * 0.85;
+    }
+    const erode = Math.min(0.004 * rate * local, discharge * maxSlope * maxSlope * 0.15 * rate * local) * erodeK;
     let lap = 0;
     for (let k = 0; k < 4; k++) lap += h[NBR[c * 4 + k]] - h[c];
-    _h[c] = h[c] - erode + lap * 0.002 * rate * local;
-    if (sink !== c) {
+    _h[c] += -erode + lap * 0.002 * rate * local;
+    const ice = iceLand?.[c] || 0;
+    let iceCarve = 0;
+    if (ice > 0.12 && maxSlope > 0) {
+      iceCarve = ice * maxSlope * maxSlope * 0.012 * rate * local;
+      _h[c] -= iceCarve;
+    }
+    const moved = erode + iceCarve;
+    if (sink !== c && moved > 0) {
       if (h[sink] < seaLevel) {
-        // delta
-        _h[sink] = Math.min(seaLevel + 0.02, h[sink] + erode * 0.7);
-        sediment[sink] = Math.min(1, sediment[sink] + erode * 2);
+        _h[sink] = Math.min(seaLevel + 0.02, _h[sink] + moved * 0.7);
+        sediment[sink] = Math.min(1, sediment[sink] + moved * 2);
       } else {
-        _h[sink] = h[sink] + erode * 0.85;
-        sediment[sink] = Math.min(1, sediment[sink] + erode);
+        _h[sink] += moved * 0.85;
+        sediment[sink] = Math.min(1, sediment[sink] + moved);
+      }
+    }
+    if (iceCarve > 0 && iceLand) {
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[c * 4 + k];
+        if ((iceLand[n] || 0) < ice * 0.35) {
+          sediment[n] = Math.min(1, sediment[n] + iceCarve * 0.45);
+          if (h[n] >= seaLevel) _h[n] += iceCarve * 0.22;
+        }
       }
     }
   }

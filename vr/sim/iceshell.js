@@ -5,7 +5,7 @@
 
 import { NC, DIR, NBR } from '../sphere.js';
 import { clamp, fbm, ridged } from '../math.js';
-import { planetKind } from './planetTerrain.js';
+import { kindOf } from './planetKind.js';
 
 /** Allocate layer fields. */
 export function initIceShell(W) {
@@ -122,6 +122,83 @@ function paintCallisto(W, tidal, seed) {
   }
 }
 
+function paintMiranda(W, tidal, seed) {
+  const coronae = [
+    [0.88, 0.22, 0.42],
+    [-0.62, 0.58, 0.53],
+    [0.12, -0.86, 0.49],
+    [-0.18, 0.28, -0.94],
+  ];
+  for (const p of coronae) {
+    const L = Math.hypot(p[0], p[1], p[2]) || 1;
+    p[0] /= L; p[1] /= L; p[2] /= L;
+  }
+  const cliff = [0.22, 0.12, 0.97];
+  const cL = Math.hypot(cliff[0], cliff[1], cliff[2]) || 1;
+  cliff[0] /= cL; cliff[1] /= cL; cliff[2] /= cL;
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    let elev = 0.11 + (fbm(x * 2, y * 2, z * 2, seed, 2, 2, 0.5) - 0.5) * 0.02;
+    let patch = 0;
+    for (const p of coronae) {
+      const d = x * p[0] + y * p[1] + z * p[2];
+      if (d > 0.78) patch = Math.max(patch, (d - 0.78) / 0.22);
+    }
+    elev += patch * 0.08;
+    const face = x * cliff[0] + y * cliff[1] + z * cliff[2];
+    if (face > -0.08 && face < 0.08) elev -= 0.12 * (1 - Math.abs(face) / 0.08);
+    W.shellLid[c] = clamp(0.55 - patch * 0.1, 0.28, 0.88);
+    W.shellOcean[c] = 0.5;
+    W.shellMantle[c] = clamp(tidal * 0.35, 0, 1);
+    W.shellVent[c] = 0;
+    W.h[c] = elev;
+  }
+}
+
+function paintMimas(W, tidal, seed) {
+  const herschel = [0.82, 0.22, 0.53];
+  const L = Math.hypot(herschel[0], herschel[1], herschel[2]) || 1;
+  herschel[0] /= L; herschel[1] /= L; herschel[2] /= L;
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    const d = x * herschel[0] + y * herschel[1] + z * herschel[2];
+    const pit = d > 0.72 ? (d - 0.72) / 0.28 : 0;
+    const cr = ridged(x * 4, y * 4, z * 4, seed, 3);
+    W.shellLid[c] = 0.7;
+    W.shellOcean[c] = 0.45;
+    W.shellMantle[c] = clamp(tidal * 0.25, 0, 1);
+    W.shellVent[c] = 0;
+    W.h[c] = 0.12 - pit * 0.22 - (cr > 0.78 ? (cr - 0.78) * 0.4 : 0);
+  }
+}
+
+function paintRhea(W, tidal, seed) {
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    const cr = ridged(x * 3.2, y * 3.2, z * 3.2, seed, 3);
+    const chasma = Math.abs(y) < 0.12 && Math.abs(Math.sin(x * 8 + z * 8)) > 0.35;
+    W.shellLid[c] = 0.72;
+    W.shellOcean[c] = 0.4;
+    W.shellMantle[c] = clamp(tidal * 0.22, 0, 1);
+    W.shellVent[c] = 0;
+    W.h[c] = 0.13 - (cr > 0.74 ? (cr - 0.74) * 0.45 : 0) - (chasma ? 0.08 : 0);
+  }
+}
+
+function paintUranian(W, tidal, seed) {
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    const cr = ridged(x * 3, y * 3, z * 3, seed, 3);
+    const grab = Math.abs(Math.sin(x * 11 + z * 7)) > 0.82;
+    W.shellLid[c] = 0.68;
+    W.shellOcean[c] = 0.42;
+    W.shellMantle[c] = clamp(tidal * 0.2, 0, 1);
+    W.shellVent[c] = 0;
+    W.h[c] = 0.12 - (cr > 0.75 ? (cr - 0.75) * 0.4 : 0) - (grab ? 0.06 : 0);
+    if (W.age) W.age[c] = grab ? 1200 : 4000;
+  }
+}
+
 function openVents(W, kind) {
   let vents = 0;
   const cap = kind === 'enceladus' ? 48 : kind === 'triton' ? 24 : 70;
@@ -157,8 +234,9 @@ function openVents(W, kind) {
 export function applyIceShell(W, rule) {
   if (!rule.iceShell) return;
   initIceShell(W);
-  const kind = planetKind(rule);
+  const { kind, why } = kindOf(W, rule);
   W._planetKind = kind;
+  W._planetKindWhy = why;
   W._shellKind = kind;
   W.seaLevel = kind === 'titan' ? 0.09 : 0.05;
   const tidal = rule.tidalHeat ?? 0.08;
@@ -170,6 +248,10 @@ export function applyIceShell(W, rule) {
   else if (kind === 'triton') paintTriton(W, tidal, seed);
   else if (kind === 'ganymede') paintGanymede(W, tidal, seed);
   else if (kind === 'callisto') paintCallisto(W, tidal, seed);
+  else if (kind === 'miranda') paintMiranda(W, tidal, seed);
+  else if (kind === 'mimas') paintMimas(W, tidal, seed);
+  else if (kind === 'rhea') paintRhea(W, tidal, seed);
+  else if (kind === 'uranian') paintUranian(W, tidal, seed);
   else paintEuropa(W, tidal, seed);
 
   for (let c = 0; c < NC; c++) {

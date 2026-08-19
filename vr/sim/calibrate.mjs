@@ -3,6 +3,7 @@
 
 import { W, generate, simTick, RULESETS } from '../world.js';
 import { NC } from '../sphere.js';
+import { zonalFraction } from './surfaceStats.js';
 
 const TOL = {
   meanTemp: [0.38, 0.62],
@@ -11,6 +12,9 @@ const TOL = {
   O2: [0.15, 0.28],
   CO2ppm: [200, 800],
   meanLife: [0.04, 0.45],
+  zonalTemp: [0.12, 0.92],
+  zonalPrecip: [0, 0.85],
+  tropPole: [0.02, 0.55],
 };
 
 export function calibrateEarth(seed = 20260808, ticks = 8) {
@@ -26,6 +30,9 @@ export function calibrateEarth(seed = 20260808, ticks = 8) {
     check('O2', W.gases.O2, TOL.O2),
     check('CO2ppm', co2ppm, TOL.CO2ppm),
     check('meanLife', W.meanLife, TOL.meanLife),
+    check('zonalTemp', zonalFraction(W.temp), TOL.zonalTemp),
+    check('zonalPrecip', zonalFraction(W.precip), TOL.zonalPrecip),
+    check('tropPole', W._tropPole ?? 0, TOL.tropPole),
   ];
   const pass = checks.every((c) => c.ok);
   return {
@@ -39,6 +46,10 @@ export function calibrateEarth(seed = 20260808, ticks = 8) {
       O2: W.gases.O2,
       CO2ppm: co2ppm,
       meanLife: W.meanLife,
+      zonalTemp: zonalFraction(W.temp),
+      zonalPrecip: zonalFraction(W.precip),
+      tropPole: W._tropPole,
+      rossby: W._rossby,
       health: W.health,
       ics: W.ics,
     },

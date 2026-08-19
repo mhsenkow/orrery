@@ -1,5 +1,31 @@
 import { tropicalFavor, midlatFavor } from './storms.js';
-import { DIR } from '../sphere.js';
+import { DIR, NF } from '../sphere.js';
+import { nodeOf } from './evolve.js';
+import { SUBSTRATES } from './substrates.js';
+import { phaseAtCell } from './substrateField.js';
+import { coverAt } from './cover.js';
+import { landformAt } from './landform.js';
+import { columnRgbAt } from './columnField.js';
+
+const SENSE_RGB = {
+  uvc: [180, 80, 255], uvb: [140, 90, 255], violetBlue: [60, 90, 220],
+  green: [50, 190, 80], red: [220, 70, 50], nearIR: [180, 40, 40],
+  midIR: [200, 90, 40], farIR: [160, 60, 30], microwave: [220, 180, 80],
+  electric: [80, 220, 210], acoustic: [200, 200, 230], chemical: [180, 140, 70],
+  pressure: [90, 160, 200], thermalContact: [220, 120, 80],
+};
+
+function dominantLineageId(W) {
+  if (W._rangeId != null && W._rangeTick === W._tickIndex) return W._rangeId;
+  let best = 0, bestPop = 0;
+  for (const id of W.tree?.living || []) {
+    const n = nodeOf(W.tree, id);
+    if ((n?.pop || 0) > bestPop) { bestPop = n.pop; best = id; }
+  }
+  W._rangeId = best;
+  W._rangeTick = W._tickIndex;
+  return best;
+}
 
 /** Field overlay modes painted via gbuf emphasis. */
 
@@ -7,7 +33,9 @@ export const OVERLAYS = [
   { id: 'none', label: 'None', icon: 'inspect', tip: 'Clear the field paint and show the surface as-is.' },
   { id: 'temp', label: 'Temperature', icon: 'solar', tip: 'Hot → cold. Red is warm; blue is cold. Not the same as insolation.' },
   { id: 'press', label: 'Pressure', icon: 'weather', tip: 'Surface pressure field that drives the synoptic chart and storm seeds.' },
+  { id: 'vapour', label: 'Vapour', icon: 'weather', tip: 'Atmospheric water. Wet windward coasts and dry interiors — continentality made visible.' },
   { id: 'wind', label: 'Wind', icon: 'spin', tip: 'Surface wind speed and direction. Fast rotators show more, narrower bands.' },
+  { id: 'front', label: 'Fronts', icon: 'weather', tip: 'Temperature gradient. Bright lines are weather-bearing fronts, not biome contours.' },
   { id: 'npp', label: 'NPP', icon: 'seedGuild', tip: 'Net primary productivity — how hard the biosphere is growing on that cell.' },
   { id: 'guild', label: 'Guild', icon: 'o2', tip: 'Dominant metabolism colour (cyano, methanogen, aerobe…). Same palette as Seed guild.' },
   { id: 'diversity', label: 'Clade diversity', icon: 'seed', tip: 'How many lineages occupy the cell. Bright = crowded tree, not just biomass.' },
@@ -22,17 +50,29 @@ export const OVERLAYS = [
   { id: 'intertidal', label: 'Intertidal', icon: 'flats', tip: 'Ground that wets and dries with the tide — the strip life actually meets twice a day.' },
   { id: 'storm', label: 'Storms', icon: 'stormdesk', tip: 'Teal = basins that can organise. Bright cores = named cyclones (eye is dimmer). Gold trail = track. Orange coast = surge. Empty still means something — the basins.' },
   { id: 'vent', label: 'Vents', icon: 'plume', tip: 'Hydrothermal heat — mid-ocean ridges, ice-shell cracks, Io paterae. Life that needs vents lives here.' },
+  { id: 'sense', label: 'Sense', icon: 'inspect', tip: 'The globe as the dominant lineage perceives it — photon band, electric, acoustic. Dark cells have no sensors, or none that this sky delivers.' },
+  { id: 'range', label: 'Range', icon: 'seed', tip: 'Geographic range of the most abundant living lineage. Bright = occupied cells of the dominant clade.' },
+  { id: 'proto', label: 'Prebiotic', icon: 'seedGuild', tip: 'Prebiotic inventory — reduced carbon on catalytic surfaces. The origin is likeliest where this is brightest.' },
+  { id: 'faces', label: 'Cube faces', icon: 'inspect', tip: 'Six cube-sphere faces. If a straight line lights up, something is treating a face as the world.' },
+  { id: 'zonal', label: 'Zonal residual', icon: 'weather', tip: 'Temperature minus a latitude-only guess. Black means banded; colour means real structure.' },
+  { id: 'ecotone', label: 'Ecotone', icon: 'seed', tip: 'Biome membership entropy. Bright = a boundary (savanna/grass, treeline); dark = a core.' },
   { id: 'lid', label: 'Ice lid', icon: 'ice', tip: 'Ice-shell thickness / stagnant lid. Darker where the crust of ice is thicker.' },
   { id: 'plates', label: 'Plates', icon: 'plate', tip: 'Named tectonic plates. Colour is identity, not height.' },
   { id: 'bounds', label: 'Boundaries', icon: 'quake', tip: 'Divergent (rift), convergent (trench/orogen), transform. Reclassifies when you steer a pole.' },
   { id: 'crust', label: 'Crust', icon: 'core', tip: 'Crust type and thickness — the thing Raise / Lower actually edits.' },
+  { id: 'substrate', label: 'Substrate', icon: 'core', tip: 'Surface material from the substrate table — nitrogen ice, tholin, sulfur, basalt.' },
+  { id: 'phase', label: 'Phase', icon: 'ice', tip: 'Phase of the dominant volatile: solid, convecting ice, liquid, gas, supercritical.' },
+  { id: 'cover', label: 'Cover', icon: 'ice', tip: 'What is lying on the substrate — frost, dust, lag, tholin, sulfur, ejecta. Grain and weathering live here. Not the rock underneath.' },
+  { id: 'forms', label: 'Landforms', icon: 'raise', tip: 'Which landform the grammar named on this cell — patera, scarp, dune, chaos. Stamps still own the heightfield; this overlay names the process.' },
+  { id: 'column', label: 'Column', icon: 'core', tip: 'Top of the vertical stack — organic sand, ice lid, regolith, envelope. Thicknesses live on inspect; this overlay names the recipe.' },
   { id: 'crustAge', label: 'Crust age', icon: 'deeptime', tip: 'Seafloor age. Young at ridges, old toward trenches — if plates are mobile.' },
 ];
 
 const OVERLAY_ORDER = [
-  'none', 'temp', 'press', 'wind', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
-  'plates', 'bounds', 'crust', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild',
+  'none', 'temp', 'press', 'vapour', 'wind', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
+  'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
+  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto',
+  'faces', 'zonal', 'ecotone',
 ];
 
 export function overlayById(id) {
@@ -64,7 +104,7 @@ function plateRGB(pid) {
 export function applyOverlay(W, vDat, vCell, NV, mode) {
   if (!mode || mode === 'none') return;
   for (let k = 0; k < NV; k++) {
-    const c = vCell[k];
+    const c = vCell ? vCell[k] : k;
     const o = k * 4;
     let r = vDat[o], g = vDat[o + 1], b = vDat[o + 2];
     if (mode === 'temp') {
@@ -73,12 +113,22 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
     } else if (mode === 'press') {
       const p = W.press?.[c] ?? (1 - W.temp[c]);
       r = 40 + p * 80; g = 60 + (1 - p) * 120; b = 100 + (1 - p) * 140;
+    } else if (mode === 'vapour') {
+      const v = Math.min(1, (W.vapour?.[c] || 0) / 0.08);
+      r = 18 + v * 50;
+      g = 48 + v * 140;
+      b = 90 + v * 150;
     } else if (mode === 'wind') {
       const u = W.windU?.[c] || 0, v = W.windV?.[c] || 0;
       const spd = Math.min(1, Math.hypot(u, v));
       r = 30 + spd * 40 + Math.max(0, u) * 80;
       g = 50 + spd * 100;
       b = 80 + spd * 60 + Math.max(0, -u) * 90;
+    } else if (mode === 'front') {
+      const f = W.front?.[c] || 0;
+      r = 30 + f * 200;
+      g = 40 + f * 80;
+      b = 50 + f * 40;
     } else if (mode === 'current') {
       const u = W.oceanU?.[c] || 0, v = W.oceanV?.[c] || 0;
       const spd = Math.min(1, Math.hypot(u, v));
@@ -209,10 +259,81 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
     } else if (mode === 'crust') {
       const th = Math.min(1, (W.crust?.[c] || 0) / 1.4);
       r = 40 + th * 180; g = 50 + th * 100; b = 40 + (1 - th) * 80;
+    } else if (mode === 'substrate') {
+      const mat = SUBSTRATES[W.substrate?.[c] ?? W.rock?.[c] ?? 0];
+      const rgb = mat?.rgb || [80, 80, 80];
+      r = rgb[0]; g = rgb[1]; b = rgb[2];
+    } else if (mode === 'phase') {
+      const ph = phaseAtCell(W, c);
+      if (ph === 'solid') { r = 210; g = 230; b = 248; }
+      else if (ph === 'convecting-ice') { r = 70; g = 200; b = 210; }
+      else if (ph === 'liquid') { r = 28; g = 88; b = 200; }
+      else if (ph === 'supercritical') { r = 220; g = 110; b = 40; }
+      else if (ph === 'gas') { r = 48; g = 46; b = 58; }
+      else { r = (r * 0.2) | 0; g = (g * 0.2) | 0; b = (b * 0.22) | 0; }
+    } else if (mode === 'cover') {
+      const hit = coverAt(W, c);
+      const rgb = hit?.rgb || [48, 46, 52];
+      const k = hit?.id === 'none' ? 0.35 : 0.55 + Math.min(1, hit.amt || 1) * 0.45;
+      r = rgb[0] * k; g = rgb[1] * k; b = rgb[2] * k;
+    } else if (mode === 'forms') {
+      const f = landformAt(W, c);
+      const rgb = f?.rgb || [48, 46, 52];
+      const k = f ? 1 : 0.28;
+      r = rgb[0] * k; g = rgb[1] * k; b = rgb[2] * k;
+    } else if (mode === 'column') {
+      const rgb = columnRgbAt(W, c) || [48, 46, 52];
+      const k = rgb ? 1 : 0.28;
+      r = rgb[0] * k; g = rgb[1] * k; b = rgb[2] * k;
     } else if (mode === 'crustAge') {
       const a = Math.min(1, Math.log1p(W.age?.[c] || 0) / Math.log1p(900));
       // young = warm ridge, old = deep blue
       r = 40 + (1 - a) * 200; g = 60 + (1 - a) * 80; b = 80 + a * 150;
+    } else if (mode === 'sense') {
+      const n = nodeOf(W.tree, W.popId?.[c]);
+      const ownBand = n?.plan?.eyes?.[0]?.band
+        || n?.genome?.organs?.find((o) => o.band)?.band;
+      const band = ownBand || W.topSense;
+      const rgb = band && SENSE_RGB[band];
+      if (rgb) {
+        const can = !!(n?.plan?.eyeCount || n?.plan?.eyes?.length
+          || n?.genome?.organs?.some((o) => o.band || o.class === 'sensor'));
+        const k = can ? 1 : 0.16;
+        r = rgb[0] * k; g = rgb[1] * k; b = rgb[2] * k;
+      } else {
+        r = r * 0.18; g = g * 0.18; b = b * 0.22;
+      }
+    } else if (mode === 'range') {
+      const id = dominantLineageId(W);
+      const here = W.popId?.[c] === id && id;
+      if (here) { r = 40; g = 220; b = 140; }
+      else { r = r * 0.18; g = g * 0.2; b = b * 0.25; }
+    } else if (mode === 'proto') {
+      const p = W.protoOrg?.[c] || 0;
+      r = 30 + p * 80; g = 40 + p * 140; b = 20 + p * 40;
+      if (W.originCell === c) { r = 255; g = 220; b = 80; }
+    } else if (mode === 'faces') {
+      const pal = [
+        [210, 86, 86], [86, 176, 96], [86, 124, 214],
+        [220, 176, 62], [176, 88, 198], [72, 196, 196],
+      ];
+      const f = Math.min(5, (c / NF) | 0);
+      r = pal[f][0]; g = pal[f][1]; b = pal[f][2];
+    } else if (mode === 'zonal') {
+      const lat = DIR[c * 3 + 1];
+      const t = W.temp[c];
+      const zonal = 0.5 + lat * 0.35;
+      const anom = t - zonal;
+      r = 40 + Math.max(0, anom) * 420;
+      g = 50 + (1 - Math.abs(anom) * 2) * 40;
+      b = 80 + Math.max(0, -anom) * 360;
+    } else if (mode === 'ecotone') {
+      const mix = W.biomeMix?.[c];
+      const e = mix == null ? 0 : Math.max(0, Math.min(1, 1 - mix));
+      const land = W.h[c] >= W.seaLevel;
+      r = land ? 30 + e * 220 : 12;
+      g = land ? 24 + e * 40 : 18;
+      b = land ? 40 + e * 80 : 28;
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

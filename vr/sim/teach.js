@@ -1,5 +1,5 @@
-/** First-run teaching — reveal systems in order.
- *  Next backlog teach category. */
+/** First-run teaching — a door, a campaign track, and map hunts.
+ *  Old REVEAL steps still exist for anyone mid-card; new visits get LESSONS. */
 
 export const REVEAL = [
   {
@@ -40,11 +40,83 @@ export const REVEAL = [
   },
 ];
 
-const KEY = 'orrery.reveal.v1';
+/** Front-door cards + follow-on hunts. The Solar System looks are the tour. */
+export const LESSONS = [
+  {
+    id: 'hold-earth',
+    door: true,
+    kicker: 'Sandbox',
+    title: 'Hold Earth',
+    body: 'A living planet in your hands. Spin it. Scroll in. Looking is always free.',
+    action: 'Keep this Earth',
+  },
+  {
+    id: 'daisy',
+    door: true,
+    kicker: 'Lesson',
+    title: 'Learn feedback',
+    body: 'Daisyworld: black daisies warm, white daisies cool. No continents — just the proof that regulation needs no foresight.',
+    scenario: 'daisy-tutorial',
+    action: 'Start Daisyworld',
+    winHint: 'Temperature is holding. That is the whole lesson.',
+  },
+  {
+    id: 'hunt-mars',
+    door: true,
+    kicker: 'Tour',
+    title: 'Visit Mars',
+    body: 'Rust, not grassland. Hover the local map until a chip says rust — the square is iron dust, not a biome.',
+    catalogue: 'Mars',
+    hunt: ['rust'],
+    action: 'Go to Mars',
+  },
+  {
+    id: 'crisis',
+    door: true,
+    kicker: 'Challenge',
+    title: 'A crisis',
+    body: 'Arrive at a snowball. Break the ice without sterilising the world. Rescue is a different skill from creation.',
+    scenario: 'save-snowball',
+    action: 'Arrive mid-ice',
+  },
+  {
+    id: 'hunt-io',
+    kicker: 'Tour',
+    title: 'Yellow for a reason',
+    body: 'Io is sulfur allotropes and lava lakes, not sand. Find a sulfur or patera square.',
+    catalogue: 'Io',
+    hunt: ['sulfur', 'patera', 'lava'],
+    action: 'Go to Io',
+  },
+  {
+    id: 'hunt-europa',
+    kicker: 'Tour',
+    title: 'A lid, not a glacier',
+    body: 'Europa’s cracks are the ice shell sliding. Find a linea or chaos square — not “ice on rock.”',
+    catalogue: 'Europa',
+    hunt: ['linea', 'chaos'],
+    action: 'Go to Europa',
+  },
+  {
+    id: 'hunt-titan',
+    kicker: 'Tour',
+    title: 'Rain that is not water',
+    body: 'Titan’s hydrology is methane. Find a CH₄ lake or the equatorial organic dunes.',
+    catalogue: 'Titan',
+    hunt: ['methaneLake', 'dune'],
+    action: 'Go to Titan',
+  },
+];
+
+export const DOOR_IDS = LESSONS.filter((l) => l.door).map((l) => l.id);
+export const TOUR_IDS = ['hunt-mars', 'hunt-io', 'hunt-europa', 'hunt-titan'];
+
+const REVEAL_KEY = 'orrery.reveal.v1';
+const LESSON_KEY = 'orrery.lessons.v1';
 
 export function loadRevealProgress() {
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw = localStorage.getItem(REVEAL_KEY);
     if (!raw) return { step: 0, done: false };
     return JSON.parse(raw);
   } catch {
@@ -53,7 +125,7 @@ export function loadRevealProgress() {
 }
 
 export function saveRevealProgress(p) {
-  try { localStorage.setItem(KEY, JSON.stringify(p)); } catch { /* */ }
+  try { localStorage.setItem(REVEAL_KEY, JSON.stringify(p)); } catch { /* */ }
 }
 
 export function currentReveal(progress = loadRevealProgress()) {
@@ -74,7 +146,78 @@ export function skipReveal() {
   return p;
 }
 
+export function emptyLessonProgress() {
+  return { seenDoor: false, current: null, done: {} };
+}
+
+export function loadLessonProgress() {
+  try {
+    const raw = localStorage.getItem(LESSON_KEY);
+    if (!raw) return emptyLessonProgress();
+    const p = JSON.parse(raw);
+    return {
+      seenDoor: !!p.seenDoor,
+      current: p.current || null,
+      done: p.done && typeof p.done === 'object' ? p.done : {},
+    };
+  } catch {
+    return emptyLessonProgress();
+  }
+}
+
+export function saveLessonProgress(p) {
+  try { localStorage.setItem(LESSON_KEY, JSON.stringify(p)); } catch { /* */ }
+}
+
+export function lessonById(id) {
+  return LESSONS.find((l) => l.id === id) || null;
+}
+
+export function markDoorSeen(progress = loadLessonProgress()) {
+  const next = { ...progress, seenDoor: true, done: { ...progress.done } };
+  saveLessonProgress(next);
+  return next;
+}
+
+export function setCurrentLesson(id, progress = loadLessonProgress()) {
+  const next = { ...progress, seenDoor: true, current: id, done: { ...progress.done } };
+  saveLessonProgress(next);
+  return next;
+}
+
+export function completeLesson(id, progress = loadLessonProgress()) {
+  const done = { ...progress.done, [id]: true };
+  const nextTour = TOUR_IDS.includes(id)
+    ? TOUR_IDS[TOUR_IDS.indexOf(id) + 1] || null
+    : null;
+  const next = {
+    ...progress,
+    seenDoor: true,
+    done,
+    current: nextTour || (progress.current === id ? null : progress.current),
+  };
+  saveLessonProgress(next);
+  return next;
+}
+
+export function lessonDone(id, progress = loadLessonProgress()) {
+  return !!progress.done?.[id];
+}
+
+export function huntKeysOf(lesson) {
+  if (!lesson?.hunt) return [];
+  return Array.isArray(lesson.hunt) ? lesson.hunt : [lesson.hunt];
+}
+
+export function nextTourAfter(id) {
+  const i = TOUR_IDS.indexOf(id);
+  if (i < 0) return null;
+  return TOUR_IDS[i + 1] || null;
+}
+
 export function campaignBlurb(id) {
+  const lesson = lessonById(id);
+  if (lesson) return lesson.body;
   const map = {
     'daisy-tutorial': 'Daisyworld — learn feedback with two colours of life.',
     'climate-only': 'Climate levers only. No seeding. Feel the thermostat.',
@@ -82,6 +225,28 @@ export function campaignBlurb(id) {
     'save-snowball': 'Arrive mid-catastrophe. Find the intervention that works.',
     'recreate-earth': 'Deep time Earth — land the big chapters within tolerance.',
     'hands-off': 'Set genesis. Touch nothing. Four billion years.',
+    'weather-sandbox': 'Spin, tilt, moon — watch tides and winds without touching life.',
   };
   return map[id] || id;
+}
+
+export function shouldOfferDoor(progress = loadLessonProgress()) {
+  return !progress.seenDoor;
+}
+
+export function nextIncompleteLesson(progress = loadLessonProgress()) {
+  return LESSONS.find((l) => !progress.done?.[l.id]) || null;
+}
+
+export function lessonChipLabel(progress = loadLessonProgress()) {
+  const total = LESSONS.length;
+  const doneN = LESSONS.filter((l) => progress.done?.[l.id]).length;
+  if (doneN >= total) return `Tour complete · ${total}/${total}`;
+  const cur = lessonById(progress.current) || nextIncompleteLesson(progress);
+  return `Lesson ${Math.min(doneN + 1, total)}/${total} · ${cur.title}`;
+}
+
+export function huntMatches(key, lesson) {
+  if (!key || !lesson) return false;
+  return huntKeysOf(lesson).includes(key);
 }

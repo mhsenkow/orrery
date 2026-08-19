@@ -563,6 +563,68 @@
   }
   #reveal button.ghost { background:transparent; color:#9aacc8; border-color:transparent; }
   #reveal button:hover { border-color:rgba(200,220,255,.55); }
+  #reveal .rv-progress {
+    display:flex; gap:5px; margin:0 0 10px;
+  }
+  #reveal .rv-dot {
+    width:7px; height:7px; border-radius:50%;
+    background:rgba(160,190,255,.22); border:1px solid rgba(160,190,255,.35);
+  }
+  #reveal .rv-dot.on { background:var(--amber); border-color:var(--amber); }
+  #reveal .rv-dot.done { background:var(--ok); border-color:var(--ok); }
+
+  #lessonchip {
+    font: inherit; cursor:pointer; pointer-events:auto; flex-shrink:0;
+    border:1px solid rgba(228,184,106,.35); background:rgba(40,32,12,.55);
+    color:#f0d9a0; border-radius:999px; padding:4px 10px; font-size:11px;
+    max-width: min(42vw, 280px); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  #lessonchip[hidden] { display:none !important; }
+  #lessonchip:hover { border-color:rgba(228,184,106,.7); }
+
+  #door {
+    display:none; position:absolute; z-index:9;
+    inset: calc(54px + var(--safe-t)) var(--gutter) auto var(--gutter);
+    max-width: 720px; margin: 0 auto;
+    max-height: calc(100dvh - 80px - var(--safe-t) - var(--safe-b));
+    overflow:auto;
+    background:var(--panel); backdrop-filter:blur(18px); border:1px solid var(--line);
+    border-radius:16px; padding:16px 16px 14px; pointer-events:auto;
+    flex-direction:column; gap:12px; box-shadow: 0 16px 48px rgba(0,0,0,.45);
+  }
+  #doorskip { flex-shrink:0; white-space:nowrap; }
+  #door.open { display:flex; animation: dockIn .4s var(--ease); }
+  #door .lp-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  #door h1 { font-family: Syne, sans-serif; font-size:18px; margin:0; letter-spacing:.04em; }
+  #door .lp-sub { color:var(--dim); font-size:12px; margin:6px 0 0; max-width:52ch; line-height:1.45; }
+  #doorgrid {
+    display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap:10px;
+  }
+  .door-card {
+    text-align:left; padding:14px 14px 12px; border-radius:12px;
+    background:rgba(0,0,0,.28); border:1px solid var(--line);
+    color:inherit; font: inherit; cursor:pointer;
+    transition: border-color .2s var(--ease), transform .2s var(--ease);
+  }
+  .door-card:hover { border-color:rgba(110,160,255,.5); transform: translateY(-1px); }
+  .door-card .dk { font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--amber); margin-bottom:6px; }
+  .door-card .dt { font-family: Syne, sans-serif; font-weight:800; font-size:16px; margin-bottom:6px; }
+  .door-card .db { font-size:12px; color:#b8c8e0; line-height:1.4; }
+  #campaigntrack { display:flex; flex-direction:column; gap:6px; margin:8px 0 10px; }
+  .camp-row {
+    display:flex; align-items:center; gap:8px; text-align:left;
+    padding:8px 10px; border-radius:8px; border:1px solid var(--line);
+    background:rgba(0,0,0,.22); color:inherit; font: inherit; cursor:pointer;
+  }
+  .camp-row:hover { border-color:rgba(110,160,255,.4); }
+  .camp-row .ck { width:1.1em; color:var(--dim); }
+  .camp-row.done .ck { color:var(--ok); }
+  .camp-row .ct { font-weight:600; }
+  .camp-row .cm { color:var(--dim); font-size:11px; margin-left:auto; }
+  .camp-row.on { border-color:rgba(228,184,106,.5); }
+  @media (max-width: 640px) {
+    #doorgrid { grid-template-columns: 1fr; }
+  }
 
   body.ceremony #moment .m-title {
     font-size:clamp(28px, 5vw, 48px);
@@ -690,6 +752,74 @@
   .lp-card .lp-id { font-size:10px; color:var(--dim); letter-spacing:.01em; }
   .lp-card[aria-pressed="true"] { border-color:var(--accent); background:rgba(42,85,200,.22); }
   #landpickfoot { font-size:11px; color:var(--dim); margin:0; }
+
+  #localkey {
+    display:none; position:absolute; z-index:9;
+    inset: calc(54px + var(--safe-t)) var(--gutter) calc(var(--gutter) + var(--safe-b)) var(--gutter);
+    width: auto; max-width: none; margin: 0;
+    max-height: none;
+    background:var(--panel); backdrop-filter:blur(18px); border:1px solid var(--line);
+    border-radius:14px; padding:8px 10px 10px; pointer-events:auto;
+    flex-direction:column; gap:6px; box-shadow: 0 16px 48px rgba(0,0,0,.45);
+    overflow:hidden;
+  }
+  #localkey.open { display:flex; animation: dockIn .4s var(--ease); }
+  #localkey .lk-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex:0 0 auto; }
+  #localkey h1 { font-family: Syne, sans-serif; font-size:13px; margin:0; letter-spacing:.04em; }
+  #localkey .lk-sub { color:var(--dim); font-size:11px; margin:2px 0 0; line-height:1.3; }
+  #localkeylist {
+    overflow:auto; flex:1 1 auto; min-height:0;
+    display:flex; flex-direction:column; gap:5px;
+  }
+  #localkey .lk-sec {
+    font-family: Syne, sans-serif; font-size:8.5px; font-weight:700;
+    letter-spacing:.16em; text-transform:uppercase; color:#9fc0ff;
+    margin:4px 0 0;
+  }
+  #localkey .lk-blurb {
+    font-size:11px; color:#9aacc4; line-height:1.35; margin:0 0 2px;
+  }
+  #localkey .lk-grid {
+    display:grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:3px 6px; flex:0 0 auto;
+  }
+  #localkey .lk-grid.guilds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #localkey .lk-grid.marks {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  #localkey .lk-row {
+    display:grid; grid-template-columns:12px 1fr; gap:1px 8px; align-items:start;
+    text-align:left; width:100%; padding:6px 8px; border-radius:6px;
+    background:rgba(0,0,0,.22); border:1px solid var(--line);
+    color:#c5d4ec; font:inherit; cursor:pointer;
+  }
+  #localkey .lk-row:hover { border-color:rgba(110,160,255,.4); }
+  #localkey .lk-row.on {
+    border-color:rgba(110,160,255,.55); background:rgba(110,160,255,.12);
+  }
+  #localkey .lk-swatch {
+    width:10px; height:10px; border-radius:2px; margin-top:3px;
+    display:block; flex:0 0 auto;
+  }
+  #localkey .lk-swatch.frame {
+    background:transparent; box-shadow: inset 0 0 0 2px rgb(232,200,120);
+  }
+  #localkey .lk-swatch.hole {
+    background:#080a10; box-shadow: inset 0 0 0 1px rgba(180,140,80,.75);
+  }
+  #localkey .lk-swatch.dot {
+    width:7px; height:7px; border-radius:50%; margin:4px 1px 0;
+  }
+  #localkey .lk-name {
+    font-size:12px; color:#e8f0ff; font-weight:600; font-family: Syne, sans-serif;
+    line-height:1.2;
+  }
+  #localkey .lk-why { font-size:10.5px; color:#9aacc4; line-height:1.32; margin-top:2px; }
+  @media (max-width: 900px) {
+    #localkey .lk-grid,
+    #localkey .lk-grid.guilds,
+    #localkey .lk-grid.marks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
   #catpanel .cat-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   #catpanel h1 { font-family: Syne, sans-serif; font-size:11px; letter-spacing:.2em; text-transform:uppercase; margin:0; color:#9fc0ff; font-weight:700; }
   .cat-nav { display:flex; gap:4px; align-items:center; }
@@ -885,8 +1015,24 @@
     width:7px; height:7px; border-radius:1.5px; display:block; flex:0 0 auto;
   }
   #locallegend .leg[hidden] { display: none !important; }
+  #locallegend .leg-n {
     font-variant-numeric: tabular-nums; color:#9fe8c8; font-size:7.5px;
   }
+  #locallegendrow {
+    display:flex; align-items:flex-start; gap:4px;
+  }
+  #locallegendrow #locallegend { flex:1; min-width:0; }
+  #localkeybtn {
+    flex:0 0 auto; height:18px; min-width:18px; padding:0 5px;
+    font-size:8px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    line-height:1; border-radius:4px; color:#c4d2ea;
+    background:rgba(16,22,34,.75); border-color:rgba(140,190,255,.35);
+    font-family: Syne, sans-serif;
+  }
+  #localkeybtn[aria-pressed="true"] {
+    background:rgba(42,85,200,.45); border-color:rgba(140,190,255,.7); color:#fff;
+  }
+  #localpanel.expanded #localkeybtn { height:20px; font-size:9px; padding:0 6px; }
   #localpanel.expanded #locallegend .leg { font-size:9.5px; padding:2px 5px; gap:4px; }
   #localpanel.expanded #locallegend .leg i { width:8px; height:8px; }
   #localpanel.expanded #locallegend .leg-n { font-size:8.5px; }
@@ -1016,6 +1162,9 @@
     .dock-tabs .btn-label { display: none; }
     .clim-strip { grid-template-columns: 1fr 1fr; }
     .clim-compare { grid-template-columns: 1fr; }
+    #localkey .lk-grid,
+    #localkey .lk-grid.guilds,
+    #localkey .lk-grid.marks { grid-template-columns: 1fr; }
 
     #timeribbon {
       left: calc(var(--gutter) + var(--safe-l));
@@ -1084,6 +1233,7 @@
   <div id="topbar">
     <div class="brand">Orrery</div>
     <div id="worldchip">Earth</div>
+    <button type="button" id="lessonchip" hidden title="Current lesson">Lesson</button>
     <div id="scalerung" title="Camera rung">Hold</div>
     <div class="actions">
       <button type="button" id="catprev" class="wide-only" title="Previous world [">‹</button>
@@ -1148,9 +1298,15 @@
               <select id="guildsel" title="Metabolism to plant with Seed guild"></select>
             </div>
             <p class="god-note" id="guildhint">Pick Seed guild in Tools, then click the planet.</p>
+            <div class="view-row">
+              <label for="origindiff" title="How hard abiogenesis is. 1 is the default prior.">Origin</label>
+              <input type="range" id="origindiff" min="0.2" max="5" step="0.1" value="1" title="Origin difficulty prior. Higher = rarer abiogenesis.">
+              <span class="val" id="origindiffVal">1.0×</span>
+            </div>
             <div class="tools god-actions">
               <button type="button" id="godundo" title="Ctrl+Z — reverts the last stroke, not time">Undo</button>
               <button type="button" id="godredo" title="Ctrl+Shift+Z — redo the stroke">Redo</button>
+              <button type="button" id="godcull" title="Remove the most abundant living lineage">Cull lineage</button>
               <button type="button" id="godwatch" aria-pressed="false" title="Hide UI and just watch">Watch mode</button>
               <button type="button" id="godbookmark" title="Mark this moment">Bookmark</button>
             </div>
@@ -1245,14 +1401,16 @@
             <button type="button" id="landpickbtn" title="Choose a starting continent layout">Pick land</button>
           </div>
           <p class="god-note" id="landmassline">Landmasses appear here after generate.</p>
+          <p class="god-note" id="axesline"></p>
           <p class="god-note">Canvas freezes plates and rivers so a stroke stays. The local map becomes a cube net of the whole sphere. Flatten, Smooth, Sharpen, Roughen, and Crust type are in Tools. Climate still ticks.</p>
         </div>
 
         <div class="suite-desk" data-suite-panel="god" data-desk-panel="challenge" hidden>
-          <div class="god-h" data-sec-icon="challenge">Challenge</div>
-          <select id="scenariosel"></select>
-          <p class="god-note" id="scenarioblurb">A short goal with limits — optional. Campaign order listed first.</p>
-          <button type="button" id="scenariostart" class="god-primary">Start challenge</button>
+          <div class="god-h" data-sec-icon="challenge">How to play</div>
+          <div id="campaigntrack"></div>
+          <p class="god-note" id="scenarioblurb">A short goal with limits. The first four are the front door; the rest wait in the list.</p>
+          <select id="scenariosel" hidden></select>
+          <button type="button" id="scenariostart" class="god-primary" hidden>Start challenge</button>
         </div>
 
         <div class="suite-desk" data-suite-panel="god" data-desk-panel="genesis" hidden>
@@ -1281,6 +1439,28 @@
             <label for="genesislandfrac">Land</label>
             <input type="range" id="genesislandfrac" min="10" max="70" value="29">
             <span class="val" id="genesislandfracVal">29%</span>
+          </div>
+          <div class="view-row">
+            <label for="genesissolvent">Solvent</label>
+            <select id="genesissolvent" title="What life dissolves in">
+              <option value="water" selected>water</option>
+              <option value="ammonia">ammonia</option>
+              <option value="methane">methane</option>
+              <option value="brine">brine</option>
+            </select>
+          </div>
+          <div class="view-row">
+            <label for="genesischirality">Hand</label>
+            <select id="genesischirality" title="Amino-acid handedness">
+              <option value="" selected>random</option>
+              <option value="L">L</option>
+              <option value="D">D</option>
+            </select>
+          </div>
+          <div class="view-row">
+            <label for="genesisorigindiff">Origin</label>
+            <input type="range" id="genesisorigindiff" min="0.2" max="5" step="0.1" value="1" title="Abiogenesis difficulty prior">
+            <span class="val" id="genesisorigindiffVal">1.0×</span>
           </div>
           <div class="tools god-actions" style="margin-top:6px">
             <button type="button" id="genesisrand">Random habitable</button>
@@ -1461,12 +1641,24 @@
 
   <div id="reveal" hidden>
     <div class="rv-kicker">Welcome</div>
+    <div class="rv-progress" id="revealdots" hidden></div>
     <div class="rv-title"></div>
     <div class="rv-body"></div>
     <div class="rv-actions">
       <button type="button" id="revealnext">Continue</button>
       <button type="button" id="revealskip" class="ghost">Skip</button>
     </div>
+  </div>
+
+  <div id="door" role="dialog" aria-label="How do you want to start">
+    <div class="lp-head">
+      <div>
+        <h1>How do you want to start?</h1>
+        <p class="lp-sub">The dock can wait. Pick a way in — a sandbox, a two-colour lesson, a real body, or a world already in trouble.</p>
+      </div>
+      <button type="button" id="doorskip">Just the planet</button>
+    </div>
+    <div id="doorgrid"></div>
   </div>
 
   <div id="timeribbon"></div>
@@ -1481,6 +1673,17 @@
     </div>
     <div id="landpickgrid"></div>
     <p id="landpickfoot"></p>
+  </div>
+
+  <div id="localkey" role="dialog" aria-modal="true" aria-labelledby="localkeytitle">
+    <div class="lk-head">
+      <div>
+        <h1 id="localkeytitle">Map squares</h1>
+        <p class="lk-sub" id="localkeysub"></p>
+      </div>
+      <button type="button" id="localkeyclose">Close</button>
+    </div>
+    <div id="localkeylist"></div>
   </div>
 
   <div id="catpanel">
@@ -1541,7 +1744,10 @@
         <div class="lc-meta"></div>
       </div>
     </div>
-    <div id="locallegend"></div>
+    <div id="locallegendrow">
+      <div id="locallegend"></div>
+      <button type="button" id="localkeybtn" title="What the squares mean" aria-haspopup="dialog" aria-controls="localkey" aria-pressed="false">key</button>
+    </div>
     <div id="localstatus"></div>
   </div>
   <div id="eoref">
@@ -1551,4 +1757,4 @@
   </div>
 </div>
 <div id="err"></div>
-<script type="module" src="./main.js?v=alive17"></script>
+    <script type="module" src="./main.js?v=alive43"></script>

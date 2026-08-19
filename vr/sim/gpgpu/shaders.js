@@ -139,7 +139,6 @@ void main(){
   float f = lat * uFScale;
   float u = -dpy * (0.5 + abs(f));
   float v = dpx * (0.5 + abs(f));
-  u += sin(lat * 3.14159 * 3.0) * 0.15;
   if (g.r > uSea + 0.08) { u *= 0.7; v *= 0.7; }
   if (uTidallyLocked > 0.5) {
     float day = dot(dir, uSunDir);
@@ -188,7 +187,6 @@ void main(){
   float f = lat * uFScale;
   float uu = -dpy * (0.5 + abs(f));
   float vv = dpx * (0.5 + abs(f));
-  uu += sin(lat * 3.14159265 * 3.0) * 0.15;
   if (g.r > uSea + 0.08) { uu *= 0.7; vv *= 0.7; }
   if (uTidallyLocked > 0.5) {
     float day = dot(dir, uSunDir);
@@ -300,7 +298,6 @@ void main(){
   float f = lat * uFScale;
   float uu = -dpy * (0.5 + abs(f));
   float vv = dpx * (0.5 + abs(f));
-  uu += sin(lat * 3.14159265 * 3.0) * 0.15;
   if (h > uSea + 0.08) { uu *= 0.7; vv *= 0.7; }
   if (uTidallyLocked > 0.5) uu += -dot(dir, uSunDir) * 0.2;
 

@@ -1,0 +1,91 @@
+{
+  "version": 1,
+  "why": "Geomorphic processes. A landform is a process acting on a material. Rates are relative (Earth rain = 1) and tagged. The compiler does not invent a stamp.",
+  "tags": ["measured", "fitted", "invented"],
+  "processes": [
+    {
+      "id": "impact",
+      "name": "impact cratering",
+      "rate": 1,
+      "tag": "measured",
+      "why": "The universal clock on any solid surface. Density follows a power law; the current stamp still takes four hand-tuned counts."
+    },
+    {
+      "id": "contraction",
+      "name": "global contraction",
+      "rate": 0.4,
+      "tag": "measured",
+      "why": "A one-plate lithosphere shrinks as the interior cools. Thrust scarps, not plate boundaries."
+    },
+    {
+      "id": "volcanism",
+      "name": "silicate volcanism",
+      "rate": 0.8,
+      "tag": "fitted",
+      "why": "Shields, plains, wrinkle ridges. Viscosity and gas content decide the edifice; this cut only names the family."
+    },
+    {
+      "id": "heatpipe",
+      "name": "heat-pipe volcanism",
+      "rate": 8,
+      "tag": "measured",
+      "why": "Io. Magma rises through a thin lid, buries the old surface, and the mountains are tilted blocks, not volcanoes."
+    },
+    {
+      "id": "cryovolcanism",
+      "name": "cryovolcanism",
+      "rate": 0.3,
+      "tag": "fitted",
+      "why": "The same volcanic grammar in ice or ammonia-water. Domes, flows, plumes, pits."
+    },
+    {
+      "id": "tidal",
+      "name": "tidal flexure",
+      "rate": 1.2,
+      "tag": "measured",
+      "why": "Diurnal stress on an ice shell. Double ridges, cycloids, tiger stripes. Computable from an orbit the catalogue already carries."
+    },
+    {
+      "id": "sublimation",
+      "name": "sublimation",
+      "rate": 0.6,
+      "tag": "measured",
+      "why": "Pits, blades, hollows, spiders. Most of what the outer Solar System looks like up close, and it has no Earth analogue in the fluvial library."
+    },
+    {
+      "id": "aeolian",
+      "name": "aeolian transport",
+      "rate": 0.7,
+      "tag": "measured",
+      "why": "Dunes and yardangs wherever there is an atmosphere and loose grains. Titan's equator and Mars's deserts."
+    },
+    {
+      "id": "fluvial",
+      "name": "fluvial erosion",
+      "rate": 1,
+      "tag": "measured",
+      "why": "Liquid running downhill. Water on Earth, methane on Titan. Needs a liquid window at surface P."
+    },
+    {
+      "id": "glacial",
+      "name": "glacial ice",
+      "rate": 0.5,
+      "tag": "measured",
+      "why": "Ice that flows. Cirques and moraines on Earth; convecting nitrogen is a different process."
+    },
+    {
+      "id": "karst",
+      "name": "dissolution",
+      "rate": 0.4,
+      "tag": "fitted",
+      "why": "A soluble rock and a solvent. Limestone on Earth, organics-over-ice on Titan."
+    },
+    {
+      "id": "convection",
+      "name": "solid-state convection",
+      "rate": 0.2,
+      "tag": "measured",
+      "why": "Sputnik Planitia. A material soft enough at the local T to overturn in cells. Rheology, not tectonics."
+    }
+  ]
+}

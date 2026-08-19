@@ -7,6 +7,14 @@ import { horizontalGeneTransfer, flagEndemics, climateRangeShift, latitudinalDiv
 import { isModernEarth, isDeepTimeEarth } from './ruleMode.js';
 import { deriveLifeClass, unlockedClassFromPool } from './lifeclass.js';
 import { isSubmerged, isLand } from './cellSurface.js';
+import {
+  blankGenome, cloneGenome, mutateGenome, expressBodyPlan, describeGenome,
+  morphPenalty, hardenGenome, genomeKey, recombineGenomes, transferOrgan,
+  genomeCopyCost,
+} from './genome.js';
+import { sensoryEnvAt, viableBands } from './sensory.js';
+import { rngOf } from './rng.js';
+import { biochemForWorld } from './origin.js';
 
 function guildBiomass(W, c) {
   const d = W.guildDens;
@@ -87,7 +95,7 @@ export function nodeOf(tree, id) {
   return tree?.byId?.get(id) || null;
 }
 
-export function addLineage(tree, parentId, traits, ageYr, name) {
+export function addLineage(tree, parentId, traits, ageYr, name, genome) {
   const id = _nextId++;
   const node = {
     id,
@@ -100,6 +108,16 @@ export function addLineage(tree, parentId, traits, ageYr, name) {
     cells: [],
     pop: 0,
     endemic: false,
+    /** The body. Everything visible about this lineage is expressed from here. */
+    genome: genome || blankGenome(),
+    morphMult: 1,
+    plan: null,
+    diet: [],
+    isolation: 0,
+    censusPop: 0,
+    Ne: 1,
+    load: 0,
+    variance: 0.05,
   };
   tree.nodes.push(node);
   tree.byId.set(id, node);
@@ -192,14 +210,103 @@ export function ensureLuca(W, chronLog) {
   if (!rootCells.length) return;
 
   const luca = addLineage(W.tree, null, traits, W.ageYr, 'LUCA');
+  luca.genome.biochem = W.planetBiochem || biochemForWorld(W.rule, rngOf(W, 'rngBio'));
   W.lucaId = luca.id;
-  for (const c of rootCells) {
+  const prefer = W.originCell != null ? [W.originCell, ...rootCells] : rootCells;
+  const seen = new Set();
+  for (const c of prefer) {
+    if (seen.has(c) || c == null) continue;
+    seen.add(c);
     W.popId[c] = luca.id;
     W.life[c] = Math.max(W.life[c], cellLifeSignal(W, c), 0.08);
     luca.cells.push(c);
     luca.pop++;
   }
-  if (chronLog) chronLog(W.year, 'origin', 0, 1, 'LUCA rooted');
+  if (chronLog) chronLog(W.year, 'origin', W.originCell ?? luca.cells[0] ?? 0, 1, 'LUCA rooted');
+}
+
+function holoceneGenome(kind) {
+  const g = blankGenome();
+  g.biochem = {
+    solvent: 'water', polymer: 'dna', carrier: 'phosphate',
+    chirality: 'L', membrane: 'phospholipid',
+  };
+  if (kind === 'plant') {
+    g.axes.habitat = 'terrestrial';
+    g.axes.trophic = 'phototroph';
+    g.axes.skeleton = 'lignin';
+    g.axes.locomotion = 'sessile';
+    g.axes.respiration = 'airSac';
+    g.n.sizeClass = 6;
+    g.n.symmetryOrder = 1;
+    g.n.segments = 1;
+  } else if (kind === 'animal') {
+    g.axes.habitat = 'terrestrial';
+    g.axes.trophic = 'predator';
+    g.axes.skeleton = 'bone';
+    g.axes.locomotion = 'limbed';
+    g.axes.nervous = 'brain';
+    g.axes.thermal = 'endotherm';
+    g.axes.respiration = 'lung';
+    g.n.sizeClass = 5;
+    g.n.symmetryOrder = 1;
+    g.n.appendagePairs = 2;
+    g.n.segments = 8;
+    g.n.expressingSegments = 4;
+  } else if (kind === 'fish') {
+    g.axes.habitat = 'pelagic';
+    g.axes.trophic = 'predator';
+    g.axes.skeleton = 'bone';
+    g.axes.locomotion = 'pairedFin';
+    g.axes.respiration = 'gill';
+    g.n.sizeClass = 4;
+    g.n.symmetryOrder = 1;
+    g.n.segments = 6;
+  }
+  return g;
+}
+
+/** Plant a living Holocene clade set on modern Earth at generate, so inspect and
+ *  the Lab tree have bodies at tick 0 instead of waiting on phylogeny. */
+export function seedHoloceneTree(W, chronLog) {
+  if (!isModernEarth(W.rule)) return;
+  if (W.tree?.nodes?.length) return;
+  if (W.transitions) W.transitions.abiogenesis = true;
+  ensureLuca(W, chronLog);
+  if (!W.tree?.nodes?.length) return;
+
+  const env = { O2: W.gases?.O2 ?? 0.21, gravity: W.rule?.gravity ?? 1 };
+  const luca = nodeOf(W.tree, W.lucaId);
+  const plants = addLineage(W.tree, luca.id, luca.traits, W.ageYr, 'Plantae', holoceneGenome('plant'));
+  const animals = addLineage(W.tree, luca.id, luca.traits, W.ageYr, 'Metazoa', holoceneGenome('animal'));
+  const fish = addLineage(W.tree, luca.id, luca.traits, W.ageYr, 'Pisces', holoceneGenome('fish'));
+  plants.traits[TRAITS.bodyMass] = 0.35;
+  plants.traits[TRAITS.trophic] = 0.05;
+  animals.traits[TRAITS.bodyMass] = 0.45;
+  animals.traits[TRAITS.trophic] = 0.65;
+  fish.traits[TRAITS.bodyMass] = 0.38;
+  fish.traits[TRAITS.trophic] = 0.55;
+  plants.plan = expressBodyPlan(plants.genome, env);
+  animals.plan = expressBodyPlan(animals.genome, env);
+  fish.plan = expressBodyPlan(fish.genome, env);
+
+  plants.cells.length = 0; plants.pop = 0;
+  animals.cells.length = 0; animals.pop = 0;
+  fish.cells.length = 0; fish.pop = 0;
+  luca.cells.length = 0; luca.pop = 0;
+
+  for (let c = 0; c < NC; c++) {
+    if (cellLifeSignal(W, c) <= lifeFloor(W)) continue;
+    const sea = isSubmerged(W, c);
+    let id = luca.id;
+    if (sea && (W.reef[c] > 0.2 || W.life[c] > 0.18)) id = fish.id;
+    else if (!sea && W.life[c] > 0.45) id = plants.id;
+    else if (!sea && W.life[c] > 0.28) id = animals.id;
+    W.popId[c] = id;
+    const n = nodeOf(W.tree, id);
+    n.cells.push(c);
+    n.pop++;
+  }
 }
 
 function mutate(traits, rng, locked = null) {
@@ -215,7 +322,7 @@ function mutate(traits, rng, locked = null) {
   return out;
 }
 
-function fitness(traits, W, c) {
+function fitness(traits, W, c, node) {
   const t = W.temp[c];
   const m = isLand(W, c) ? W.moist[c] : 1;
   const o2 = W.gases.O2;
@@ -228,7 +335,23 @@ function fitness(traits, W, c) {
     water *= clamp(traits[TRAITS.desiccation] / Math.max(0.15, need), 0.2, 1.4);
   }
   const oxy = o2 >= traits[TRAITS.o2Affinity] * 0.3 ? 1 : o2 / 0.3;
-  return therm * water * oxy;
+  let biotic = 1;
+  if (node) {
+    if ((node.preyAvail || 0) > 0) biotic *= 1 + Math.min(0.6, node.preyAvail);
+    if ((node.predation || 0) > 0) {
+      biotic *= clamp(1 - node.predation * (1 - (traits[TRAITS.defence] || 0)), 0.2, 1.2);
+    }
+    if ((node.compete || 0) > 0) biotic *= clamp(1 - node.compete * 0.35, 0.4, 1);
+    const copy = genomeCopyCost(node.genome || { organs: [], n: { segments: 1 } });
+    biotic *= clamp(1 - copy, 0.4, 1);
+    if (node.plan && node.plan.viable === false) biotic *= 0.15;
+  }
+  const chir = node?.genome?.biochem?.chirality;
+  if (chir && W.planetBiochem?.chirality && chir !== W.planetBiochem.chirality && chir !== 'racemic') {
+    biotic *= 0.25;
+  }
+  W.bioticTerm = (W.bioticTerm || 0) * 0.9 + (biotic !== 1 ? 0.1 : 0);
+  return therm * water * oxy * (node?.morphMult ?? 1) * biotic;
 }
 
 function neighbourLineage(W, c) {
@@ -242,11 +365,124 @@ function neighbourLineage(W, c) {
 }
 
 /**
- * Kleiber: B ∝ M^0.75 → density ∝ M^-0.75. Item 63.
+ * Kleiber: B ∝ M^0.75 → density ∝ M^-0.75.
+ * `massG` in grams when known; otherwise the old 0–1 trait.
  */
-export function kleiberDensity(bodyMassTrait) {
-  const M = Math.pow(10, bodyMassTrait * 6 - 2);
-  return Math.pow(M, -0.75);
+export function kleiberDensity(bodyMassTrait, massG) {
+  const M = massG != null ? massG : Math.pow(10, bodyMassTrait * 6 - 2);
+  return Math.pow(Math.max(1e-12, M), -0.75);
+}
+
+function cellKm2(c, radiusKm = 6371) {
+  return (AREA[c] || 1) * (4 * Math.PI * radiusKm * radiusKm) / NC;
+}
+
+
+/* ------------------------------------------------------------- morphology -- */
+
+/** One sensory environment per medium per tick — bandViability integrates a Planck
+ *  spectrum, so it is cached rather than recomputed per lineage. */
+function morphEnv(W, node) {
+  const c = node.cells?.[0] ?? 0;
+  const medium = W.rule?.iceShell ? 'cryobrine' : (W.h?.[c] < W.seaLevel ? 'water' : 'air');
+  W._morphEnvCache = W._morphEnvCache || new Map();
+  const key = `${medium}|${(W.gases?.O2 ?? 0).toFixed(2)}`;
+  let env = W._morphEnvCache.get(key);
+  if (!env) {
+    env = sensoryEnvAt(W, c, { medium });
+    env.bands = viableBands(env);
+    env.O2 = W.gases?.O2 ?? 0.21;
+    env.gravity = W.rule?.gravity ?? 1;
+    W._morphEnvCache.set(key, env);
+  }
+  return env;
+}
+
+/**
+ * Bodies change. Once per phylogeny tick a lineage may gain, lose, duplicate or
+ * retune one module; old lineages harden and stop being able to.
+ *
+ * There is no ladder here and no list of Earth events. What a lineage can become is
+ * whatever the grammar allows, and what it is *worth* becoming is decided by the
+ * incompatibility rules and by whether this planet delivers the band a sensor needs.
+ */
+export function morphTick(W, chronLog, dtMyr) {
+  const tree = W.tree;
+  if (!tree) return;
+  const rng = rngOf(W, 'rngBio');
+  W._morphEnvCache = null;
+  W.morphFirsts = W.morphFirsts || new Set();
+  let changed = 0;
+
+  for (const id of tree.living) {
+    const node = nodeOf(tree, id);
+    if (!node || node.pop < 1 || !node.genome) continue;
+    const env = morphEnv(W, node);
+    const ageMyr = Math.max(0, (W.ageYr - node.birth) / 1e6);
+
+    // One module event per lineage per tick, scaled by how long the tick was.
+    const p = clamp(0.06 * Math.max(0.1, dtMyr), 0, 0.5);
+    if (rng() < p) {
+      const before = genomeKey(node.genome);
+      const op = mutateGenome(node.genome, rng, env);
+      if (op && genomeKey(node.genome) !== before) {
+        changed++;
+        node.plan = null;
+        // A planet-first is a moment, whoever gets there.
+        const first = `${op}:${node.genome.axes.locomotion}:${node.genome.n.symmetryOrder}`;
+        if (op === 'gain' && !W.morphFirsts.has(genomeKey(node.genome).split(':')[3] || first)) {
+          const last = node.genome.organs[node.genome.organs.length - 1];
+          const tag = `organ:${last?.id}`;
+          if (last && !W.morphFirsts.has(tag)) {
+            W.morphFirsts.add(tag);
+            node.genome.firsts.push(last.id);
+            if (chronLog) {
+              chronLog(W.year, 'evolution', node.cells?.[0] ?? 0, 1,
+                `First ${last.id}: ${node.name}`, { body: describeGenome(node.genome) });
+            }
+          }
+        }
+      }
+    }
+    hardenGenome(node.genome, ageMyr, Math.max(1, node.pop), rng);
+
+    const pen = morphPenalty(node.genome);
+    node.morphMult = pen.mult;
+    node.morphWhy = pen.why;
+    if (!node.plan) node.plan = expressBodyPlan(node.genome, env);
+  }
+
+  W.morphChanged = changed;
+  W.morphospaceOccupied = countMorphs(tree);
+
+  // What this sky and this medium actually deliver, for the HUD and for the god layer.
+  // Prefer the most abundant living body's own eyes — that is the world's sense, not a catalogue.
+  let topNode = null, topPop = 0;
+  for (const id of tree.living) {
+    const n = nodeOf(tree, id);
+    if ((n?.pop || 0) > topPop) { topPop = n.pop; topNode = n; }
+  }
+  const anyEnv = W._morphEnvCache?.values().next().value;
+  W.topSense = topNode?.plan?.eyes?.[0]?.band || anyEnv?.bands?.[0]?.id || null;
+  W.senseBands = anyEnv?.bands?.slice(0, 5) || [];
+}
+
+/** How many structurally distinct bodies are alive right now. */
+export function countMorphs(tree) {
+  const seen = new Set();
+  for (const id of tree.living) {
+    const n = nodeOf(tree, id);
+    if (n?.genome) seen.add(genomeKey(n.genome));
+  }
+  return seen.size;
+}
+
+/** The body of whatever lives in this cell, expressed. */
+export function planAt(W, c) {
+  const node = lineageAt(W, c);
+  if (!node?.genome) return null;
+  if (!node.plan) node.plan = expressBodyPlan(node.genome, { O2: W.gases?.O2 ?? 0.21, gravity: W.rule?.gravity ?? 1 });
+  return node.plan;
 }
 
 export function evolveTick(W, chronLog) {
@@ -261,7 +497,7 @@ export function evolveTick(W, chronLog) {
 
   for (const id of tree.living) {
     const n = nodeOf(tree, id);
-    if (n) { n.pop = 0; n.cells.length = 0; }
+    if (n) { n.pop = 0; n.cells.length = 0; n.censusPop = 0; }
   }
   for (let c = 0; c < NC; c++) {
     const id = W.popId[c];
@@ -277,22 +513,44 @@ export function evolveTick(W, chronLog) {
     }
     n.pop++;
     n.cells.push(c);
+    const massG = n.plan?.massG ?? Math.pow(10, (n.traits[TRAITS.bodyMass] ?? 0.15) * 6 - 2);
+    n.censusPop = (n.censusPop || 0) + kleiberDensity(n.traits[TRAITS.bodyMass], massG)
+      * Math.max(0.02, cellLifeSignal(W, c)) * cellKm2(c);
     const grade = n.traits[TRAITS.bodyMass] > 0.25 && (W.transitions?.multicellular)
       ? clamp(n.traits[TRAITS.bodyMass], 0, 1) : 0;
     W.macroDens[c] = grade;
   }
 
   const livingNodes = tree.living.map((id) => nodeOf(tree, id)).filter(Boolean);
+  for (const n of livingNodes) {
+    n.Ne = Math.max(1, (n.censusPop || n.pop) * 0.35);
+  }
 
   for (const node of livingNodes) {
     if (!node || node.pop < 1) continue;
 
-    const Ne = Math.max(1, node.pop);
-    const drift = 1 / Math.sqrt(Ne);
-    if (rng() < 0.05 * dt + drift * 0.02) {
-      node.traits = mutate(node.traits, rng, node.locked);
+    const Ne = Math.max(1, node.Ne || node.pop);
+    // Drift is random change that overwhelms weak selection when Ne is small —
+    // not a mutation-rate bonus. provenance: measured-shape
+    const driftSigma = 1 / Math.sqrt(Ne);
+    const genYr = Math.max(1e-4, Math.pow(10, (node.traits[TRAITS.bodyMass] || 0.15) * 2 - 2));
+    const gens = clamp((W.dtYr || 200) / (genYr * 365), 0.01, 1e4);
+    const mutP = clamp(0.02 * dt * (node.genome?.biochem?.polymer === 'rna' ? 2 : 1), 0, 0.4);
+    if (rng() < mutP) {
+      const next = mutate(node.traits, rng, node.locked);
+      // Neutral / nearly-neutral: most steps stick; strong selection needs s > 1/Ne
+      for (let k = 0; k < TRAITS.COUNT; k++) {
+        const s = Math.abs(next[k] - node.traits[k]);
+        if (s * Ne < 1 && rng() < 0.7) {
+          next[k] = clamp(node.traits[k] + (rng() * 2 - 1) * driftSigma * 0.05, 0, 1);
+        }
+      }
+      node.traits = next;
     }
-    node.substitutions += 0.01 * dt * Ne;
+    node.substitutions += 0.01 * dt; // neutral: rate = μ, independent of N
+    node.load = (node.load || 0) + (W.transitions?.sex ? 0 : 0.002 * dt * driftSigma);
+    if (W.transitions?.sex) node.load = Math.max(0, (node.load || 0) - 0.004 * dt);
+    void gens;
 
     const complexity = node.traits[TRAITS.bodyMass] + (node.traits[TRAITS.trophic] > 0.3 ? 0.2 : 0);
     if (complexity > 0.5 && W.meanLife < 0.1) {
@@ -311,6 +569,8 @@ export function evolveTick(W, chronLog) {
     }
   }
 
+  morphTick(W, chronLog, dt);
+  maybeRecombine(W, rng, dt);
   horizontalGeneTransfer(W, chronLog);
   flagEndemics(W);
   climateRangeShift(W);
@@ -323,7 +583,9 @@ export function evolveTick(W, chronLog) {
     if (rng() < 0.02 * dt * W._recoveryBoost && tree.living.length) {
       const parent = nodeOf(tree, tree.living[0]);
       if (parent) {
-        const child = addLineage(tree, parent.id, mutate(parent.traits, rng), W.ageYr);
+        const radGenome = cloneGenome(parent.genome || blankGenome());
+        mutateGenome(radGenome, rng, morphEnv(W, parent));
+        const child = addLineage(tree, parent.id, mutate(parent.traits, rng), W.ageYr, null, radGenome);
         child.name = cladeName(child.traits, child.id);
         if (chronLog) chronLog(W.year, 'speciation', 0, 1, `Radiation: ${child.name}`);
       }
@@ -356,7 +618,7 @@ export function evolveTick(W, chronLog) {
       let best = tree.living[0], bestF = -1;
       for (const node of livingNodes) {
         if (!node) continue;
-        const f = fitness(node.traits, W, c);
+        const f = fitness(node.traits, W, c, node);
         if (f > bestF) { bestF = f; best = node.id; }
       }
       W.popId[c] = best;
@@ -377,6 +639,21 @@ export function evolveTick(W, chronLog) {
 
   deriveLifeClass(W);
   W.unlockedClass = unlockedClassFromPool(W);
+}
+
+function maybeRecombine(W, rng, dt) {
+  if (!W.transitions?.sex) return;
+  const living = W.tree.living.map((id) => nodeOf(W.tree, id)).filter(Boolean);
+  if (living.length < 2) return;
+  if (rng() > 0.04 * dt) return;
+  const a = living[(rng() * living.length) | 0];
+  const b = living[(rng() * living.length) | 0];
+  if (!a?.genome || !b?.genome || a.id === b.id) return;
+  if (a.genome.biochem?.chirality !== b.genome.biochem?.chirality) return;
+  if (Math.abs((a.traits[TRAITS.bodyMass] || 0) - (b.traits[TRAITS.bodyMass] || 0)) > 0.25) return;
+  a.genome = recombineGenomes(a.genome, b.genome, rng);
+  a.plan = null;
+  a.load = Math.max(0, (a.load || 0) * 0.5);
 }
 
 function extinguish(tree, node, ageYr, reason, chronLog, W) {
@@ -401,24 +678,61 @@ function maybeSpeciate(W, chronLog, rng, dt) {
   const tree = W.tree;
   for (const id of [...tree.living]) {
     const node = nodeOf(tree, id);
-    if (!node || node.pop < 8) continue;
+    if (!node || node.pop < 3) continue;
 
     const comps = connectedComponents(node.cells, W);
-    if (comps.length < 2) continue;
+    if (comps.length >= 2) node.isolation = clamp((node.isolation || 0) + 0.18 * dt, 0, 1);
+    else node.isolation = (node.isolation || 0) * 0.88;
 
-    for (let i = 1; i < comps.length; i++) {
-      if (comps[i].length < 3) continue;
-      if (rng() > 0.01 * dt) continue;
-      const childTraits = mutate(node.traits, rng);
-      if (rng() < 0.3) childTraits[TRAITS.trophic] = clamp(childTraits[TRAITS.trophic] + 0.15, 0, 1);
-      const child = addLineage(tree, node.id, childTraits, W.ageYr);
-      for (const c of comps[i]) W.popId[c] = child.id;
-      if (chronLog) chronLog(W.year, 'speciation', comps[i][0], 1, `Speciation: ${child.name}`);
-      child.locked = child.locked || new Uint8Array(TRAITS.COUNT);
-      if (node.traits[TRAITS.bodyMass] > 0.4) child.locked[TRAITS.bodyMass] = 1;
-      break;
+    // Allopatry once isolation has actually accumulated.
+    if (comps.length >= 2 && (node.isolation || 0) > 0.35) {
+      for (let i = 1; i < comps.length; i++) {
+        if (comps[i].length < 2) continue;
+        if (rng() > 0.04 * dt) continue;
+        splitOff(W, node, comps[i], chronLog, rng, 'allopatry');
+        node.isolation = 0.1;
+        break;
+      }
     }
+
+    // Sympatric: large, variable population on a productivity gradient.
+    if (node.pop >= 6 && rng() < 0.006 * dt * Math.min(2, node.variance || 0.05) * 8) {
+      const half = node.cells.slice(Math.ceil(node.cells.length / 2));
+      if (half.length >= 2) splitOff(W, node, half, chronLog, rng, 'sympatry');
+    }
+
+    // Polyploid instant speciation — WGD founds a species.
+    if (node.genome?.n?.ploidy > (node._lastPloidy || 1) && rng() < 0.5) {
+      const founder = node.cells.slice(0, Math.max(2, (node.cells.length / 4) | 0));
+      if (founder.length) splitOff(W, node, founder, chronLog, rng, 'polyploid');
+    }
+    node._lastPloidy = node.genome?.n?.ploidy || 1;
   }
+}
+
+function splitOff(W, parent, cells, chronLog, rng, how) {
+  const childTraits = mutate(parent.traits, rng);
+  if (how === 'sympatry' && rng() < 0.5) {
+    childTraits[TRAITS.trophic] = clamp(childTraits[TRAITS.trophic] + 0.18, 0, 1);
+  }
+  const childGenome = cloneGenome(parent.genome || blankGenome());
+  const env = morphEnv(W, parent);
+  const kicks = how === 'polyploid' ? 0 : 1 + ((rng() * 3) | 0);
+  for (let k = 0; k < kicks; k++) mutateGenome(childGenome, rng, env);
+  const child = addLineage(W.tree, parent.id, childTraits, W.ageYr, null, childGenome);
+  child.plan = expressBodyPlan(childGenome, env);
+  const pen = morphPenalty(childGenome);
+  child.morphMult = pen.mult;
+  child.morphWhy = pen.why;
+  child.isolation = 1;
+  for (const c of cells) W.popId[c] = child.id;
+  if (chronLog) {
+    chronLog(W.year, 'speciation', cells[0], 1, `Speciation (${how}): ${child.name}`,
+      { body: describeGenome(childGenome), how });
+  }
+  child.locked = child.locked || new Uint8Array(TRAITS.COUNT);
+  if (parent.traits[TRAITS.bodyMass] > 0.4) child.locked[TRAITS.bodyMass] = 1;
+  return child;
 }
 
 function connectedComponents(cells, W) {
@@ -439,6 +753,10 @@ function connectedComponents(cells, W) {
         if (set.has(n) && !seen.has(n)) {
           const landA = isLand(W, c);
           const landB = isLand(W, n);
+          const elevGap = Math.abs((W.h[c] || 0) - (W.h[n] || 0));
+          const mountain = !landA && !landB ? false : elevGap > 0.28;
+          const deep = (W.seaLevel - Math.min(W.h[c], W.h[n])) > 0.35 && landA !== landB;
+          if (mountain || deep) continue;
           if (landA === landB || W.life[n] > 0.05) {
             seen.add(n);
             stack.push(n);
@@ -469,9 +787,12 @@ function detectConvergence(tree, ageYr, tickIndex) {
       checked++;
       const a = living[i], b = living[j];
       if (related(tree, a, b, 3)) continue;
+      const ka = a.genome ? genomeKey(a.genome).split(':').slice(0, 3).join(':') : '';
+      const kb = b.genome ? genomeKey(b.genome).split(':').slice(0, 3).join(':') : '';
       let d = 0;
       for (let k = 0; k < TRAITS.COUNT; k++) d += Math.abs(a.traits[k] - b.traits[k]);
-      if (d < 0.45) {
+      const bodyHit = ka && ka === kb;
+      if (d < 0.45 || bodyHit) {
         const key = `${Math.min(a.id, b.id)}-${Math.max(a.id, b.id)}`;
         if (!tree._convSeen) tree._convSeen = new Set();
         if (!tree._convSeen.has(key)) {
@@ -503,11 +824,80 @@ export function forkWorldSeed(seed, label = 'fork') {
 }
 
 export function treeSummary(tree) {
-  if (!tree) return { living: 0, total: 0, extinct: 0 };
+  if (!tree) return { living: 0, total: 0, extinct: 0, maxDepth: 0 };
+  const st = treeStats(tree);
   return {
     living: tree.living.length,
     total: tree.nodes.length,
     extinct: tree.nodes.length - tree.living.length,
     convergences: tree.convergences.length,
+    maxDepth: st.maxDepth,
   };
+}
+
+/** Compact phylogeny for save files. Cells are occupancy, rebuilt on tick. */
+export function packTree(tree) {
+  if (!tree) return null;
+  return {
+    nextId: _nextId,
+    living: [...(tree.living || [])],
+    nodes: (tree.nodes || []).map((n) => ({
+      id: n.id,
+      parentId: n.parentId,
+      birth: n.birth,
+      death: n.death,
+      traits: Array.from(n.traits || []),
+      name: n.name,
+      substitutions: n.substitutions || 0,
+      genome: n.genome || null,
+      pop: n.pop || 0,
+      censusPop: n.censusPop || 0,
+      Ne: n.Ne || 1,
+      diet: n.diet || [],
+      isolation: n.isolation || 0,
+      load: n.load || 0,
+      endemic: !!n.endemic,
+      morphMult: n.morphMult ?? 1,
+      morphWhy: n.morphWhy || [],
+    })),
+    convergences: (tree.convergences || []).slice(-40),
+    extinctions: (tree.extinctions || []).slice(-40),
+  };
+}
+
+export function unpackTree(data) {
+  const tree = createTree();
+  if (!data?.nodes?.length) return tree;
+  _nextId = Math.max(data.nextId || 1, data.nodes.reduce((m, n) => Math.max(m, n.id || 0), 0) + 1);
+  for (const n of data.nodes) {
+    const node = {
+      id: n.id,
+      parentId: n.parentId ?? null,
+      birth: n.birth || 0,
+      death: n.death ?? null,
+      traits: Float32Array.from(n.traits?.length ? n.traits : blankTraits()),
+      name: n.name || cladeName(blankTraits(), n.id),
+      substitutions: n.substitutions || 0,
+      cells: [],
+      pop: n.pop || 0,
+      endemic: !!n.endemic,
+      genome: n.genome || blankGenome(),
+      morphMult: n.morphMult ?? 1,
+      morphWhy: n.morphWhy || [],
+      plan: null,
+      diet: n.diet || [],
+      isolation: n.isolation || 0,
+      censusPop: n.censusPop || 0,
+      Ne: n.Ne || 1,
+      load: n.load || 0,
+      variance: 0.05,
+    };
+    tree.nodes.push(node);
+    tree.byId.set(node.id, node);
+  }
+  tree.living = (data.living || []).filter((id) => tree.byId.has(id));
+  tree.livingSet = new Set(tree.living);
+  tree.convergences = data.convergences || [];
+  tree.extinctions = data.extinctions || [];
+  return tree;
 }

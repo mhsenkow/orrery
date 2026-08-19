@@ -1,0 +1,28 @@
+{
+  "$comment": "Which life-grammar numbers are measured, fitted, or invented. Same honesty contract as param-coverage.json for planets.",
+  "version": 1,
+  "measured": [
+    { "id": "solvent.dielectric", "note": "CRC / standard physical constants for water, ammonia, methane, formamide, sulfuric acid." },
+    { "id": "solvent.meltK", "note": "Triple/melting points at 1 bar." },
+    { "id": "solvent.boilK", "note": "Boiling points at 1 bar; supercritical CO2 is tagged invented." },
+    { "id": "photoisomerisation_eV", "note": "Retinal isomerisation ~1.5 eV." },
+    { "id": "diffraction", "note": "1.22 λ/D Airy disk." },
+    { "id": "kleiber", "note": "B ∝ M^0.75, generation time and lifespan ~ M^0.25." },
+    { "id": "eigen", "note": "μL < 1 error threshold; ~10 kb unproofread RNA ceiling." },
+    { "id": "trophicTransfer", "note": "~10% of energy crosses each trophic step (Lindeman)." },
+    { "id": "nFixAtp", "note": "16 ATP per N2; nitrogenase O2-poisoned." }
+  ],
+  "fitted": [
+    { "id": "guild.yield", "note": "Hand-written GUILDS yield column, now also a ΔG sketch from concentrations." },
+    { "id": "bioRateScale", "note": "Arrhenius exponent compressed /8 so Titan is slow rather than 10^−15." },
+    { "id": "guildGrowth", "note": "Logistic colonisation terms so a viable guild actually grows." },
+    { "id": "originRate", "note": "Prior so Earth-like worlds originate inside a stated Hadean/Archean window." }
+  ],
+  "invented": [
+    { "id": "azotosome", "note": "Proposed methane vesicle; not observed." },
+    { "id": "polyether", "note": "Speculative non-polar backbone." },
+    { "id": "phasedArray", "note": "Honest microwave eye; nothing on Earth does this." },
+    { "id": "utility", "note": "Per-band utility column in sensors.json is a design weight, not a measurement." },
+    { "id": "arsenate", "note": "Energy carrier analogue; chemically fragile in water." }
+  ]
+}

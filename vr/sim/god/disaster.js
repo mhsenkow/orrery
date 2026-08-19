@@ -160,6 +160,7 @@ export function releaseClathrate(gtC = 2000) {
   W.gases.CH4 = Math.min(0.05, (W.gases.CH4 || 0) + add);
   W.gases.CO2 = Math.min(0.3, W.gases.CO2 + add * 0.3);
   if (W.carbon) W.carbon.atmosphere += gtC / 100;
+  W._clathrate = 0;
   issueReceipt({
     tool: 'clathrate',
     cell: 0,

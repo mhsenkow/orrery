@@ -6,6 +6,9 @@
 
 import { clamp, lerp, fbm, ridged, mulberry32 } from '../math.js';
 import { NC, DIR } from '../sphere.js';
+import { kindOf, isGasKind, isIceShellKind } from './planetKind.js';
+
+export { planetKind, planetKindWhy, cachePlanetKind, kindOf, usesWhittakerCover, isGasKind, isIceShellKind } from './planetKind.js';
 
 function randomUnit(rng) {
   const u = rng() * 2 - 1, th = rng() * Math.PI * 2, r = Math.sqrt(1 - u * u);
@@ -33,35 +36,6 @@ function ring(d, inner, outer) {
   const mid = (inner + outer) * 0.5;
   const w = (outer - inner) * 0.5;
   return 1 - Math.abs(d - mid) / Math.max(1e-6, w);
-}
-
-/** Catalogue / ruleset → a geology kind. Ice shells are a separate path. */
-export function planetKind(rule) {
-  if (!rule) return 'generic';
-  if (rule.earthLike) return 'earth';
-  if (rule.daisyworld) return 'daisy';
-  const name = `${rule.id || ''} ${rule.name || ''} ${rule._catalogueItem?.b || ''} ${rule._catalogueItem?.t || ''}`.toLowerCase();
-  const lid = rule.interior?.lidMode || rule.lidMode || '';
-  if (lid === 'none' || /jupiter|saturn|uranus|neptune/.test(name)) return 'gas';
-  if (rule.iceShell || lid === 'ice') {
-    if (/enceladus/.test(name)) return 'enceladus';
-    if (/titan/.test(name)) return 'titan';
-    if (/pluto/.test(name)) return 'pluto';
-    if (/triton/.test(name)) return 'triton';
-    if (/ganymede/.test(name)) return 'ganymede';
-    if (/callisto/.test(name)) return 'callisto';
-    return 'europa';
-  }
-  if (/\bio\b/.test(name) && !/ion/.test(name)) return 'io';
-  if ((rule.tidalHeat || 0) > 0.8 && !rule.iceShell) return 'io';
-  if (/venus/.test(name) || lid === 'episodic') return 'venus';
-  if (rule.id === 'ares' || rule.signature === 'dust' || /\bmars\b/.test(name)) return 'mars';
-  if (/mercury/.test(name)) return 'mercury';
-  if (rule.id === 'selene' || /\bmoon\b|selene/.test(name)) return 'moon';
-  if (rule.airless) return 'airless';
-  if (rule.magmaOcean) return 'magma';
-  if (lid === 'stagnant') return 'stagnant';
-  return 'generic';
 }
 
 function stampCraters(h, seed, opts = {}) {
@@ -356,25 +330,132 @@ function stampGas(W) {
   W.hotspots = [];
 }
 
+function stampIapetus(W, seed) {
+  const h = W.h, crust = W.crust, age = W.age, rock = W.rock;
+  for (let c = 0; c < NC; c++) {
+    const y = DIR[c * 3 + 1];
+    let elev = 0.08;
+    if (Math.abs(y) < 0.07) elev += (0.07 - Math.abs(y)) / 0.07 * 0.22;
+    crust[c] = 0.4;
+    age[c] = 4000;
+    rock[c] = DIR[c * 3] > 0 ? 0 : 2;
+    h[c] = clamp(elev, -1.2, 1.2);
+  }
+  stampCraters(h, seed, { nLarge: 5, nMid: 24, depth: 0.2, micro: 0.5 });
+  dryWorld(W, -0.9);
+}
+
+function stampCharon(W, seed) {
+  const h = W.h, crust = W.crust, age = W.age, rock = W.rock;
+  const chasma = norm3(0.15, 0.02, 0.99);
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    let elev = 0.10 + (y > 0.62 ? (y - 0.62) * 0.08 : 0);
+    crust[c] = 0.45;
+    age[c] = 4000;
+    rock[c] = y > 0.7 ? 1 : 2;
+    const along = dotDir(c, chasma);
+    const off = Math.hypot(y * chasma[2] - z * chasma[1], z * chasma[0] - x * chasma[2], x * chasma[1] - y * chasma[0]);
+    if (along > -0.2 && off < 0.045) elev -= (0.045 - off) / 0.045 * 0.12;
+    h[c] = clamp(elev, -1.2, 1.2);
+  }
+  stampCraters(h, seed, { nLarge: 4, nMid: 20, depth: 0.16, micro: 0.4 });
+  dryWorld(W, -0.9);
+}
+
+function stampPhobos(W, seed) {
+  const h = W.h, crust = W.crust, age = W.age, rock = W.rock;
+  const stickney = norm3(0.92, 0.18, 0.35);
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    let elev = 0.06;
+    crust[c] = 0.22;
+    age[c] = 4500;
+    rock[c] = 0;
+    const k = bowl(dotDir(c, stickney), 0.72, 0.94);
+    elev -= k * 0.42;
+    const groove = Math.sin(x * 22 + z * 9) * Math.cos(y * 14);
+    if (groove > 0.55 && k < 0.4) elev -= (groove - 0.55) * 0.06;
+    h[c] = clamp(elev, -1.2, 1.2);
+  }
+  stampCraters(h, seed, { nLarge: 2, nMid: 14, depth: 0.18, micro: 0.45 });
+  dryWorld(W, -0.95);
+}
+
+function stampCeres(W, seed) {
+  const h = W.h, crust = W.crust, age = W.age, ice = W.ice, iceLand = W.iceLand;
+  const occator = norm3(0.35, 0.55, 0.76);
+  const ahuna = norm3(-0.42, -0.18, 0.89);
+  for (let c = 0; c < NC; c++) {
+    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+    let elev = 0.08 + (fbm(x * 1.6, y * 1.6, z * 1.6, seed, 3, 2, 0.5) - 0.5) * 0.03;
+    crust[c] = 0.38;
+    age[c] = 3000;
+    W.rock[c] = 0;
+    const oc = bowl(dotDir(c, occator), 0.92, 0.985);
+    elev -= oc * 0.08;
+    if (oc > 0.35 && ice) {
+      ice[c] = Math.max(ice[c] || 0, 0.55 + oc * 0.35);
+      if (iceLand) iceLand[c] = ice[c];
+    }
+    const ah = bowl(dotDir(c, ahuna), 0.97, 0.995);
+    elev += ah * 0.16;
+    h[c] = clamp(elev, -1.2, 1.2);
+  }
+  stampCraters(h, seed, { nLarge: 6, nMid: 28, depth: 0.14, micro: 0.4 });
+  dryWorld(W, -0.85);
+}
+
+function stampEris(W, seed) {
+  stampAirless(W, seed);
+  for (let c = 0; c < NC; c++) {
+    const y = DIR[c * 3 + 1];
+    W.h[c] = clamp(W.h[c] * 0.35 + 0.1, -1.2, 1.2);
+    if (W.ice) {
+      W.ice[c] = 0.7 + Math.abs(y) * 0.2;
+      if (W.iceLand) W.iceLand[c] = W.ice[c];
+    }
+  }
+}
+
+function stampSmallbody(W, seed) {
+  const a = norm3(0.9, 0.1, 0.4);
+  const b = norm3(-0.85, -0.2, 0.48);
+  for (let c = 0; c < NC; c++) {
+    const da = Math.max(0, dotDir(c, a));
+    const db = Math.max(0, dotDir(c, b));
+    W.h[c] = clamp(0.02 + Math.max(da, db) * 0.18 - 0.08, -1.2, 1.2);
+    W.crust[c] = 0.18;
+    W.age[c] = 4500;
+    W.rock[c] = 0;
+  }
+  stampCraters(W.h, seed, { nLarge: 4, nMid: 22, depth: 0.32, micro: 0.8 });
+  dryWorld(W, -0.95);
+}
+
 /**
  * Overwrite Voronoi-Earth hypsometry with the landforms this world actually has.
  * No-op for Earth, Daisyworld, and ice-shell worlds (iceshell.js owns those).
  */
 export function refinePlanetHypsometry(W, seed, rule) {
-  const kind = planetKind(rule);
+  const { kind, why } = kindOf(W, rule);
   W._planetKind = kind;
+  W._planetKindWhy = why;
   if (kind === 'earth' || kind === 'daisy') return kind;
-  if (kind === 'europa' || kind === 'enceladus' || kind === 'titan'
-    || kind === 'pluto' || kind === 'triton' || kind === 'ganymede' || kind === 'callisto') {
-    return kind;
-  }
+  if (isIceShellKind(kind)) return kind;
   if (kind === 'mars') stampMars(W, seed);
   else if (kind === 'venus') stampVenus(W, seed);
   else if (kind === 'moon') stampMoon(W, seed);
   else if (kind === 'mercury') stampMercury(W, seed);
   else if (kind === 'io') stampIo(W, seed);
   else if (kind === 'magma') stampMagma(W, seed);
-  else if (kind === 'gas') stampGas(W);
+  else if (isGasKind(kind)) stampGas(W);
+  else if (kind === 'iapetus') stampIapetus(W, seed);
+  else if (kind === 'charon') stampCharon(W, seed);
+  else if (kind === 'phobos') stampPhobos(W, seed);
+  else if (kind === 'ceres') stampCeres(W, seed);
+  else if (kind === 'eris') stampEris(W, seed);
+  else if (kind === 'smallbody') stampSmallbody(W, seed);
   else if (kind === 'airless') stampAirless(W, seed);
   else if (kind === 'stagnant') stampStagnant(W, seed);
   return kind;

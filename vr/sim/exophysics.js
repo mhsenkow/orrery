@@ -175,20 +175,28 @@ export function rocheLimitAu(stMassSolar, densGcm3) {
   return 2.44 * rStarAu * Math.pow(1.41 / densGcm3, 1 / 3);
 }
 
-/** Tidal heating flux (W/m²) — Io-normalised order-of-magnitude.
- *  Ė ∝ (R^5 e² n^5) / Q ; n = 2π/P. */
-export function tidalHeatFluxWm2({ rEarth, e, Pdays, dens, parentMassEarth = 317.8 }) {
+/** Uncalibrated Peale–Cassen–Reynolds sketch (W/m²). Scale via `tidalHeatFluxWm2`. */
+function tidalHeatRawWm2({ rEarth, e, Pdays, dens, parentMassEarth = 317.8 }) {
   if (!(rEarth > 0) || !(Pdays > 0) || !(e > 0)) return 0;
   const n = (2 * Math.PI) / (Pdays * 86400);
   const R = rEarth * R_EARTH_M;
   const rho = (dens || 3) * 1000;
   const Mp = parentMassEarth * M_EARTH_KG;
-  const k2Q = 0.015; // Io-ish dissipation
-  // Peale–Cassen–Reynolds sketch
-  const flux = (21 / 2) * k2Q * (Mp * Mp) * Math.pow(R, 5) * (n ** 5) * (e * e)
-    / (Math.pow(rho, 1) * 4 * Math.PI * R * R);
-  // Normalise so Io (~e=0.004, P=1.77d, R=0.286, parent=Jupiter) ~ 2 W/m²
-  return Math.max(0, flux * 2e-28);
+  const k2Q = 0.015;
+  const power = (21 / 2) * k2Q * (Mp * Mp) * Math.pow(R, 5) * (n ** 5) * (e * e)
+    / Math.max(1, rho);
+  return power / (4 * Math.PI * R * R);
+}
+
+const IO_TIDAL_REF = tidalHeatRawWm2({
+  rEarth: 0.286, e: 0.0041, Pdays: 1.769, dens: 3.53, parentMassEarth: M_JUP_ME,
+});
+
+/** Tidal heating flux (W/m²) — Io-normalised. Io ≈ 2 W/m²; Luna is far smaller. */
+export function tidalHeatFluxWm2(opts) {
+  const raw = tidalHeatRawWm2(opts);
+  if (!(IO_TIDAL_REF > 0) || !(raw > 0)) return 0;
+  return 2 * raw / IO_TIDAL_REF;
 }
 
 /** Radiogenic heat vs Earth today. ²³⁸U, ²³²Th, ⁴⁰K half-lives. */

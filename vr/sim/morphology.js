@@ -1,8 +1,25 @@
 /** Body-plan grammar from trait vectors.
- *  Next backlog items 30–33, 41 (mesh/grammar foundation). */
+ *
+ *  Deprecated as the source of a body: a lineage's shape now comes from its genome via
+ *  `expressBodyPlan` in genome.js, and this file is the shim for the callers that only
+ *  ever hold an 11-float trait vector (mesh.js, and agents.js before a tree exists).
+ *  Prefer `planOf(node)`.
+ */
 
 import { TRAITS } from './evolve.js';
 import { clamp } from '../math.js';
+import { expressBodyPlan, genomeFromTraits } from './genome.js';
+
+/** The body of a phylogeny node, expressed from its genome and cached on the node. */
+export function planOf(node, opts = {}) {
+  if (!node) return null;
+  if (node.plan) return node.plan;
+  if (node.genome) {
+    node.plan = expressBodyPlan(node.genome, opts);
+    return node.plan;
+  }
+  return node.traits ? bodyPlanFromTraits(node.traits, opts) : null;
+}
 
 /**
  * Derive a compact body plan from traits.
@@ -13,7 +30,9 @@ export function bodyPlanFromTraits(traits, opts = {}) {
   const trop = traits?.[TRAITS.trophic] ?? 0.2;
   const disp = traits?.[TRAITS.dispersal] ?? 0.3;
   const o2 = traits?.[TRAITS.o2Affinity] ?? 0.3;
-  const therm = traits?.[TRAITS.thermalOpt] ?? 0.5;
+  // Was `TRAITS.thermalOpt`, which is not a key of TRAITS — so this read `traits[undefined]`
+  // and every creature in the product has had a pigment bias of exactly 0.5 since it was written.
+  const therm = traits?.[TRAITS.tOpt] ?? 0.5;
   const defence = traits?.[TRAITS.defence] ?? 0.2;
 
   const O2 = opts.O2 ?? 0.21;
@@ -32,8 +51,15 @@ export function bodyPlanFromTraits(traits, opts = {}) {
   // Stride frequency ~ mass^(-1/6)
   const stride = Math.pow(Math.max(0.05, mass), -1 / 6) * (0.7 + disp);
 
-  // Silhouette score — reject mush (item 41)
-  const silhouette = limbs >= 2 || symmetry === 'radial' || appendage === 'frond' ? 1 : 0.4;
+  // Silhouette score — reject mush (item 41). The old test was
+  // `limbs >= 2 || symmetry === 'radial' || appendage === 'frond'`, which every reachable
+  // body passes, so it rejected nothing across 20,736 sampled trait vectors.
+  let silhouette = 0.3;
+  if (limbs >= 2) silhouette += 0.35;
+  if (segments >= 3) silhouette += 0.15;
+  if (defence > 0.4) silhouette += 0.1;
+  if (appendage === 'jaw') silhouette += 0.15;
+  silhouette = clamp(silhouette * clamp(size / 0.6, 0.4, 1.2), 0, 1);
 
   return {
     size: clamp(size, 0.25, 3.5),

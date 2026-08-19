@@ -6,6 +6,8 @@ import { W, applyImpact, chronLog, seedLife } from './world.js';
 import { injectGas } from './sim/atmo.js';
 import { startTsunami } from './sim/hydro.js';
 import { coreSample, iceCore } from './sim/instruments.js';
+import { describeSubstrate } from './sim/substrateField.js';
+import { landformAt, explainForm } from './sim/landform.js';
 import {
   BRUSH, paintBrush, beginStroke, undoStroke, redoStroke, canUndo, canRedo,
   startDrag, continueDrag, endDrag, isDragging, previewBrush, brushKm, brushForTier,
@@ -489,6 +491,13 @@ export function inspectCell(cell) {
     build: W.build[cell],
     seaLevel: W.seaLevel,
     crust: W.crust[cell],
+    substrate: W.substrate ? describeSubstrate(W, cell) : undefined,
+    landform: (() => {
+      const f = landformAt(W, cell);
+      return f ? explainForm(f) : undefined;
+    })(),
+    frost: W.frost?.[cell] || 0,
+    lag: W.lag?.[cell] || 0,
     tideHeight: W.tideHeight?.[cell],
     tideRange: W.tideRange?.[cell],
     intertidal: W.intertidal?.[cell],

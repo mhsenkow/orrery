@@ -42,22 +42,23 @@ function nextName(W) {
   return n;
 }
 
-/** Favourable tropical conditions (toy). */
+/** Favourable tropical conditions (toy). Coriolis dead zone, then SST. */
 export function tropicalFavor(W, c) {
   const lat = Math.abs(DIR[c * 3 + 1]);
-  if (lat < 0.08 || lat > 0.45) return 0;
+  if (lat < 0.08) return 0;
   if (W.h[c] >= W.seaLevel) return 0;
   const sst = W.temp[c] || 0;
-  if (sst < 0.62) return 0; // ~26.5°C sketch
+  if (sst < 0.62) return 0;
   const shear = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
   const moist = W.moist?.[c] || 0;
   return clamp((sst - 0.58) * 2.2 * (1.1 - shear * 0.5) * (0.4 + moist), 0, 1);
 }
 
-/** Midlatitude baroclinic favor. */
+/** Midlatitude baroclinic favor — Coriolis + shear, not a latitude list. */
 export function midlatFavor(W, c) {
   const lat = Math.abs(DIR[c * 3 + 1]);
-  if (lat < 0.35 || lat > 0.82) return 0;
+  if (lat < 0.12) return 0;
+  if ((W.temp[c] || 0) > 0.62) return 0;
   const conv = Math.max(0, W.converg?.[c] || 0);
   const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
   const moist = W.moist?.[c] || 0;

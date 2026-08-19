@@ -1,0 +1,44 @@
+{
+  "$comment": "What the body is made of and what it runs on. Solvent choice sets the temperature window, the dielectric constant that decides whether polymers can fold, and the density that sets every drag and buoyancy number downstream.",
+  "version": 1,
+  "solvents": [
+    { "id": "water", "meltK": 273, "boilK": 373, "dielectric": 80, "densityKgM3": 1000, "viscosity_mPas": 0.89,
+      "why": "Wide liquid range, huge dielectric constant so ions dissociate and polyelectrolytes fold, and it is anomalously dense as a liquid so ice floats and an ocean does not freeze from the bottom up.", "tag": "measured" },
+    { "id": "ammonia", "meltK": 195, "boilK": 240, "dielectric": 22, "densityKgM3": 682, "viscosity_mPas": 0.26,
+      "why": "Liquid where water is ice. Narrower window at 1 bar, weaker solvent for ions, and it does not float when solid — so an ammonia ocean freezes downward and buries its own chemistry.", "tag": "measured" },
+    { "id": "methane", "meltK": 91, "boilK": 112, "dielectric": 1.7, "densityKgM3": 422, "viscosity_mPas": 0.2,
+      "why": "Titan. Dielectric constant near vacuum, so nothing ionic dissolves and any polymer has to be held together by something other than the hydrophobic effect. Reaction rates at 94 K are slower by many orders of magnitude, which means a methane biosphere is not a slower Earth, it is a differently shaped one.", "tag": "measured" },
+    { "id": "supercriticalCO2", "meltK": 216, "boilK": 304, "dielectric": 1.6, "densityKgM3": 700,
+      "why": "Venus-deep and super-Earth-floor conditions. A good solvent for non-polar chemistry and it does not hydrolyse the polymer it is carrying, which is an advantage water does not have.", "tag": "invented" },
+    { "id": "formamide", "meltK": 275, "boilK": 483, "dielectric": 109, "densityKgM3": 1130,
+      "why": "Higher dielectric than water, does not hydrolyse nucleotides, and it condenses them instead. The best-supported alternative for an origin, on a warm dry world where water would take the polymer apart as fast as it built it.", "tag": "measured" },
+    { "id": "brine", "meltK": 252, "boilK": 380, "dielectric": 70, "densityKgM3": 1200,
+      "why": "Eutectic salt water — the actual solvent inside every ice moon and every cold desert on this map. Depresses the freezing point tens of kelvin and stays conducting, so electroreception works in it.", "tag": "measured" },
+    { "id": "sulfuricAcid", "meltK": 283, "boilK": 610, "dielectric": 100, "densityKgM3": 1830,
+      "why": "The Venus cloud deck. Ferociously dehydrating, so any polymer in it must be built without an OH group to lose.", "tag": "measured" }
+  ],
+  "polymers": [
+    { "id": "rna", "why": "Catalyst and template in one molecule, which is why every origin story starts here even though it is fragile.", "tag": "measured" },
+    { "id": "dna", "why": "Template only, double-stranded so it can be proofread. The split of the two jobs is what allows a genome larger than about ten kilobases.", "tag": "measured" },
+    { "id": "pna", "why": "Peptide backbone, uncharged — folds in a low-dielectric solvent where RNA's phosphate backbone would not dissolve at all.", "tag": "invented" },
+    { "id": "tna", "why": "Threose. Simpler sugar, plausibly easier to make abiotically than ribose.", "tag": "measured" },
+    { "id": "polyether", "why": "A speculative backbone for a methane solvent: no hydrogen bonds needed, held by dipole stacking.", "tag": "invented" }
+  ],
+  "carriers": [
+    { "id": "phosphate", "why": "ATP. Phosphoanhydride bonds hold about 0.3 eV — well matched to a single enzymatic step.", "tag": "measured" },
+    { "id": "thioester", "why": "Pre-phosphate energy currency; works where phosphate is scarce, which on most rocky worlds it is.", "tag": "measured" },
+    { "id": "protonGradient", "why": "Chemiosmosis directly, with no soluble carrier at all. This is what a vent gives you for free and it is why the first cell may have been a membrane before it was a metabolism.", "tag": "measured" },
+    { "id": "arsenate", "why": "Chemically similar to phosphate and far less stable in water — which makes it plausible only in a solvent that hydrolyses slowly.", "tag": "invented" }
+  ],
+  "chirality": [
+    { "id": "L", "why": "Earth's amino-acid handedness. A coin-flip frozen at the origin." },
+    { "id": "D", "why": "The other outcome of the same coin flip. A D-world's biochemistry is invisible as food to an L-world's." },
+    { "id": "racemic", "why": "No enantiomeric excess. Possible for a metabolism, close to impossible for a folded catalyst, so a racemic biosphere stays simple." }
+  ],
+  "membranes": [
+    { "id": "phospholipid", "why": "Bilayer in a polar solvent. Self-assembling, self-healing, and it stops working the moment the solvent is non-polar.", "tag": "measured" },
+    { "id": "isoprenoidEther", "why": "Archaeal. Ether bonds instead of ester, so it holds at 120 °C and in acid where a bacterial membrane comes apart.", "tag": "measured" },
+    { "id": "azotosome", "why": "Acrylonitrile vesicle proposed for liquid methane — polarity inverted, with the nitrile groups facing out into the solvent.", "tag": "invented" },
+    { "id": "mineralCompartment", "why": "No membrane at all: iron-sulfide pores in vent chimney rock as the first cell walls. The one option that does not require the cell to have solved lipid synthesis first.", "tag": "measured" }
+  ]
+}

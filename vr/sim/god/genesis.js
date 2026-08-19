@@ -28,6 +28,9 @@ export function blankGenesis() {
     habitabilityBias: true,
     difficulty: 'nominal',
     preset: null,
+    solvent: 'water',
+    chirality: '',
+    originDifficulty: 1,
   };
 }
 
@@ -146,6 +149,9 @@ export function genesisFromPanel(doc = document, base = null) {
   g.nPlates = +(doc.getElementById('genesisplates')?.value || g.nPlates);
   g.waterInventory = (+(doc.getElementById('genesiswater')?.value || 100)) / 100;
   g.landFrac = clamp((+(doc.getElementById('genesislandfrac')?.value || 29)) / 100, 0.05, 0.85);
+  g.solvent = doc.getElementById('genesissolvent')?.value || g.solvent || 'water';
+  g.chirality = doc.getElementById('genesischirality')?.value || g.chirality || '';
+  g.originDifficulty = +(doc.getElementById('genesisorigindiff')?.value || g.originDifficulty || 1);
   // Preset last so "no plates" actually gets one plate, not the leftover slider.
   if (preset) applyPreset(g, preset);
   return g;
@@ -169,7 +175,14 @@ export function rulesetFromGenesis(genesis) {
     totalWater: (base.totalWater || 0.9) * (genesis.waterInventory || 1),
     worldName: genesis.name,
     _genesisWater: genesis.waterInventory ?? 1,
+    originDifficulty: genesis.originDifficulty ?? 1,
+    methaneSolvent: genesis.solvent === 'methane',
+    iceShell: genesis.solvent === 'brine' ? !!base.iceShell : base.iceShell,
   };
+  if (genesis.solvent === 'ammonia') rule.tSurfK = rule.tSurfK ?? 220;
+  if (genesis.solvent === 'methane') rule.tSurfK = rule.tSurfK ?? 94;
+  if (genesis.chirality) rule.forcedChirality = genesis.chirality;
+  if (genesis.solvent) rule.forcedSolvent = genesis.solvent;
   if (genesis.difficulty === 'hard') {
     rule.solar = (rule.solar || 1) * 0.9;
     rule.magnetosphere = (rule.magnetosphere || 1) * 0.5;
@@ -213,4 +226,12 @@ export function applyGenesisToWorld(W, genesis) {
   W.moon = genesis.moons?.[0] || null;
   W.magnetosphere = genesis.magnetosphere;
   if (genesis.star) W.star = { ...genesis.star };
+  W.originDifficulty = genesis.originDifficulty ?? 1;
+  if (genesis.solvent || genesis.chirality) {
+    W.planetBiochem = {
+      ...(W.planetBiochem || {}),
+      solvent: genesis.solvent || W.planetBiochem?.solvent || 'water',
+      chirality: genesis.chirality || W.planetBiochem?.chirality || 'L',
+    };
+  }
 }

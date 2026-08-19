@@ -4,6 +4,7 @@
 import { clamp } from '../math.js';
 import { NC, DIR } from '../sphere.js';
 import { nodeOf } from './evolve.js';
+import { solventOf, bioRateScale, tempKOf, diagnoseOriginFailure } from './origin.js';
 
 /**
  * Usable photon fraction for oxygenic photosynthesis.
@@ -31,12 +32,24 @@ export function surfacePigmentMode(W) {
 export function alienTick(W, chronLog) {
   const R = W.rule;
   W.photonUsable = photonUsable(R);
+  W.solvent = solventOf(R);
+  const TK = R.tSurfK || (288 + ((W.meanTemp ?? 0.5) - 0.5) * 160);
+  W.bioRate = bioRateScale(TK, W.solvent);
+
+  if (R.airless) {
+    if (W.life) W.life.fill(0);
+    W.meanLife = 0;
+    W.chemoPower = 0;
+    W.sterileWhy = diagnoseSterile(W) || diagnoseOriginFailure(W) || 'no atmosphere / no solvent';
+    return;
+  }
 
   // Chemosynthetic darkness budget. Item 126.
   W.chemoPower = 0;
   if (R.chemoOnly || R.iceShell || R.signature === 'vents') {
-    // Radiolysis + serpentinization — tiny but nonzero
-    W.chemoPower = (R.tidalHeat || 0.05) + 0.02 + (R.radiogenic || 0) * 0.01;
+    // Radiolysis (K-40 + magnetospheric) + serpentinisation. provenance: fitted-shape
+    const radio = (R.radiogenic || 0.05) * 0.04 + (R.tidalHeat || 0) * 0.3;
+    W.chemoPower = radio + 0.02;
     for (let c = 0; c < NC; c++) {
       if (W.bound[c] === 0 || R.iceShell) {
         if (!W.guildDens) continue;
@@ -44,26 +57,29 @@ export function alienTick(W, chronLog) {
         if (W.transitions?.abiogenesis) {
           W.life[c] = Math.max(W.life[c], 0.08 * W.chemoPower);
         }
+        if (W.species?.H2) W.species.H2[c] = Math.max(W.species.H2[c], 0.05 + radio);
       }
     }
   }
 
-  // Ice-shell sparse biosphere. Item 127.
+  // Ice-shell sparse biosphere — ceiling from hydrogen flux, not a dimmer Earth.
   if (R.iceShell) {
+    const ceil = clamp(0.04 + (W.chemoPower || 0.05) * 0.8, 0.03, 0.18);
     for (let c = 0; c < NC; c++) {
-      W.life[c] = Math.min(W.life[c], 0.15 * (W.chemoPower || 0.05));
+      W.life[c] = Math.min(W.life[c], ceil);
       W.ice[c] = Math.max(W.ice[c], 0.85);
     }
   }
 
-  // Titan-like methane solvent. Item 128.
-  if (R.methaneSolvent) {
-    W.photonUsable = 0;
-    W.chemoPower = 0.01;
-    // Slow, cold, sparse
+  // Titan-like methane solvent — slow clock, not a 0.5 multiplier.
+  if (R.methaneSolvent || W.solvent?.id === 'methane') {
+    W.photonUsable = Math.min(W.photonUsable || 1, 0.15);
+    const rate = W.bioRate || 0.05;
     for (let c = 0; c < NC; c++) {
-      if (W.temp[c] > 0.2) W.life[c] *= 0.5;
-      W.life[c] = Math.min(W.life[c], 0.12);
+      const tK = tempKOf(W, c);
+      const liquid = tK > 85 && tK < 120;
+      if (!liquid) W.life[c] *= 0.92;
+      else W.life[c] = Math.min(W.life[c], 0.2 * Math.max(0.2, rate));
     }
   }
 
@@ -78,13 +94,13 @@ export function alienTick(W, chronLog) {
 
   // Terminator ring on tidally locked worlds. Item 135.
   if (R.tidallyLocked && W._sunDir) {
+    if (!W.terminatorHab) W.terminatorHab = new Float32Array(NC);
     const [sx, sy, sz] = W._sunDir;
     for (let c = 0; c < NC; c++) {
       const mu = DIR[c * 3] * sx + DIR[c * 3 + 1] * sy + DIR[c * 3 + 2] * sz;
       const term = 1 - Math.abs(mu); // peak at terminator
       const ring = clamp(term * 2.2, 0, 1);
-      if (ring < 0.35) W.life[c] *= 0.3; // too hot or too cold
-      else W.life[c] = Math.max(W.life[c], ring * 0.4 * (W.meanLife || 0.2));
+      if (ring < 0.35) W.life[c] *= 0.3;
       W.terminatorHab[c] = ring;
     }
   } else if (!W.terminatorHab) {
@@ -121,7 +137,7 @@ export function alienTick(W, chronLog) {
   }
 
   // Dead-world diagnosis. Item 137.
-  W.sterileWhy = diagnoseSterile(W);
+  W.sterileWhy = diagnoseSterile(W) || diagnoseOriginFailure(W);
 }
 
 function avg(arr) {

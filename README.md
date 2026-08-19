@@ -29,6 +29,9 @@ Embodied god-game prototype: hold a planet, shrink, walk in.
 - [Currents — 200 items on everything that is supposed to move](https://mhsenkow.github.io/simearth/site/currents.html)
 - [Realism — 800 items on how the globe looks, and how to make it Earth](https://mhsenkow.github.io/simearth/site/realism.html)
 - [Landscape — 400 items on picking, drawing and shaping the land you start with](https://mhsenkow.github.io/simearth/site/landscape.html)
+- [Life — 400 items on an open morphospace: genomes, senses, and whether evolution here could have come out differently](https://mhsenkow.github.io/simearth/site/life.html)
+- [Surface — 400 items on why the picture has hard edges and why the world is striped](https://mhsenkow.github.io/simearth/site/surface.html)
+- [World space — 400 items on the palette of worlds: taxonomy, substrates, giants, landform grammar, epochs and the technosphere](https://mhsenkow.github.io/simearth/site/worldspace.html)
 
 ## Local
 
@@ -41,7 +44,8 @@ WebXR needs HTTPS or localhost. Docs in `briefs/`.
 
 ## Backlogs
 
-All twelve backlogs are generated — edit the script, never the output.
+All fifteen backlogs are generated — edit the script, never the output.
+`lifegrammar.mjs`, `substrates.mjs`, `cover.mjs`, `landgram.mjs` and `columns.mjs` are not backlogs: they compile authored JSON into frozen runtime modules.
 
 ```bash
 node scripts/backlog.mjs        # briefs/backlog.md + site/backlog.html
@@ -56,6 +60,14 @@ node scripts/living.mjs         # briefs/living-backlog.md + site/living.html
 node scripts/currents.mjs       # briefs/currents-backlog.md + site/currents.html
 node scripts/realism.mjs        # briefs/realism-backlog.md + site/realism.html
 node scripts/landscape.mjs      # briefs/landscape-backlog.md + site/landscape.html
+node scripts/life.mjs           # briefs/life-backlog.md + site/life.html
+node scripts/surface.mjs        # briefs/surface-backlog.md + site/surface.html
+node scripts/worldspace.mjs     # briefs/worldspace-backlog.md + site/worldspace.html
+node scripts/lifegrammar.mjs    # vr/data/life/*.json -> vr/sim/lifeGrammar.js
+node scripts/substrates.mjs     # vr/data/worlds/substrates.json -> vr/sim/substrates.js
+node scripts/cover.mjs          # vr/data/worlds/cover.json -> vr/sim/coverTable.js
+node scripts/landgram.mjs       # vr/data/worlds/processes.json + landforms.json -> vr/sim/landGrammar.js
+node scripts/columns.mjs        # vr/data/worlds/columns.json -> vr/sim/columnTable.js
 node scripts/capture-site.mjs # site/img/*.png — needs python3 -m http.server 8765
 ```
 
@@ -102,12 +114,104 @@ redo. This pass ships an openings table, thirteen landscape archetypes in
 — a front door with pictures, a curve with a shelf in it, a stroke that is a path, and the layer
 stack 22 other items are waiting on.
 
+`worldspace.mjs` is the palette pass: what a world *is* in this engine, what it is made of,
+what happens when it has no surface, what its landforms should be, which moment in its history you
+are looking at, and what comes after life. The headline measurement was the worst in any of these
+documents: resolving all 120 catalogue bodies used to give **40 Io** (28 of 29 temperate worlds)
+and **17 Mars** (every furnace world). That path is closed. Io now requires `tidalHeat > 0.8`
+*and* airless; magma-ocean / furnace beats the dust stamp; the committed table is
+[`vr/data/worlds/kinds.json`](vr/data/worlds/kinds.json). `worldAxes` computes seven numbered
+axes per world (gravity, volatiles, dominant volatile, interior, insolation, age, resurfacing)
+with units and provenance; the chip title prints them. Dominant volatile now gates the water
+cycle, gravity sets the relief ceiling, snow line scales inventory, and tidal heat is
+Io-normalised so the Moon no longer shares Io's overflow. Named Solar System bodies are still
+regex validation cases. Kind is still one string. The substrate table is
+[`vr/data/worlds/substrates.json`](vr/data/worlds/substrates.json): twenty-four materials,
+`W.substrate` stamped at generate, Pluto nitrogen ice rather than sediment. `hydroTick` is told
+which substance it is carrying (`cycleMaterial`); Titan rains methane, Pluto frosts nitrogen,
+Mars CO₂ has no liquid window at 6 mbar. Thin CO₂ / N₂ atmospheres are a reservoir
+(`W._atmScale`): Mars winter deposits polar frost and live pressure drops; Pluto thins at
+aphelion. Cover (frost / dust / lag / tholin / grain) feeds CPU albedo; Iapetus two-tone and
+Enceladus brightness are asserted from that field, not from the photograph globe, which still
+keys off kind. Clathrate is a store with a T/P threshold (Titan holds; a warm seafloor releases).
+Ice VI is a column layer when the recipe says so: Europa sits on rock, Titan includes ice VI,
+a 2 R⊕ water world bottoms on ice VI and origin loses water–rock chemistry. The landform
+grammar is first-cut data: `processes.json` + `landforms.json` compile to a per-world palette
+and a `W.landform` overlay. Stamps still own the heightfield; Earth does not stamp; exo palettes
+say invented. The column is first-cut data: `columns.json` recipes plus `columnAt` thicknesses
+from the shell fields. Earth stays silent. Next is worlds with no surface.
+
+Also still true: `stampGas` is nine lines that set `h`, `crust`, `age` and `seaLevel` to zero, so a
+gas giant is a planet whose surface is entirely land at exactly sea level — 21 of 120 bodies are
+giants. Temperate worlds now get Whittaker cover via `generic`; other bodies have a frost/dust/lag
+field. `eraPatch` returns exactly `{ deepTime, startAgeGa }` and
+`availableEras` returns `[]` unless the world is `earthLike`. The technosphere is `W.build[c]`,
+a float, with four thresholds and no thermodynamics.
+
+The physics for the replacement is already written and starting to be asked: `exophysics.js`
+exports the cosmic shoreline, the radius valley, atmospheric retention, tidal heating, spin–orbit
+resonance, snow lines and Roche limits. Jupiter's own note in `SEED_WORLDS` reads "Banded at a
+Rhines scale set by a 9.9-hour day." Critical path: the no-surface stack
+`nosurface` → `plevel` → `rhines` → `depthaxis`.
+
+`surface.mjs` starts from two complaints about a screenshot — the planet has hard rectangular
+edges on it, and the world is striped — and finds six bugs and one missing field. This pass
+lands the cheap half and the contour/circulation follow-ups. The wash no longer greys the
+planet (`washfix`, default is a rim); `vMixC0..3` and `sampleSphere` cross cube faces
+(`stencilfix`); the field atlas is guttered `(N+2)` tiles so LINEAR cannot blend opposite
+sides of the planet (`atlasfix`); overlays composite then bilinearise (`inklayer`).
+`seamtest` asserts the topology. The stripes were real: atmospheric water is a per-cell field
+(`vapourfield`), continentality is a BFS from the coast, biome colour blends by membership,
+and the ocean ramp no longer saturates at 530 m. Drainage is primed before the world is shown;
+coasts are a marching-squares polyline (`isoline`) drawn on the globe and the map; wind is
+geostrophy of a pressure field rather than sine bands (`pressfield`); erosion deposits where
+it carves and ice lowers the bed (`sedfield`, `glacio`). Vertex colour is Bayer-dithered.
+The picture is under a CPU artefact test (`node vr/sim/surfaceStats.js`). What remains is a
+GPU framebuffer `pixtest` (shader-only faults), stratigraphy, soil depth, and the leftover
+latitude shortcuts.
+
+`life.mjs` asks whether the biology could ever have come out differently. Measured first:
+evaluating `bodyPlanFromTraits` across 20,736 trait vectors gives **26 distinct body plans and
+six sprite kinds** — the entire creature space of a game about evolving life on other planets —
+and `pigmentBias` was constant at 0.5 on every creature ever drawn because the code read
+`TRAITS.thermalOpt`, which is not a key of `TRAITS`. The word "eye" appeared nowhere in
+`vr/sim/`; the only sensory quantity was `photonUsable`, one scalar per planet from a
+three-branch step on stellar temperature. Evolution itself was a Gaussian on eleven floats, so
+the largest structural change a lineage could undergo was a number moving by 0.05.
+
+This pass ships the data layer that lifts the ceiling. [`vr/data/life/`](vr/data/life/) holds the
+authored grammar — ten categorical axes, eight counted axes (symmetry order is an integer 0–12,
+so pentaradial is reachable and organ counts follow from it), 27 organs with mass and power costs,
+19 receptor bands with their physics, and seven solvents with measured dielectric constants —
+compiled by `scripts/lifegrammar.mjs` into [`vr/sim/lifeGrammar.js`](vr/sim/lifeGrammar.js).
+[`vr/sim/genome.js`](vr/sim/genome.js) is a JSON genome with the operators that actually make
+novelty: loss, duplication, divergence of a duplicate into another band, gain, whole-genome
+duplication, and developmental locking that hardens with clade age.
+[`vr/sim/sensory.js`](vr/sim/sensory.js) decides band by band what a world delivers, from the
+Planck photon spectrum of its star, the transmission of its atmosphere and medium, the photon
+energy against the 1.5 eV pigment threshold, and 1.22 lambda over D against the body's own aperture.
+
+Measured with it: Earth ranks red, green, blue. TRAPPIST-1e ranks chemical sensing first and red
+fourth, because its 1132 nm peak is below the energy any pigment can use. A Europa ocean under
+15 km of ice ranks chemical, then electroreception, then flow sensing. And a microwave eye is not
+a pigment at all — 1.24 meV is 0.05 kT — so it has to be an antenna, and the diffraction limit
+says imaging at human acuity needs a 70 m aperture, which makes it a body-size problem rather
+than an impossibility. The morphospace goes from 26 bodies to 1.6 x 10^28, the HUD now names the
+dominant lineage's body from its own genome, and `vr/sim/test.mjs` goes from 110 to 135 assertions.
+
+Its critical path starts somewhere else entirely, because the grammar is a ceiling and not an
+achievement: measured over 3.2 Gyr at N=32, `meanLife` **falls** from 0.0226 to 0.0013, O2 stays
+at 0.0000, and the tree reaches six lineages with a maximum depth of one. `biomass` first, then
+`popscale` and `specmech`, then `foodweb` and `biotic`, then `procsprite` — because until a
+pentaradial animal with three near-IR eyes is drawn as one, all of this is a number in a log file.
+
 `next.mjs` is written against what those two left behind. The simulation and the god layer are
 both built; this pass starts closing the gap on picture, machine, and audience: field textures
 on the GPU, seeded RNG everywhere, golden-run tests, host stars as objects, morphology from
 traits, and finale export.
 
-Implemented systems under `vr/sim/`: `time`, `carbon`, `redox`, `evolve`, `ecology`,
+Implemented systems under `vr/sim/`: `time`, `carbon`, `redox`, `evolve`, `lifeGrammar`,
+`genome`, `sensory`, `ecology`,
 `extinction`, `alien`, `instruments`, `meta`, `calibrate`, `rng`, `assert`, `star`,
 `morphology`, `finale`, plus the god layer in `vr/sim/god/` — brush, receipts, thermo
 economy, guild seeding, crust/plate sculpt, climate levers, disasters, genesis,

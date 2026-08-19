@@ -6,6 +6,7 @@ import { NC, DIR } from '../../sphere.js';
 import { W, chronLog } from '../../world.js';
 import { GUILDS } from '../redox.js';
 import { TRAITS, addLineage, blankTraits, nodeOf, removeLiving } from '../evolve.js';
+import { blankGenome } from '../genome.js';
 import { LIFE_CLASSES, seedLife } from '../bio.js';
 import { paintBrush, beginStroke } from './brush.js';
 import { issueReceipt, causalChain } from './receipt.js';
@@ -79,7 +80,9 @@ export function seedGuildAt(cell, guildId = selectedGuild, radiusRad = null) {
     const traits = designerTraits ? designerTraits.slice() : defaultTraits();
     if (g.pigment === 'bchl') traits[TRAITS.pigment] = 0.2;
     if (g.pigment === 'chla') traits[TRAITS.pigment] = 0.7;
-    addLineage(W.tree, null, traits, W.ageYr, `${guildId}-seed`);
+    const genome = blankGenome();
+    if (W.planetBiochem) genome.biochem = { ...W.planetBiochem };
+    addLineage(W.tree, null, traits, W.ageYr, `${guildId}-seed`, genome);
   }
 
   const receipt = issueReceipt({
@@ -102,7 +105,9 @@ export function seedGuildAt(cell, guildId = selectedGuild, radiusRad = null) {
 export function releaseDesign(cell, traits = designerTraits || defaultTraits(), name = 'designed') {
   designerTraits = traits;
   if (!W.tree) return { ok: false, note: 'No phylogeny yet' };
-  const node = addLineage(W.tree, null, traits.slice(), W.ageYr, name);
+  const genome = blankGenome();
+  if (W.planetBiochem) genome.biochem = { ...W.planetBiochem };
+  const node = addLineage(W.tree, null, traits.slice(), W.ageYr, name, genome);
   beginStroke(['life']);
   paintBrush(cell, (c, f) => {
     W.life[c] = Math.min(1, W.life[c] + 0.4 * f);

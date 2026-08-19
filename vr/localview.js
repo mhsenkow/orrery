@@ -5,8 +5,8 @@ import { NC, NBR, DIR, N, cellAtFace } from './sphere.js';
 import { W } from './world.js';
 import { ENT } from './agents.js';
 import { BIOMES } from './sim/ecology.js';
-import { lifeLabel, KIND_RGB, legendKeyAt, legendEntries, GUILD_RGB } from './sim/lifeColour.js';
-import { drawSprite } from './sprites.js';
+import { lifeLabel, KIND_RGB, legendKeyAt, legendEntries, cellMatchesLegend, GUILD_RGB } from './sim/lifeColour.js';
+import { drawSprite, drawCreature } from './sprites.js';
 import { whatHappenedHere } from './chronicle.js';
 import {
   hash2, presentTime, reducedMotion, stampPhase, windSway,
@@ -14,6 +14,7 @@ import {
   placeSentence, patchScale, tidePhase, wearAt, isOutNow, seasonAt, waterStage,
 } from './sim/present.js';
 import { isLand, isSubmerged } from './sim/cellSurface.js';
+import { squareSegments } from './sim/isoline.js';
 import { BRUSH } from './sim/god/brush.js';
 
 export const LOCAL_SIZES = [200, 280, 380, 500];
@@ -595,7 +596,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
       if (key) shares[key] = (shares[key] || 0) + 1;
       lifeSum += desc.life || 0;
       if ((desc.life || 0) > 0.08) living++;
-      if (hoverKey && key && key !== hoverKey) {
+      if (hoverKey && !cellMatchesLegend(W, c, hoverKey)) {
         rgb = [rgb[0] * 0.28, rgb[1] * 0.28, rgb[2] * 0.32];
       }
       const mark = W.strokeMark?.[c] || 0;
@@ -653,6 +654,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
   }
 
   paintCellGrid(ctx, ox, oy, cellPx, cells, side, dpr);
+  paintIsoline(ctx, ox, oy, cellPx, cells, side, dpr);
   const rivers = cellPx >= 6 ? paintRivers(ctx, ox, oy, cellPx, cells, side) : 0;
 
   weatherOverlay(ctx, ox, oy, cellPx, cells, side);
@@ -698,8 +700,10 @@ export function drawLocalView(cvs, inspect, opts = {}) {
     ctx.save();
     if (!out) ctx.globalAlpha = 0.22;
     if (hiFi && cellPx >= 8) castShadow(ctx, cx, cy, size, cellLight(m.cell));
-    if (hiFi) drawSprite(ctx, m.kind, cx, cy, size, { flip, lean });
-    else {
+    if (hiFi) {
+      if (m.plan) drawCreature(ctx, m.plan, cx, cy, size, { flip, lean, ageFrac: m.age ? Math.min(1, 0.4 + m.age * 0.02) : 1 });
+      else drawSprite(ctx, m.kind, cx, cy, size, { flip, lean });
+    } else {
       const rgb = KIND_RGB[m.kind] || [125, 255, 106];
       fillRGB(ctx, rgb[0], rgb[1], rgb[2]);
       drawKindGlyph(ctx, cx, cy, cellPx, m.kind);
@@ -780,7 +784,7 @@ const KIND_CENSUS = {
 /** Cover + moving life in this map window — not the crosshair cell. */
 function viewCensus(shares, nCells, beings, living, lifeSum) {
   const n = Math.max(1, nCells | 0);
-  const labels = Object.fromEntries(legendEntries().map((e) => [e.id, e.label]));
+  const labels = Object.fromEntries(legendEntries(W).map((e) => [e.id, e.label]));
   const ranked = Object.entries(shares)
     .map(([id, count]) => ({
       id,
@@ -1020,6 +1024,37 @@ function paintCoast(ctx, x, y, cellPx, c, desc, cells, side, ix, iy) {
     ctx.arc(x + cellPx, y + cellPx, fringe * 1.6, Math.PI, Math.PI * 1.5);
     ctx.fill();
   }
+}
+
+function paintIsoline(ctx, ox, oy, cellPx, cells, side, dpr) {
+  const h = W.h;
+  if (!h) return;
+  const sea = W.seaLevel;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(8, 22, 40, 0.72)';
+  ctx.lineWidth = Math.max(1.15, dpr * 1.05);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let iy = 0; iy < side - 1; iy++) {
+    for (let ix = 0; ix < side - 1; ix++) {
+      const c0 = cells[iy * side + ix];
+      const c1 = cells[iy * side + ix + 1];
+      const c2 = cells[(iy + 1) * side + ix + 1];
+      const c3 = cells[(iy + 1) * side + ix];
+      if (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0) continue;
+      const segs = squareSegments(h[c0], h[c1], h[c2], h[c3], sea);
+      if (!segs.length) continue;
+      const x0 = ox + ix * cellPx + cellPx * 0.5;
+      const y0 = oy + iy * cellPx + cellPx * 0.5;
+      for (let s = 0; s < segs.length; s += 4) {
+        ctx.moveTo(x0 + segs[s] * cellPx, y0 + segs[s + 1] * cellPx);
+        ctx.lineTo(x0 + segs[s + 2] * cellPx, y0 + segs[s + 3] * cellPx);
+      }
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
 }
 
 function paintBiomeTexture(ctx, x, y, cellPx, c, desc, rgb, seed, step) {

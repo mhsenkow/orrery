@@ -5,30 +5,59 @@ import { NC, NBR, DIR, AREA, N as SIM_N } from '../sphere.js';
 import { greenhouseFromGases, totalPressure } from '../rulesets.js';
 import { circumbinaryBeat } from './exophysics.js';
 import { neighbourEN, neighbourMean } from './vecop.js';
+import { groundAlbedo, thermalInertiaAt, livePressureBar } from './substrateField.js';
+
+/**
+ * Daily-mean TOA cosine factor. `sLat` and `sDec` are sin(φ) and sin(δ).
+ * Polar night is 0; polar day is sin φ sin δ. Equator, equinox is 1/π.
+ */
+export function dailyMeanMu(sLat, sDec) {
+  const cLat = Math.sqrt(Math.max(0, 1 - sLat * sLat));
+  const cDec = Math.sqrt(Math.max(0, 1 - sDec * sDec));
+  const x = -sLat * sDec / Math.max(1e-8, cLat * cDec);
+  if (x >= 1) return 0;
+  if (x <= -1) return Math.max(0, sLat * sDec);
+  const H0 = Math.acos(clamp(x, -1, 1));
+  return Math.max(0, (H0 * sLat * sDec + cLat * cDec * Math.sin(H0)) / Math.PI);
+}
+
+/** Geometric insolation (season × day) before solar constant and greenhouse extras.
+ *  Unlocked: daily-mean declination envelope × local sun angle.
+ *  Locked: substellar cosine only — no zonal bands. fitted equator ≈ old 0.55. */
+export function geometricInsolation(W, c, sunDir) {
+  const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+  const obl = W.obliquity || 0;
+  const season = W.season || 0;
+  const mu = x * sunDir[0] + y * sunDir[1] + z * sunDir[2];
+  const day = Math.max(0, mu);
+  const Pbar = livePressureBar(W);
+  const atm = Pbar != null
+    ? Math.min(1, Math.log10(Pbar + 1) / 2)
+    : Math.min(1, totalPressure(W.gases || {}, W.rule));
+  if (W.rule?.tidallyLocked) {
+    const e = W.eccentricity || W.rule?.eccentricity || 0;
+    const lib = e * Math.sin(season) * 0.35;
+    const sub = Math.max(0, mu + lib);
+    const redist = W.rule.redistribution ?? (atm > 0.3 ? 0.45 : 0.05);
+    return lerp(sub, 0.5, redist);
+  }
+  const dec = Math.sin(obl) * Math.sin(season);
+  // fitted: dailyMeanMu(0,0)=1/π → 0.08 + 1.48/π ≈ 0.55, matching the old equator.
+  const seasonal = 0.08 + dailyMeanMu(y, dec) * 1.48;
+  let diurnal = lerp(0.5 + 0.5 * day, day, 1 - atm * 0.85);
+  if (W.rule && !W.rule.earthLike) {
+    const I = thermalInertiaAt(W, c);
+    const k = Math.sqrt(Math.max(50, I) / 1200);
+    diurnal = lerp(0.5, diurnal, clamp(1 / k, 0.25, 1.55));
+  }
+  return seasonal * (0.35 + 0.65 * diurnal);
+}
 
 /**
  * Insolation with obliquity (seasons) + diurnal term from sun angle.
  * sunPhase in radians: orbital day angle for terminator.
  */
 export function insolation(W, c, sunDir) {
-  const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
-  const obl = W.obliquity;
-  const season = W.season;
-  const dec = Math.sin(obl) * Math.sin(season);
-  const lat = y;
-  const day = Math.max(0, x * sunDir[0] + y * sunDir[1] + z * sunDir[2]);
-  const seasonal = Math.max(0.05, 0.55 + 0.45 * (lat * dec));
-  const Pbar = W.rule?.surfacePressureBar;
-  const atm = Pbar != null ? Math.min(1, Math.log10(Pbar + 1) / 2) : Math.min(1, totalPressure(W.gases, W.rule));
-  let diurnal = lerp(0.5 + 0.5 * day, day, 1 - atm * 0.85);
-  // Locked worlds: permanent dayside / nightside; libration sweeps the terminator when e > 0
-  if (W.rule?.tidallyLocked) {
-    const e = W.eccentricity || W.rule?.eccentricity || 0;
-    const lib = e * Math.sin(season) * 0.35;
-    const sub = Math.max(0, x * sunDir[0] + y * sunDir[1] + z * sunDir[2] + lib);
-    const redist = W.rule.redistribution ?? (atm > 0.3 ? 0.45 : 0.05);
-    diurnal = lerp(sub, 0.5, redist);
-  }
   const heating = W.rule?.star?.heating;
   let extra = 1;
   if (heating === 'particle') extra = 0.4; // pulsar wind — albedo-irrelevant floor
@@ -40,8 +69,8 @@ export function insolation(W, c, sunDir) {
     const b = W.rule.binaryBeat;
     beat = circumbinaryBeat(b.L1, b.L2, b.Pbin, W.rule.orbitalPeriodDays, (W.ageYr || 0) * 365.25);
   }
-  const S = W.solar * (W._solarMod || 1) * seasonal * (0.35 + 0.65 * diurnal) * extra * intern * tidal * beat;
-  return heating === 'none' ? (W.rule?.tidalHeat || 0) * 0.05 : S;
+  if (heating === 'none') return (W.rule?.tidalHeat || 0) * 0.05;
+  return W.solar * (W._solarMod || 1) * geometricInsolation(W, c, sunDir) * extra * intern * tidal * beat;
 }
 
 /** Three-cell Hadley/Ferrel/polar wind field + Coriolis from rotation. */
@@ -116,29 +145,28 @@ export function advect(field, W, rate) {
 
 export function cloudsTick(W) {
   const { clouds, moist, temp, precip, ash, gases } = W;
-  const itcz = W._itczLat || 0;
   const earth = !!W.rule.earthLike && !W.rule.deepTime;
-  // Earth mean cloud fraction is ~0.67; prior coeffs locked ~0.80 and whitened the globe.
   const formScale = earth ? 0.62 : 1;
   const retain = earth ? 0.76 : 0.82;
   const ashCloud = earth ? 0.08 : 0.2;
+  const vap = W.vapour;
+  const h2o = gases.H2O || 0.01;
   for (let c = 0; c < NC; c++) {
-    const lat = DIR[c * 3 + 1];
-    const abs = Math.abs(lat - itcz);
-    // ITCZ: deep convection band; subtropics: descending dry
-    const itczBand = Math.exp(-((lat - itcz) * (lat - itcz)) / 0.018);
-    const subtropDry = Math.exp(-((abs - 0.38) * (abs - 0.38)) / 0.02);
-    const conv = Math.max(0, W.converg?.[c] || 0);
-    let form = moist[c] * clamp(1.1 - temp[c], 0, 1) * 0.55 + precip[c] * 0.35;
-    const dash = 0.42 + 0.58 * Math.abs(Math.sin(c * 12.9898 + lat * 9.1));
-    form += itczBand * moist[c] * 0.55 * dash + conv * 0.4;
-    form *= 1 - subtropDry * (earth ? 0.7 : 0.55); // horse latitudes clear
-    // Midlatitude storm belt — moist + strong wind shear proxy
+    const conv = W.converg?.[c] || 0;
+    const localV = vap?.[c] ?? moist[c];
+    const sat = h2o * Math.exp((temp[c] - 0.5) * 1.8);
+    const rh = localV / Math.max(1e-5, sat);
+    let form = clamp(rh - 0.4, 0, 1) * 0.72 + precip[c] * 0.28;
+    form += Math.max(0, conv) * 0.55;
+    form *= 1 - clamp(-conv, 0, 1) * (earth ? 0.7 : 0.5);
     const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
-    if (abs > 0.4 && abs < 0.75) form += moist[c] * wind * 0.2;
+    form += localV * wind * 0.18;
+    form += (W.front?.[c] || 0) * 0.32;
+    if (W.h[c] < W.seaLevel && temp[c] < 0.48 && conv < 0 && rh > 0.5) {
+      form += 0.12;
+    }
     form *= formScale;
     clouds[c] = clamp(clouds[c] * retain + form * 0.55 + ash[c] * ashCloud, 0, 1);
-    // Rain shafts under thick convective cloud
     if (clouds[c] > 0.55 && conv > 0.15) {
       W.precip[c] = Math.max(W.precip[c] || 0, clouds[c] * 0.45);
     }
@@ -187,13 +215,14 @@ export function atmoMetaTick(W) {
     const roa = (1 - e * e) / Math.max(0.02, 1 + e * Math.cos(nu));
     W._solarMod = 1 / (roa * roa);
   }
-  W.greenhouse = greenhouseFromGases(gases, R);
+  W.greenhouse = greenhouseFromGases(gases, R, livePressureBar(W));
 }
 
 export function atmoTick(W, sunDir) {
   const R = W.rule;
   const { temp, moist, ice, clouds, h, seaLevel, gases, _t, ash } = W;
-  const gh = greenhouseFromGases(gases, R);
+  const Plive = livePressureBar(W);
+  const gh = greenhouseFromGases(gases, R, Plive);
   W.greenhouse = gh;
   // Winds come from geostrophicWind (called before this tick). The old
   // three-band computeWinds field was overwritten every tick and never advected.
@@ -203,21 +232,27 @@ export function atmoTick(W, sunDir) {
 
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
-    const lat = DIR[c * 3 + 1];
-    const absLat = Math.abs(lat);
     const cloudAlb = R.earthLike && !R.deepTime ? 0.2 : 0.28;
     const iceAlb = W._spinup ? 0 : ice[c];
-    const alb = clamp(
-      iceAlb * 0.42 +
-      clouds[c] * cloudAlb +
-      W.dust[c] * 0.22 +
-      (isSea ? 0.06 : 0.18),
-      0, 0.85
-    );
+    const ground = groundAlbedo(W, c, isSea);
+    const alb = R.earthLike
+      ? clamp(
+        iceAlb * 0.42 +
+        clouds[c] * cloudAlb +
+        W.dust[c] * 0.22 +
+        ground,
+        0, 0.85)
+      : clamp(
+        iceAlb * 0.55 +
+        clouds[c] * cloudAlb +
+        W.dust[c] * 0.22 +
+        ground * (1 - iceAlb * 0.7),
+        0, 0.92);
     const insol = insolation(W, c, sunDir);
     const above = Math.max(0, h[c] - seaLevel);
-    // Poles run cold on Earth even after heat diffusion — without this, caps vanish.
-    const polarCool = (R.earthLike && !R.deepTime) ? absLat * absLat * 0.16 : 0;
+    const polarCool = (R.earthLike && !R.deepTime)
+      ? clamp(0.18 - insol, 0, 0.12) * 0.28
+      : 0;
     const eq = insol * (1 - alb) * 0.95 + gh * 1.4 - above * lapse * 0.35 + 0.12 - polarCool;
     const c4 = c * 4;
     const dT = neighbourMean(temp, c) - temp[c];
@@ -225,10 +260,11 @@ export function atmoTick(W, sunDir) {
     if (!isSea) {
       for (let k = 0; k < 4; k++) if (h[NBR[c4 + k]] < seaLevel) maritime += 0.2;
     }
-    const thermalMass = (isSea ? 0.035 : lerp(0.18, 0.08, clamp(maritime, 0, 1)))
-      * (R.surfacePressureBar != null ? clamp(0.4 + Math.log10((R.surfacePressureBar || 1) + 0.01) * 0.35, 0.08, 2.5) : 1);
-    // Less poleward heat bleed on Earth so polar cooling sticks
-    const mix0 = (R.earthLike && !R.deepTime) ? 0.12 + (1 - absLat) * 0.06 : 0.18;
+    const inland = isSea ? 0 : clamp((W.cont?.[c] || 0) / 1400, 0, 1);
+    const thermalMass = (isSea ? 0.032 : lerp(0.16, 0.09, clamp(maritime, 0, 1)) * (1 + inland * 0.35))
+      * (Plive != null ? clamp(0.4 + Math.log10((Plive || 1) + 0.01) * 0.35, 0.08, 2.5) : 1)
+      * (R.earthLike ? 1 : clamp(1200 / Math.max(50, thermalInertiaAt(W, c)), 0.22, 2.4));
+    const mix0 = (R.earthLike && !R.deepTime) ? 0.11 : 0.18;
     const mix = mix0 * Math.min(2.5, Math.max(1, SIM_N / 64));
     let t = temp[c] + (eq - temp[c]) * thermalMass + dT * mix;
     if (R.airless || Ptot < 0.01) t = lerp(temp[c], eq, 0.45);

@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "why": "A world's surface is the top of a stack. Recipes are gated by axes and flags, not a name regex. Thicknesses are class numbers; ice-shell cells scale lid and ocean from the existing shell fields. Not a saved per-cell array and not deposition history.",
+  "tags": ["measured", "fitted", "invented"],
+  "layers": [
+    {
+      "id": "envelope",
+      "name": "envelope",
+      "substrate": "envelope",
+      "rgb": [48, 40, 72],
+      "tag": "measured",
+      "why": "Hydrogen–helium with no solid surface. Pressure is the vertical coordinate; this layer is the honest empty stack."
+    },
+    {
+      "id": "organics",
+      "name": "organic sand",
+      "substrate": "tholin",
+      "rgb": [150, 90, 50],
+      "tag": "measured",
+      "why": "Photochemical goo sitting on ice. Titan's dunes and Pluto's dark regions are this layer, metres thick, not bedrock."
+    },
+    {
+      "id": "regolith",
+      "name": "regolith",
+      "substrate": "regolith",
+      "rgb": [140, 132, 124],
+      "tag": "measured",
+      "why": "Gardened dust on an airless world. Lunar mare regolith is a few metres; it mutes every crater rim."
+    },
+    {
+      "id": "megaregolith",
+      "name": "megaregolith",
+      "substrate": "impactEjecta",
+      "rgb": [96, 90, 86],
+      "tag": "fitted",
+      "why": "Kilometres of impact-shattered crust. Porous, weak, and the reason lunar craters relax the way they do."
+    },
+    {
+      "id": "iceLid",
+      "name": "ice lid",
+      "substrate": "waterIce",
+      "rgb": [200, 220, 236],
+      "tag": "measured",
+      "why": "Ice I shell. Europa 15–25 km; Enceladus thinner at the south pole. The lid is what a lander hits."
+    },
+    {
+      "id": "ocean",
+      "name": "subsurface ocean",
+      "rgb": [28, 72, 160],
+      "tag": "measured",
+      "why": "Liquid water under ice. Europa's ocean is ~100 km; it is the habitable layer and the thing plumes sample."
+    },
+    {
+      "id": "iceVI",
+      "name": "ice VI",
+      "substrate": "waterIce",
+      "rgb": [160, 188, 220],
+      "tag": "measured",
+      "why": "High-pressure ice between a deep ocean and rock. Titan has it; Europa's smaller g keeps the ocean on rock."
+    },
+    {
+      "id": "clathrate",
+      "name": "methane clathrate",
+      "substrate": "clathrate",
+      "rgb": [180, 200, 210],
+      "tag": "fitted",
+      "why": "Cage ice holding methane. Titan's interior store; not a seafloor map. The tick still owns dissociation."
+    },
+    {
+      "id": "lava",
+      "name": "lava crust",
+      "substrate": "silicate",
+      "rgb": [180, 64, 36],
+      "tag": "fitted",
+      "why": "A magma-ocean world has a thin chilled lid over melt, not a continent. Thickness is a sketch."
+    },
+    {
+      "id": "crust",
+      "name": "rock",
+      "substrate": "basalt",
+      "rgb": [78, 72, 64],
+      "tag": "measured",
+      "why": "Silicate basement. The ocean sits on it when g is too low for ice VI; the Moon's crust is ~40 km."
+    }
+  ],
+  "recipes": [
+    {
+      "id": "envelope",
+      "needs": { "interior": ["fluid"] },
+      "noSurface": true,
+      "layers": [],
+      "tag": "measured",
+      "why": "Giants and other envelopes have no heightfield to hang a column from. Pressure levels are the next pass."
+    },
+    {
+      "id": "magma",
+      "needs": { "interior": ["magma"] },
+      "layers": [
+        { "id": "lava", "depthKm": 8 }
+      ],
+      "tag": "fitted",
+      "why": "A furnace world is a chilled lid over melt. Not Earth's crust, and not a stratigraphy."
+    },
+    {
+      "id": "iceOrganics",
+      "needs": { "iceShell": true, "notAirless": true, "volatile": ["CH4"] },
+      "layers": [
+        { "id": "organics", "depthKm": 0.05 },
+        { "id": "iceLid", "depthKm": 80, "vary": "lid" },
+        { "id": "clathrate", "depthKm": 0.4, "when": "clathrate" },
+        { "id": "ocean", "depthKm": 250, "vary": "ocean" },
+        { "id": "iceVI", "depthKm": 200 },
+        { "id": "crust", "depthKm": 0 }
+      ],
+      "tag": "measured",
+      "why": "Titan class: organic sand over ice I over an ammonia-rich ocean over ice VI over rock. Gates are CH4 plus an atmosphere, not /titan/."
+    },
+    {
+      "id": "iceShell",
+      "needs": { "iceShell": true },
+      "layers": [
+        { "id": "iceLid", "depthKm": 20, "vary": "lid" },
+        { "id": "clathrate", "depthKm": 0.4, "when": "clathrate" },
+        { "id": "ocean", "depthKm": 100, "vary": "ocean" },
+        { "id": "iceVI", "depthKm": 80, "when": "hpIce" },
+        { "id": "crust", "depthKm": 0 }
+      ],
+      "tag": "measured",
+      "why": "Europa class: ice over ocean over rock. Ice VI only when seafloor pressure demands it. Lid and ocean thicknesses follow the shell fields."
+    },
+    {
+      "id": "heatpipe",
+      "needs": { "interior": ["heatpipe"] },
+      "layers": [
+        { "id": "crust", "depthKm": 25 }
+      ],
+      "tag": "fitted",
+      "why": "Io's lithosphere is a thin silicate lid continually buried by lava. Sulfur is cover, not a column layer."
+    },
+    {
+      "id": "airless",
+      "needs": { "airless": true, "notIceShell": true, "notFluid": true, "notMagma": true },
+      "layers": [
+        { "id": "regolith", "depthKm": 0.008 },
+        { "id": "megaregolith", "depthKm": 2 },
+        { "id": "crust", "depthKm": 40 }
+      ],
+      "tag": "measured",
+      "why": "Moon class: metres of gardened dust over kilometres of shattered crust over ~40 km of basement. Mercury and the other airless rocks share it."
+    },
+    {
+      "id": "rocky",
+      "needs": { "notFluid": true, "notIceShell": true, "notMagma": true },
+      "layers": [
+        { "id": "crust", "depthKm": 35 }
+      ],
+      "tag": "fitted",
+      "why": "A generic solid world has crust. Cover and landforms sit on top; deposition history is not this cut."
+    }
+  ]
+}

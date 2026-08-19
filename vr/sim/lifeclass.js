@@ -11,18 +11,34 @@ export const GRADE_IDS = [
 ];
 export const GRADES = GRADE_IDS.map((id, index) => ({ id, index }));
 
-/** Grade from traits + global transitions (Phase 0); accepts future node.slots/flags. */
+/** Grade from this lineage's genome / plan, not from planet-wide flags.
+ *  LIFE_CLASSES stays as a legend; unlockedClassFromPool remains an agent cap. */
 export function deriveGrade(node, W) {
   if (!node) return 0;
-  const T = W?.transitions || {};
+  const g = node.genome;
+  const plan = node.plan;
   const mass = node.traits?.[4] ?? 0.15;
   const trop = node.traits?.[7] ?? 0;
-  if (T.language || T.endothermy) return 7;
-  if (T.landPlants && mass > 0.18) return 2;
-  if (T.biomineral) return 4;
-  if (T.multicellular) return trop > 0.5 ? 3 : 4;
-  if (T.eukaryote) return 1;
+  const habitat = g?.axes?.habitat || plan?.habitat || '';
+  const skeleton = g?.axes?.skeleton || plan?.skeleton || 'none';
+  const thermal = g?.axes?.thermal;
+  const nervous = g?.axes?.nervous;
+  const loco = g?.axes?.locomotion || '';
+  const sizeClass = g?.n?.sizeClass ?? 0;
+  const limbs = plan?.limbs ?? 0;
+  const marine = /pelagic|ventBenthic|shelfBenthic|abyssal|nekton/.test(habitat)
+    || habitat === 'marine';
+
+  if (thermal === 'endotherm' || nervous === 'cortex' || (thermal === 'endotherm' && sizeClass >= 4)) return 7;
+  if ((habitat === 'terrestrial' || habitat === 'fossorial') && (skeleton === 'bone' || skeleton === 'pneumaticBone') && trop > 0.25) return 6;
+  if (habitat === 'terrestrial' && sizeClass >= 3 && trop > 0.15 && skeleton !== 'lignin') return 5;
+  if (marine && sizeClass >= 3 && skeleton !== 'none' && trop > 0.2) return 4;
+  if (skeleton === 'chitinExo' || limbs >= 6 || loco === 'ambulacral') return 3;
+  if (sizeClass >= 2 || (g?.n?.segments || 0) > 1 || plan?.silhouette === 'sessile') return 2;
+  if (g?.axes?.nervous && g.axes.nervous !== 'none') return 1;
   if (mass > 0.32) return 1;
+  const T = W?.transitions || {};
+  if (T.eukaryote && !g) return 1;
   return 0;
 }
 

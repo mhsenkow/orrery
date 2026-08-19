@@ -12,6 +12,7 @@
 import { N as DEFAULT_N, NBR, DIR } from '../../sphere.js';
 import { VS_FULLSCREEN, FS_CLIMATE_STEP } from './shaders.js';
 import { greenhouseFromGases } from '../../rulesets.js';
+import { geometricInsolation } from '../atmo.js';
 
 let _shared = null;
 
@@ -293,16 +294,7 @@ export class GpgpuEngine {
       geoCPU[px + 1] = sea;
       geoCPU[px + 2] = W.dust?.[c] || 0;
       geoCPU[px + 3] = W.dust?.[c] || W.gases?.dust || 0;
-      const dx = DIR[c * 3], dy = DIR[c * 3 + 1], dz = DIR[c * 3 + 2];
-      const day = Math.max(0.05, dx * sun[0] + dy * sun[1] + dz * sun[2]);
-      const dec = Math.sin(W.obliquity || 0) * Math.sin(W.season || 0);
-      const seasonal = Math.max(0.05, 0.55 + 0.45 * (dy * dec));
-      let insol = seasonal * (0.35 + 0.65 * day);
-      if (W.rule?.earthLike && !W.rule?.deepTime) {
-        const absLat = Math.abs(dy);
-        insol *= Math.max(0.6, 1 - absLat * absLat * 0.12);
-      }
-      sunCPU[px] = insol;
+      sunCPU[px] = geometricInsolation(W, c, sun);
       sunCPU[px + 1] = sunCPU[px + 2] = sunCPU[px + 3] = 0;
     }
     const ping = slot.ping;
@@ -463,16 +455,7 @@ export class GpgpuEngine {
       geoCPU[px + 1] = sea;
       geoCPU[px + 2] = W.dust?.[c] || 0;
       geoCPU[px + 3] = W.dust?.[c] || W.gases?.dust || 0;
-      const dx = DIR[c * 3], dy = DIR[c * 3 + 1], dz = DIR[c * 3 + 2];
-      const day = Math.max(0.05, dx * sun[0] + dy * sun[1] + dz * sun[2]);
-      const dec = Math.sin(W.obliquity || 0) * Math.sin(W.season || 0);
-      const seasonal = Math.max(0.05, 0.55 + 0.45 * (dy * dec));
-      let insol = seasonal * (0.35 + 0.65 * day);
-      if (W.rule?.earthLike && !W.rule?.deepTime) {
-        const absLat = Math.abs(dy);
-        insol *= Math.max(0.6, 1 - absLat * absLat * 0.12);
-      }
-      sunCPU[px] = insol;
+      sunCPU[px] = geometricInsolation(W, c, sun);
       sunCPU[px + 1] = sunCPU[px + 2] = sunCPU[px + 3] = 0;
     }
     this._upload(slot.geo, geoCPU, AW, slot.H);

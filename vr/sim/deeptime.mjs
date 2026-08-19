@@ -52,6 +52,23 @@ function transitionsList(T) {
   return Object.entries(T).filter(([, v]) => v).map(([k]) => k).join(',');
 }
 
+const { describeGenome } = await import('./genome.js');
+
+function treeStatsMax(tree) {
+  if (!tree?.nodes?.length) return 0;
+  const byId = tree.byId;
+  let max = 0;
+  for (const n of tree.nodes) {
+    let d = 0, cur = n;
+    while (cur?.parentId != null && d < 64) {
+      cur = byId?.get(cur.parentId);
+      d++;
+    }
+    if (d > max) max = d;
+  }
+  return max;
+}
+
 function printRow(tick, W, NC, nodeOf, rangeContiguity) {
   const ma = (4.567e9 - W.ageYr) / 1e6;
   const tree = W.tree || { living: [], nodes: [] };
@@ -68,6 +85,7 @@ function printRow(tick, W, NC, nodeOf, rangeContiguity) {
     `CO2=${(W.gases?.CO2 ?? 0).toFixed(5)}`,
     `living=${tree.living?.length ?? 0}`,
     `total=${tree.nodes?.length ?? 0}`,
+    `depth=${treeStatsMax(tree)}`,
     `unlockedClass=${W.unlockedClass ?? 0}`,
     `lifeClass={${histStr}}`,
     `bodyMass=${bm.min.toFixed(3)}–${bm.max.toFixed(3)}`,
@@ -75,8 +93,22 @@ function printRow(tick, W, NC, nodeOf, rangeContiguity) {
     `convergences=${tree.convergences?.length ?? 0}`,
     `transitions=[${transitionsList(W.transitions)}]`,
     `guilds=${topGuilds(W)}`,
+    `bodies=${W.morphospaceOccupied ?? 0}`,
+    `sense=${W.topSense || '—'}`,
     contig,
   ].join(' '));
+  const dom = dominantBody(tree);
+  if (dom) console.log(`         body: ${dom}`);
+}
+
+function dominantBody(tree) {
+  if (!tree.living?.length) return null;
+  let best = null;
+  for (const id of tree.living) {
+    const n = tree.byId?.get(id);
+    if (n?.genome && (!best || n.pop > best.pop)) best = n;
+  }
+  return best ? `${best.name} — ${describeGenome(best.genome)}` : null;
 }
 
 const args = parseArgs(process.argv);
