@@ -1217,6 +1217,7 @@ function update(t) {
       if (W._buildsDirty) { needGeom(); W._buildsDirty = false; }
       else if (W.year % 4000 < 200) needGeom(); // occasional elev rebuild for erosion/sculpt
       const elapsed = performance.now() - t0;
+      W._msSim = elapsed;
       if (elapsed > 12) {
         noteDroppedTicks(W, Math.max(1, (simAcc / 0.09) | 0));
         simAcc = 0;
@@ -1261,7 +1262,9 @@ function update(t) {
     const lv = document.getElementById('localview');
     if (lv) {
       const hoverKey = S.localLegendLock || S.localHoverKey;
-      const patch = drawLocalView(lv, S.inspect, {
+      const lvOn = lv.offsetWidth > 8 && lv.offsetHeight > 8
+        && getComputedStyle(lv).display !== 'none';
+      const patch = lvOn ? drawLocalView(lv, S.inspect, {
         radius: S.localRadius,
         pin: S.localPin,
         seek: S.localSeek,
@@ -1271,7 +1274,7 @@ function update(t) {
         simAlpha: S.simAlpha,
         followId: S.follow?.id,
         net: S.canvasMode,
-      });
+      }) : null;
       const prevFocus = S._localFocus;
       updateLocalHighlight(patch, S.localGlobe);
       S._localFocus = patch?.focus ?? -1;

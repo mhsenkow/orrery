@@ -57,6 +57,7 @@ export function liquidWaterOk(W) {
 
 /** What the hydro machinery is doing: liquid rain, frost/sublimation, or nothing. */
 export function cycleMode(W) {
+  if (W.rule?.airless) return 'none';
   if (liquidWaterOk(W)) return 'liquid';
   const mat = cycleMaterial(W);
   if (!mat) return 'none';
@@ -66,6 +67,21 @@ export function cycleMode(W) {
   const rheo = rheologyAt(mat, T, P);
   if (ph === 'solid' || rheo === 'convecting-ice') return 'frost';
   return 'none';
+}
+
+function downwindNeighbour(c, u, v) {
+  let best = -1, bestA = 0.02;
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[c * 4 + k];
+    const dx = DIR[n * 3] - DIR[c * 3];
+    const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
+    const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
+    const e = dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2];
+    const nn = dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2];
+    const along = u * e + v * nn;
+    if (along > bestA) { bestA = along; best = n; }
+  }
+  return best;
 }
 
 function noteCycleShift(W, mode) {
@@ -202,7 +218,8 @@ export function computeRivers(W) {
   if (!W.groundW || W.groundW.length !== NC) W.groundW = new Float32Array(NC);
 
   const tick = W._tickIndex || 0;
-  const rebuild = W._hydroDirty || W._drainTick == null || (tick - W._drainTick) > 7;
+  const terrainMoved = !!W._hydroDirty;
+  const rebuild = terrainMoved || W._drainTick == null || (tick - W._drainTick) > 7;
   if (rebuild) {
     W._drainTick = tick;
     W._hydroDirty = false;
@@ -224,9 +241,13 @@ export function computeRivers(W) {
   }
 
   flow.fill(0);
+  if (!W._order || W._order.length !== NC) W._order = new Int32Array(NC);
   const order = W._order;
-  for (let c = 0; c < NC; c++) order[c] = c;
-  order.sort((a, b) => h[b] - h[a]);
+  if (terrainMoved || !W._orderReady) {
+    for (let c = 0; c < NC; c++) order[c] = c;
+    order.sort((a, b) => h[b] - h[a]);
+    W._orderReady = true;
+  }
 
   // `flow` is surface discharge (throughput), not ponded volume. A 0.35 floor on
   // every land cell used to make the whole continent a river after D8 pile-up.
@@ -246,7 +267,7 @@ export function computeRivers(W) {
     const rainRunoff = rain * (0.08 + 0.72 * wet);
     const satExcess = Math.max(0, soil - 0.58) * 0.18;
     W.groundW[c] = clamp(
-      table * 0.984 + rain * (0.22 - wet * 0.12) + soil * 0.025 - rainRunoff * 0.06,
+      table * 0.992 + rain * (0.22 - wet * 0.12) + soil * 0.025 - rainRunoff * 0.06,
       0, 1
     );
     const seep = W.groundW[c] > 0.64 ? (W.groundW[c] - 0.64) * 0.2 : 0;
@@ -326,8 +347,11 @@ export function iceTick(W) {
       if (cold) {
         iceLand[c] = clamp(iceLand[c] + precip[c] * 0.10 * canopy, 0, 1);
       } else {
-        const melt = Math.max(0.04, (temp[c] - snowline) * 0.35) * (2 - canopy) * (1 - coldness * 0.85);
+        const melt = Math.max(0.04, (temp[c] - snowline) * 0.35) * (2 - canopy) * (1 - coldness * 0.85)
+          * (1 + (precip[c] || 0) * 1.6);
+        const lost = Math.min(iceLand[c], melt);
         iceLand[c] = Math.max(0, iceLand[c] - melt);
+        if (lost > 0.002) moist[c] = clamp((moist[c] || 0) + lost * 0.22, 0, 1);
       }
       if (earth && coldness > 0.72 && elev > 0.02) {
         iceLand[c] = Math.max(iceLand[c], 0.2 + coldness * 0.4);
@@ -381,7 +405,8 @@ function iceTickFromPhase(W, mat) {
 export function hydroTick(W) {
   const { h, temp, moist, precip, seaLevel, windU, windV, rule, gases, _m } = W;
   const canLiquid = liquidWaterOk(W);
-  noteCycleShift(W, cycleMode(W));
+  const mode = cycleMode(W);
+  noteCycleShift(W, mode);
   if (!W.vapour || W.vapour.length !== NC) W.vapour = new Float32Array(NC);
   if (!W._vapourInit) {
     W.vapour.fill(gases.H2O || 0.01);
@@ -397,6 +422,23 @@ export function hydroTick(W) {
   }
   noteTropicalBasin(W, seaLevel);
   const vapourF = W.vapour;
+  if (!W.fog || W.fog.length !== NC) W.fog = new Float32Array(NC);
+  if (!W.ariver || W.ariver.length !== NC) W.ariver = new Float32Array(NC);
+  if (!W._upslope || W._upslope.length !== NC) W._upslope = new Float32Array(NC);
+  if (!W._lee || W._lee.length !== NC) W._lee = new Float32Array(NC);
+  const leeF = W._lee;
+  const upF = W._upslope;
+
+  if (mode === 'none') {
+    precip.fill(0);
+    W.fog.fill(0);
+    W.ariver.fill(0);
+    computeRivers(W);
+    iceTick(W);
+    updateSeaLevel(W);
+    W.waterDrift = W.waterDrift || 0;
+    return;
+  }
 
   // Evaporation from ocean / wet land into a per-cell vapour field
   let evap = 0;
@@ -413,7 +455,7 @@ export function hydroTick(W) {
         * (0.65 + 0.35 * wind) * (0.4 + deficit * 8);
     } else if (moist[c] > 0.05) {
       e = moist[c] * Math.max(0, temp[c] - 0.25) * rule.aridity * 0.0015 * AREA[c]
-        * (0.7 + 0.3 * wind);
+        * (0.7 + 0.3 * wind) * (0.4 + deficit * 8);
       moist[c] = Math.max(0, moist[c] - e / (AREA[c] + 1e-6));
     }
     if (!isSea && (W.life[c] || 0) > 0.35) {
@@ -425,14 +467,10 @@ export function hydroTick(W) {
   void evap;
   if (W._adv && windU && windV) advect(vapourF, W, 0.28);
 
-  // Orographic + advected precip from the local column, not a global pool
-  let precipTotal = 0;
-  let vapourMass = 0;
+  leeF.fill(0);
+  upF.fill(0);
   for (let c = 0; c < NC; c++) {
-    const lat = DIR[c * 3 + 1];
-    const localV = vapourF[c];
-    const maritime = Math.exp(-(W.cont[c] || 0) / 900);
-    let p = localV * (0.45 + 0.55 * maritime) * 0.08;
+    if (h[c] < seaLevel) continue;
     const wu = W.windU?.[c] || 0;
     const wv = W.windV?.[c] || 0;
     let upslope = 0, lee = 0;
@@ -448,11 +486,44 @@ export function hydroTick(W) {
       if (along < 0 && slope > 0) upslope = Math.max(upslope, slope * (-along));
       if (along < 0 && slope < 0) lee = Math.max(lee, -slope * (-along));
     }
+    upF[c] = upslope;
+    leeF[c] = Math.max(leeF[c], lee);
+    if (lee > 0.008) {
+      let cell = c;
+      let L = lee;
+      for (let s = 0; s < 3; s++) {
+        const nb = downwindNeighbour(cell, wu, wv);
+        if (nb < 0 || h[nb] < seaLevel) break;
+        L *= 0.55;
+        leeF[nb] = Math.max(leeF[nb], L);
+        cell = nb;
+      }
+    }
+  }
+
+  // Orographic + advected precip from the local column, not a global pool
+  let precipTotal = 0;
+  let vapourMass = 0;
+  for (let c = 0; c < NC; c++) {
+    const lat = DIR[c * 3 + 1];
+    const localV = vapourF[c];
+    const maritime = Math.exp(-(W.cont[c] || 0) / 900);
+    let p = localV * (0.45 + 0.55 * maritime) * 0.08;
+    const wu = W.windU?.[c] || 0;
+    const wv = W.windV?.[c] || 0;
+    const upslope = upF[c] || 0;
+    const lee = leeF[c] || 0;
     p += upslope * localV * 2.4;
     p *= 1 / (1 + lee * 10);
     const conv = W.converg?.[c] || 0;
     p *= 1 + conv * 0.85;
     p += (W.front?.[c] || 0) * localV * 0.32;
+    const spd = Math.hypot(wu, wv);
+    const poleward = wv * lat;
+    const river = localV > 0.028 && poleward > 0.08 && spd > 0.32
+      ? clamp(localV * spd * 4.2, 0, 1) : 0;
+    W.ariver[c] = river;
+    if (river > 0.12) p += localV * 0.16 * river;
     if (W._monsoon > 0.45 && h[c] >= seaLevel && temp[c] > 0.40) {
       const summer = Math.sin(W.season || 0) * lat;
       if (summer > 0.08) p += W._monsoon * localV * 0.22 * maritime;
@@ -464,28 +535,30 @@ export function hydroTick(W) {
       else p *= east < -0.15 ? 1.12 : east > 0.15 ? 0.88 : 1;
     }
     if (!canLiquid) {
-      if (!rule.earthLike) {
+      if (mode === 'frost') {
         const mat = cycleMaterial(W);
         if (mat) {
           const ph = phaseAt(mat, cellTK(W, c), surfacePbar(rule));
           p *= ph === 'solid' || ph === 'liquid' ? 0.45 : 0.04;
-        } else {
-          const vol = W._worldAxes?.volatile?.v;
-          p *= (!vol || vol === 'H2O') ? 0.15 : 0;
-        }
+        } else p = 0;
       } else {
-        const vol = W._worldAxes?.volatile?.v;
-        p *= (!vol || vol === 'H2O') ? 0.15 : 0;
+        p = 0;
       }
     }
     precip[c] = clamp(p, 0, 1);
     precipTotal += precip[c] * AREA[c];
     vapourMass += vapourF[c] * AREA[c];
+    const sat = (gases.H2O || 0.01) * Math.exp((temp[c] - 0.5) * 1.8);
+    const rh = localV / Math.max(1e-5, sat);
+    const coast = Math.abs(W.coastDist?.[c] || 99) < 180;
+    const still = spd < 0.28;
+    W.fog[c] = (rh > 0.82 && temp[c] < 0.46 && still && (coast || h[c] >= seaLevel) && conv <= 0.05)
+      ? clamp((rh - 0.82) * 4.2 * (0.55 + (coast ? 0.45 : 0)), 0, 1) : 0;
   }
 
-  // Rain removes local vapour; global H2O is the mean of the field
+  // Rain removes local vapour (Rayleigh: windward slopes dry the parcel more)
   for (let c = 0; c < NC; c++) {
-    vapourF[c] = Math.max(0, vapourF[c] - precip[c] * 0.08);
+    vapourF[c] = Math.max(0, vapourF[c] - precip[c] * (0.08 + (upF[c] || 0) * 0.22));
   }
   let vapour = vapourMass / NC;
   const remove = Math.min(vapour, precipTotal * 0.08);
@@ -502,19 +575,7 @@ export function hydroTick(W) {
     } else {
       const dM = neighbourMean(moist, c);
       _m[c] = clamp(moist[c] * 0.92 + precip[c] * 0.55 + (dM - moist[c]) * 0.2 - rule.aridity * 0.08, 0, 1);
-      const wu = windU?.[c] || 0, wv = windV?.[c] || 0;
-      let lee = 0;
-      for (let k = 0; k < 4; k++) {
-        const n = NBR[c * 4 + k];
-        const dx = DIR[n * 3] - DIR[c * 3];
-        const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
-        const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
-        const e = dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2];
-        const nn = dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2];
-        const along = wu * e + wv * nn;
-        const slope = h[c] - h[n];
-        if (along < 0 && slope < 0) lee = Math.max(lee, -slope * (-along));
-      }
+      const lee = leeF[c] || 0;
       if (lee > 0.01) _m[c] *= 1 / (1 + lee * 6);
     }
   }
@@ -529,24 +590,24 @@ export function hydroTick(W) {
     updateIsoline(W);
   }
 
-  // Water mass bookkeeping (normalized units)
-  let mass = gases.H2O * 50;
-  for (let c = 0; c < NC; c++) {
-    mass += moist[c] * AREA[c] * 0.1;
-    mass += W.iceLand[c] * AREA[c] * 0.35;
-    mass += W.iceSea[c] * AREA[c] * 0.08;
-    if (h[c] < W.seaLevel) mass += (W.seaLevel - h[c]) * AREA[c] * 0.5;
+  if (((W._tickIndex || 0) & 7) === 0 || W._waterMass0 == null) {
+    let mass = gases.H2O * 50;
+    for (let c = 0; c < NC; c++) {
+      mass += moist[c] * AREA[c] * 0.1;
+      mass += W.iceLand[c] * AREA[c] * 0.35;
+      mass += W.iceSea[c] * AREA[c] * 0.08;
+      if (h[c] < W.seaLevel) mass += (W.seaLevel - h[c]) * AREA[c] * 0.5;
+    }
+    if (W._waterMass0 == null) W._waterMass0 = mass;
+    const drift = mass - W._waterMass0;
+    if (Math.abs(drift) > 0.5) {
+      const h2oCap = (rule.earthLike && !rule.deepTime) ? 0.025 : 0.25;
+      gases.H2O = clamp(gases.H2O - drift * 0.002, 0, h2oCap);
+      mass = W._waterMass0 + drift * 0.85;
+    }
+    W.waterMass = mass;
+    W.waterDrift = Math.abs(mass - W._waterMass0) / (W._waterMass0 + 1e-6);
   }
-  if (W._waterMass0 == null) W._waterMass0 = mass;
-  // Soft conservation: bleed excess into/out of vapour rather than inventing water
-  const drift = mass - W._waterMass0;
-  if (Math.abs(drift) > 0.5) {
-    const h2oCap = (rule.earthLike && !rule.deepTime) ? 0.025 : 0.25;
-    gases.H2O = clamp(gases.H2O - drift * 0.002, 0, h2oCap);
-    mass = W._waterMass0 + drift * 0.85;
-  }
-  W.waterMass = mass;
-  W.waterDrift = Math.abs(mass - W._waterMass0) / (W._waterMass0 + 1e-6);
 }
 
 /** Tsunami wavefront from a quake/impact energy spike. */

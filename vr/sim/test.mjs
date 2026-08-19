@@ -116,8 +116,9 @@ console.log('mode / surface');
 
 console.log('fluids / tangent frame');
 {
-  const { EAST, NORTH, DIR, NC, NBR, AREA, setResolution } = await import('../sphere.js');
-  setResolution(32);
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { EAST, NORTH, DIR, NC, NBR, NBR_E, NBR_N, AREA } = sph;
   let ortho = true, unit = true;
   for (let c = 0; c < NC; c += 17) {
     const e = EAST[c * 3] * EAST[c * 3] + EAST[c * 3 + 1] * EAST[c * 3 + 1] + EAST[c * 3 + 2] * EAST[c * 3 + 2];
@@ -129,6 +130,7 @@ console.log('fluids / tangent frame');
   }
   ok('east/north unit length', unit);
   ok('east ⊥ north ⊥ up', ortho);
+  ok('nbr east/north table matches NC', NBR_E.length === NC * 4 && NBR_N.length === NC * 4);
 
   const { advect } = await import('./atmo.js');
   const field = new Float32Array(NC);
@@ -152,8 +154,23 @@ console.log('fluids / tangent frame');
   ok('neighbourMean of 1 is 1', Math.abs(neighbourMean(ones, mid) - 1) < 1e-6);
   const { W } = await import('../world.js');
   ok('ocean velocity field exists', !!(W.oceanU && W.oceanV && W.oceanU.length === NC));
+  const { stepShallowWater } = await import('./swe.js');
+  const eta = new Float32Array(NC).fill(0.5);
+  const su = new Float32Array(NC);
+  const sv = new Float32Array(NC);
+  let bump = 0;
+  for (let c = 0; c < NC; c++) {
+    if (DIR[c * 3 + 1] > 0.35 && DIR[c * 3 + 1] < 0.55) { bump = c; break; }
+  }
+  eta[bump] = 0.95;
+  stepShallowWater({ eta, u: su, v: sv, fScale: 1, g: 2.1, H: 0.38, dt: 0.2, relax: 0, damp: 0.05 });
+  let sweSpd = 0;
+  for (let c = 0; c < NC; c++) sweSpd = Math.max(sweSpd, Math.hypot(su[c], sv[c]));
+  ok('SWE bump makes wind', sweSpd > 1e-5, `${sweSpd}`);
+  ok('SWE height stays finite', Number.isFinite(eta[bump]) && eta[bump] > 0.2);
   ok('glossary has Ekman', !!(await import('./glossary.js')).GLOSSARY.Ekman);
   ok('glossary has ENSO', !!(await import('./glossary.js')).GLOSSARY.ENSO);
+  ok('glossary has vorticity', !!(await import('./glossary.js')).GLOSSARY.vorticity);
   const [ge, gn] = gradEN(ones, 0);
   ok('grad of constant ~0', Math.abs(ge) + Math.abs(gn) < 0.05);
   const { ensoLabel } = await import('./ocean.js');
@@ -204,7 +221,7 @@ console.log('cube-sphere seams / surface');
   ok('heavy ice is ice', icy[0].id === 'ice');
 
   const { updateContinentality } = await import('./hydro.js');
-  const { W: Wcont, generate, RULESETS } = await import('../world.js');
+  const { W: Wcont, generate, simTick, RULESETS } = await import('../world.js');
   generate(11, RULESETS.find((r) => r.id === 'terra') || RULESETS[0]);
   updateContinentality(Wcont);
   let oceanZero = true, landFar = false;
@@ -215,6 +232,8 @@ console.log('cube-sphere seams / surface');
   ok('continentality is 0 on ocean', oceanZero);
   ok('continentality rises inland', landFar);
   ok('vapour is a field', !!(Wcont.vapour && Wcont.vapour.length === NC));
+  ok('fog is a field', !!(Wcont.fog && Wcont.fog.length === NC));
+  ok('moisture river is a field', !!(Wcont.ariver && Wcont.ariver.length === NC));
 
   const { updateCoastDistance } = await import('./hydro.js');
   updateCoastDistance(Wcont);
@@ -319,6 +338,16 @@ console.log('cube-sphere seams / surface');
   geostrophicWind(Wcont);
   ok('locked worlds skip zonal ITCZ inflow', Wcont._windRegime === 'substellar', Wcont._windRegime);
   generate(11, RULESETS.find((r) => r.id === 'terra') || RULESETS[0]);
+  for (let i = 0; i < 24; i++) simTick(true);
+  ok('water budget stays bounded', (Wcont.waterDrift || 0) < 0.4, `${Wcont.waterDrift}`);
+  const moonRule = RULESETS.find((r) => r.id === 'selene') || RULESETS.find((r) => r.airless);
+  if (moonRule) {
+    generate(3, moonRule);
+    let psum = 0;
+    for (let c = 0; c < NC; c++) psum += Wcont.precip[c] || 0;
+    ok('airless world has no rain', psum < 1e-3, `${psum}`);
+  }
+  generate(11, RULESETS.find((r) => r.id === 'terra') || RULESETS[0]);
   ok('height seam mean ≤ interior', pic.heightSeam.meanEdge <= pic.heightSeam.meanInterior * 1.5 + 1e-6,
     `${pic.heightSeam.meanEdge.toFixed(4)} vs ${pic.heightSeam.meanInterior.toFixed(4)}`);
   ok('ocean ramp is not fully saturated', pic.ramp.frac < 0.62,
@@ -352,8 +381,20 @@ console.log('cube-sphere seams / surface');
     if (u > uMax) uMax = u;
   }
   ok('pressure field exists', !!(Wcont.press && Wcont.press.length === NC));
+  ok('vorticity field exists', !!(Wcont.vort && Wcont.vort.length === NC));
+  let vortAbs = 0;
+  for (let c = 0; c < NC; c++) vortAbs += Math.abs(Wcont.vort[c] || 0);
+  ok('SWE has spin', vortAbs > 1, `${vortAbs.toFixed(2)}`);
   ok('tropical wind varies in longitude', tropN > 20 && uMax - uMin > 0.02,
     `Δu ${(uMax - uMin).toFixed(3)} n=${tropN}`);
+  let seaSpd = 0, seaN = 0;
+  for (let c = 0; c < NC; c++) {
+    if (Wcont.h[c] >= Wcont.seaLevel) continue;
+    seaN++;
+    seaSpd += Math.hypot(Wcont.oceanU[c] || 0, Wcont.oceanV[c] || 0);
+  }
+  ok('ocean SWE has motion', seaN > 100 && seaSpd / seaN > 0.002,
+    `mean ${((seaSpd / Math.max(1, seaN))).toFixed(4)} n=${seaN}`);
 }
 
 console.log('evolve / lifeclass');
@@ -791,6 +832,8 @@ console.log('reservoir / cover');
   ok('Pluto aphelion is thinner than perihelion', apo < peri - 0.04, `apo=${apo} peri=${peri}`);
 
   ok('cover overlay is in the picker', overlayById('cover')?.id === 'cover');
+  ok('fog overlay is in the picker', overlayById('fog')?.id === 'fog');
+  ok('vort overlay is in the picker', overlayById('vort')?.id === 'vort');
 }
 
 console.log('clathrate / ice VI / cover pins');

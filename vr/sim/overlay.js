@@ -34,7 +34,10 @@ export const OVERLAYS = [
   { id: 'temp', label: 'Temperature', icon: 'solar', tip: 'Hot → cold. Red is warm; blue is cold. Not the same as insolation.' },
   { id: 'press', label: 'Pressure', icon: 'weather', tip: 'Surface pressure field that drives the synoptic chart and storm seeds.' },
   { id: 'vapour', label: 'Vapour', icon: 'weather', tip: 'Atmospheric water. Wet windward coasts and dry interiors — continentality made visible.' },
+  { id: 'fog', label: 'Fog', icon: 'weather', tip: 'Surface fog: high humidity, cool still air, usually near the coast.' },
+  { id: 'ariver', label: 'Moisture river', icon: 'weather', tip: 'Poleward vapour filaments. Most of the moisture transport in a few corridors.' },
   { id: 'wind', label: 'Wind', icon: 'spin', tip: 'Surface wind speed and direction. Fast rotators show more, narrower bands.' },
+  { id: 'vort', label: 'Vorticity', icon: 'spin', tip: 'Relative vorticity of the air. Cyclones are patches; the jet is a ribbon. Sign follows the hemisphere.' },
   { id: 'front', label: 'Fronts', icon: 'weather', tip: 'Temperature gradient. Bright lines are weather-bearing fronts, not biome contours.' },
   { id: 'npp', label: 'NPP', icon: 'seedGuild', tip: 'Net primary productivity — how hard the biosphere is growing on that cell.' },
   { id: 'guild', label: 'Guild', icon: 'o2', tip: 'Dominant metabolism colour (cyano, methanogen, aerobe…). Same palette as Seed guild.' },
@@ -69,7 +72,7 @@ export const OVERLAYS = [
 ];
 
 const OVERLAY_ORDER = [
-  'none', 'temp', 'press', 'vapour', 'wind', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
+  'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
   'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto',
   'faces', 'zonal', 'ecotone',
@@ -118,12 +121,27 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 18 + v * 50;
       g = 48 + v * 140;
       b = 90 + v * 150;
+    } else if (mode === 'fog') {
+      const f = W.fog?.[c] || 0;
+      r = 70 + f * 140;
+      g = 80 + f * 140;
+      b = 90 + f * 130;
+    } else if (mode === 'ariver') {
+      const a = W.ariver?.[c] || 0;
+      r = 20 + a * 40;
+      g = 70 + a * 150;
+      b = 140 + a * 100;
     } else if (mode === 'wind') {
       const u = W.windU?.[c] || 0, v = W.windV?.[c] || 0;
       const spd = Math.min(1, Math.hypot(u, v));
       r = 30 + spd * 40 + Math.max(0, u) * 80;
       g = 50 + spd * 100;
       b = 80 + spd * 60 + Math.max(0, -u) * 90;
+    } else if (mode === 'vort') {
+      const z = W.vort?.[c] || 0;
+      r = 40 + Math.max(0, z) * 200;
+      g = 30 + (1 - Math.abs(z)) * 50;
+      b = 50 + Math.max(0, -z) * 200;
     } else if (mode === 'front') {
       const f = W.front?.[c] || 0;
       r = 30 + f * 200;

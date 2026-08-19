@@ -154,7 +154,7 @@ export function ecologyTick(W, chronLog) {
     const isSea = W.h[c] < W.seaLevel;
     let mem;
     if (whittaker) {
-      mem = biomeMembership(W.temp[c], W.moist[c], W.ice[c], isSea, {
+      mem = biomeMembership(W.temp[c], clamp((W.moist[c] || 0) * 0.82 + Math.min(1, (W.precip[c] || 0) * 6) * 0.18, 0, 1), W.ice[c], isSea, {
         reef: W.reef[c],
         upwelling: W.upwell?.[c] || W.upwelling?.[c] || 0,
         depth: isSea ? W.seaLevel - W.h[c] : 0,

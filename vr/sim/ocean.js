@@ -1,10 +1,11 @@
-/** Circulating ocean: wind stress, Ekman, gyres, salt, overturning, ENSO, waves.
+/** Circulating ocean: wind-stress SWE, salt, overturning, ENSO, waves.
  *  Currents backlog: oceanvel, ekman, gyre, wbc, salt, moc, enso, mixedlayer, wavefield. */
 
 import { NC, DIR, NBR, AREA } from '../sphere.js';
 import { clamp } from '../math.js';
 import { advectField } from './atmo.js';
-import { westNeighbour, eastNeighbour, curlTau, upwindNeighbour, divUV } from './vecop.js';
+import { upwindNeighbour } from './vecop.js';
+import { stepShallowWater, geostrophyOf, ensureMask, divEN } from './swe.js';
 
 export function initOcean(W) {
   W.oceanSurf = new Float32Array(NC);
@@ -26,6 +27,10 @@ export function initOcean(W) {
   W._thermoclineTilt = 0;
   W._walkerSST = 0;
   W._ensoPhase = 'neutral';
+  W._ssh = null;
+  W._osweBoot = false;
+  W._fluidMask = null;
+  W._fluidMaskSea = null;
   for (let c = 0; c < NC; c++) {
     if (W.h[c] < W.seaLevel) {
       W.oceanSurf[c] = W.temp[c];
@@ -90,6 +95,18 @@ export function ensoLabel(W) {
   return 'neutral';
 }
 
+function refreshFetch(W) {
+  const tick = W._tickIndex | 0;
+  if (W._fetch?.length === NC && (tick - (W._fetchTick | 0)) < 8 && tick >= (W._fetchTick | 0)) return;
+  if (!W._fetch || W._fetch.length !== NC) W._fetch = new Uint8Array(NC);
+  W._fetchTick = tick;
+  const sea = W.seaLevel;
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] >= sea) { W._fetch[c] = 0; continue; }
+    W._fetch[c] = fetchLength(W, c, W.windU?.[c] || 0, W.windV?.[c] || 0);
+  }
+}
+
 function fetchLength(W, c, u, v) {
   const sea = W.seaLevel;
   let cell = c, n = 0;
@@ -115,10 +132,13 @@ export function ensoEastness(W, c) {
 
 /** Largest tropical ocean, as a connected component. East/west of its centroid is the ENSO dipole. */
 export function noteTropicalBasin(W, sea = W.seaLevel) {
-  const tick = W.year ?? 0;
-  if (W._ensoBasinTick === tick && W._ensoBasinN != null
-      && Math.abs((W._ensoBasinSea ?? sea) - sea) < 0.01) return;
-  W._ensoBasinTick = tick;
+  const gen = W._tickIndex | 0;
+  if (W._ensoBasinN != null
+      && Math.abs((W._ensoBasinSea ?? sea) - sea) < 0.01
+      && (gen - (W._ensoBasinTick | 0)) < 32 && gen >= (W._ensoBasinTick | 0)) {
+    return;
+  }
+  W._ensoBasinTick = gen;
   W._ensoBasinSea = sea;
   if (W._ensoSeen?.length !== NC) {
     W._ensoSeen = new Uint8Array(NC);
@@ -216,7 +236,7 @@ function mocStreamfunction(W, sea) {
   W._mocSv = maxPsi * 26;
 }
 
-/** Wind-stress gyre + Ekman pumping + conserved salt + diagnosed overturning. */
+/** Wind-stress shallow water + conserved salt + diagnosed overturning. */
 export function oceanTick(W) {
   if (!W.oceanSurf) initOcean(W);
   if (!W.oceanU || W.oceanU.length !== NC) {
@@ -235,6 +255,7 @@ export function oceanTick(W) {
   const scratch = W._adv;
   const enso = W._ensoIndex || 0;
   const tilt = W._thermoclineTilt || 0;
+  refreshFetch(W);
 
   for (let c = 0; c < NC; c++) {
     if (W.h[c] >= sea) {
@@ -247,9 +268,9 @@ export function oceanTick(W) {
     const u = W.windU?.[c] || 0;
     const v = W.windV?.[c] || 0;
     const spd = Math.hypot(u, v);
-    tauE[c] = 0.0013 * spd * u * 40;
-    tauN[c] = 0.0013 * spd * v * 40;
-    const fetch = fetchLength(W, c, u, v);
+    tauE[c] = 0.0013 * spd * u * 40 * 3.6;
+    tauN[c] = 0.0013 * spd * v * 40 * 3.6;
+    const fetch = W._fetch[c];
     const ice = W.iceSea?.[c] || 0;
     const hs = 0.55 * spd * spd * Math.tanh(fetch / 5) * (1 - ice);
     W.waveHt[c] = clamp((W.waveHt[c] || 0) * 0.65 + hs * 0.35, 0, 1);
@@ -258,53 +279,59 @@ export function oceanTick(W) {
   let sinkNH = 0, nNH = 0, sinkSH = 0, nSH = 0;
   let freshPulse = 0;
 
+  if (!W._ssh || W._ssh.length !== NC) W._ssh = new Float32Array(NC);
+  if (!W._oDrag || W._oDrag.length !== NC) W._oDrag = new Float32Array(NC);
+  if (!W._oEq || W._oEq.length !== NC) W._oEq = new Float32Array(NC);
+  const mask = ensureMask(W, sea);
+  const ssh = W._ssh;
+  const oDrag = W._oDrag;
+  const oEq = W._oEq;
   for (let c = 0; c < NC; c++) {
-    if (W.h[c] >= sea) continue;
+    if (!mask[c]) {
+      oDrag[c] = 1; oEq[c] = 0.5;
+      continue;
+    }
+    oEq[c] = clamp(0.5 + (W.oceanSurf[c] - 0.5) * 0.22, 0.12, 0.9);
+    oDrag[c] = 0.055 + (W.iceSea?.[c] || 0) * 0.14;
+  }
+
+  if (!W._osweBoot) {
+    for (let c = 0; c < NC; c++) {
+      if (!mask[c]) { W.oceanU[c] = 0; W.oceanV[c] = 0; ssh[c] = 0.5; continue; }
+      ssh[c] = oEq[c];
+      const [u0, v0] = geostrophyOf(ssh, c, fScale);
+      W.oceanU[c] = clamp(u0 * 0.55 + tauE[c] * 12, -1.8, 1.8);
+      W.oceanV[c] = clamp(v0 * 0.55 + tauN[c] * 12, -1.8, 1.8);
+    }
+    W._osweBoot = true;
+  }
+
+  for (let s = 0; s < 2; s++) {
+    stepShallowWater({
+      eta: ssh, u: W.oceanU, v: W.oceanV,
+      fScale, g: 0.72, H: 0.48, dt: 0.2,
+      drag: oDrag, forceE: tauE, forceN: tauN,
+      etaEq: oEq, relax: 0.055, mask, umax: 1.8, damp: 0.06,
+      advect: 0.62, etamin: 0.08, etamax: 1.2,
+    });
+  }
+
+  for (let c = 0; c < NC; c++) {
+    if (!mask[c]) {
+      W.oceanU[c] = 0; W.oceanV[c] = 0; W.upwell[c] = 0;
+      continue;
+    }
     const lat = DIR[c * 3 + 1];
     const east = ensoEastness(W, c);
-    const f = lat * fScale;
-    const fSafe = f + 0.1 * Math.sign(f || 1);
-    const ekE = tauN[c] / fSafe;
-    const ekN = -tauE[c] / fSafe;
-
-    const curl = curlTau(tauE, tauN, c);
-    const beta = fScale * Math.max(0.12, Math.sqrt(Math.max(0, 1 - lat * lat)));
-    const vSver = clamp(curl * 2.2 / beta, -1.2, 1.2);
-
-    const west = westNeighbour(c);
-    const onWest = W.h[west] >= sea;
-    let uVel = ekE * 0.55;
-    let vVel = ekN * 0.55 + (onWest ? -vSver * 2.4 : vSver * 0.28);
-    if (onWest) uVel *= 0.35;
-
-    if (Math.abs(lat) > 0.55) {
-      let land = 0;
-      for (let k = 0; k < 4; k++) if (W.h[NBR[c * 4 + k]] >= sea) land++;
-      if (land === 0) uVel += (W.windU?.[c] || 0) * 0.45;
-    }
-
-    // Equatorial currents: westward SEC, eastward undercurrent leaking up
-    if (Math.abs(lat) < 0.14) {
-      uVel = -0.42 * fScale * 0.35 + ekE * 0.2 + enso * 0.4;
-      if (Math.abs(lat) < 0.05) uVel += 0.22 * (1 - Math.abs(enso));
-    }
-
-    if (onWest) uVel = Math.max(0, uVel);
-    const eastNb = eastNeighbour(c);
-    if (W.h[eastNb] >= sea) uVel = Math.min(0, uVel);
-
-    W.oceanU[c] = clamp(uVel, -1.6, 1.6);
-    W.oceanV[c] = clamp(vVel, -1.6, 1.6);
-
-    const div = divUV(W.oceanU, W.oceanV, c);
+    const div = divEN(W.oceanU, W.oceanV, c, mask);
     let up = -div * 1.8 + (Math.abs(lat) < 0.12 ? 0.12 : 0);
     if (Math.abs(lat) < 0.22 && east > 0.12) up *= 1 - clamp(enso * 0.7, -0.4, 0.85);
     W.upwell[c] = clamp(up, 0, 1);
   }
 
-  advectField(W.oceanSurf, W.oceanU, W.oceanV, scratch, 0.14);
-  advectField(W.oceanSalt, W.oceanU, W.oceanV, scratch, 0.12);
-  if (W.nutrientP) advectField(W.nutrientP, W.oceanU, W.oceanV, scratch, 0.1);
+  advectField(W.oceanSurf, W.oceanU, W.oceanV, scratch, 0.2);
+  advectField(W.oceanSalt, W.oceanU, W.oceanV, scratch, 0.16);
+  if (W.nutrientP) advectField(W.nutrientP, W.oceanU, W.oceanV, scratch, 0.13);
 
   for (let c = 0; c < NC; c++) {
     if (W.h[c] >= sea) continue;
@@ -358,7 +385,7 @@ export function oceanTick(W) {
     } else if (lat > 0.45) nNH++;
     else if (lat < -0.45) nSH++;
 
-    W.temp[c] += (W.oceanSurf[c] - W.temp[c]) * 0.024 * (0.4 + W.conveyor) * clamp(mixD, 0.4, 1.1);
+    W.temp[c] += (W.oceanSurf[c] - W.temp[c]) * 0.032 * (0.4 + W.conveyor) * clamp(mixD, 0.4, 1.1);
 
     if (W.nutrientP && W.upwell[c] > 0.25) {
       W.nutrientP[c] = Math.min(1, (W.nutrientP[c] || 0) + W.upwell[c] * 0.018);

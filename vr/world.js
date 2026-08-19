@@ -90,6 +90,8 @@ export function reallocateWorldFields(target = W) {
   // Prognostic ocean/isostasy live outside the buf() list — leftover values
   // from a previous generate() make the next golden run diverge.
   target.oceanSurf = target.oceanDeep = target.oceanSalt = target.upwell = null;
+  target.upwelling = null;
+  target.vort = null;
   target._tauE = target._tauN = null;
   target._iso0 = null;
   target._mantle = null;
@@ -100,6 +102,18 @@ export function reallocateWorldFields(target = W) {
   target._walkerSST = 0;
   target._ensoPhase = 'neutral';
   target._ensoEvent = null;
+  target._ensoBasinN = null;
+  target._ensoBasinLon = null;
+  target._ensoBasinSea = null;
+  target._ensoBasinTick = -1;
+  target._fetchTick = -1;
+  target._fetch = null;
+  target._ssh = null;
+  target._fluidMask = null;
+  target._fluidMaskSea = null;
+  target._osweBoot = false;
+  target._sweBoot = false;
+  target._orderReady = false;
   target._drainTick = null;
   target._hydroDirty = true;
   target._vapourInit = false;
@@ -254,7 +268,6 @@ export function generate(seed, ruleIn) {
   W._springEvent = false;
   W._ensoSeen = null;
   W._ensoQ = null;
-  W._ensoBasinTick = -1;
   W.morphFirsts = null;
   W.morphospaceOccupied = 0;
   W.morphChanged = 0;
@@ -538,6 +551,7 @@ export function generate(seed, ruleIn) {
   primeDrainage(W);
   if (targetLand != null) fitSeaLevel(W, targetLand);
   initOcean(W);
+  if (!rule.airless) oceanTick(W);
   initTides(W);
   initStorms(W);
   if (rule.iceShell) applyIceShell(W, rule);
@@ -615,14 +629,12 @@ export function simTick(silent = false) {
   if (!rule.daisyworld) interiorTick(W, log);
   if (!rule.daisyworld && !rule.airless) mantleTick(W);
 
-  // Climate fields: GPGPU when GL float FBOs exist; else CPU atmo + wind
+  // CPU shallow-water wind always — hydro, storms and overlays read windU/V / converg / front.
+  // GPGPU only replaces the thermal relaxation loop.
+  geostrophicWind(W);
   const gpu = gpgpuClimateTick(W);
-  if (!gpu) {
-    geostrophicWind(W);
-    atmoTick(W, _sunDir);
-  } else {
-    atmoMetaTick(W);
-  }
+  if (!gpu) atmoTick(W, _sunDir);
+  else atmoMetaTick(W);
   hydroTick(W);
   tsunamiTick(W);
   if (!rule.airless) {

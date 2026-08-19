@@ -1,17 +1,16 @@
 /** Shared tangent-frame operators. Currents backlog `vecop`. */
 
-import { NBR, DIR, EAST, NORTH, AREA } from '../sphere.js';
+import { NBR, NBR_E, NBR_N, AREA } from '../sphere.js';
+
+/** Tangent neighbour. Reuses one slot — copy fields out, do not hold the object. */
+const _en = { nb: 0, e: 0, n: 0 };
 
 export function neighbourEN(c, k) {
-  const nb = NBR[c * 4 + k];
-  const dx = DIR[nb * 3] - DIR[c * 3];
-  const dy = DIR[nb * 3 + 1] - DIR[c * 3 + 1];
-  const dz = DIR[nb * 3 + 2] - DIR[c * 3 + 2];
-  return {
-    nb,
-    e: dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2],
-    n: dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2],
-  };
+  const i = c * 4 + k;
+  _en.nb = NBR[i];
+  _en.e = NBR_E[i];
+  _en.n = NBR_N[i];
+  return _en;
 }
 
 /** Geographic gradient of a scalar → (east, north). Area-weighted. */

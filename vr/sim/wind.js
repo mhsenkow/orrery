@@ -1,10 +1,25 @@
-/** Prognostic wind: diagnosed geostrophy + memory + Walker + monsoon.
- *  Currents backlog: progatm, walker, jet, monsoon. */
+/** Prognostic wind: rotating shallow water + heating target.
+ *  Currents backlog: progatm. Height relaxes toward a thermal η_eq;
+ *  momentum is stepped — geostrophy emerges, the field has memory. */
 
-import { NC, DIR, AREA } from '../sphere.js';
+import { NC, DIR, AREA, NBR } from '../sphere.js';
 import { clamp } from '../math.js';
-import { gradEN, divUV, neighbourEN } from './vecop.js';
 import { ensoEastness } from './ocean.js';
+import { stepShallowWater, geostrophyOf, divEN, curlEN } from './swe.js';
+
+let _etaEq = null;
+let _drag = null;
+let _fE = null;
+let _fN = null;
+
+function bufs() {
+  if (!_etaEq || _etaEq.length !== NC) {
+    _etaEq = new Float32Array(NC);
+    _drag = new Float32Array(NC);
+    _fE = new Float32Array(NC);
+    _fN = new Float32Array(NC);
+  }
+}
 
 /** Number of meridional cells from rotation (Rhines / Held–Hou sketch). */
 export function circulationCellCount(rotationPeriod = 1) {
@@ -16,11 +31,12 @@ export function circulationCellCount(rotationPeriod = 1) {
   return 7;
 }
 
-/** Overwrite windU/windV from pressure + Coriolis, then blend with last tick. */
+/** Step windU/windV as shallow water. `press` is the free-surface height. */
 export function geostrophicWind(W) {
   if (!W.windU) return;
   if (!W.press || W.press.length !== NC) W.press = new Float32Array(NC);
   if (!W.converg || W.converg.length !== NC) W.converg = new Float32Array(NC);
+  bufs();
 
   const rot = W.rotationPeriod || 1;
   const fScale = clamp(1 / Math.max(0.2, Math.abs(rot)), 0.15, 4);
@@ -42,21 +58,12 @@ export function geostrophicWind(W) {
   W._itczLat = itczLat;
 
   const enso = W._ensoIndex || 0;
-  const walkerSST = W._walkerSST || 0; // west minus east tropical SST
+  const walkerSST = W._walkerSST || 0;
 
   let tropLandT = 0, tropSeaT = 0, nLand = 0, nSea = 0;
-  let jetU = 0, jetLat = 0.45, jetN = 0;
 
   for (let c = 0; c < NC; c++) {
     const isLand = W.h[c] >= W.seaLevel;
-    const landHeat = isLand ? (W.temp[c] - 0.5) * 0.12 : 0;
-    const diag = (1 - W.temp[c]) * 0.55
-      + Math.max(0, W.h[c] - W.seaLevel) * 0.22
-      + (W.ice[c] || 0) * 0.18
-      - landHeat;
-    const prevC = W.converg[c] || 0;
-    W.press[c] = clamp((W.press[c] || diag) * 0.7 + diag * 0.3 - prevC * 0.05, 0, 1.4);
-
     if ((W.temp[c] || 0) > 0.32) {
       if (isLand) { tropLandT += W.temp[c]; nLand++; }
       else { tropSeaT += W.temp[c]; nSea++; }
@@ -70,74 +77,82 @@ export function geostrophicWind(W) {
 
   if (!W.front || W.front.length !== NC) W.front = new Float32Array(NC);
 
+  const etaEq = _etaEq;
+  const drag = _drag;
+  const fE = _fE;
+  const fN = _fN;
+  fE.fill(0); fN.fill(0);
+
+  for (let c = 0; c < NC; c++) {
+    const isLand = W.h[c] >= W.seaLevel;
+    const lat = DIR[c * 3 + 1];
+    const landHeat = isLand ? (W.temp[c] - 0.5) * 0.12 : 0;
+    let eq = (1 - W.temp[c]) * 0.55
+      + Math.max(0, W.h[c] - W.seaLevel) * 0.22
+      + (W.ice[c] || 0) * 0.18
+      - landHeat;
+
+    if (!locked) {
+      const dItcz = Math.abs(lat - itczLat);
+      eq -= Math.max(0, 0.22 - dItcz) * 0.48;
+      if (Math.abs(lat) < 0.28) {
+        eq -= walkerSST * ensoEastness(W, c) * 0.1;
+        eq += enso * ensoEastness(W, c) * 0.06;
+      }
+      if (isLand && W.temp[c] > 0.36) {
+        const summer = Math.sin(season) * lat;
+        if (summer > 0.05) eq -= monsoonPush * 0.08;
+      }
+    } else if (W._sunDir) {
+      const day = DIR[c * 3] * W._sunDir[0] + DIR[c * 3 + 1] * W._sunDir[1]
+        + DIR[c * 3 + 2] * W._sunDir[2];
+      eq -= day * 0.12;
+    }
+
+    etaEq[c] = clamp(eq, 0, 1.4);
+    const elev = Math.max(0, W.h[c] - W.seaLevel);
+    drag[c] = 0.045 + (isLand ? 0.09 : 0) + elev * 0.28 + ((W.ice[c] || 0) > 0.55 ? 0.06 : 0);
+
+    if ((W.ice[c] || 0) > 0.55 && elev > 0.05) {
+      fN[c] = -Math.sign(lat || 1) * 0.12;
+    }
+    if (elev > 0.04) {
+      fN[c] += -Math.sign(lat || 1) * elev * 0.08;
+    }
+  }
+
+  if (!W._sweBoot) {
+    for (let c = 0; c < NC; c++) {
+      W.press[c] = etaEq[c];
+      const [u0, v0] = geostrophyOf(etaEq, c, fScale);
+      W.windU[c] = clamp(u0, -1.85, 1.85);
+      W.windV[c] = clamp(v0, -1.85, 1.85);
+    }
+    W._sweBoot = true;
+  }
+
+  const steps = 2;
+  for (let s = 0; s < steps; s++) {
+    stepShallowWater({
+      eta: W.press, u: W.windU, v: W.windV,
+      fScale, g: 2.35, H: 0.4, dt: 0.2,
+      drag, forceE: fE, forceN: fN,
+      etaEq, relax: 0.15, umax: 1.85, damp: 0.07, advect: 0.55,
+    });
+  }
+
   let spdSum = 0, fAbs = 0, tropT = 0, tropA = 0, poleT = 0, poleA = 0, flux = 0;
+  let jetU = 0, jetLat = 0, jetN = 0;
 
   for (let c = 0; c < NC; c++) {
     const lat = DIR[c * 3 + 1];
     const f = lat * fScale;
-    const [dpe, dpn] = gradEN(W.press, c);
-    const [dte, dtn] = gradEN(W.temp, c);
     let tJump = 0;
     for (let k = 0; k < 4; k++) {
-      const nb = neighbourEN(c, k).nb;
+      const nb = NBR[c * 4 + k];
       tJump = Math.max(tJump, Math.abs((W.temp[nb] || 0) - (W.temp[c] || 0)));
     }
-
-    const cor = 0.35 + Math.abs(f);
-    let u = -dpn * cor;
-    let v = dpe * cor;
-
-    // Thermal-wind meander: the jet follows the temperature gradient, not a parallel.
-    v += dte * 0.42;
-    u += -dtn * 0.18;
-
-    const elev = Math.max(0, W.h[c] - W.seaLevel);
-    if (elev > 0.04) {
-      u *= 1 / (1 + elev * 1.8);
-      v += -Math.sign(lat || 1) * elev * Math.abs(u) * 0.55;
-    }
-
-    const abs = Math.abs(lat - itczLat);
-
-    if (!locked) {
-      const toItcz = itczLat - lat;
-      v += clamp(toItcz * 0.55, -0.45, 0.45) * (0.5 + 0.5 * (1 - Math.abs(lat)));
-      if (Math.abs(lat) < 0.28) {
-        u += -walkerSST * 0.45;
-        u += enso * 0.32;
-        v += walkerSST * ensoEastness(W, c) * 0.12;
-      }
-      if (W.h[c] >= W.seaLevel && W.temp[c] > 0.36) {
-        const summer = Math.sin(season) * lat;
-        if (summer > 0.05) {
-          v += -Math.sign(lat || 1) * monsoonPush * 0.35;
-          u += monsoonPush * 0.12;
-        }
-      }
-      if (abs > 0.28 && abs < 0.72) u += enso * 0.1;
-    }
-
-    if (W.h[c] > W.seaLevel + 0.08) {
-      u *= 0.72; v *= 0.72;
-    }
-    if ((W.ice[c] || 0) > 0.55 && W.h[c] > W.seaLevel + 0.05) {
-      v += -Math.sign(lat || 1) * 0.15;
-    }
-
-    if (locked && W._sunDir) {
-      const day = DIR[c * 3] * W._sunDir[0] + DIR[c * 3 + 1] * W._sunDir[1]
-        + DIR[c * 3 + 2] * W._sunDir[2];
-      u += -day * 0.28;
-      v += -day * lat * 0.12;
-    }
-
-    u = (W.windU[c] || 0) * 0.76 + u * 0.24;
-    v = (W.windV[c] || 0) * 0.76 + v * 0.24;
-    W.windU[c] = clamp(u, -1.6, 1.6);
-    W.windV[c] = clamp(v, -1.6, 1.6);
-
     W.front[c] = clamp(tJump * 14, 0, 1);
-
     const spd = Math.hypot(W.windU[c], W.windV[c]);
     spdSum += spd;
     fAbs += Math.abs(f);
@@ -147,7 +162,7 @@ export function geostrophicWind(W) {
     if (Math.abs(lat) > 0.28 && Math.abs(lat) < 0.42) {
       flux += W.windV[c] * W.temp[c] * a * Math.sign(lat || 1);
     }
-
+    const abs = Math.abs(lat - itczLat);
     if (!locked && abs > 0.28 && abs < 0.72) {
       jetU += Math.abs(W.windU[c]);
       jetLat += lat * Math.abs(W.windU[c]);
@@ -155,8 +170,11 @@ export function geostrophicWind(W) {
     }
   }
 
+  if (!W.vort || W.vort.length !== NC) W.vort = new Float32Array(NC);
+
   for (let c = 0; c < NC; c++) {
-    W.converg[c] = clamp(-divUV(W.windU, W.windV, c) * 0.15, -1, 1);
+    W.converg[c] = clamp(-divEN(W.windU, W.windV, c) * 0.18, -1, 1);
+    W.vort[c] = clamp(curlEN(W.windU, W.windV, c) * 6, -1, 1);
   }
 
   const U = spdSum / NC;

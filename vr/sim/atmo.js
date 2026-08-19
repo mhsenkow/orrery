@@ -73,42 +73,13 @@ export function insolation(W, c, sunDir) {
   return W.solar * (W._solarMod || 1) * geometricInsolation(W, c, sunDir) * extra * intern * tidal * beat;
 }
 
-/** Three-cell Hadley/Ferrel/polar wind field + Coriolis from rotation. */
-export function computeWinds(W) {
-  const { windU, windV, temp, rotationPeriod, h, seaLevel } = W;
-  const cor = 1 / Math.max(0.15, Math.abs(rotationPeriod) || 1);
-  for (let c = 0; c < NC; c++) {
-    const lat = DIR[c * 3 + 1]; // -1..1 ~ sin(lat)
-    const abs = Math.abs(lat);
-    // Meridional cells: Hadley 0–0.5, Ferrel 0.5–0.75, Polar 0.75–1
-    let v = 0; // toward pole positive in N
-    if (abs < 0.45) v = -Math.sign(lat || 1) * 0.6; // equatorward surface return? Hadley surface = equatorward... actually Hadley surface flow is equatorward
-    else if (abs < 0.75) v = Math.sign(lat || 1) * 0.35;
-    else v = -Math.sign(lat || 1) * 0.25;
-
-    // Zonal: trades easterly in tropics, westerlies midlat
-    let u = abs < 0.4 ? -0.7 : abs < 0.75 ? 0.85 : -0.3;
-    u *= cor;
-    v *= cor * 0.6;
-
-    // Terrain deflection
-    let gradX = 0;
-    for (let k = 0; k < 4; k++) {
-      const n = NBR[c * 4 + k];
-      gradX += (temp[n] - temp[c]);
-    }
-    u += gradX * 0.05;
-    // Continent drag
-    if (h[c] >= seaLevel) { u *= 0.7; v *= 0.7; }
-    windU[c] = u;
-    windV[c] = v;
-  }
-}
-
 /** Advect a scalar by a geographic (east, north) velocity pair.
  *  Flux-form, area-weighted: mass `field * AREA` is conserved to the limiter. */
+const _flux = [0, 0, 0, 0];
+
 export function advectField(field, uArr, vArr, scratch, rate) {
   scratch.fill(0);
+  const flux = _flux;
   for (let c = 0; c < NC; c++) {
     const u = uArr[c] || 0, v = vArr[c] || 0;
     if (u * u + v * v < 1e-12) continue;
@@ -116,9 +87,10 @@ export function advectField(field, uArr, vArr, scratch, rate) {
     const mass = field[c] * ac;
     if (!(mass > 0)) continue;
     let out = 0;
-    const flux = [0, 0, 0, 0];
+    flux[0] = flux[1] = flux[2] = flux[3] = 0;
     for (let k = 0; k < 4; k++) {
-      const { e, n } = neighbourEN(c, k);
+      const en = neighbourEN(c, k);
+      const e = en.e, n = en.n;
       const chord = Math.hypot(e, n) || 1e-6;
       const along = (u * e + v * n) / chord;
       if (along <= 0) continue;
@@ -224,8 +196,7 @@ export function atmoTick(W, sunDir) {
   const Plive = livePressureBar(W);
   const gh = greenhouseFromGases(gases, R, Plive);
   W.greenhouse = gh;
-  // Winds come from geostrophicWind (called before this tick). The old
-  // three-band computeWinds field was overwritten every tick and never advected.
+  // Winds come from geostrophicWind / SWE (called before this tick).
 
   const lapse = 0.45 * R.gravity;
   const Ptot = totalPressure(gases, R);

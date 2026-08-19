@@ -54,6 +54,7 @@ export function climateSnapshot(Wref = W) {
     rossby: Wref._rossby ?? null,
     rossbyNote: Wref._rossbyNote || '',
     tropPole: Wref._tropPole ?? null,
+    colourMs: Wref._msColour ?? null,
     intertidalPct: (Wref.intertidalFrac || 0) * 100,
     meanPress: meanField(Wref.press),
     teqK: Wref.rule?.teqK ?? null,
@@ -278,11 +279,13 @@ export function climatePanelChrome() {
           <button type="button" data-overlay="press">${iconSVG('weather')}<span class="btn-label">Pressure</span></button>
           <button type="button" data-overlay="vapour">${iconSVG('weather')}<span class="btn-label">Vapour</span></button>
           <button type="button" data-overlay="wind">${iconSVG('spin')}<span class="btn-label">Wind</span></button>
+          <button type="button" data-overlay="vort">${iconSVG('spin')}<span class="btn-label">Vorticity</span></button>
+          <button type="button" data-overlay="current">${iconSVG('spin')}<span class="btn-label">Currents</span></button>
           <button type="button" data-overlay="storm">${iconSVG('stormdesk')}<span class="btn-label">Storms</span></button>
           <button type="button" data-overlay="tide">${iconSVG('moon')}<span class="btn-label">Tide</span></button>
           <button type="button" data-overlay="intertidal">${iconSVG('flats')}<span class="btn-label">Intertidal</span></button>
         </div>
-        <p class="god-note">Pressure, wind, storms, tides — painted on the globe.</p>
+        <p class="god-note">Pressure, wind, vorticity, currents — painted on the globe.</p>
       </div>
 
       <div class="clim-explain" id="climExplain"></div>
@@ -564,7 +567,7 @@ export function refreshClimatePanel(opts = {}) {
       <div class="clim-chip"><span>Ro</span><b>${snap.rossby != null ? snap.rossby.toFixed(2) : '—'}</b></div>
       <div class="clim-chip"><span>ITCZ</span><b>${snap.itczDeg.toFixed(0)}°</b></div>
       <div class="clim-chip"><span>Moon</span><b>${snap.moonIllum != null ? `${(snap.moonIllum * 100) | 0}%` : '—'}</b></div>
-      <div class="clim-chip"><span>Storms</span><b>${W._stormCount || 0}</b></div>
+      <div class="clim-chip"><span>ms</span><b>${snap.colourMs != null ? snap.colourMs.toFixed(1) : '—'}</b></div>
     `;
   }
   const chart = document.getElementById('climChart');
@@ -589,7 +592,7 @@ export function refreshClimatePanel(opts = {}) {
     explain.innerHTML = `
       <div class="clim-fact"><b>${snap.cells}</b> circulation cells / hemisphere · trades near ITCZ read as <b>${band}</b></div>
       <div class="clim-fact">${snap.rossbyNote || snap.spinNote}${snap.tropPole != null ? ` · tropics−pole ΔT <b>${snap.tropPole.toFixed(2)}</b>` : ''}</div>
-      <div class="clim-fact">Cloud cover ~<b>${(snap.meanCloud * 100) | 0}%</b> · mean wind <b>${snap.meanWind.toFixed(2)}</b></div>
+      <div class="clim-fact">Cloud cover ~<b>${(snap.meanCloud * 100) | 0}%</b> · mean wind <b>${snap.meanWind.toFixed(2)}</b>${snap.colourMs != null ? ` · colour <b>${snap.colourMs.toFixed(1)} ms</b>` : ''}</div>
       <div class="clim-fact">${snap.moon
         ? `Moon ${snap.moon.mass.toFixed(2)} M @ ${snap.moon.distance.toFixed(2)} · axis ${W.obliquityWander ? 'wanders' : 'stable'}`
         : 'No moon — solar tide only, obliquity may wander'}</div>

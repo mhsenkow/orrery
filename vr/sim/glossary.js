@@ -22,6 +22,8 @@ export const GLOSSARY = {
   'Bjerknes': 'The coupling that makes El Niño: stronger trades deepen the east–west SST contrast, which strengthens the trades.',
   Walker: 'The tropical east–west cell — rising over the warm pool, sinking over the cold tongue. ENSO is this cell breathing.',
   ENSO: 'El Niño–Southern Oscillation. The thermocline tilts, trades slacken, the east Pacific warms, and rainfall swaps oceans.',
+  vorticity: 'How much the air is spinning. Cyclones are patches of vorticity; the jet is a ribbon of it.',
+  'shallow water': 'A one-layer fluid: height plus two velocities. Rotation turns a height gradient into a current. Not a GCM.',
   'mixed layer': 'The stirred top of the ocean. Wind and convection deepen it; summer warming shoals it. Maritime climates live here.',
   fetch: 'How far the wind has blown over open water. Fetch, not wind speed alone, is why some coasts have surf and others do not.',
   monsoon: 'A seasonal reversal driven by land heating faster than the sea. Summer continents inhale; winter they exhale.',

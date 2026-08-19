@@ -405,6 +405,7 @@ export function useToolAt(cell, extra = {}) {
       startTsunami(W, cell, 0.7);
       if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
       W.strokeMark[cell] = 1;
+      W._strokeTick = W._tickIndex || 0;
       issueReceipt({ tool: 'quake', cell, intent: 'Quake', expected: 'Tsunami launched' });
       chronLog(W.year, 'quake', cell, 1, 'Triggered quake');
       result.said = 'Quake — coast dropped, tsunami running';

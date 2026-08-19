@@ -246,8 +246,9 @@ export function setPinpoint(on) {
 function markStroke(cells) {
   if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
   for (const c of cells) {
-    if (c >= 0) W.strokeMark[c] = 1;
+    W.strokeMark[c] = 1;
   }
+  W._strokeTick = W._tickIndex || 0;
 }
 
 /**

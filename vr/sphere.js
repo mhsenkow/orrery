@@ -215,6 +215,30 @@ export let NBR8 = buildNbr8();
 let _basis = buildBasis();
 export let EAST = _basis.east;
 export let NORTH = _basis.north;
+let _nbrEN = buildNbrEN();
+export let NBR_E = _nbrEN.e;
+export let NBR_N = _nbrEN.n;
+
+/** Per-neighbour east/north chords. Rebuilt with the topology. */
+function buildNbrEN() {
+  const e = new Float32Array(NC * 4);
+  const n = new Float32Array(NC * 4);
+  for (let c = 0; c < NC; c++) {
+    const ex = EAST[c * 3], ey = EAST[c * 3 + 1], ez = EAST[c * 3 + 2];
+    const nx = NORTH[c * 3], ny = NORTH[c * 3 + 1], nz = NORTH[c * 3 + 2];
+    const cx = DIR[c * 3], cy = DIR[c * 3 + 1], cz = DIR[c * 3 + 2];
+    for (let k = 0; k < 4; k++) {
+      const nb = NBR[c * 4 + k];
+      const dx = DIR[nb * 3] - cx;
+      const dy = DIR[nb * 3 + 1] - cy;
+      const dz = DIR[nb * 3 + 2] - cz;
+      const i = c * 4 + k;
+      e[i] = dx * ex + dy * ey + dz * ez;
+      n[i] = dx * nx + dy * ny + dz * nz;
+    }
+  }
+  return { e, n };
+}
 
 /** Rebuild topology for a new face resolution. Call before generate/remesh. */
 export function setResolution(n) {
@@ -232,6 +256,9 @@ export function setResolution(n) {
   _basis = buildBasis();
   EAST = _basis.east;
   NORTH = _basis.north;
+  _nbrEN = buildNbrEN();
+  NBR_E = _nbrEN.e;
+  NBR_N = _nbrEN.n;
   return { N, NC, NF, NV };
 }
 

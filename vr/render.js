@@ -660,7 +660,7 @@ void main(){
   col += vec3(0.55, 0.64, 0.9) * pow(max(dot(N, Hm), 0.0), gloss) * waterish * uMoon * night * 0.55;
   float termBand = exp(-pow(nl - 0.05, 2.0) * 40.0);
   // Lightning gated by local storm (cloud × precip) — flashes where storms are
-  float stormLocal = cloudF * max(moistF, 0.35) * max(uStorm, 0.15);
+  float stormLocal = cloudF * max(precipF, 0.12) * max(uStorm, 0.15);
   float stormFlash = step(0.988, fract(sin(dot(vObj.xy * 40.0 + cloudF * 9.0, vec2(12.9898,78.233)) + uTime*41.0)*43758.5453));
   col += vec3(0.8, 0.88, 1.0) * stormFlash * stormLocal * (night + termBand*0.55) * 2.0;
   float rim=pow(1.0-max(dot(N,V),0.0), 4.2);
@@ -1329,10 +1329,10 @@ export function refreshColours(alpha = 1) {
   const season = W.season || 0;
   const preview = BRUSH.preview;
   const previewSet = preview?.length ? new Set(preview) : null;
-  const now = (typeof performance !== 'undefined') ? performance.now() : 0;
-  const dt = Math.min(0.08, (now - (refreshColours._t || now)) / 1000);
-  refreshColours._t = now;
-  const strokeFade = Math.exp(-3.2 * dt);
+  const t0 = (typeof performance !== 'undefined') ? performance.now() : 0;
+  const tick = W._tickIndex || 0;
+  const strokeFade = refreshColours._strokeAt === tick ? 1 : Math.exp(-0.14);
+  refreshColours._strokeAt = tick;
   for (let c = 0; c < NC; c++) {
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
@@ -1648,6 +1648,11 @@ export function refreshColours(alpha = 1) {
       const wk = clamp((W.moist[c] - 0.45) / 0.55, 0, 1) * 0.16;
       col = [col[0] * (1 - wk), col[1] * (1 - wk), col[2] * (1 - wk * 0.7)];
     }
+    const fog = W.fog?.[c] || 0;
+    if (fog > 0.04 && ice < 0.4) {
+      const fk = fog * 0.22;
+      col = [lerp(col[0], 210, fk), lerp(col[1], 218, fk), lerp(col[2], 226, fk)];
+    }
     const o = c << 2;
     _cellDat[o] = u8round(col[0]);
     _cellDat[o + 1] = u8round(col[1]);
@@ -1675,6 +1680,7 @@ export function refreshColours(alpha = 1) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloudCov);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, cov);
   }
+  if (typeof performance !== 'undefined') W._msColour = performance.now() - t0;
 }
 
 /** Cloud shell lattice — its own mesh so the cheap sphere stays cheap. */
