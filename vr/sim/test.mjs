@@ -2082,7 +2082,7 @@ console.log('data layer hygiene');
   const guarded = new Set([
     'colstack.js', 'illum.js', 'pictureDisc.js', 'definition.js',
     'substrateField.js', 'columnField.js', 'worldDef.js',
-    'paintEval.js', 'planetLook.js',
+    'paintEval.js', 'paintTable.js', 'planetLook.js',
   ]);
   const banned = /\bif\s*\(\s*kind\s*===\s*'(triton|iapetus|titan|europa|io|pluto|mars|venus|mercury)'/i;
   const hits = [];
@@ -2104,6 +2104,209 @@ console.log('golden + calibrate');
   ok('golden reproducible', g.pass, `${g.hash} vs ${g.hashB}`);
   const cal = calibrateEarth(20260808, 4);
   ok('earth calibrate', cal.pass, JSON.stringify(cal.checks.filter((c) => !c.ok)));
+}
+
+/* Beings, settlements, fire, herds and plumes. Until `agentsTick` moved into
+   `simTick` none of this could be tested at all: the layer the player actually
+   watches ran on the render loop, so it was absent from headless runs, absent
+   from saves, and asserted by exactly one of 563 checks. */
+console.log('beings inside the tick (slice A)');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun, isPinnedEarth } = await import('./ruleMode.js');
+  const thriveRule = RULESETS.find((r) => r.id === 'thrive');
+  const terraRule = RULESETS.find((r) => r.id === 'terra');
+
+  ok('demo ruleset exists', !!thriveRule && thriveRule.thrive === true);
+  ok('demo Earth is not the pinned Earth', !isPinnedEarth(thriveRule) && isPinnedEarth(terraRule));
+
+  /** Population fingerprint — kinds, cells, ages and behaviours. */
+  const signature = () => {
+    const parts = [String(ENT.n)];
+    let seen = 0;
+    for (let i = 0; i < ENT.n && seen < 40; i++) {
+      const m = ENT.meta[i];
+      if (!m || m.dead) continue;
+      parts.push(`${m.kind}:${m.cell}:${m.age}:${m.behav}`);
+      seen++;
+    }
+    return parts.join('|');
+  };
+
+  const run = (rule, ticks) => {
+    generate(4242, cloneRuleForRun(rule));
+    for (let i = 0; i < ticks; i++) simTick(true);
+    return signature();
+  };
+
+  // `simTick` is the only thing called here. If beings were still on the render
+  // loop this population would be empty.
+  const a = run(thriveRule, 30);
+  ok('simTick alone populates the world', ENT.n > 0, `ENT.n=${ENT.n}`);
+  const behaviours = new Set();
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (m && !m.dead) behaviours.add(m.behav);
+  }
+  ok('beings age inside the tick', maxAgeOf(ENT) > 20, `maxAge=${maxAgeOf(ENT)}`);
+  ok('beings pick more than one behaviour', behaviours.size > 1, [...behaviours].join(','));
+
+  const b = run(thriveRule, 30);
+  ok('same seed, same population', a === b);
+  // A second generate must not inherit the previous world's individuals.
+  ok('generate resets the population', maxAgeOf(ENT) <= 30, `maxAge=${maxAgeOf(ENT)}`);
+
+  // The pinned Earth stays pinned: clock welded to the present.
+  generate(4242, cloneRuleForRun(terraRule));
+  const pinnedAge = W.ageYr;
+  for (let i = 0; i < 30; i++) simTick(true);
+  ok('calibration Earth clock stays at the present', W.ageYr === pinnedAge);
+  generate(4242, cloneRuleForRun(thriveRule));
+  const demoAge = W.ageYr;
+  for (let i = 0; i < 30; i++) simTick(true);
+  ok('demo Earth clock advances', W.ageYr > demoAge, `${demoAge} -> ${W.ageYr}`);
+}
+
+console.log('settlements, fire, herds, plumes (slices B-E)');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, simTick } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { probeThrive, lightTheDriestForest } = await import('../../scripts/thrive-probe.mjs');
+
+  const r = probeThrive({ seed: 20260808, ruleId: 'thrive', ticks: 500 });
+
+  // Slice B — the first visible win. These are the assertions that fail if the
+  // settlement loop is throttled back to invisibility.
+  ok('demo world raises build', r.settlement.meanBuild > 0, `meanBuild=${r.settlement.meanBuild}`);
+  /* Thresholds, not just non-zero: the pinned Earth reaches 2 settlements and
+     meanBuild ~0.001 over the same 500 ticks, so a bare `> 0` would not notice
+     the throttles coming back. Measured demo run at N=32: 45 settlements,
+     meanBuild 0.0115, lights 0.23. */
+  ok('demo world produces settlements', r.settlement.cities >= 8, `cities=${r.settlement.cities}`);
+  ok('demo settlement is not the pinned trickle', r.settlement.meanBuild > 0.004,
+    `meanBuild=${r.settlement.meanBuild}`);
+  ok('settlements reach village or better',
+    (r.settlement.stages.village || 0) + (r.settlement.stages.town || 0)
+      + (r.settlement.stages.city || 0) > 0,
+    JSON.stringify(r.settlement.stages));
+  ok('night lights are lit', r.settlement.cityLights > 0.05, `cityLights=${r.settlement.cityLights}`);
+  ok('lights arrive within 500 ticks',
+    r.settlement.firstLightTick > 0 && r.settlement.firstLightTick < 500,
+    `tick ${r.settlement.firstLightTick}`);
+  ok('settled area has not saturated', (W.builtFrac || 0) > 0 && (W.builtFrac || 0) < 1,
+    `builtFrac=${W.builtFrac}`);
+  ok('there are settlers doing the building',
+    (r.beings.byKind.settler || 0) > 0, JSON.stringify(r.beings.byKind));
+
+  // Slice D — a herd is a group with a shared heading, not a crowd.
+  ok('a herd forms', r.herd.peak >= 4, `peak herd=${r.herd.peak}`);
+  {
+    let aligned = 0, pairs = 0;
+    for (let i = 0; i < ENT.n; i++) {
+      const m = ENT.meta[i];
+      if (!m || m.dead || m.kind !== 7 || (m.herd || 0) < 3) continue;
+      for (let j = i + 1; j < ENT.n; j++) {
+        const o = ENT.meta[j];
+        if (!o || o.dead || o.kind !== 7 || o.cell !== m.cell) continue;
+        const dot = (m.hx || 0) * (o.hx || 0) + (m.hy || 0) * (o.hy || 0)
+          + (m.hz || 0) * (o.hz || 0);
+        pairs++;
+        if (dot > 0) aligned++;
+        break;
+      }
+    }
+    ok('herd-mates share a heading', pairs === 0 || aligned / pairs > 0.5, `${aligned}/${pairs}`);
+  }
+
+  // Slice E — surface feeding fertilises the water it feeds in.
+  ok('marine animals surface-feed', r.plume.surfaceFeeders > 0, `${r.plume.surfaceFeeders}`);
+  ok('surface feeding leaves a plume', r.plume.cells > 0 && r.plume.max > 0.01,
+    `cells=${r.plume.cells} max=${r.plume.max}`);
+  ok('plume raises N and P above the seeded 0.40 / 0.35',
+    r.plume.meanNutrientN > 0.4 && r.plume.meanNutrientP > 0.35,
+    `N=${r.plume.meanNutrientN} P=${r.plume.meanNutrientP}`);
+
+  // Slice C — fire, on the world those 500 ticks just built.
+  const { igniteFire, flammableAt, fireDanger } = await import('./fire.js');
+  const lit = lightTheDriestForest();
+  ok('a fire can be lit', lit > 0, `${lit} cells`);
+  let cell = -1;
+  for (let i = 0; i < W.fire.length; i++) if (W.fire[i] > 0.02) { cell = i; break; }
+  const life0 = W.life[cell];
+  let peak = W.fireCells || 0, ashPeak = 0, fled = 0;
+  for (let t = 0; t < 12; t++) {
+    simTick(true);
+    if ((W.fireCells || 0) > peak) peak = W.fireCells;
+    for (let i = 0; i < W.ash.length; i++) if (W.ash[i] > ashPeak) ashPeak = W.ash[i];
+    for (let i = 0; i < ENT.n; i++) if (ENT.meta[i]?.behav === 'flee') fled++;
+  }
+  ok('fire spreads past the cells it was lit in', peak > lit, `peak front=${peak} lit=${lit}`);
+  ok('fire consumes the fuel it burns', W.life[cell] < life0, `${life0} -> ${W.life[cell]}`);
+  ok('fire lays down ash', ashPeak > 0.05, `maxAsh=${ashPeak}`);
+  ok('fire burns an area', (W.burntArea || 0) > 0, `${W.burntArea}`);
+  ok('something flees the fire', fled > 0, `${fled} flee-ticks`);
+  let sea = -1;
+  for (let c = 0; c < W.h.length; c++) if (W.h[c] < W.seaLevel) { sea = c; break; }
+  ok('water will not light', sea < 0 || igniteFire(W, sea, 1, 0) === 0);
+  ok('fire danger is zero at sea', sea < 0 || fireDanger(W, sea) === 0);
+  let bare = -1;
+  for (let c = 0; c < W.h.length; c++) {
+    if (W.h[c] >= W.seaLevel && W.life[c] < 0.05) { bare = c; break; }
+  }
+  ok('flammable needs fuel', bare < 0 || !flammableAt(W, bare));
+}
+
+console.log('entity save round-trip (entsave)');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, serializeRun, loadRunMeta, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { livingMetrics, formatLivingLine } = await import('./livemetric.js');
+  const thrive = RULESETS.find((r) => r.id === 'thrive');
+  generate(7777, cloneRuleForRun(thrive));
+  for (let i = 0; i < 80; i++) simTick(true);
+  const n0 = ENT.n;
+  const sig0 = ENT.meta.slice(0, n0).filter((m) => m && !m.dead)
+    .map((m) => `${m.id}:${m.cell}:${m.age}:${m.behav}`).join('|');
+  const age0 = W.ageYr;
+  const cities0 = W.cities?.length || 0;
+  const save = serializeRun();
+  ok('save v8 carries entities', save.version === 8 && save.entities?.list?.length > 0,
+    `${save.entities?.list?.length} beings`);
+  ok('save carries build and cities', save.buildB64 && Array.isArray(save.cities));
+  loadRunMeta(JSON.stringify(save));
+  const sig1 = ENT.meta.slice(0, ENT.n).filter((m) => m && !m.dead)
+    .map((m) => `${m.id}:${m.cell}:${m.age}:${m.behav}`).join('|');
+  ok('load restores population', ENT.n === n0 && sig0 === sig1, `${n0} vs ${ENT.n}`);
+  ok('load restores clock and settlements', W.ageYr === age0 && (W.cities?.length || 0) === cities0);
+  const lm = livingMetrics(W);
+  ok('living metrics module', lm.alive > 0 && formatLivingLine(lm).includes('alive'));
+}
+
+console.log('food web keeps strongest links');
+{
+  const links = [];
+  for (let i = 0; i < 250; i++) links.push({ prey: i, pred: i + 1, w: Math.random() });
+  links.sort((a, b) => b.w - a.w);
+  const kept = links.slice(0, 200);
+  ok('top 200 links are heaviest', kept[0].w >= kept[kept.length - 1].w);
+  ok('weakest kept beats first dropped', kept[199].w >= links[200].w);
+}
+
+function maxAgeOf(ENT) {
+  let m = 0;
+  for (let i = 0; i < ENT.n; i++) {
+    const e = ENT.meta[i];
+    if (e && !e.dead && e.age > m) m = e.age;
+  }
+  return m;
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

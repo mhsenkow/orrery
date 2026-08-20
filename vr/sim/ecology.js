@@ -312,7 +312,10 @@ export function updateFoodWeb(W, chronLog) {
     const prey = nodeOf(W.tree, L.prey);
     if (prey) prey.predation = (prey.predation || 0) + L.w;
   }
+  links.sort((a, b) => b.w - a.w);
+  const dropped = Math.max(0, links.length - 200);
   W.foodWeb.links = links.slice(0, 200);
+  W.foodWeb.dropped = dropped;
   // Lotka–Volterra on census: predators eat, prey shrink. provenance: fitted
   const dt = Math.min(1, (W.dtYr || 200) / 1e6);
   for (const n of nodes) {

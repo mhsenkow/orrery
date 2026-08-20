@@ -6,7 +6,7 @@ Embodied god-game prototype: hold a planet, shrink, walk in.
 
 [Open the live prototype](https://mhsenkow.github.io/simearth/vr/) — drag to spin, scroll to zoom. WebXR on a headset if you have one.
 
-**Showing someone:** use the [demo opening](https://mhsenkow.github.io/simearth/vr/?demo=1) (classic Earth, Tour button always visible). First visit walks through **pick a world → choose a lesson**; press **Tour** or **?** anytime to reopen the track. Pitch stills: `?pitch=hud`, `?pitch=local`, `?pitch=worlds`.
+**Showing someone:** use the [demo opening](https://mhsenkow.github.io/simearth/vr/?demo=1) — living Earth (`thrive` ruleset, clock runs, settlements and herds). Tour button always visible. First visit walks through **pick a world → choose a lesson**; press **Tour** or **?** anytime to reopen the track. Pitch stills: `?pitch=hud`, `?pitch=local`, `?pitch=worlds`.
 
 <p>
 <img src="site/img/earth-currents.png" width="49%" alt="Ocean currents overlay on the globe and local patch">

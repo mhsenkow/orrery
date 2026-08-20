@@ -556,7 +556,7 @@ const FOUND = [
 
 const NOW = [
   ['Construct 16 is a foothold, and its own note says so',
-   'Five tables with compilers and provenance is a real architecture and it is not yet the thing the construct asked for, because the join is missing: no object ties a world to its materials, processes, landforms, cover and column. The data describes a vocabulary and never a sentence, which is why 64 functions still have to.'],
+   'The join landed: `definitions.json` + `worldDef.js` tie column, bedrock, cover, paint and features per body; `node scripts/data.mjs` is the one-build compiler and scoreboard (`newworldcost 0`, paint/stamps/shell in data). Remaining: per-cell deposition in play, pixel baselines, illuminant art direction, schema CI.'],
   ['Construct 17 has not started, and it blocks the most',
    'The column recipe is good work aimed at a different problem — describing a world\'s layering rather than storing a cell\'s. Deposition, burial, exposure, differential erosion, the fossil record, stratigraphic colour banding and the surface backlog\'s `strata` item are all waiting on a per-cell stack that does not exist.'],
   ['Construct 18 is a third done and the remaining two thirds are the hard part',

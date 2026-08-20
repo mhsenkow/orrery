@@ -288,6 +288,7 @@ ${unitRows}
 
 await mkdir(join(ROOT, 'site'), { recursive: true });
 await writeFile(join(ROOT, 'site', 'world-data.html'), html);
+console.log(`[data] ${nBodies} bodies · ${coverageGaps} with coverage gaps · newworldcost ${newWorldCost} · dataratio ${ratio.toFixed(2)}`);
 console.log('wrote site/world-data.html');
 
 try {

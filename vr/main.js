@@ -527,7 +527,14 @@ function setRuleset(i) {
   if (!r) return;
   S.catalogueId = null;
   clearCatalogueSelection();
-  runGenerate(W.seed, mergeRunRule(r, { deepTime: W.rule?.deepTime, startAgeGa: W.rule?.startAgeGa }));
+  /* A ruleset that declares its own clock owns it. Carrying the previous
+     world's deepTime / startAgeGa into Earth Thrive turned the demo Earth into a
+     lifeless deep-time run, because the Holocene biosphere is only seeded on the
+     modern path. */
+  const ownsClock = !!r.thrive || r.startAgeGa != null;
+  runGenerate(W.seed, ownsClock
+    ? mergeRunRule(r)
+    : mergeRunRule(r, { deepTime: W.rule?.deepTime, startAgeGa: W.rule?.startAgeGa }));
 }
 
 function clearCatalogueSelection() {
@@ -4056,7 +4063,10 @@ export function boot() {
   const opening = isDemoMode()
     ? { seed: 20260808, landscape: 'auto', pinned: false }
     : pickOpening();
-  applyOpening(opening, { rule: RULESETS[0] });
+  const bootRule = isDemoMode()
+    ? (RULESETS.find((r) => r.id === 'thrive') || RULESETS[0])
+    : RULESETS[0];
+  applyOpening(opening, { rule: bootRule });
   let pitch = null;
   try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* ignore */ }
   if (pitch) applyPitchShot(pitch);

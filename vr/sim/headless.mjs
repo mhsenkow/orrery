@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import { W, generate, simTick, RULESETS, serializeRun } from '../world.js';
 import { assertBudgets } from './assert.js';
 import { NC } from '../sphere.js';
+import { formatLivingLine, livingMetrics } from './livemetric.js';
 
 function hashFields(W) {
   const h = createHash('sha256');
@@ -36,7 +37,8 @@ export function runHeadless({
     }
   }
   if (!assertEvery) budgets.push(assertBudgets(W));
-  return {
+  const living = (base.thrive || ruleId === 'thrive') ? livingMetrics(W) : null;
+  const out = {
     seed,
     ruleId,
     ticks,
@@ -55,6 +57,11 @@ export function runHeadless({
     budgets,
     save: serializeRun(),
   };
+  if (living) {
+    out.living = living;
+    out.livingLine = formatLivingLine(living);
+  }
+  return out;
 }
 
 /** Golden-run: fixed seed + ticks → stable hash. Item 59. */

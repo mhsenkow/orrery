@@ -665,3 +665,79 @@ export function followTarget() {
   }
   return null;
 }
+
+/** Save every live individual — cell, kind, age, lineage, name, behaviour. */
+export function packEntities() {
+  const list = [];
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (!m || m.dead) continue;
+    list.push({
+      id: m.id,
+      cell: m.cell,
+      kind: m.kind,
+      age: m.age,
+      name: m.name,
+      popId: m.popId,
+      cladeName: m.cladeName,
+      behav: m.behav,
+      hx: m.hx,
+      hy: m.hy,
+      hz: m.hz,
+      herd: m.herd,
+      born: m.born,
+      bornCell: m.bornCell,
+      heading: m.heading,
+      stride: m.stride,
+      prevCell: m.prevCell,
+    });
+  }
+  return { seq: _idSeq, list };
+}
+
+/** Reload a packed population after `generate` + terrain restore. */
+export function restoreEntities(packed) {
+  resetAgents();
+  if (!packed?.list?.length) return 0;
+  let maxId = packed.seq || 0;
+  let n = 0;
+  for (const rec of packed.list) {
+    if (n >= MAX_ENT) break;
+    ENT.meta[n] = {
+      id: rec.id,
+      cell: rec.cell,
+      kind: rec.kind,
+      age: rec.age ?? 0,
+      name: rec.name ?? null,
+      born: rec.born ?? W.year,
+      bornCell: rec.bornCell ?? rec.cell,
+      plan: null,
+      popId: rec.popId ?? 0,
+      cladeName: rec.cladeName ?? null,
+      stride: rec.stride ?? 1,
+      heading: rec.heading ?? 0,
+      hx: rec.hx ?? 0,
+      hy: rec.hy ?? 0,
+      hz: rec.hz ?? 0,
+      herd: rec.herd ?? 0,
+      prevCell: rec.prevCell ?? rec.cell,
+      arriveAt: null,
+      behav: rec.behav ?? 'forage',
+      dead: false,
+      cause: null,
+    };
+    writePos(n, rec.cell);
+    const o = n * 8;
+    const rgb = KIND_RGB[rec.kind] || [200, 200, 200];
+    ENT.data[o + 3] = rec.kind === 7 ? 0.036 : rec.kind === 5 ? 0.02 : 0.015;
+    ENT.data[o + 4] = rec.kind;
+    ENT.data[o + 5] = rgb[0] / 255;
+    ENT.data[o + 6] = rgb[1] / 255;
+    ENT.data[o + 7] = rgb[2] / 255;
+    maxId = Math.max(maxId, rec.id || 0);
+    n++;
+  }
+  ENT.n = n;
+  _idSeq = maxId + 1;
+  return n;
+}

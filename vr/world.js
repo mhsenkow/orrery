@@ -55,7 +55,7 @@ import { gpgpuClimateTick } from './sim/gpgpu/index.js';
 import { isModernEarth, isDeepTimeEarth, cloneRuleForRun } from './sim/ruleMode.js';
 import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
-import { agentsTick, resetEntities } from './agents.js';
+import { agentsTick, resetEntities, packEntities, restoreEntities } from './agents.js';
 import { fireTick, resetFireState } from './sim/fire.js';
 
 function buf() { return new Float32Array(NC); }
@@ -893,12 +893,32 @@ function unpackHeights(b64, into) {
   for (let i = 0; i < n; i++) into[i] = buf[i] / 8000;
 }
 
-/** Event-log save. Version 7 keeps the per-cell material stack. */
+function packFloatField(arr) {
+  const f = arr instanceof Float32Array ? arr : Float32Array.from(arr);
+  const u8 = new Uint8Array(f.buffer, f.byteOffset, f.byteLength);
+  let s = '';
+  const CH = 0x8000;
+  for (let i = 0; i < u8.length; i += CH) {
+    s += String.fromCharCode.apply(null, u8.subarray(i, i + CH));
+  }
+  return btoa(s);
+}
+
+function unpackFloatField(b64, into) {
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+  const buf = new Float32Array(u8.buffer, u8.byteOffset, (u8.byteLength / 4) | 0);
+  const n = Math.min(into.length, buf.length);
+  into.set(buf.subarray(0, n));
+}
+
+/** Event-log save. Version 8 adds build, settlements and the living population. */
 export function serializeRun() {
   const land = W._landscape || W.rule?.landscape || 'auto';
   const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 7,
+    version: 8,
     seed: W.seed,
     landSeed,
     landscape: land,
@@ -926,6 +946,12 @@ export function serializeRun() {
     originCell: W.originCell ?? null,
     planetBiochem: W.planetBiochem || null,
     originDifficulty: W.originDifficulty ?? 1,
+    buildB64: packFloatField(W.build),
+    cities: (W.cities || []).map((c) => ({ ...c })),
+    civPop: W.civPop ?? 0,
+    builtFrac: W.builtFrac ?? 0,
+    meanBuild: W.meanBuild ?? 0,
+    entities: packEntities(),
   };
 }
 
@@ -973,6 +999,18 @@ export function loadRunMeta(json) {
   if (data.planetBiochem) W.planetBiochem = data.planetBiochem;
   if (data.originCell != null) W.originCell = data.originCell;
   if (data.originDifficulty != null) W.originDifficulty = data.originDifficulty;
+  if (data.ageYr != null) {
+    W.ageYr = data.ageYr;
+    W.year = data.ageYr;
+  }
+  if (data.gases) Object.assign(W.gases, data.gases);
+  if (data.rngState != null) W.rngState = data.rngState;
+  if (data.buildB64 && data.n === SIM_N) unpackFloatField(data.buildB64, W.build);
+  if (data.cities) W.cities = data.cities.map((c) => ({ ...c }));
+  if (data.civPop != null) W.civPop = data.civPop;
+  if (data.builtFrac != null) W.builtFrac = data.builtFrac;
+  if (data.meanBuild != null) W.meanBuild = data.meanBuild;
+  if (data.entities?.list?.length) restoreEntities(data.entities);
   return data;
 }
 
