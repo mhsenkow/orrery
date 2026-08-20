@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'site/img');
-const BASE = process.env.ORRERY_BASE || 'http://localhost:8765/vr/?seed=20260808&land=auto';
+const BASE = process.env.ORRERY_BASE || 'http://localhost:8765/vr/?demo=1&seed=20260808&land=auto';
 const CHROME = process.env.CHROME_PATH
   || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 

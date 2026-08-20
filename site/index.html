@@ -266,7 +266,7 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
     <a href="fleet.html"><code>FL</code><span>Fleet contact — 120 bodies</span></a>
     <a href="https://claude.ai/code/artifact/220b7f00-e527-462b-88b7-989a16e022e9" target="_blank" rel="noopener"><code>BL*</code><span>Backlog (Claude artifact)</span></a>
   </div>
-  <div class="railfoot">Draft for review<br>2026-08-08</div>
+  <div class="railfoot">Live on GitHub Pages<br>2026-08-19</div>
 </nav>
 
 <main class="main">
@@ -284,11 +284,11 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
   </dl>
   <p class="lede">Two companion briefs — product design and engineering — plus a working WebXR prototype of the substrate they both depend on. The second sentence of the thesis is the entire product; everything below is in service of making that descent feel inevitable rather than menu-driven.</p>
   <div class="shots">
-    <a href="../vr/" class="wide"><img src="img/earth-hud.png" width="1600" height="900" alt="Orrery Earth sandbox: globe, tools dock, time ribbon, and a first-free-oxygen moment"></a>
-    <a href="../vr/"><img src="img/earth-currents.png" width="1600" height="900" alt="Surface currents painted on the globe and in the local patch"></a>
+    <a href="../vr/?demo=1" class="wide"><img src="img/earth-hud.png" width="1600" height="900" alt="Orrery Earth sandbox: globe, tools dock, time ribbon, and a first-free-oxygen moment"></a>
+    <a href="../vr/?demo=1"><img src="img/earth-currents.png" width="1600" height="900" alt="Surface currents painted on the globe and in the local patch"></a>
     <a href="../vr/"><img src="img/worlds-picker.png" width="1600" height="900" alt="Worlds catalogue open beside the live planet"></a>
   </div>
-  <p class="shotcap">From the live prototype — Earth, currents overlay, worlds drawer. <a href="../vr/">Open it</a>.</p>
+  <p class="shotcap">From the live prototype — Earth, currents overlay, worlds drawer. <a href="../vr/?demo=1">Open the living demo</a>.</p>
 </header>
 
 <!-- ============================================================ FIGURE 1 -->
@@ -597,12 +597,12 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
 <!-- ================================================================== P 0 -->
 <section id="proto">
   <div class="sechead"><code>P 0</code><h2>What is already running</h2></div>
-  <p>A single-file WebXR prototype, raw WebGL2, no dependencies. It is not the game — it is the substrate both briefs depend on, built so the load-bearing claims can be checked rather than asserted.</p>
+  <p>A single-file WebXR prototype, raw WebGL2, no dependencies. The demo opening is a living Earth: herds, hunts, colonisation fronts, births and deaths you can see. Calibration Earth stays pinned; thrive is the world that moves.</p>
   <div class="shots">
-    <a href="../vr/"><img src="img/earth-hud.png" width="1600" height="900" alt="Tools dock, Holocene ribbon, and Earth"></a>
-    <a href="../vr/"><img src="img/earth-local.png" width="1600" height="900" alt="Expanded local map of a coastal patch beside the globe"></a>
+    <a href="../vr/?demo=1"><img src="img/earth-hud.png" width="1600" height="900" alt="Tools dock, Holocene ribbon, and Earth"></a>
+    <a href="../vr/?demo=1"><img src="img/earth-local.png" width="1600" height="900" alt="Expanded local map of a coastal patch beside the globe"></a>
   </div>
-  <p class="shotcap">The two views at once: a planet you hold, and a pixel map of one patch of it.</p>
+  <p class="shotcap">The two views at once: a planet you hold, and a pixel map of one patch of it. <a href="../vr/?demo=1">Open the living demo</a>.</p>
   <div class="tw"><table>
     <thead><tr><th>Claim</th><th>Status</th></tr></thead>
     <tbody>
@@ -622,8 +622,9 @@ footer{margin-top:70px; padding-top:24px; border-top:1px solid var(--rule);
     <h3>Run it in the headset</h3>
     <p>Serve the folder over HTTP and open it in the Quest browser. The Quest treats <code>localhost</code> as a secure context, so <code>adb reverse</code> is enough — no HTTPS certificate needed. Press <strong>Enter VR</strong>; the planet appears at arm's length. Hold the trigger and move your hand to roll it, thumbstick to resize, A or X to cycle rulesets.</p>
     <p>On desktop it runs as an ordinary web page: drag to spin, scroll to zoom.</p>
-    <a class="btn" href="../vr/">Open the live prototype</a>
-    <a class="btn ghost" href="worlds.html">200 worlds catalogue</a>
+    <a class="btn" href="../vr/?demo=1">Open the living demo</a>
+    <a class="btn ghost" href="../vr/">Calibration Earth</a>
+    <a class="btn ghost" href="thrive.html">Thrive backlog</a>
   </div>
   <pre>python3 -m http.server 8777          <b># from the project root</b>
 adb reverse tcp:8777 tcp:8777        <b># with the headset connected over USB</b>
