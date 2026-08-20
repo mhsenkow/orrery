@@ -50,6 +50,8 @@ export function livingMetrics(W, ent = ENT) {
     foodWebDropped: W.foodWeb?.dropped || 0,
     groups: W.groupCount || W.groups?.length || 0,
     mood: W.mood?.label || null,
+    huntKills: W.huntKills || 0,
+    carcasses: W.carcassCount || 0,
     ageYr: W.ageYr,
     meanLife: W.meanLife,
   };

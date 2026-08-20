@@ -88,12 +88,14 @@ export const OVERLAYS = [
   { id: 'plume', label: 'Nutrient plume', icon: 'upwell', tip: 'Where animals fertilised the water. Surface-feeding whale-scale life brings N and P up; the green is the bloom that follows.' },
   { id: 'behav', label: 'Behaviour', icon: 'seed', tip: 'What beings are doing on each cell — forage, flee, hunt, tend. The living layer as a map, not a sprite count.' },
   { id: 'trophic', label: 'Trophic', icon: 'seedGuild', tip: 'Local food pyramid. Green is producers, gold grazers, red hunters. Ice and rainforest are no longer the same number.' },
+  { id: 'fear', label: 'Fear', icon: 'seed', tip: 'Landscape of fear — where hunts and near-misses leave predation pressure. Prey flee the bright cells.' },
+  { id: 'carcass', label: 'Carcass', icon: 'seed', tip: 'Kill sites and scavenging. Discrete carcasses decay into soil and nutrients.' },
 ];
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic',
+  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic', 'fear', 'carcass',
   'faces', 'zonal', 'ecotone',
 ];
 
@@ -426,6 +428,16 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 12 + k * 240 + h * 40;
       g = 16 + p * 180 + h * 90;
       b = 18 + p * 40;
+    } else if (mode === 'fear') {
+      const f = W.preyFear?.[c] || 0;
+      r = 18 + f * 220;
+      g = 12 + f * 40;
+      b = 22 + f * 90;
+    } else if (mode === 'carcass') {
+      const k = W.carcassField?.[c] || 0;
+      r = 20 + k * 160;
+      g = 14 + k * 50;
+      b = 10 + k * 20;
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

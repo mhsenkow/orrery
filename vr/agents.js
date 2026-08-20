@@ -14,7 +14,9 @@ import { isSubmerged, isLand, localSeaLevel } from './sim/cellSurface.js';
 import { isModernEarth, isPinnedEarth } from './sim/ruleMode.js';
 import { settleCities, cityLights } from './sim/city.js';
 import { carryingCapacityNPP } from './sim/ecology.js';
-import { noteGraze, noteHunt } from './sim/trophicField.js';
+import {
+  noteGraze, noteHunt, noteFear, dropCarcass, scavengeAt, fearAt, carcassAt,
+} from './sim/trophicField.js';
 import { presentTime, noteWear, isOutNow } from './sim/present.js';
 import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
@@ -62,7 +64,8 @@ function bodyMassTrait(m) {
 }
 
 function metabolicRate(m) {
-  return 0.001 + kleiberDensity(bodyMassTrait(m)) * 0.022;
+  const base = 0.001 + kleiberDensity(bodyMassTrait(m)) * 0.022;
+  return m.kind === 5 ? base * 0.55 : base;
 }
 
 function maxLifespan(m) {
@@ -97,19 +100,27 @@ function killBeing(m, c, cause) {
   if (W.detritus?.length === NC) {
     W.detritus[c] = Math.min(1, (W.detritus[c] || 0) + 0.018 * mass);
   }
+  if (isAnimalKind(m.kind)) dropCarcass(W, c, mass, m.kind);
+  if (cause === 'hunted') noteFear(W, c, 0.35);
   if (m.name) {
     logEvent(W.chron, W.year, 'death', c, 0.2,
       `${m.name} ${cause}`, { who: m.name, cause, born: m.born });
   }
+  return mass;
 }
 
 function tryBirth(parent, c, rng, log) {
-  if (!isAnimalKind(parent.kind) || parent.kind === 5 || parent.dead) return false;
-  if (parent.energy < 0.68 || parent.age < 36) return false;
+  if (!isAnimalKind(parent.kind) || parent.dead) return false;
+  if (parent.kind === 14) return false;
+  if (parent.energy < (parent.kind === 5 ? 0.55 : 0.68) || parent.age < (parent.kind === 5 ? 24 : 36)) return false;
   const cap = carryingCapacityNPP(W, c);
-  if (W.life[c] < cap * 0.25 && (W.npp?.[c] || 0) < 0.12) return false;
+  if (parent.kind !== 5 && W.life[c] < cap * 0.25 && (W.npp?.[c] || 0) < 0.12) return false;
+  if (parent.kind === 5 && W.build[c] < 0.08 && W.life[c] < 0.12) return false;
   if (ENT.n >= capForWorld() - 1) return false;
-  if (rng() > (isPinnedEarth(W.rule) ? 0.022 : 0.11) * (parent.energy - 0.4)) return false;
+  const birthP = parent.kind === 5
+    ? (isPinnedEarth(W.rule) ? 0.012 : 0.08)
+    : (isPinnedEarth(W.rule) ? 0.022 : 0.11);
+  if (rng() > birthP * (parent.energy - 0.4)) return false;
   let nb = c;
   for (let k = 0; k < 4; k++) {
     const n = NBR[c * 4 + k];
@@ -292,7 +303,14 @@ export function resetEntities() {
   W.groupCount = 0;
   W._agentsSeeded = false;
   W.huntKills = 0;
+  W.huntMisses = 0;
+  W.groupSplits = 0;
+  W.groupMerges = 0;
+  W.carcasses = [];
+  W.carcassCount = 0;
   if (W.behavMap) W.behavMap.fill(0);
+  if (W.preyFear) W.preyFear.fill(0);
+  if (W.carcassField) W.carcassField.fill(0);
 }
 
 /** Grazers arrive as a group.
@@ -422,6 +440,54 @@ function censusGroups() {
   W.groupCount = next.length;
 }
 
+/** Fission when a herd is too big; fusion when two small same-kind herds meet. */
+function maybeSplitMerge(rng) {
+  const groups = W.groups || [];
+  if (!groups.length) return;
+  const membersOf = Object.create(null);
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (!m || m.dead || !m.groupId) continue;
+    (membersOf[m.groupId] || (membersOf[m.groupId] = [])).push(i);
+  }
+  for (const g of groups.slice()) {
+    const mem = membersOf[g.id] || [];
+    if (mem.length < 12) continue;
+    if (rng() > 0.35) continue;
+    const ng = mintGroup(g.kind, g.cell);
+    ng.home = g.home;
+    W.groups.push(ng);
+    for (let k = (mem.length / 2) | 0; k < mem.length; k++) {
+      ENT.meta[mem[k]].groupId = ng.id;
+    }
+    W.groupSplits = (W.groupSplits | 0) + 1;
+  }
+  const byKind = Object.create(null);
+  for (const g of W.groups || []) {
+    if ((g.n || 0) > 7) continue;
+    (byKind[g.kind] || (byKind[g.kind] = [])).push(g);
+  }
+  for (const kind of Object.keys(byKind)) {
+    const list = byKind[kind];
+    for (let a = 0; a < list.length; a++) {
+      for (let b = a + 1; b < list.length; b++) {
+        const ga = list[a], gb = list[b];
+        if (!ga || !gb) continue;
+        if (cellDot(ga.cell, gb.cell) < 0.9 && ga.cell !== gb.cell
+            && !cellsAdjacent(ga.cell, gb.cell)) continue;
+        const memB = membersOf[gb.id] || [];
+        for (const i of memB) {
+          if (ENT.meta[i]) ENT.meta[i].groupId = ga.id;
+        }
+        gb._merged = true;
+        W.groupMerges = (W.groupMerges | 0) + 1;
+        list[b] = null;
+      }
+    }
+  }
+  if ((W.groupMerges | 0) > 0 || (W.groupSplits | 0) > 0) censusGroups();
+}
+
 /** Fill empty slots without wiping living individuals. */
 function topUpEntities() {
   const rng = rngOf(W, 'rngAgents');
@@ -538,7 +604,12 @@ function pickBehav(m, c, rng) {
   for (let k = 0; k < 4; k++) nearFire = Math.max(nearFire, (W.fire?.[NBR[c * 4 + k]] || 0) * 0.55);
   if (nearFire > 0.04) m.fear = Math.min(1, m.fear * 0.65 + nearFire * 1.1);
   else m.fear *= 0.9;
-  if (m.fear > 0.32 || fire > 0.05 || ash > 0.18 || dust > 0.28 || storm > 0.35 || W.ice[c] > 0.55) {
+  const pred = fearAt(W, c);
+  if (!isPredator(m) && pred > 0.12) {
+    m.fear = Math.min(1, m.fear * 0.7 + pred * 0.9);
+  }
+  if (m.fear > 0.32 || fire > 0.05 || ash > 0.18 || dust > 0.28 || storm > 0.35 || W.ice[c] > 0.55
+      || (!isPredator(m) && pred > 0.28)) {
     return 'flee';
   }
   if (m.kind === 5) return W.build[c] > 0.3 ? 'tend' : 'forage';
@@ -811,14 +882,28 @@ export function agentsTick(log = null) {
       if (prey) {
         m.huntCell = prey.cell;
         const adjacent = cellsAdjacent(c, prey.cell);
-        if (adjacent && rng() < (prey.cell === c ? 0.45 : 0.22)) {
-          killBeing(prey, prey.cell, 'hunted');
-          m.energy = Math.min(1.35, m.energy + 0.28);
-          m.hunger = Math.max(0, m.hunger - 0.42);
-          noteHunt(W, c);
-          W.huntKills = (W.huntKills | 0) + 1;
-          m.preyId = null;
-          m.huntCell = -1;
+        if (adjacent) {
+          /* Cover and prey awareness make most hunts fail — predators are not
+             a mortality constant. Forest (high life) hides; open ground helps. */
+          const cover = clamp((W.life[prey.cell] || 0) * 0.55 + (W.moist?.[prey.cell] || 0) * 0.15, 0, 0.7);
+          const aware = prey.fear > 0.2 || prey.behav === 'flee' ? 0.22 : 0;
+          const base = prey.cell === c ? 0.38 : 0.18;
+          const pHit = Math.max(0.04, base * (1 - cover) - aware);
+          if (rng() < pHit) {
+            const mass = killBeing(prey, prey.cell, 'hunted') || 0.75;
+            m.energy = Math.min(1.35, m.energy + mass * 0.22);
+            m.hunger = Math.max(0, m.hunger - 0.42);
+            noteHunt(W, c);
+            W.huntKills = (W.huntKills | 0) + 1;
+            m.preyId = null;
+            m.huntCell = -1;
+          } else {
+            /* Miss: prey notices, fear field rises, hunter pays the chase. */
+            prey.fear = Math.min(1, (prey.fear || 0) + 0.28);
+            noteFear(W, prey.cell, 0.18);
+            m.energy = Math.max(0, m.energy - 0.015);
+            W.huntMisses = (W.huntMisses | 0) + 1;
+          }
         } else {
           m.energy = Math.max(0, m.energy - 0.008);
         }
@@ -839,8 +924,15 @@ export function agentsTick(log = null) {
       }
       if (m.behav === 'forage') {
         if (m.kind === 5) {
-          m.energy = Math.min(1.1, m.energy + 0.06);
-          m.hunger = Math.max(0, m.hunger - 0.14);
+          m.energy = Math.min(1.2, m.energy + 0.09);
+          m.hunger = Math.max(0, m.hunger - 0.18);
+        } else if (carcassAt(W, c) > 0.08 && m.hunger > 0.25) {
+          const bite = scavengeAt(W, c, 0.22);
+          if (bite > 0) {
+            m.energy = Math.min(1.3, m.energy + bite * 0.9);
+            m.hunger = Math.max(0, m.hunger - bite * 1.2);
+            m.behav = 'forage';
+          }
         } else if (isLand(W, c) && W.life[c] > 0.05) {
           const graze = Math.min(W.life[c] * 0.09, 0.045);
           W.life[c] = Math.max(0, W.life[c] - graze);
@@ -869,6 +961,8 @@ export function agentsTick(log = null) {
         : W.life[n] + W.moist[n] * 0.3 - W.ice[n] * 0.5 + rng() * 0.05;
       s -= terrainCost * 0.15;
       if (m.behav === 'flee') s -= (W.ash?.[n] || 0) * 2 + (W.dust?.[n] || 0) * 1.5 + (W.stormField?.[n] || 0);
+      if (m.behav === 'flee' && !isPredator(m)) s -= fearAt(W, n) * 1.6;
+      if (!isPredator(m) && carcassAt(W, n) > 0.12 && m.hunger > 0.4) s += carcassAt(W, n) * 0.5;
       if (m.behav === 'rest') s -= 0.4;
       if (m.behav === 'hunt' && m.huntCell >= 0) s += cellDot(n, m.huntCell) * 1.4;
       const pack = m.groupId ? groupById[m.groupId] : null;
@@ -965,6 +1059,7 @@ export function agentsTick(log = null) {
   W.surfaceFeeders = plumeFed;
   W.herdMax = herdBest;
   censusGroups();
+  maybeSplitMerge(rng);
   if (buildsDirty) W._buildsDirty = true;
   plumeDecay();
   if (tick % 4 === 0) {

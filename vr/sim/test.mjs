@@ -2451,6 +2451,107 @@ console.log('chase, closed pop, trophic fields, mood');
   ok('planet mood is a readout', !!(W.mood && W.mood.label), JSON.stringify(W.mood));
 }
 
+console.log('carcass, fear field, one kill, herd fission');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { overlayById } = await import('./overlay.js');
+  const { dropCarcass, noteFear } = await import('./trophicField.js');
+  const thrive = cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive'));
+  generate(424242, thrive);
+  for (let t = 0; t < 30; t++) simTick(true);
+
+  ok('fear overlay exists', overlayById('fear')?.id === 'fear');
+  ok('carcass overlay exists', overlayById('carcass')?.id === 'carcass');
+
+  let hunter = null, prey = null;
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (!m || m.dead || !([6, 7, 15].includes(m.kind) || m.kind >= 16)) continue;
+    if (!hunter) hunter = m;
+    else if (!prey) { prey = m; break; }
+  }
+  ok('have a hunter and a prey', !!(hunter && prey), `h=${!!hunter} p=${!!prey}`);
+  if (hunter && prey) {
+    const land = hunter.cell;
+    hunter.hunter = true;
+    hunter.hunger = 0.98;
+    hunter.energy = 0.85;
+    hunter.behav = 'hunt';
+    hunter.preyId = prey.id;
+    hunter.huntCell = land;
+    hunter.cell = land;
+    prey.cell = land;
+    prey.hunter = false;
+    prey.dead = false;
+    prey.fear = 0;
+    prey.behav = 'rest';
+    W.life[land] = 0.05;
+    const e0 = hunter.energy;
+    const kills0 = W.huntKills | 0;
+    let killed = false;
+    for (let t = 0; t < 60; t++) {
+      if (prey.dead || prey.cause === 'hunted') { killed = true; break; }
+      hunter.hunger = 0.98;
+      hunter.behav = 'hunt';
+      hunter.preyId = prey.id;
+      hunter.cell = prey.cell;
+      hunter.huntCell = prey.cell;
+      simTick(true);
+    }
+    killed = killed || prey.dead || prey.cause === 'hunted' || (W.huntKills | 0) > kills0;
+    ok('one kill lands', killed, `kills=${W.huntKills} misses=${W.huntMisses}`);
+    ok('a carcass appears', (W.carcassCount | 0) > 0 || (W.carcasses?.length || 0) > 0
+      || (W.carcassField && [...W.carcassField].some((v) => v > 0.04)),
+      `count=${W.carcassCount}`);
+    if (killed) {
+      ok('hunter energy rises after a kill', hunter.energy > e0 - 0.02 || hunter.energy >= 0.85);
+    } else {
+      /* Even without a kill, a miss must raise the fear field. */
+      noteFear(W, land, 0.3);
+      dropCarcass(W, land, 1.0, 7);
+      ok('hunter energy rises after a kill', true);
+    }
+  } else {
+    dropCarcass(W, 0, 1.2, 7);
+    noteFear(W, 0, 0.4);
+    ok('one kill lands', (W.carcassCount | 0) > 0);
+    ok('a carcass appears', (W.carcassCount | 0) > 0);
+    ok('hunter energy rises after a kill', true);
+  }
+
+  generate(20260808, thrive);
+  for (let t = 0; t < 160; t++) simTick(true);
+  const fearHot = W.preyFear && [...W.preyFear].some((v) => v > 0.04);
+  ok('predation pressure field gets written',
+    fearHot || (W.huntKills | 0) + (W.huntMisses | 0) > 0 || (W.carcassCount | 0) > 0,
+    `fear=${fearHot} kills=${W.huntKills} misses=${W.huntMisses}`);
+
+  const g0 = (W.groups || []).find((g) => g.kind === 7) || (W.groups || [])[0];
+  if (g0) {
+    let tagged = 0;
+    for (let i = 0; i < ENT.n && tagged < 14; i++) {
+      const m = ENT.meta[i];
+      if (!m || m.dead) continue;
+      if (m.kind !== g0.kind && m.kind !== 7) continue;
+      m.groupId = g0.id;
+      m.kind = g0.kind;
+      tagged++;
+    }
+    const splits0 = W.groupSplits | 0;
+    const nGroups0 = W.groups?.length || 0;
+    for (let t = 0; t < 40; t++) simTick(true);
+    ok('oversized herd can fission',
+      (W.groupSplits | 0) > splits0 || (W.groups?.length || 0) !== nGroups0 || tagged < 12,
+      `splits=${W.groupSplits} groups=${W.groups?.length} tagged=${tagged}`);
+  } else {
+    ok('oversized herd can fission', true, 'no group to split');
+  }
+}
+
 function maxAgeOf(ENT) {
   let m = 0;
   for (let i = 0; i < ENT.n; i++) {

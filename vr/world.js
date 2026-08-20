@@ -79,6 +79,7 @@ export function reallocateWorldFields(target = W) {
     'macroDens', 'cladeCount', 'hydrotherm', 'protoOrg', 'detritus',
     'fire', 'nutrientPlume',
     'trophProd', 'trophHerb', 'trophCarn', 'trophDecomp', 'trophOccHerb', 'trophOccCarn',
+    'preyFear', 'carcassField',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
@@ -306,6 +307,9 @@ export function generate(seed, ruleIn) {
   W.sulfurPaint = null;
   W.mood = null;
   W.huntKills = 0;
+  W.huntMisses = 0;
+  W.carcasses = [];
+  W.carcassCount = 0;
 
   initDeepTime(W, rule);
 
@@ -404,6 +408,13 @@ export function generate(seed, ruleIn) {
     W.trophProd.fill(0); W.trophHerb.fill(0); W.trophCarn.fill(0); W.trophDecomp.fill(0);
     W.trophOccHerb.fill(0); W.trophOccCarn.fill(0);
   }
+  if (W.preyFear) W.preyFear.fill(0);
+  if (W.carcassField) W.carcassField.fill(0);
+  W.carcasses = [];
+  W.carcassCount = 0;
+  W.huntMisses = 0;
+  W.groupSplits = 0;
+  W.groupMerges = 0;
   W._agentTick = 0;
   W._cityLights = 0;
   W.cities = [];
