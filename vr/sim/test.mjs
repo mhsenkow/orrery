@@ -2503,7 +2503,8 @@ console.log('carcass, fear field, one kill, herd fission');
       simTick(true);
     }
     killed = killed || prey.dead || prey.cause === 'hunted' || (W.huntKills | 0) > kills0;
-    ok('one kill lands', killed, `kills=${W.huntKills} misses=${W.huntMisses}`);
+      ok('one kill lands', killed || (W.huntKills | 0) > kills0,
+        `kills=${W.huntKills} misses=${W.huntMisses}`);
     ok('a carcass appears', (W.carcassCount | 0) > 0 || (W.carcasses?.length || 0) > 0
       || (W.carcassField && [...W.carcassField].some((v) => v > 0.04)),
       `count=${W.carcassCount}`);
@@ -2653,6 +2654,41 @@ console.log('Gaia drive + trails');
     `groups=${W.groups?.length}`);
   ok('beings carry thirst/heat drives',
     ENT.meta.some((m) => m && !m.dead && m.thirst != null && m.heat != null));
+}
+
+console.log('biology clock and life substeps');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS, setLifeSpeed, lifeSubsteps } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun, isPinnedEarth } = await import('./ruleMode.js');
+  const thrive = cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive'));
+  const terra = cloneRuleForRun(RULESETS.find((r) => r.id === 'terra'));
+
+  generate(4242, terra);
+  ok('pinned Earth life substeps stay at 1', lifeSubsteps(W) === 1);
+
+  generate(4242, thrive);
+  ok('thrive starts at 1× life', (W.lifeSpeed | 0) === 1 && lifeSubsteps(W) === 1);
+  setLifeSpeed(2);
+  ok('life speed dial sets 2×', lifeSubsteps(W) === 2);
+  const age0 = maxAgeOf(ENT);
+  for (let t = 0; t < 10; t++) simTick(true);
+  ok('life substeps age beings faster than calendar ticks', maxAgeOf(ENT) >= age0 + 15, `age ${age0} -> ${maxAgeOf(ENT)}`);
+  ok('bioGen advances', (W.bioGen || 0) > 0, `bioGen=${W.bioGen}`);
+
+  setLifeSpeed(4);
+  ok('life speed dial sets 4×', lifeSubsteps(W) === 4);
+  setLifeSpeed(1);
+  const n0 = ENT.n;
+  const book0 = { ...(W.popBook || {}) };
+  for (let t = 0; t < 40; t++) simTick(true);
+  const born = (W.popBook?.births || 0) - (book0.births || 0);
+  const died = (W.popBook?.deaths || 0) - (book0.deaths || 0);
+  const dn = ENT.n - n0;
+  ok('population book nearly balances', Math.abs(dn - (born - died)) <= 2,
+    `Δn=${dn} births=${born} deaths=${died}`);
 }
 
 function maxAgeOf(ENT) {

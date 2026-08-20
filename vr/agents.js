@@ -792,6 +792,9 @@ export function agentsTick(log = null) {
     m.age++;
     let c = m.cell;
     const animal = isAnimalKind(m.kind);
+    if (animal) {
+      m.gen = (m.gen || 0) + (W.dtBio || W.dtYr || 10) / (45 + bodyMassTrait(m) * 220);
+    }
     initDrives(m);
     if (animal) m.hunger = Math.min(1, m.hunger + metabolicRate(m) * 0.32);
     m.behav = pickBehav(m, c, rng);

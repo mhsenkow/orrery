@@ -546,6 +546,10 @@ export const RIBBON_TIPS = {
     title: 'Held season',
     body: 'Which month the planet is frozen in while years pass. The climate panel season slider writes the same lock.',
   },
+  life: {
+    title: 'Biology speed',
+    body: 'How many life steps run inside one climate tick. 1× = geology pace; 2–8× lets herds, hunts and births move while mountains stay slow. Pinned calibration Earth always stays at 1×.',
+  },
 };
 
 export function tipForTool(id) {

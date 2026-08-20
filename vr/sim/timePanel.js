@@ -28,5 +28,8 @@ export function timePanelState(W, S = {}) {
     clockFace: face,
     seasonHoldId: nearestSeasonHold(W).id,
     lived: face === 'now',
+    lifeSpeed: W.lifeSpeed || 1,
+    dtBio: W.dtBio || null,
+    bioGen: W.bioGen || 0,
   };
 }

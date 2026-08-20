@@ -5,7 +5,7 @@ import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
 import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
 import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js?v=49';
 import { setClockFace, setSeasonHold, livedTick } from './sim/clockFace.js';
-import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain } from './world.js';
+import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed } from './world.js';
 import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
 import { freshSeed } from './sim/rng.js';
 import { describeGenome } from './sim/genome.js';
@@ -809,6 +809,13 @@ function toggleFastForward() {
   updateHUD();
 }
 
+function applyLifeSpeed(n) {
+  setLifeSpeed(+n || 1);
+  const ribbon = document.getElementById('timeribbon');
+  if (ribbon) delete ribbon.dataset.sig;
+  updateHUD();
+}
+
 function applyEra(eraId) {
   if (!eraId || !availableEras(W.rule).some((e) => e.id === eraId)) return;
   const rule = ruleForEra(W.rule, eraId);
@@ -826,6 +833,7 @@ function bindRibbonTips(ribbon) {
     ['.rib-track', RIBBON_TIPS.track],
     ['.rib-faces', RIBBON_TIPS.face],
     ['.rib-hold', RIBBON_TIPS.hold],
+    ['.rib-life', RIBBON_TIPS.life],
   ];
   for (const [sel, tip] of map) {
     const el = ribbon.querySelector(sel);
@@ -862,6 +870,12 @@ function bindTimeRibbon() {
     if (hold) {
       e.preventDefault();
       applySeasonHold(hold.dataset.seasonHold);
+      return;
+    }
+    const life = e.target.closest('[data-life-speed]');
+    if (life) {
+      e.preventDefault();
+      applyLifeSpeed(life.dataset.lifeSpeed);
       return;
     }
     const step = e.target.closest('[data-rate-step]');
@@ -1065,7 +1079,7 @@ function updateHUD() {
     const needle = Math.min(100, Math.max(0, ((4567 - (W.ics?.maBP ?? 0)) / 4567) * 100)) | 0;
     const ageLabel = formatAge(W.ageYr || W.year);
     const panel = timePanelState(W, S);
-    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}`;
+    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}|${panel.lifeSpeed}`;
     if (ribbon.dataset.sig !== sig) {
       ribbon.dataset.sig = sig;
       ribbon.innerHTML = icsRibbonHTML(W.ics, ageLabel, W.ics?.maBP, clock, panel);
@@ -4112,6 +4126,7 @@ export function boot() {
     ? (RULESETS.find((r) => r.id === 'thrive') || RULESETS[0])
     : RULESETS[0];
   applyOpening(opening, { rule: bootRule });
+  if (isDemoMode()) setLifeSpeed(2);
   let pitch = null;
   try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* ignore */ }
   if (pitch) applyPitchShot(pitch);

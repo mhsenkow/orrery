@@ -76,17 +76,18 @@
   input[type="file"] {
     font: inherit; font-size: 10.5px; color: var(--dim); max-width: 100%;
   }
-  input[type="file"]::file-selector-button,
-  input[type="file"]::-webkit-file-upload-button {
+  /* Hide native file chrome; the wrapping .file-btn is the visible control */
+  .file-btn {
+    position: relative; display: inline-flex; align-items: center;
     font: inherit; font-size: 10.5px; color: var(--text); cursor: pointer;
     background: rgba(255,255,255,.04); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 8px; margin-right: 8px;
-    -webkit-appearance: none; appearance: none;
+    border-radius: 8px; padding: 5px 9px;
     transition: background .25s var(--ease), border-color .25s var(--ease);
   }
-  input[type="file"]::file-selector-button:hover,
-  input[type="file"]::-webkit-file-upload-button:hover {
-    background: rgba(110,160,255,.14); border-color: rgba(110,160,255,.4);
+  .file-btn:hover { background: rgba(110,160,255,.14); border-color: rgba(110,160,255,.4); }
+  .file-btn input[type="file"] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    font-size: 0; max-width: none;
   }
   kbd { font:inherit; font-size:10px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
         border-radius:3px; padding:0 4px; }
@@ -535,10 +536,24 @@
   .rib-hold-btn.on {
     background:rgba(198,154,79,.18); border-color:rgba(198,154,79,.5); color:#f0d9a8;
   }
-  .rib-face-btn:hover, .rib-hold-btn:hover {
+  .rib-life {
+    display:flex; align-items:center; gap:3px; margin-top:6px;
+  }
+  .rib-life-label {
+    font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:#6a7a94; margin-right:2px;
+  }
+  .rib-life-btn {
+    font:inherit; cursor:pointer; flex:1; height:22px; padding:0;
+    font-size:9px; letter-spacing:.04em; color:#8aa0c0;
+    background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:7px;
+  }
+  .rib-life-btn.on {
+    background:rgba(110,200,140,.18); border-color:rgba(110,200,140,.5); color:#c8f0d0;
+  }
+  .rib-face-btn:hover, .rib-hold-btn:hover, .rib-life-btn:hover {
     background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4);
   }
-  .rib-face-btn:focus-visible, .rib-hold-btn:focus-visible {
+  .rib-face-btn:focus-visible, .rib-hold-btn:focus-visible, .rib-life-btn:focus-visible {
     outline:none; border-color:rgba(110,160,255,.65);
     box-shadow:0 0 0 2px rgba(110,160,255,.25);
   }
@@ -928,7 +943,6 @@
     font-size:10.5px; color:var(--dim); letter-spacing:.04em;
   }
   #catsort { font-size:10.5px; padding:4px 7px; background:rgba(0,0,0,.35); }
-  #catcsv { max-width:11rem; }
   #catlist { overflow:auto; flex:1; min-height:140px; display:flex; flex-direction:column; gap:3px; }
   .cat-item { text-align:left; padding:7px 8px; border-radius:8px; width:100%;
     display:grid; grid-template-columns:32px 1fr; gap:1px 8px; }
@@ -1875,7 +1889,7 @@
         </select>
       </label>
       <label>CSV
-        <input id="catcsv" type="file" accept=".csv,text/csv" aria-label="Import catalogue CSV">
+        <span class="file-btn">Import<input id="catcsv" type="file" accept=".csv,text/csv" aria-label="Import catalogue CSV"></span>
       </label>
     </div>
     <div id="catcats"></div>

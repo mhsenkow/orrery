@@ -310,6 +310,9 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
   const holdId = panel.seasonHoldId || 'mar';
   const holdBtns = SEASON_HOLDS.map((h) =>
     `<button type="button" class="rib-hold-btn${h.id === holdId ? ' on' : ''}" data-season-hold="${h.id}" title="${h.title}">${h.label}</button>`).join('');
+  const lifeSpeed = panel.lifeSpeed || 1;
+  const lifeBtns = [1, 2, 4, 8].map((n) =>
+    `<button type="button" class="rib-life-btn${n === lifeSpeed ? ' on' : ''}" data-life-speed="${n}" title="${n}× biology steps per climate tick">${n}×</button>`).join('');
   return `<div class="ics-ribbon${pausedCls}${lived ? ' is-now' : ' is-years'}">
     <div class="rib-head">
       <span class="rib-mode">${mode}</span>
@@ -325,6 +328,10 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       ? 'Days, seasons and the moon · the calendar holds'
       : 'Years pass · this season stays'}</p>
     ${lived ? '' : `<div class="rib-hold" role="group" aria-label="Held season">${holdBtns}</div>`}
+    <div class="rib-life" role="group" aria-label="Biology speed">
+      <span class="rib-life-label">Life</span>${lifeBtns}
+      <span class="rib-dt">${panel.dtBio != null ? `bio ${Number(panel.dtBio).toPrecision(3)} yr` : ''}</span>
+    </div>
     <div class="rib-clock">
       <button type="button" class="rib-pause" data-time-pause aria-pressed="${paused ? 'true' : 'false'}" title="Pause (Space)">${paused ? '▶' : '⏸'}</button>
       ${lived ? '' : `

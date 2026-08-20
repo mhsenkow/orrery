@@ -52,7 +52,7 @@ import { initStorms, stormsTick } from './sim/storms.js';
 import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
-import { isModernEarth, isDeepTimeEarth, cloneRuleForRun } from './sim/ruleMode.js';
+import { isModernEarth, isDeepTimeEarth, cloneRuleForRun, isPinnedEarth } from './sim/ruleMode.js';
 import { applySeasonPolicy, initClockFace, shouldHoldCalendar } from './sim/clockFace.js';
 import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
@@ -319,6 +319,10 @@ export function generate(seed, ruleIn) {
   W._gaiaLifePrev = null;
   W.trail = null;
   W.popBook = { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
+  W.bioGen = 0;
+  W.dtBio = 0;
+  W.lifeStepsLast = 1;
+  W.lifeSpeed = 1;
 
   initDeepTime(W, rule);
 
@@ -707,6 +711,22 @@ export function setSunDir(x, y, z) {
   W._sunDir = _sunDir;
 }
 
+/** How many `agentsTick` passes run inside one climate `simTick`. */
+export function lifeSubsteps(W, rule = W.rule) {
+  if (isPinnedEarth(rule)) return 1;
+  const n = W.lifeSpeed | 0;
+  if (n >= 8) return 8;
+  if (n >= 4) return 4;
+  if (n >= 2) return 2;
+  return 1;
+}
+
+export function setLifeSpeed(n) {
+  const v = n >= 8 ? 8 : n >= 4 ? 4 : n >= 2 ? 2 : 1;
+  W.lifeSpeed = v;
+  return v;
+}
+
 export function simTick(silent = false) {
   W.prevTemp.set(W.temp);
   W.prevLife.set(W.life);
@@ -791,7 +811,14 @@ export function simTick(silent = false) {
      spin-up where there is no biosphere to walk yet. */
   if (!W._spinup && !rule.daisyworld && !W.noSurface) {
     fireTick(W, log);
-    agentsTick(log);
+    /* Biology clock: life can sub-step inside one climate tick. Pinned terra
+       stays at 1 for golden reproducibility; thrive / lived worlds use
+       `W.lifeSpeed` (1–8) so generations stay visible while geology is slow. */
+    const lifeSteps = lifeSubsteps(W, rule);
+    W.dtBio = (W.dtYr || 10) / Math.max(1, lifeSteps);
+    W.bioGen = (W.bioGen || 0) + (W.dtBio / 25);
+    for (let s = 0; s < lifeSteps; s++) agentsTick(log);
+    W.lifeStepsLast = lifeSteps;
   }
   absorbSimDelta(W);
 
