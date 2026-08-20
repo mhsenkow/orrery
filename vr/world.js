@@ -81,6 +81,7 @@ export function reallocateWorldFields(target = W) {
     'fire', 'nutrientPlume',
     'trophProd', 'trophHerb', 'trophCarn', 'trophDecomp', 'trophOccHerb', 'trophOccCarn',
     'preyFear', 'carcassField',
+    'lifeFront', 'lifeFlux', 'lifePrevTick',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
@@ -424,9 +425,17 @@ export function generate(seed, ruleIn) {
   }
   if (W.preyFear) W.preyFear.fill(0);
   if (W.carcassField) W.carcassField.fill(0);
+  if (W.lifeFront) { W.lifeFront.fill(0); W.lifeFlux.fill(0); W.lifePrevTick.fill(0); }
   W.carcasses = [];
   W.carcassCount = 0;
   W.huntMisses = 0;
+  W.swarmMarks = [];
+  W.swarmCount = 0;
+  W.lifeSparks = [];
+  W.frontCells = 0;
+  W.frontMean = 0;
+  W.frontMax = 0;
+  W.disperseSeeds = 0;
   W.groupSplits = 0;
   W.groupMerges = 0;
   W._agentTick = 0;

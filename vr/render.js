@@ -14,6 +14,8 @@ import { getSpriteAtlas, ATLAS_COLS, morphAtlasDirty } from './sprites.js';
 import { buildTransmittanceLUT, uploadScatterLUT, buildMultipleScatterLUT, updateScatterLUT } from './sim/scatter.js';
 import { applyOverlay } from './sim/overlay.js';
 import { fillFlowStreaks } from './sim/flowviz.js';
+import { fillLifeMarks } from './sim/lifeFront.js';
+import { isPinnedEarth } from './sim/ruleMode.js';
 import { updateIsoline, fillRiverLines } from './sim/isoline.js';
 import { BRUSH } from './sim/god/brush.js';
 import { localSeaLevel, isSubmerged } from './sim/cellSurface.js';
@@ -117,6 +119,7 @@ export let overlayMode = 'none';
 export function setOverlayMode(m) { overlayMode = m || 'none'; }
 
 let _flowBuf = null;
+let _lifeMarkBuf = null;
 let FLOW_COUNT = 0;
 let COAST_COUNT = 0;
 let RIVER_LINE_COUNT = 0;
@@ -2289,6 +2292,27 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
         gl.depthMask(true); gl.disable(gl.BLEND);
         disableAll();
       }
+    }
+  }
+
+  /* herds / carcass marks — biology that moves from orbit */
+  {
+    if (!_lifeMarkBuf) _lifeMarkBuf = new Float32Array(800 * 3);
+    const lifeN = fillLifeMarks(_lifeMarkBuf, W);
+    if (lifeN > 0 && !isPinnedEarth(W.rule)) {
+      gl.useProgram(flatProg);
+      gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+      const pulse = 0.55 + Math.sin(presentTime() * 2.4) * 0.2;
+      gl.uniform4f(flatProg.u.uCol, 0.55 + pulse * 0.2, 0.95, 0.45, 0.38 + pulse * 0.22);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
+      gl.bufferData(gl.ARRAY_BUFFER, _lifeMarkBuf.subarray(0, lifeN * 3), gl.DYNAMIC_DRAW);
+      l = gl.getAttribLocation(flatProg, 'aPos');
+      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      gl.drawArrays(gl.LINES, 0, lifeN);
+      gl.depthMask(true); gl.disable(gl.BLEND);
+      disableAll();
     }
   }
 

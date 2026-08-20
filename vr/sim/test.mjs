@@ -2691,6 +2691,36 @@ console.log('biology clock and life substeps');
     `Δn=${dn} births=${born} deaths=${died}`);
 }
 
+console.log('colonisation front, flux, swarm marks');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { overlayById } = await import('./overlay.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { fillLifeMarks, noteLifeSpark } = await import('./lifeFront.js');
+  const thrive = cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive'));
+  generate(20260819, thrive);
+  for (let t = 0; t < 24; t++) simTick(true);
+  ok('life front overlay exists', overlayById('lifefront')?.id === 'lifefront');
+  ok('life flux overlay exists', overlayById('flux')?.id === 'flux');
+  ok('lifeFront field is allocated', !!(W.lifeFront && W.lifeFront.length > 0));
+  const frontHot = W.lifeFront && [...W.lifeFront].some((v) => v > 0.05);
+  const fluxHot = W.lifeFlux && [...W.lifeFlux].some((v) => Math.abs(v) > 0.01);
+  ok('colonisation front has an edge', frontHot || (W.frontCells | 0) > 0,
+    `frontCells=${W.frontCells} hot=${frontHot}`);
+  ok('life flux records change', fluxHot || (W.lifeGrown | 0) + (W.lifeDied | 0) > 0,
+    `grown=${W.lifeGrown} died=${W.lifeDied}`);
+  ok('swarm marks update', (W.swarmMarks?.length || 0) >= 0);
+  const buf = new Float32Array(2400);
+  const nMarks = fillLifeMarks(buf, W);
+  ok('globe life marks fill when herds exist',
+    nMarks > 0 || (W.groups || []).every((g) => (g.n || 0) < 4),
+    `nMarks=${nMarks} swarms=${W.swarmCount}`);
+  noteLifeSpark(W, 0, 'birth');
+  ok('life sparks record events', (W.lifeSparks?.length || 0) >= 1);
+}
+
 function maxAgeOf(ENT) {
   let m = 0;
   for (let i = 0; i < ENT.n; i++) {

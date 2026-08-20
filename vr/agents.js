@@ -17,6 +17,7 @@ import { carryingCapacityNPP } from './sim/ecology.js';
 import {
   noteGraze, noteHunt, noteFear, dropCarcass, scavengeAt, fearAt, carcassAt,
 } from './sim/trophicField.js';
+import { updateSwarmMarks, noteLifeSpark, ageLifeSparks } from './sim/lifeFront.js';
 import { presentTime, noteWear, wearAt, isOutNow } from './sim/present.js';
 import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
@@ -39,7 +40,11 @@ export function resetAgents() {
   for (let i = 0; i < MAX_ENT; i++) ENT.meta[i] = null;
   W.groups = [];
   W.groupCount = 0;
-  if (W.behavMap) W.behavMap.fill(0);
+  W.swarmMarks = [];
+  W.swarmCount = 0;
+  W.lifeSparks = [];
+  W.behavMap = null;
+  W.plumeCells = undefined;
 }
 
 const NAMES_A = ['Ash', 'Bri', 'Cor', 'Del', 'Fen', 'Gri', 'Hel', 'Jor', 'Kel', 'Lum', 'Mor', 'Nyx', 'Orn', 'Pyx', 'Quin', 'Ryn', 'Sol', 'Tor', 'Ulm', 'Vex'];
@@ -104,6 +109,7 @@ function killBeing(m, c, cause) {
   }
   if (isAnimalKind(m.kind)) dropCarcass(W, c, mass, m.kind);
   if (cause === 'hunted') noteFear(W, c, 0.35);
+  noteLifeSpark(W, c, cause === 'hunted' ? 'hunt' : 'death');
   W.popBook = W.popBook || { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
   W.popBook.deaths++;
   if (cause === 'hunted') W.popBook.hunted++;
@@ -150,6 +156,7 @@ function tryBirth(parent, c, rng, log) {
     : null;
   ENT.n++;
   parent.energy -= 0.32;
+  noteLifeSpark(W, nb, 'birth');
   W.popBook = W.popBook || { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
   W.popBook.births++;
   if (log && child.name) {
@@ -287,6 +294,10 @@ function writeEnt(n, c, kind, rng) {
     hunter: false,
     preyId: null,
     huntCell: -1,
+    baseScale: scale,
+    baseR: (cr / 255) * v,
+    baseG: (cg / 255) * v,
+    baseB: (cb / 255) * v,
   };
   const m = ENT.meta[n];
   if (isAnimalKind(kind) && kind !== 5 && kind !== 14 && rng() < 0.08) {
@@ -315,7 +326,11 @@ export function resetEntities() {
   W.groupMerges = 0;
   W.carcasses = [];
   W.carcassCount = 0;
-  if (W.behavMap) W.behavMap.fill(0);
+  W.swarmMarks = [];
+  W.swarmCount = 0;
+  W.lifeSparks = [];
+  W.behavMap = null;
+  W.plumeCells = undefined;
   if (W.preyFear) W.preyFear.fill(0);
   if (W.carcassField) W.carcassField.fill(0);
 }
@@ -716,6 +731,34 @@ export function presentAgents() {
     ENT.data[o] = x * rr;
     ENT.data[o + 1] = y * rr;
     ENT.data[o + 2] = z * rr;
+
+    /* Behaviour read from orbit — tint and pulse so hunts/flees aren't invisible. */
+    const base = m.baseScale || ENT.data[o + 3] || 0.015;
+    if (m.baseScale == null) m.baseScale = base;
+    let sc = base;
+    let tr = m.baseR ?? ENT.data[o + 5];
+    let tg = m.baseG ?? ENT.data[o + 6];
+    let tb = m.baseB ?? ENT.data[o + 7];
+    if (m.behav === 'hunt') {
+      sc *= 1.22 + Math.sin(t * 9 + i) * 0.06;
+      tr = Math.min(1, tr * 0.55 + 0.55);
+      tg = tg * 0.45;
+      tb = tb * 0.35;
+    } else if (m.behav === 'flee') {
+      sc *= 1.12 + Math.sin(t * 14 + i) * 0.08;
+      tr = Math.min(1, tr * 0.7 + 0.35);
+      tg = Math.min(1, tg * 0.55 + 0.25);
+      tb = tb * 0.4;
+    } else if (m.behav === 'forage') {
+      tg = Math.min(1, tg * 0.85 + 0.18);
+    } else if (m.behav === 'rest') {
+      sc *= 0.92;
+    }
+    if ((m.herd || 0) >= 3) sc *= 1.08;
+    ENT.data[o + 3] = sc;
+    ENT.data[o + 5] = tr;
+    ENT.data[o + 6] = tg;
+    ENT.data[o + 7] = tb;
   }
 }
 
@@ -1145,6 +1188,8 @@ export function agentsTick(log = null) {
       named ? `${named.name} (${named.n}) moves together` : `A ${what} of ${herdBest} moves together`);
   }
   if (isPinnedEarth(W.rule) && ENT.n < capForWorld() * 0.28) topUpEntities();
+  updateSwarmMarks(W);
+  ageLifeSparks(W);
 }
 
 export function followTarget() {

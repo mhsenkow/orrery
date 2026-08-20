@@ -80,6 +80,13 @@ export function resetFocusCache() {
 }
 
 export function huntGlance() {
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (m && !m.dead && m.behav === 'hunt' && m.cell >= 0) return m.cell;
+  }
+  for (const sp of W.lifeSparks || []) {
+    if (sp.kind === 'hunt' && sp.cell >= 0) return sp.cell;
+  }
   return (_seek.phase === 'go' && _seek.next >= 0) ? _seek.next : _seek.show;
 }
 
@@ -742,6 +749,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
       fillRGB(ctx, rgb[0], rgb[1], rgb[2]);
       drawKindGlyph(ctx, cx, cy, cellPx, m.kind);
     }
+    drawActMark(ctx, cx, cy, size, m, dpr);
     if (followId != null && m.id === followId) {
       ctx.strokeStyle = 'rgba(180,255,160,0.9)';
       ctx.lineWidth = Math.max(1.2, dpr);
@@ -753,6 +761,8 @@ export function drawLocalView(cvs, inspect, opts = {}) {
     beings.push({ x: cx, y: cy, size, meta: m });
   }
   patch.beings = beings;
+
+  drawLifeSparks(ctx, cellToXY, ox, oy, cellPx, dpr);
 
   const nCells = side * side - (patch.missing || 0);
   const census = viewCensus(shares, nCells, beings, living, lifeSum);
@@ -874,9 +884,12 @@ function entityBlend(m) {
 function entityGait(m) {
   if (reducedMotion() || m.behav === 'rest') return [0, 0];
   const f = (m.plan?.stride || m.stride || 1);
-  const freq = 6.5 * Math.pow(Math.max(0.2, f), -0.16);
-  const bob = Math.sin(presentTime() * freq + (m.id || 0) * 0.2) * 1.1;
-  return [0, m.kind <= 2 ? 0 : bob];
+  const freq = (m.behav === 'flee' ? 11 : m.behav === 'hunt' ? 9 : 6.5)
+    * Math.pow(Math.max(0.2, f), -0.16);
+  const amp = m.behav === 'flee' ? 1.8 : m.behav === 'hunt' ? 1.45 : 1.1;
+  const bob = Math.sin(presentTime() * freq + (m.id || 0) * 0.2) * amp;
+  const leanX = m.behav === 'flee' ? Math.cos(presentTime() * freq * 0.5) * 1.2 : 0;
+  return [leanX, m.kind <= 2 ? 0 : bob];
 }
 
 /** Stamp density rungs. 0 colour · 1 grain · 2 sprites · 3 tile · 4 ground. */
@@ -1962,4 +1975,76 @@ function drawKindGlyph(ctx, cx, cy, cellPx, kind) {
     ctx.stroke();
   }
   ctx.restore();
+}
+
+/** Small posture mark — hunt wedge, flee dashes, forage leaf, tend square. */
+function drawActMark(ctx, cx, cy, size, m, dpr) {
+  const behav = m.behav;
+  if (!behav || behav === 'rest') return;
+  const s = Math.max(3, size * 0.42);
+  ctx.save();
+  ctx.lineWidth = Math.max(1, dpr * 0.9);
+  ctx.lineCap = 'round';
+  if (behav === 'hunt') {
+    ctx.strokeStyle = 'rgba(255,70,55,0.9)';
+    ctx.fillStyle = 'rgba(255,70,55,0.55)';
+    ctx.beginPath();
+    ctx.moveTo(cx + s * 0.9, cy);
+    ctx.lineTo(cx - s * 0.55, cy - s * 0.55);
+    ctx.lineTo(cx - s * 0.55, cy + s * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  } else if (behav === 'flee') {
+    ctx.strokeStyle = 'rgba(255,170,70,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(cx - s, cy - s * 0.35);
+    ctx.lineTo(cx + s * 0.2, cy - s * 0.55);
+    ctx.moveTo(cx - s, cy + s * 0.35);
+    ctx.lineTo(cx + s * 0.2, cy + s * 0.55);
+    ctx.stroke();
+  } else if (behav === 'forage') {
+    ctx.strokeStyle = 'rgba(120,230,110,0.85)';
+    ctx.beginPath();
+    ctx.arc(cx + s * 0.55, cy - s * 0.55, s * 0.35, 0, Math.PI * 2);
+    ctx.stroke();
+    if ((m.hunger || 0) < 0.35) {
+      ctx.fillStyle = 'rgba(90,200,80,0.55)';
+      ctx.beginPath();
+      ctx.arc(cx, cy + s * 0.45, s * 0.22, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (behav === 'tend') {
+    ctx.strokeStyle = 'rgba(240,210,80,0.85)';
+    ctx.strokeRect(cx - s * 0.35, cy - s * 0.35, s * 0.7, s * 0.7);
+  } else if (behav === 'surface') {
+    ctx.strokeStyle = 'rgba(80,200,255,0.8)';
+    ctx.beginPath();
+    ctx.arc(cx, cy + s * 0.2, s * 0.55, Math.PI * 1.1, Math.PI * 1.9);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawLifeSparks(ctx, cellToXY, ox, oy, cellPx, dpr) {
+  const sparks = W.lifeSparks;
+  if (!sparks?.length) return;
+  for (const sp of sparks) {
+    const xy = cellToXY.get(sp.cell);
+    if (!xy) continue;
+    const u = Math.min(1, (sp.t || 0) / 28);
+    const cx = ox + xy[0] * cellPx + cellPx * 0.5;
+    const cy = oy + xy[1] * cellPx + cellPx * 0.5;
+    const r = cellPx * (0.18 + u * 0.55);
+    ctx.save();
+    ctx.globalAlpha = (1 - u) * 0.85;
+    ctx.lineWidth = Math.max(1, dpr);
+    if (sp.kind === 'birth') ctx.strokeStyle = 'rgba(140,255,180,0.95)';
+    else if (sp.kind === 'hunt') ctx.strokeStyle = 'rgba(255,90,70,0.95)';
+    else ctx.strokeStyle = 'rgba(200,120,255,0.9)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 }

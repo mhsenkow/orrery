@@ -5,6 +5,8 @@ import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { carryingCapacityNPP } from './ecology.js';
 import { daisyNSpeciesTick } from './alien.js';
+import { updateLifeFront, disperseLife } from './lifeFront.js';
+import { rngOf } from './rng.js';
 
 /** Life classes in evolutionary order — display / agent ladder. */
 export const LIFE_CLASSES = [
@@ -168,6 +170,8 @@ export function bioTick(W, chronLog) {
 
   W.lifeGrown = grown;
   W.lifeDied = died;
+  disperseLife(W, rngOf(W, 'rngBio'));
+  updateLifeFront(W);
   const delta = (W.meanLife || 0) - prevMean;
   if (chronLog && Math.abs(delta) > 0.04) {
     chronLog(W.year, delta > 0 ? 'bloom' : 'dieback', 0, Math.abs(delta),
@@ -232,6 +236,7 @@ function daisyTick(W, chronLog) {
   W.meanTemp = sumT / NC;
   W.meanLife = sumLife / NC;
   W.lifeGrown = grown;
+  updateLifeFront(W);
   // Tutorial framing. Item 113.
   W.gaiaMode = 'tutorial-feedback';
   if (!W.pausedSolar) W.rule.solar = Math.min(1.85, W.rule.solar + 0.00035);

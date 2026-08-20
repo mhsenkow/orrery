@@ -91,12 +91,15 @@ export const OVERLAYS = [
   { id: 'fear', label: 'Fear', icon: 'seed', tip: 'Landscape of fear — where hunts and near-misses leave predation pressure. Prey flee the bright cells.' },
   { id: 'carcass', label: 'Carcass', icon: 'seed', tip: 'Kill sites and scavenging. Discrete carcasses decay into soil and nutrients.' },
   { id: 'trail', label: 'Trails', icon: 'seed', tip: 'Worn paths from movement. Herds and foragers prefer desire lines already walked.' },
+  { id: 'lifefront', label: 'Life front', icon: 'seed', tip: 'Colonisation edge — where life is advancing into empty or sparse cells. The leading rim of the biosphere.' },
+  { id: 'flux', label: 'Life flux', icon: 'seed', tip: 'Where biomass grew or died this tick. Green is gain, magenta is loss — rates, not occupancy.' },
 ];
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
   'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic', 'fear', 'carcass', 'trail',
+  'lifefront', 'flux',
   'faces', 'zonal', 'ecotone',
 ];
 
@@ -444,6 +447,24 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 22 + tr * 90;
       g = 18 + tr * 70;
       b = 14 + tr * 40;
+    } else if (mode === 'lifefront') {
+      const f = W.lifeFront?.[c] || 0;
+      const L = W.life?.[c] || 0;
+      r = 8 + L * 20 + f * 40;
+      g = 14 + L * 90 + f * 200;
+      b = 18 + L * 40 + f * 60;
+    } else if (mode === 'flux') {
+      const fx = W.lifeFlux?.[c] || 0;
+      if (fx >= 0) {
+        r = 12 + fx * 40;
+        g = 18 + fx * 220;
+        b = 22 + fx * 80;
+      } else {
+        const m = -fx;
+        r = 18 + m * 200;
+        g = 10 + m * 30;
+        b = 28 + m * 140;
+      }
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }
