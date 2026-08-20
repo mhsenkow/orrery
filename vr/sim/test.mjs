@@ -2410,6 +2410,45 @@ console.log('named herds and behaviour overlay');
   ok('herd members carry a group id', grouped > 0, `grouped=${grouped}`);
   ok('groups are world objects', (W.groups?.length || 0) >= 1, `n=${W.groups?.length}`);
   ok('behaviour map has activity', !!(W.behavMap && W.behavMap.some((v) => v > 0)));
+  ok('herds remember a home cell', (W.groups || []).some((g) => g.home != null && g.goal != null));
+}
+
+console.log('chase, closed pop, trophic fields, mood');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { overlayById } = await import('./overlay.js');
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 6; t++) simTick(true);
+  const n0 = ENT.n;
+  ok('thrive seeds a living population', n0 > 40, `n0=${n0}`);
+  for (let t = 0; t < 80; t++) simTick(true);
+  ok('closed pop grows by births, not topUp', ENT.n <= n0 + 90, `${n0} -> ${ENT.n}`);
+  const chased = ENT.meta.some((m) => m && !m.dead && (m.huntCell >= 0 || m.preyId != null || m.behav === 'hunt'));
+  const hunted = ENT.meta.some((m) => m?.cause === 'hunted') || (W.huntKills | 0) > 0;
+  ok('hunts have a target or a kill', chased || hunted, `chase=${chased} kill=${hunted} kills=${W.huntKills}`);
+  /* Extinction sticks: wipe the book and thrive must not refill from thin air. */
+  ENT.n = 0;
+  ENT.meta.fill(null);
+  for (let t = 0; t < 24; t++) simTick(true);
+  ok('thrive extinction stays empty', ENT.n === 0, `n=${ENT.n}`);
+  ok('trophic overlay exists', overlayById('trophic')?.id === 'trophic');
+  ok('trophic fields are per cell', W.trophHerb?.length === W.life.length);
+  let lush = 0, iceH = 0, nL = 0, nI = 0;
+  for (let c = 0; c < W.life.length; c++) {
+    if (W.h[c] >= W.seaLevel && W.life[c] > 0.45 && (W.ice[c] || 0) < 0.1) {
+      lush += W.trophHerb[c]; nL++;
+    }
+    if ((W.ice[c] || 0) > 0.6) { iceH += W.trophHerb[c]; nI++; }
+  }
+  const lushM = nL ? lush / nL : 0;
+  const iceM = nI ? iceH / nI : 0;
+  ok('grazing load is higher on living land than ice', nL === 0 || nI === 0 || lushM > iceM,
+    `lush=${lushM.toFixed(3)} ice=${iceM.toFixed(3)}`);
+  ok('planet mood is a readout', !!(W.mood && W.mood.label), JSON.stringify(W.mood));
 }
 
 function maxAgeOf(ENT) {

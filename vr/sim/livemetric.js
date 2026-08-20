@@ -49,6 +49,7 @@ export function livingMetrics(W, ent = ENT) {
     foodWebLinks: W.foodWeb?.links?.length || 0,
     foodWebDropped: W.foodWeb?.dropped || 0,
     groups: W.groupCount || W.groups?.length || 0,
+    mood: W.mood?.label || null,
     ageYr: W.ageYr,
     meanLife: W.meanLife,
   };

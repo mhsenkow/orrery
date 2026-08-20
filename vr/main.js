@@ -1013,6 +1013,7 @@ function updateHUD() {
       ? `<span style="color:#6fd6a4">GPGPU climate <b>${(W._gpgpuMs || 0).toFixed(2)} ms</b></span><br>`
       : `<span style="color:#889">climate CPU</span><br>`) +
     `state <b>${W.state}</b> · health <b>${(W.health * 100) | 0}%</b>` +
+    (W.mood?.label ? ` · mood <b>${W.mood.label}</b>` : '') +
     ` · hab <b>${((W.habitability || 0) * 100) | 0}</b>/<b>${((W.inhabitance || 0) * 100) | 0}</b>${bioSig}<br>` +
     `T <b>${tStr}</b> · sea <b>${W.seaLevel.toFixed(3)}</b>` +
     (R.surfacePressureBar != null ? ` · <b>${formatLivePressure(W)}</b>` : '') +

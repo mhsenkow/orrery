@@ -14,6 +14,7 @@ import { isSubmerged, isLand, localSeaLevel } from './sim/cellSurface.js';
 import { isModernEarth, isPinnedEarth } from './sim/ruleMode.js';
 import { settleCities, cityLights } from './sim/city.js';
 import { carryingCapacityNPP } from './sim/ecology.js';
+import { noteGraze, noteHunt } from './sim/trophicField.js';
 import { presentTime, noteWear, isOutNow } from './sim/present.js';
 import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
@@ -61,17 +62,24 @@ function bodyMassTrait(m) {
 }
 
 function metabolicRate(m) {
-  return 0.003 + kleiberDensity(bodyMassTrait(m)) * 0.07;
+  return 0.001 + kleiberDensity(bodyMassTrait(m)) * 0.022;
 }
 
 function maxLifespan(m) {
-  return 60 + bodyMassTrait(m) * 420;
+  return 220 + bodyMassTrait(m) * 520;
 }
 
 function isPredator(m) {
   if (!isAnimalKind(m.kind) || m.kind === 5) return false;
+  if (m.hunter) return true;
   const node = m.popId ? nodeOf(W.tree, m.popId) : null;
-  return (node?.traits?.[TRAITS.trophic] ?? 0) > 0.55;
+  return (node?.traits?.[TRAITS.trophic] ?? 0) > 0.48;
+}
+
+function cellsAdjacent(a, b) {
+  if (a === b) return true;
+  for (let k = 0; k < 4; k++) if (NBR[a * 4 + k] === b) return true;
+  return false;
 }
 
 function initDrives(m) {
@@ -101,7 +109,7 @@ function tryBirth(parent, c, rng, log) {
   const cap = carryingCapacityNPP(W, c);
   if (W.life[c] < cap * 0.25 && (W.npp?.[c] || 0) < 0.12) return false;
   if (ENT.n >= capForWorld() - 1) return false;
-  if (rng() > 0.022 * (parent.energy - 0.45)) return false;
+  if (rng() > (isPinnedEarth(W.rule) ? 0.022 : 0.11) * (parent.energy - 0.4)) return false;
   let nb = c;
   for (let k = 0; k < 4; k++) {
     const n = NBR[c * 4 + k];
@@ -117,6 +125,7 @@ function tryBirth(parent, c, rng, log) {
   child.energy = 0.58;
   child.hunger = 0.35;
   child.fear = 0;
+  child.hunter = !!parent.hunter;
   child.popId = parent.popId;
   child.cladeName = parent.cladeName;
   child.plan = parent.plan;
@@ -257,7 +266,15 @@ function writeEnt(n, c, kind, rng) {
     energy: 1,
     hunger: 0,
     fear: 0,
+    hunter: false,
+    preyId: null,
+    huntCell: -1,
   };
+  const m = ENT.meta[n];
+  if (isAnimalKind(kind) && kind !== 5 && kind !== 14 && rng() < 0.08) {
+    m.hunter = true;
+    m.hunger = 0.5 + rng() * 0.25;
+  }
 }
 
 /** Drop every individual. A new world must not inherit the last one's
@@ -273,6 +290,8 @@ export function resetEntities() {
   resetMorphAtlas();
   W.groups = [];
   W.groupCount = 0;
+  W._agentsSeeded = false;
+  W.huntKills = 0;
   if (W.behavMap) W.behavMap.fill(0);
 }
 
@@ -295,7 +314,7 @@ function mintGroup(kind, cell) {
   const id = _groupSeq++;
   const what = kind === 14 || kind === 15 ? 'pod' : 'herd';
   const name = `${nameFrom(W.seed, id + 800)} ${what}`;
-  return { id, kind, name, n: 0, cell, hx: 0, hy: 0, hz: 0 };
+  return { id, kind, name, n: 0, cell, home: cell, goal: cell, hx: 0, hy: 0, hz: 0, born: W.year };
 }
 
 function writeHerd(n, c, kind, rng, cap) {
@@ -383,6 +402,15 @@ function censusGroups() {
       cell: t.cell,
       hx: 0, hy: 0, hz: 0,
     };
+    old.home = old.home ?? t.cell;
+    let goal = t.cell, bestLife = W.life[t.cell] || 0;
+    for (let k = 0; k < 4; k++) {
+      const nb = NBR[t.cell * 4 + k];
+      const lv = (W.life[nb] || 0) - (W.fire?.[nb] || 0) - (W.ice?.[nb] || 0) * 0.5;
+      if (lv > bestLife) { bestLife = lv; goal = nb; }
+    }
+    if ((W.life[t.cell] || 0) < 0.08 && old.home >= 0) goal = old.home;
+    old.goal = goal;
     old.n = t.n;
     old.cell = t.cell;
     old.kind = t.kind;
@@ -457,6 +485,40 @@ function eachNearby(c, fn) {
   }
 }
 
+function findPrey(self, c) {
+  let best = -1, bestDist = 9;
+  const consider = (j, dist) => {
+    if (j === self || dist >= bestDist) return;
+    const p = ENT.meta[j];
+    const selfM = ENT.meta[self];
+    if (!p || p.dead || p.kind === 5 || p.kind === 14) return;
+    if (!isAnimalKind(p.kind)) return;
+    if (isSubmerged(W, p.cell) !== isSubmerged(W, selfM.cell)) return;
+    /* Same-kind herds: hunters may take non-hunters; peers leave each other alone. */
+    if (p.kind === selfM.kind && (p.hunter || !selfM.hunter)) return;
+    best = j;
+    bestDist = dist;
+  };
+  let j = _head[c];
+  while (j >= 0) { consider(j, 0); j = _next[j]; }
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[c * 4 + k];
+    j = _head[n];
+    while (j >= 0) { consider(j, 1); j = _next[j]; }
+  }
+  if (best >= 0) return best;
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[c * 4 + k];
+    for (let k2 = 0; k2 < 4; k2++) {
+      const n2 = NBR[n * 4 + k2];
+      if (n2 === c) continue;
+      j = _head[n2];
+      while (j >= 0) { consider(j, 2); j = _next[j]; }
+    }
+  }
+  return best;
+}
+
 function cellDot(a, b) {
   return DIR[a * 3] * DIR[b * 3] + DIR[a * 3 + 1] * DIR[b * 3 + 1] + DIR[a * 3 + 2] * DIR[b * 3 + 2];
 }
@@ -484,7 +546,7 @@ function pickBehav(m, c, rng) {
     return m.hunger > 0.35 ? 'surface' : (rng() < 0.45 ? 'surface' : 'forage');
   }
   if (m.kind <= 2) return 'rest';
-  if (isPredator(m) && m.hunger > 0.42) return 'hunt';
+  if (isPredator(m) && m.hunger > 0.38) return 'hunt';
   if (m.hunger > 0.58) return 'forage';
   if (m.hunger > 0.38 && rng() < 0.65) return 'forage';
   if (m.hunger < 0.22 && rng() < 0.45) return 'rest';
@@ -572,9 +634,15 @@ function stageLabel(b) {
 export function agentsTick(log = null) {
   const rng = rngOf(W, 'rngAgents');
   if (ENT.n === 0) {
-    respawnEntities();
+    /* Pinned Earth may refill forever. Thrive seeds once from empty, then a
+       wipe stays a wipe — closed book, births only. */
+    if (isPinnedEarth(W.rule) || !W._agentsSeeded) {
+      respawnEntities();
+      W._agentsSeeded = true;
+    }
     return;
   }
+  W._agentsSeeded = true;
   /* Cadence used to be `W.year % 4000` and `W.year % 40`, which on the pinned
      Earth is a constant divisible by both — so top-up and the settlement scan
      ran every single tick, and on a fast clock they ran never. A tick counter
@@ -582,9 +650,11 @@ export function agentsTick(log = null) {
   const tick = (W._agentTick = (W._agentTick | 0) + 1);
   if (!W.behavMap || W.behavMap.length !== NC) W.behavMap = new Uint8Array(NC);
   else if ((tick & 1) === 0) W.behavMap.fill(0);
-  if (tick % 64 === 0) topUpEntities();
+  if (isPinnedEarth(W.rule) && tick % 64 === 0) topUpEntities();
   compactDead();
   rebuildBuckets();
+  const groupById = Object.create(null);
+  for (const g of W.groups || []) groupById[g.id] = g;
 
   let buildsDirty = false;
   let built = 0;
@@ -596,8 +666,9 @@ export function agentsTick(log = null) {
     if (!m || m.dead) continue;
     m.age++;
     let c = m.cell;
+    const animal = isAnimalKind(m.kind);
     initDrives(m);
-    m.hunger = Math.min(1, m.hunger + metabolicRate(m) * 0.32);
+    if (animal) m.hunger = Math.min(1, m.hunger + metabolicRate(m) * 0.32);
     m.behav = pickBehav(m, c, rng);
     if (!W.behavMap || W.behavMap.length !== NC) W.behavMap = new Uint8Array(NC);
     W.behavMap[c] = BEHAV_CODE[m.behav] || 1;
@@ -725,33 +796,65 @@ export function agentsTick(log = null) {
     }
 
     if (m.behav === 'hunt') {
-      eachNearby(c, (j) => {
-        if (j === i || rng() > 0.18) return;
-        const prey = ENT.meta[j];
-        if (!prey || prey.dead || prey.kind === m.kind || prey.kind === 5) return;
-        if (!isAnimalKind(prey.kind)) return;
-        killBeing(prey, prey.cell, 'hunted');
-        m.energy = Math.min(1.35, m.energy + 0.28);
-        m.hunger = Math.max(0, m.hunger - 0.42);
-      });
+      let prey = null;
+      if (m.preyId != null) {
+        for (let j = 0; j < ENT.n; j++) {
+          const q = ENT.meta[j];
+          if (q && q.id === m.preyId && !q.dead) { prey = q; break; }
+        }
+      }
+      if (!prey) {
+        const j = findPrey(i, c);
+        prey = j >= 0 ? ENT.meta[j] : null;
+        m.preyId = prey?.id ?? null;
+      }
+      if (prey) {
+        m.huntCell = prey.cell;
+        const adjacent = cellsAdjacent(c, prey.cell);
+        if (adjacent && rng() < (prey.cell === c ? 0.45 : 0.22)) {
+          killBeing(prey, prey.cell, 'hunted');
+          m.energy = Math.min(1.35, m.energy + 0.28);
+          m.hunger = Math.max(0, m.hunger - 0.42);
+          noteHunt(W, c);
+          W.huntKills = (W.huntKills | 0) + 1;
+          m.preyId = null;
+          m.huntCell = -1;
+        } else {
+          m.energy = Math.max(0, m.energy - 0.008);
+        }
+      } else {
+        m.huntCell = -1;
+        m.preyId = null;
+        m.behav = 'forage';
+      }
     }
 
-    const moveCost = metabolicRate(m) * (
-      m.behav === 'flee' ? 1.35 : m.behav === 'rest' ? 0.55 : m.behav === 'hunt' ? 1.1 : 0.95);
-    m.energy = Math.max(0, m.energy - moveCost);
-    if (m.behav === 'forage' && isAnimalKind(m.kind)) {
-      if (m.kind === 5) {
-        m.energy = Math.min(1.1, m.energy + 0.04);
-        m.hunger = Math.max(0, m.hunger - 0.1);
-      } else if (isLand(W, c) && W.life[c] > 0.05) {
-        const graze = Math.min(W.life[c] * 0.07, 0.035);
-        W.life[c] = Math.max(0, W.life[c] - graze);
-        m.energy = Math.min(1.25, m.energy + graze * 5);
-        m.hunger = Math.max(0, m.hunger - graze * 7);
-      } else if (isSubmerged(W, c) && (W.npp?.[c] || 0) > 0.08) {
-        m.energy = Math.min(1.15, m.energy + 0.06);
-        m.hunger = Math.max(0, m.hunger - 0.12);
+    if (animal) {
+      const moveCost = metabolicRate(m) * (
+        m.behav === 'flee' ? 1.2 : m.behav === 'rest' ? 0.4 : m.behav === 'hunt' ? 1.05 : 0.85);
+      m.energy = Math.max(0, m.energy - moveCost);
+      if (m.behav === 'rest') {
+        m.energy = Math.min(1.15, m.energy + 0.02);
+        m.hunger = Math.max(0, m.hunger - 0.04);
       }
+      if (m.behav === 'forage') {
+        if (m.kind === 5) {
+          m.energy = Math.min(1.1, m.energy + 0.06);
+          m.hunger = Math.max(0, m.hunger - 0.14);
+        } else if (isLand(W, c) && W.life[c] > 0.05) {
+          const graze = Math.min(W.life[c] * 0.09, 0.045);
+          W.life[c] = Math.max(0, W.life[c] - graze);
+          noteGraze(W, c, graze);
+          m.energy = Math.min(1.25, m.energy + graze * 6);
+          m.hunger = Math.max(0, m.hunger - graze * 8);
+        } else if (isSubmerged(W, c) && (W.npp?.[c] || 0) > 0.08) {
+          m.energy = Math.min(1.15, m.energy + 0.08);
+          m.hunger = Math.max(0, m.hunger - 0.15);
+        }
+      }
+    } else {
+      m.energy = 1;
+      m.hunger = 0;
     }
 
     for (let k = 0; k < 4; k++) {
@@ -767,6 +870,11 @@ export function agentsTick(log = null) {
       s -= terrainCost * 0.15;
       if (m.behav === 'flee') s -= (W.ash?.[n] || 0) * 2 + (W.dust?.[n] || 0) * 1.5 + (W.stormField?.[n] || 0);
       if (m.behav === 'rest') s -= 0.4;
+      if (m.behav === 'hunt' && m.huntCell >= 0) s += cellDot(n, m.huntCell) * 1.4;
+      const pack = m.groupId ? groupById[m.groupId] : null;
+      if (pack && pack.goal >= 0 && m.behav !== 'flee' && m.behav !== 'hunt') {
+        s += cellDot(n, pack.goal) * 0.35;
+      }
       if (s > score) { score = s; best = n; }
     }
     // A stampede is a herd that moves faster than it forages. Fire in the cell
@@ -779,6 +887,7 @@ export function agentsTick(log = null) {
     const panic = m.behav === 'flee' || nearFire > 0.08;
     const moveChance = m.behav === 'rest' ? 0.06
       : panic ? (m.herd > 3 ? 0.92 : 0.7)
+      : m.behav === 'hunt' ? 0.72
       : m.kind === 5 ? (frontier ? 0.45 : W.build[c] > 0.25 ? 0.12 : 0.35)
       : m.behav === 'surface' ? 0.22
       : 0.4;
@@ -837,19 +946,19 @@ export function agentsTick(log = null) {
       killBeing(m, c, 'burned');
       continue;
     }
-    if (m.energy <= 0) {
+    if (animal && m.energy <= 0) {
       killBeing(m, c, 'starved');
       continue;
     }
-    if (m.age > maxLifespan(m) && rng() < 0.07) {
+    if (animal && m.age > maxLifespan(m) && rng() < 0.025) {
       killBeing(m, c, 'old age');
       continue;
     }
-    if (W.life[c] < 0.04 && m.kind < 10 && isAnimalKind(m.kind) && rng() < 0.1) {
+    if (animal && W.life[c] < 0.04 && m.kind < 10 && rng() < 0.1) {
       killBeing(m, c, W.ice[c] > 0.4 ? 'ice' : (W.temp[c] > 0.75 ? 'heat' : 'starved'));
       continue;
     }
-    if (tick % 8 === (m.id & 7) && rng() < 0.025) tryBirth(m, c, rng, log);
+    if (animal && tick % 4 === (m.id & 3) && rng() < 0.045) tryBirth(m, c, rng, log);
   }
 
   W.buildersActive = built;
@@ -874,7 +983,7 @@ export function agentsTick(log = null) {
     log(W.year, 'herd', herdCell, herdBest / 20,
       named ? `${named.name} (${named.n}) moves together` : `A ${what} of ${herdBest} moves together`);
   }
-  if (ENT.n < capForWorld() * 0.28) topUpEntities();
+  if (isPinnedEarth(W.rule) && ENT.n < capForWorld() * 0.28) topUpEntities();
 }
 
 export function followTarget() {
@@ -916,6 +1025,9 @@ export function packEntities() {
       fear: m.fear,
       parentId: m.parentId ?? null,
       groupId: m.groupId || 0,
+      preyId: m.preyId ?? null,
+      huntCell: m.huntCell ?? -1,
+      hunter: !!m.hunter,
     });
   }
   return { seq: _idSeq, list, groups: (W.groups || []).map((g) => ({ ...g })) };
@@ -956,6 +1068,9 @@ export function restoreEntities(packed) {
       fear: rec.fear ?? 0,
       parentId: rec.parentId ?? null,
       groupId: rec.groupId || 0,
+      preyId: rec.preyId ?? null,
+      huntCell: rec.huntCell ?? -1,
+      hunter: !!rec.hunter,
     };
     writePos(n, rec.cell);
     const o = n * 8;

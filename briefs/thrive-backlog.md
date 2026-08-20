@@ -115,7 +115,7 @@ Landed (partial). `agentsTick()` now runs inside `simTick` in `vr/world.js`, so 
 
 ## A being with no inside
 
-Partial. Individuals now carry **energy**, **hunger** and **fear**; Kleiber metabolism, grazing, birth (`tryBirth`), death with cause (starved, burned, hunted, old age), and cell-local **hunt** for trophic > 0.55 lineages. Still missing: memory, territory, full behaviour genome, field↔being contract.
+Partial. Individuals now carry **energy**, **hunger** and **fear**; Kleiber metabolism, grazing, birth (`tryBirth`), death with cause (starved, burned, hunted, old age), and chase hunts for predators. Still missing: memory, territory, full behaviour genome, field↔being contract.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
@@ -142,11 +142,11 @@ Partial. Individuals now carry **energy**, **hunger** and **fear**; Kleiber meta
 
 ## Nothing is born and nothing dies
 
-Partial. `tryBirth` spends parent energy and writes `parentId`; deaths increment probe `died` with causes; fire kills; predators hunt adjacent prey. `topUpEntities` still backfills catastrophic dips — population is not yet a closed book.
+Partial. `tryBirth` spends parent energy and writes `parentId`; deaths carry causes; fire kills; predators chase and kill. On thrive, `topUpEntities` is off and an empty world stays empty after the first seed — closed book, births only. Pinned terra still tops up for calibration.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
-| 61 | **Birth, so a population can grow** <br>gives `birth` <br>needs `energy` | Landed (first cut). `tryBirth` spends parent energy, writes `parentId`, inherits group. `topUpEntities` still backfills crashes. | Model | M | 3 |
+| 61 | **Birth, so a population can grow** <br>gives `birth` <br>needs `energy` | Landed (first cut). `tryBirth` spends parent energy, writes `parentId`, inherits group. Thrive no longer tops up — growth is births only. | Model | M | 3 |
 | 62 | **Death, from something** <br>gives `death` <br>needs `energy` | Landed (first cut). Causes: starved, burned, hunted, old age, ice, heat. Detritus on the cell. Probe counts deaths. | Model | M | 3 |
 | 63 | **A population book per lineage** <br>gives `popbook` <br>needs `birth` `death` | `node.pop` counts occupied cells and `node.censusPop` is a Lotka–Volterra scalar. Neither is a count of anything that exists. Keep births, deaths, immigration and emigration per lineage per tick, and every population claim becomes an accounting identity that can be asserted. | Model | M | 3 |
 | 64 | **Reproductive strategy from the genome** <br>needs `birth` | The genome has axes for size, dispersal and defence, which is most of an r-versus-K position. Many cheap offspring with high mortality, or few expensive ones with care — that choice changes the shape of a population curve and it is already latent in the trait vector. | Model | M | 3 |
@@ -169,11 +169,11 @@ Partial. `tryBirth` spends parent energy and writes `parentId`; deaths increment
 
 ## Nothing hunts anything
 
-`updateFoodWeb` is real work and it is entirely lineage-level: `a.diet` is up to three lineage ids, `predation` and `preyAvail` are scalars on a tree node, and the Lotka–Volterra step runs on `n.censusPop` — **one number per lineage for the whole planet**. Predation therefore has no location, no chase, no kill, no carcass and no failure. The string `hunt` appears in `teach.js`, `god/tips.js`, `main.js` and `localview.js` — all of it interface copy about a camera.
+Partial. Predators carry `hunter` / trophic traits, acquire `preyId`, close within two cells, and kill when adjacent. `W.huntKills` and `trophOccCarn` record the act. Still open: long-range path, carcass objects, fail rates from defence/cover.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
-| 81 | **A hunt that happens on a cell** <br>gives `hunt` <br>needs `entsim` `percept` | Partial. Predators (trophic > 0.55) pick `hunt` and kill a neighbour; energy transfers. No chase path yet. | Model | L | 3 |
+| 81 | **A hunt that happens on a cell** <br>gives `hunt` <br>needs `entsim` `percept` | Partial. Predators acquire a `preyId`, close the distance, then kill adjacent. Failure costs energy. No long-range path yet. | Model | L | 3 |
 | 82 | **Predation pressure as a field** <br>gives `preyfield` <br>needs `hunt` | Kills per cell per unit time, decayed. It is the field that makes prey avoid a place, makes a predator return to one, drives the landscape of fear, and gives the globe its first behavioural overlay. One `Float32Array` and an accumulate. | Model | M | 3 |
 | 83 | **A pursuit the player can see** <br>needs `hunt` | Two sprites, a closing distance, an outcome. On the local grid this is the single most legible piece of behaviour possible, and it needs the predator and prey to be interpolated between cells — which `presentAgents` already does for movement. | Show | M | 3 |
 | 84 | **Hunts that fail** <br>needs `hunt` | A success probability from the difference in speed, size, cover and the prey being aware. If every hunt succeeds, predators are a mortality constant. If they fail most of the time, the whole system gains the texture it should have and predator energy becomes a real constraint. | Model | M | 3 |
@@ -196,12 +196,12 @@ Partial. `tryBirth` spends parent energy and writes `parentId`; deaths increment
 
 ## The word flock does not appear anywhere
 
-Grep `vr/` for `flock`: zero hits. What exists is a cohesion-plus-separation nudge in `agentsTick` for exactly four of sixteen kinds — 6, 7, 14, 15 — which averages up to eight same-kind neighbours within `cellDot > 0.92` and steps one cell toward the centroid with probability 0.25. There is no alignment term, so the group has no heading; no leader; no size; no name; and no reason to exist rather than disperse.
+Landed (first cut). Named groups with `home` and `goal`; members bias toward the goal; barren cells send the herd home. Split/merge still open.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
 | 101 | **Flocking with an alignment term** <br>gives `flock` <br>needs `entsim` | The existing code averages neighbour positions and steps toward the centroid, with a separation nudge when beings share a cell. That is two of the three classical rules; without alignment a group has no shared heading, so it clumps rather than moves. `m.heading` exists and is written on every move and read nowhere. | Model | M | 3 |
-| 102 | **A group as an object** <br>gives `group` <br>needs `flock` | Landed (first cut). `writeHerd` mints a named group; members carry `groupId`; `W.groups` is censused each tick; overlay Behaviour paints activity; chronicle can name a pod/herd. Split/merge not yet. | Model | M | 3 |
+| 102 | **A group as an object** <br>gives `group` <br>needs `flock` | Landed (first cut). Named groups with `home` and `goal`; members bias toward the goal; barren cells send the herd home. Split/merge still open. | Model | M | 3 |
 | 103 | **Flocking for more than four kinds** | The nudge applies to kinds 6, 7, 14 and 15. Whether a body plan schools, herds, swarms, flocks or is solitary should come from the genome — sociality is a trait — not from a hardcoded list of four sprite indices. | Model | M | 3 |
 | 104 | **Sociality as a genome axis** <br>needs `group` | Solitary, pair, family, troop, herd, colony, superorganism. It is a categorical axis of exactly the kind `lifeGrammar.js` already carries, with real consequences for predation risk, disease, foraging efficiency and the path to a settlement. | Model | M | 3 |
 | 105 | **Group size that is selected, not set** <br>needs `group` | Bigger groups see predators sooner and eat their patch faster. That trade produces an optimum that depends on predation pressure and productivity, both of which are fields the world already has, so group size becomes a readout of the environment. | Model | M | 3 |
@@ -250,11 +250,11 @@ Colonisation in `bioTick` is `max` over the four neighbours: if a neighbour is a
 
 ## An ecosystem is four scalars
 
-`W.trophic` is `{prod, herb, carn, decomp}` computed as `nppMean`, `× 0.1`, `× 0.01`, `× 0.3` — a global mean multiplied by three constants, from which `W.herbivore` and `W.carnivore` follow. So the herbivore load on a rainforest cell equals the herbivore load on an ice cell. `guildDens` in `redox.js` is a genuine per-cell guild field for metabolisms; nothing equivalent exists above the microbial layer.
+Landed (first cut). `trophProd/Herb/Carn/Decomp` per cell plus occupancy from grazing and hunts. Overlay Trophic. Planet means follow the fields, not npp×0.1.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
-| 141 | **A trophic field, not three multiplications** <br>gives `guildfield` | `W.trophic` is `{nppMean, ×0.1, ×0.01, ×0.3}` and `W.herbivore`/`W.carnivore` follow from it, so a rainforest cell and an ice cell carry identical herbivore load. Producers, herbivores, carnivores and decomposers need to be per-cell — four `Float32Array`s — and `redox.js` already proves the pattern with `guildDens`. | Model | L | 3 |
+| 141 | **A trophic field, not three multiplications** <br>gives `guildfield` | Landed (first cut). `trophProd/Herb/Carn/Decomp` per cell plus occupancy from grazing and hunts. Overlay Trophic. Planet means follow the fields, not npp×0.1. | Model | L | 3 |
 | 142 | **Transfer efficiency that varies** <br>needs `guildfield` | Ten percent is a textbook average, not a law: it is higher in aquatic webs, lower in terrestrial ones, and depends on what is being eaten. Making it depend on the biome and the prey type is what makes ocean and land pyramids differ. | Model | M | 2 |
 | 143 | **A pyramid that can be the wrong shape** <br>needs `guildfield` | Inverted biomass pyramids are real — plankton support more fish biomass than they hold at an instant, because turnover is fast. A model that computes standing stock from a fixed ratio can never show that, and it is one of the few genuinely counterintuitive facts in ecology. | Model | M | 2 |
 | 144 | **Guilds above the microbial layer** <br>needs `guildfield` | `GUILDS` in `redox.js` is a real metabolic guild table and it stops at chemistry. Grazers, browsers, filterers, ambush predators, pursuit predators, scavengers, detritivores, pollinators — a table of the same shape, one level up, and the interface already has a palette for it. | Model | M | 3 |
@@ -693,7 +693,7 @@ The Walker thermostat in `gaia.js` is a CO₂ leak of `0.0000004` from warm wet 
 
 ## A mood that is a readout, not a story
 
-Pain is `rateStress`. Hunger is whatever nutrient or carbon is limiting. Fear is tipping proximity. Ease is high resilience with low gain. None of those words should be invented — they are projections of numbers `gaiaTick` already computes. The voice, the analog face, the soundtrack and the haptic in VR all hang off one labelled vector, and a dead world has none of it.
+Landed (first cut). `gaiaTick` projects valence/arousal into `W.mood.label` (calm, burning, frozen, fever, bloom, restless). HUD shows it. Voice and face still open.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|

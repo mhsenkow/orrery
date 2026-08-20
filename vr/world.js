@@ -78,6 +78,7 @@ export function reallocateWorldFields(target = W) {
     '_t', '_m', '_l', '_h', '_adv', 'prevTemp', 'prevLife', 'prevIce',
     'macroDens', 'cladeCount', 'hydrotherm', 'protoOrg', 'detritus',
     'fire', 'nutrientPlume',
+    'trophProd', 'trophHerb', 'trophCarn', 'trophDecomp', 'trophOccHerb', 'trophOccCarn',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
@@ -302,6 +303,9 @@ export function generate(seed, ruleIn) {
   W.topSense = null;
   W.senseBands = [];
   W._morphEnvCache = null;
+  W.sulfurPaint = null;
+  W.mood = null;
+  W.huntKills = 0;
 
   initDeepTime(W, rule);
 
@@ -396,6 +400,10 @@ export function generate(seed, ruleIn) {
   W.soil.fill(0); W.reef.fill(0);
   resetFireState(W);
   if (W.nutrientPlume) W.nutrientPlume.fill(0);
+  if (W.trophProd) {
+    W.trophProd.fill(0); W.trophHerb.fill(0); W.trophCarn.fill(0); W.trophDecomp.fill(0);
+    W.trophOccHerb.fill(0); W.trophOccCarn.fill(0);
+  }
   W._agentTick = 0;
   W._cityLights = 0;
   W.cities = [];

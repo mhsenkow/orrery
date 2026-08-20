@@ -6,6 +6,7 @@ import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { kleiberDensity, TRAITS, nodeOf, removeLiving } from './evolve.js';
 import { shannonDiversity } from './lifeGuide.js';
 import { usesWhittakerCover } from './planetKind.js';
+import { trophicTick } from './trophicField.js';
 
 export const BIOMES = [
   'tundra', 'boreal', 'tempDeciduous', 'tempRainforest', 'grassland',
@@ -203,25 +204,19 @@ export function ecologyTick(W, chronLog) {
   }
   W.ecotoneFrac = landN ? ecoN / landN : 0;
 
-  // Trophic pyramid from transfer efficiency ~10%. Item 60.
   const nppMean = meanNpp(W);
-  W.trophic = W.trophic || { prod: 0, herb: 0, carn: 0, decomp: 0 };
-  W.trophic.prod = nppMean;
-  W.trophic.herb = nppMean * 0.1;
-  W.trophic.carn = nppMean * 0.01;
-  W.trophic.decomp = nppMean * 0.3;
-  W.herbivore = clamp(W.trophic.herb * 2, 0.01, 1);
-  W.carnivore = clamp(W.trophic.carn * 4, 0.01, 0.8);
   W.biosphereWatts = nppMean * 1.2e14; // order-of-magnitude Earth NPP ~ 100 TW. provenance: fitted scale
 
-  // Food-web link sketch from lineages. Item 61.
-  updateFoodWeb(W, chronLog);
-  W.shannon = shannonDiversity(W);
   if (!W.detritus || W.detritus.length !== NC) W.detritus = new Float32Array(NC);
   for (let c = 0; c < NC; c++) {
     const rain = (W.life[c] || 0) * 0.012 + (W.npp?.[c] || 0) * 0.008;
     W.detritus[c] = clamp((W.detritus[c] || 0) * 0.97 + rain, 0, 1);
   }
+  trophicTick(W);
+
+  // Food-web link sketch from lineages. Item 61.
+  updateFoodWeb(W, chronLog);
+  W.shannon = shannonDiversity(W);
 
   // Biome bistability forest/savanna. Item 85.
   for (let c = 0; c < NC; c++) {

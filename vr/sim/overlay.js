@@ -87,12 +87,13 @@ export const OVERLAYS = [
   { id: 'fire', label: 'Fire', icon: 'volcano', tip: 'Orange is flame, grey is smoke and ash, dim red is fire danger — dry fuelled land that has not caught yet. A rate, not a state.' },
   { id: 'plume', label: 'Nutrient plume', icon: 'upwell', tip: 'Where animals fertilised the water. Surface-feeding whale-scale life brings N and P up; the green is the bloom that follows.' },
   { id: 'behav', label: 'Behaviour', icon: 'seed', tip: 'What beings are doing on each cell — forage, flee, hunt, tend. The living layer as a map, not a sprite count.' },
+  { id: 'trophic', label: 'Trophic', icon: 'seedGuild', tip: 'Local food pyramid. Green is producers, gold grazers, red hunters. Ice and rainforest are no longer the same number.' },
 ];
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav',
+  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic',
   'faces', 'zonal', 'ecotone',
 ];
 
@@ -418,6 +419,13 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       else if (code === 2) { r = 90; g = 200; b = 80; }
       else if (code === 7) { r = 120; g = 160; b = 255; }
       else { r = 70; g = 80; b = 90; }
+    } else if (mode === 'trophic') {
+      const p = W.trophProd?.[c] || 0;
+      const h = W.trophHerb?.[c] || 0;
+      const k = W.trophCarn?.[c] || 0;
+      r = 12 + k * 240 + h * 40;
+      g = 16 + p * 180 + h * 90;
+      b = 18 + p * 40;
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

@@ -138,6 +138,24 @@ export function gaiaTick(W, chronLog) {
     0, 1
   );
 
+  const fireFrac = Math.min(1, (W.fireCells || 0) / Math.max(8, NC * 0.02));
+  const valence = clamp(
+    W.meanLife * 1.1
+      - W.iceFrac * 0.7
+      - Math.abs(W.meanTemp - 0.55) * 0.9
+      - fireFrac * 0.8
+      - W.medeaScore * 0.4,
+    -1, 1
+  );
+  const arousal = clamp(fireFrac * 1.2 + (W.rateStress || 0) * 0.8 + Math.abs(W.dTempDt || 0) * 0.4, 0, 1);
+  let moodLabel = 'calm';
+  if (fireFrac > 0.12) moodLabel = 'burning';
+  else if (W.state === 'snowball' || W.iceFrac > 0.55) moodLabel = 'frozen';
+  else if (W.meanTemp > 0.82) moodLabel = 'fever';
+  else if (W.meanLife > 0.22 && valence > 0.15) moodLabel = 'bloom';
+  else if (arousal > 0.35) moodLabel = 'restless';
+  W.mood = { valence, arousal, label: moodLabel };
+
   if (W.state === 'snowball') {
     for (let c = 0; c < NC; c++) {
       if (temp[c] < 0.38) W.ice[c] = Math.max(W.ice[c], 0.8);
