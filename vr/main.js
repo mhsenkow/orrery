@@ -61,7 +61,7 @@ import {
 } from './sim/god/genesis.js';
 import {
   setTimeRate, TIME_RATES, addBookmark, setLetItRun, shouldHaltFF,
-  cycleTimeRate, timeClockInfo,
+  cycleTimeRate, timeClockInfo, cycleGaiaButton, gaiaDriveOf,
 } from './sim/god/observe.js';
 import { addToShelf, loadShelf, rankByBiosignature } from './sim/god/shelf.js';
 import { tipForTool, tipForId, SUITE_TIPS, RIBBON_TIPS } from './sim/god/tips.js';
@@ -1757,7 +1757,9 @@ function refreshWorldModeStrip() {
   const scarcity = W.scarcityMode || (W.budgetMode ? 'budgeted' : 'free');
   strip.innerHTML = `
     <div class="clim-chip" title="Energy: Free / Observe / Budget"><span>Energy</span><b>${scarcity}</b></div>
-    <div class="clim-chip" title="Gaia autopilot — nudges climate when it drifts"><span>Gaia</span><b>${W.autopilot ? 'on' : 'off'}</b></div>
+    <div class="clim-chip" title="Gaia button — cycles Regulator / Gardener / Experimenter autopilot. Off = you drive."><span>Gaia</span><b>${
+      W.autopilot ? (gaiaDriveOf(W).label) : 'off'
+    }</b></div>
     <div class="clim-chip" title="Simulation grid size — climate and life run here"><span>Sim N</span><b>${N}</b></div>
     <div class="clim-chip" title="Tectonic lid: mobile plates vs stagnant"><span>Lid</span><b>${I?.lidMode || '—'}</b></div>
     <div class="clim-chip" title="Magnetosphere strength — aurora and atmosphere loss"><span>Field</span><b>${(W.magnetosphere ?? 0).toFixed(2)}</b></div>
@@ -2395,7 +2397,12 @@ function refreshLab() {
     card('tower', 'autopilot', 'Gaia',
       `<div class="lab-meta">feedback <b>${(W.feedbackGain || 0).toFixed(2)}</b> · Medea <b>${((W.medeaScore || 0) * 100) | 0}</b>` +
       (W.carbon ? ` · Ω <b>${W.carbon.omegaAragonite.toFixed(2)}</b>` : '') +
-      ` · mode <b>${W.gaiaMode || '—'}</b></div>`) +
+      ` · mode <b>${W.gaiaMode || '—'}</b>` +
+      ` · drive <b>${W.autopilot ? gaiaDriveOf(W).label : 'off'}</b>` +
+      (W.gaiaObjective ? `<br>aims to <b>${W.gaiaObjective}</b>` : '') +
+      (W.gaiaLastAct ? `<br>last: ${W.gaiaLastAct}` : '') +
+      (W.mood?.label ? ` · mood <b>${W.mood.label}</b>` : '') +
+      `</div>`) +
     card('survey', 'weather', 'Synoptic chart',
       `${synopticChartSVG(W)}
       <div class="lab-meta">${W._windRegime || '—'} · spin reorganises banding · forecast limit ~2 weeks</div>`) +
@@ -3055,10 +3062,15 @@ export function boot() {
     updateHUD();
   };
   document.getElementById('autopilot').onclick = () => {
-    W.autopilot = !W.autopilot;
-    document.getElementById('autopilot').setAttribute('aria-pressed', W.autopilot ? 'true' : 'false');
-    chronLog(W.year, 'gaia', 0, 1, W.autopilot ? 'Gaia autopilot ON' : 'Autopilot OFF');
+    const { autopilot, drive } = cycleGaiaButton(W);
+    const btn = document.getElementById('autopilot');
+    btn.setAttribute('aria-pressed', autopilot ? 'true' : 'false');
+    const label = autopilot ? gaiaDriveOf(W).label : 'Gaia';
+    decorateButton(btn, 'autopilot', label);
+    chronLog(W.year, 'gaia', 0, 1,
+      autopilot ? `Gaia ${gaiaDriveOf(W).label} ON — ${gaiaDriveOf(W).aim}` : 'Gaia autopilot OFF');
     refreshWorldModeStrip();
+    updateHUD();
   };
   document.getElementById('simN')?.addEventListener('change', (e) => {
     const n = parseInt(e.target.value, 10);

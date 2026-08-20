@@ -17,7 +17,7 @@ import { carryingCapacityNPP } from './sim/ecology.js';
 import {
   noteGraze, noteHunt, noteFear, dropCarcass, scavengeAt, fearAt, carcassAt,
 } from './sim/trophicField.js';
-import { presentTime, noteWear, isOutNow } from './sim/present.js';
+import { presentTime, noteWear, wearAt, isOutNow } from './sim/present.js';
 import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
 export const MAX_ENT = 1400;
@@ -963,6 +963,8 @@ export function agentsTick(log = null) {
       if (m.behav === 'flee') s -= (W.ash?.[n] || 0) * 2 + (W.dust?.[n] || 0) * 1.5 + (W.stormField?.[n] || 0);
       if (m.behav === 'flee' && !isPredator(m)) s -= fearAt(W, n) * 1.6;
       if (!isPredator(m) && carcassAt(W, n) > 0.12 && m.hunger > 0.4) s += carcassAt(W, n) * 0.5;
+      /* Desire lines: herds and foragers prefer worn paths. */
+      if (m.behav !== 'flee' && m.behav !== 'hunt') s += wearAt(n) * 0.55;
       if (m.behav === 'rest') s -= 0.4;
       if (m.behav === 'hunt' && m.huntCell >= 0) s += cellDot(n, m.huntCell) * 1.4;
       const pack = m.groupId ? groupById[m.groupId] : null;

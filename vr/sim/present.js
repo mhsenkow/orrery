@@ -188,6 +188,11 @@ export function tidePhase(c = 0) {
 
 let WEAR = null;
 const _worn = [];
+export function resetWear() {
+  WEAR = null;
+  _worn.length = 0;
+  if (W) W.trail = null;
+}
 export function noteWear(c, amt = 0.06) {
   if (c < 0) return;
   if (!WEAR || WEAR.length !== NC) {
@@ -197,10 +202,13 @@ export function noteWear(c, amt = 0.06) {
   const was = WEAR[c];
   WEAR[c] = Math.min(1, was + amt);
   if (was < 0.01 && WEAR[c] >= 0.01) _worn.push(c);
+  W.trail = WEAR;
 }
 export function wearAt(c) { return WEAR?.[c] || 0; }
+export function wearField() { return WEAR; }
 export function wearTick(decay = 0.965) {
   if (!WEAR) return;
+  W.trail = WEAR;
   for (let i = _worn.length - 1; i >= 0; i--) {
     const c = _worn[i];
     WEAR[c] *= decay;

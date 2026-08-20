@@ -2552,6 +2552,75 @@ console.log('carcass, fear field, one kill, herd fission');
   }
 }
 
+console.log('Gaia drive + trails');
+{
+  const { tipProximity, cycleGaiaButton, gaiaDriveOf, gaiaPolicyTick, GAIA_DRIVES } = await import('./god/gaiaDrive.js');
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { overlayById } = await import('./overlay.js');
+  const { noteWear, wearAt } = await import('./present.js');
+
+  ok('three named Gaia dispositions', GAIA_DRIVES.length === 3);
+  const thrive = cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive'));
+  generate(314159, thrive);
+
+  W.autopilot = false;
+  const a = cycleGaiaButton(W);
+  ok('Gaia button first click is Regulator', a.autopilot && a.drive === 'regulator');
+  const b = cycleGaiaButton(W);
+  ok('Gaia button second click is Gardener', b.drive === 'gardener');
+  const c = cycleGaiaButton(W);
+  ok('Gaia button third click is Experimenter', c.drive === 'experimenter');
+  const d = cycleGaiaButton(W);
+  ok('Gaia button fourth click turns off', !d.autopilot);
+
+  W.autopilot = true;
+  W.gaiaDrive = 'regulator';
+  W.meanTemp = 0.25;
+  W.mood = { valence: -0.5, arousal: 0.4, label: 'frozen' };
+  W.tips = { iceSheet: { on: false, val: 0.8, label: 'ice' } };
+  W.rateStress = 0.3;
+  W.resilience = 0.4;
+  W.gases = { ...(W.gases || {}), CO2: 0.04 };
+  const solar0 = W.solar = 0.85;
+  gaiaPolicyTick(W, null);
+  ok('Regulator raises solar when frozen', W.solar > solar0, `${solar0} -> ${W.solar}`);
+  ok('tip proximity is readable', tipProximity(W) >= 0.8);
+  ok('drive names an objective', !!(W.gaiaObjective && gaiaDriveOf(W).aim));
+
+  /* Autopilot helps a cold world recover solar vs off. */
+  generate(314159, thrive);
+  W.solar = 0.72;
+  W.autopilot = false;
+  for (let t = 0; t < 40; t++) simTick(true);
+  const solarOff = W.solar;
+
+  generate(314159, thrive);
+  W.solar = 0.72;
+  W.autopilot = true;
+  W.gaiaDrive = 'regulator';
+  W.mood = { valence: -0.4, arousal: 0.3, label: 'frozen' };
+  for (let t = 0; t < 40; t++) {
+    if (W.meanTemp < 0.4) W.mood = { valence: -0.4, arousal: 0.3, label: 'frozen' };
+    simTick(true);
+  }
+  ok('controller helps a cold forcing', W.solar >= solarOff, `on=${W.solar} off=${solarOff}`);
+
+  ok('trail overlay exists', overlayById('trail')?.id === 'trail');
+  noteWear(10, 0.4);
+  noteWear(10, 0.2);
+  ok('movement writes a trail field', wearAt(10) > 0.3 && W.trail && W.trail[10] > 0.3);
+
+  generate(20260808, thrive);
+  for (let t = 0; t < 50; t++) simTick(true);
+  let worn = 0;
+  if (W.trail) for (let i = 0; i < W.trail.length; i++) if (W.trail[i] > 0.05) worn++;
+  ok('lived trails accumulate on thrive', worn > 0 || ENT.n === 0, `wornCells=${worn}`);
+}
+
 function maxAgeOf(ENT) {
   let m = 0;
   for (let i = 0; i < ENT.n; i++) {

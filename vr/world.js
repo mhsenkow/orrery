@@ -58,6 +58,7 @@ import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
 import { agentsTick, resetEntities, packEntities, restoreEntities } from './agents.js';
 import { fireTick, resetFireState } from './sim/fire.js';
+import { resetWear } from './sim/present.js';
 
 function buf() { return new Float32Array(NC); }
 function ibuf() { return new Int32Array(NC); }
@@ -310,6 +311,12 @@ export function generate(seed, ruleIn) {
   W.huntMisses = 0;
   W.carcasses = [];
   W.carcassCount = 0;
+  W.gaiaDrive = 'regulator';
+  W.gaiaLastAct = null;
+  W.gaiaObjective = null;
+  W.gaiaTipProx = 0;
+  W._gaiaLifePrev = null;
+  W.trail = null;
 
   initDeepTime(W, rule);
 
@@ -383,6 +390,7 @@ export function generate(seed, ruleIn) {
   W._agentTick = 0;
   delete W._buildsDirty;
   resetEntities();
+  resetWear();
   resetFireState(W);
   W.plates = null;
   W.hotspots = null;

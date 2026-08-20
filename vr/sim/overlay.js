@@ -90,12 +90,13 @@ export const OVERLAYS = [
   { id: 'trophic', label: 'Trophic', icon: 'seedGuild', tip: 'Local food pyramid. Green is producers, gold grazers, red hunters. Ice and rainforest are no longer the same number.' },
   { id: 'fear', label: 'Fear', icon: 'seed', tip: 'Landscape of fear — where hunts and near-misses leave predation pressure. Prey flee the bright cells.' },
   { id: 'carcass', label: 'Carcass', icon: 'seed', tip: 'Kill sites and scavenging. Discrete carcasses decay into soil and nutrients.' },
+  { id: 'trail', label: 'Trails', icon: 'seed', tip: 'Worn paths from movement. Herds and foragers prefer desire lines already walked.' },
 ];
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic', 'fear', 'carcass',
+  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic', 'fear', 'carcass', 'trail',
   'faces', 'zonal', 'ecotone',
 ];
 
@@ -438,6 +439,11 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 20 + k * 160;
       g = 14 + k * 50;
       b = 10 + k * 20;
+    } else if (mode === 'trail') {
+      const tr = W.trail?.[c] || 0;
+      r = 22 + tr * 90;
+      g = 18 + tr * 70;
+      b = 14 + tr * 40;
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

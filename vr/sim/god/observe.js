@@ -97,6 +97,10 @@ export function initObserve(W) {
   W.stopOnAnomaly = true;
   W.ambientMode = false;
   W.gaiaLog = W.gaiaLog || [];
+  W.gaiaDrive = W.gaiaDrive || 'regulator';
+  W.gaiaObjective = null;
+  W.gaiaLastAct = null;
+  W.gaiaTipProx = 0;
   W.timeRateId = W.timeRateId || 'auto';
   if (W.fixedDtYr === undefined) {
     const r = TIME_RATES.find((x) => x.id === W.timeRateId) || TIME_RATES[0];
@@ -146,33 +150,8 @@ export function addBookmark(label = '') {
   return b;
 }
 
-/** Autopilot as character. Item 129. */
-export function gaiaPolicyTick(W, log) {
-  if (!W.autopilot) return;
-  const acts = [];
-  if (W.meanTemp < 0.35) {
-    W.solar = Math.min(1.4, W.solar + 0.002);
-    acts.push('raised solar — too cold');
-  }
-  if (W.meanTemp > 0.85) {
-    W.solar = Math.max(0.5, W.solar - 0.002);
-    acts.push('lowered solar — too hot');
-  }
-  if (W.gases.CO2 < 0.005 && W.meanTemp < 0.4) {
-    W.gases.CO2 += 0.0005;
-    acts.push('injected CO₂ — greenhouse thin');
-  }
-  if (W.gases.CO2 > 0.15 && W.meanTemp > 0.7) {
-    W.gases.CO2 *= 0.998;
-    acts.push('drew down CO₂ — greenhouse thick');
-  }
-  if (acts.length) {
-    W.gaiaLog = W.gaiaLog || [];
-    W.gaiaLog.push({ t: W.ageYr, acts });
-    if (W.gaiaLog.length > 60) W.gaiaLog.shift();
-    if (log && acts[0]) log(W.year, 'gaia', 0, 1, `Gaia: ${acts[0]}`);
-  }
-}
+/** Autopilot as character. Item 129 — implementation in gaiaDrive.js. */
+export { gaiaPolicyTick, cycleGaiaButton, gaiaDriveOf, tipProximity, GAIA_DRIVES } from './gaiaDrive.js';
 
 /** Notification threshold moves with clock. Item 135. */
 export function noticeThreshold(W) {

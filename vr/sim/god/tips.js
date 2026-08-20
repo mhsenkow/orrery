@@ -254,7 +254,7 @@ export const PLAY_TIPS = {
   },
   autopilot: {
     title: 'Gaia',
-    body: 'Autopilot agent that nudges solar/CO₂ when the climate drifts, and logs why. You can still override it.',
+    body: 'Cycles the planetary autopilot: off → Regulator (hold the climate) → Gardener (grow life) → Experimenter (nudge when calm) → off. It reads mood, tipping proximity and resilience — not just temperature — then nudges solar/CO₂. Daisyworld regulation is separate and does not need this button.',
   },
   pause: {
     title: 'Pause',
