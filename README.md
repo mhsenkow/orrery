@@ -2,41 +2,41 @@
 
 Embodied god-game prototype: hold a planet, shrink, walk in.
 
-[![Orrery — Earth sandbox with tools dock, globe, and a first-free-oxygen moment](site/img/earth-hud.png)](https://mhsenkow.github.io/simearth/vr/)
+[![Orrery — Earth sandbox with tools dock, globe, and a first-free-oxygen moment](site/img/earth-hud.png)](https://mhsenkow.github.io/orrery/vr/)
 
-[Open the live prototype](https://mhsenkow.github.io/simearth/vr/) — drag to spin, scroll to zoom. WebXR on a headset if you have one.
+[Open the live prototype](https://mhsenkow.github.io/orrery/vr/) — drag to spin, scroll to zoom. WebXR on a headset if you have one.
 
-**Showing someone:** use the [demo opening](https://mhsenkow.github.io/simearth/vr/?demo=1) — living Earth (`thrive` ruleset, clock runs, settlements and herds). Tour button always visible. First visit walks through **pick a world → choose a lesson**; press **Tour** or **?** anytime to reopen the track. Pitch stills: `?pitch=hud`, `?pitch=local`, `?pitch=worlds`.
+**Showing someone:** use the [demo opening](https://mhsenkow.github.io/orrery/vr/?demo=1) — living Earth (`thrive` ruleset, clock runs, settlements and herds). Tour button always visible. First visit walks through **pick a world → choose a lesson**; press **Tour** or **?** anytime to reopen the track. Pitch stills: `?pitch=hud`, `?pitch=local`, `?pitch=worlds`.
 
 <p>
 <img src="site/img/earth-currents.png" width="49%" alt="Ocean currents overlay on the globe and local patch">
 <img src="site/img/earth-local.png" width="49%" alt="Expanded local map beside the planet">
 </p>
 
-[![Worlds catalogue open beside Earth](site/img/worlds-picker.png)](https://mhsenkow.github.io/simearth/vr/)
+[![Worlds catalogue open beside Earth](site/img/worlds-picker.png)](https://mhsenkow.github.io/orrery/vr/)
 
 ## Live
 
-- [Pitch / site](https://mhsenkow.github.io/simearth/site/)
-- [VR / WebGL prototype](https://mhsenkow.github.io/simearth/vr/)
-- [Improvement backlog](https://mhsenkow.github.io/simearth/site/backlog.html)
-- [Worlds backlog — 200 real planets and moons](https://mhsenkow.github.io/simearth/site/worlds.html)
-- [Evolution & fidelity backlog — 200 ways to make evolution legible](https://mhsenkow.github.io/simearth/site/evolution.html)
-- [God-game backlog — 200 ways to act like a god](https://mhsenkow.github.io/simearth/site/godgame.html)
-- [The next 200 — what the last two backlogs left behind](https://mhsenkow.github.io/simearth/site/next.html)
-- [Tides & weather — 200 items on the two systems you cannot see](https://mhsenkow.github.io/simearth/site/tides-weather.html)
-- [Geology — 482 items: molding the starting world, then the mantle, the plates, and the geology each active planet actually does](https://mhsenkow.github.io/simearth/site/geology.html)
-- [Real parameters — 500 items to make every world match its measured values](https://mhsenkow.github.io/simearth/site/exoparams.html)
-- [Alive — 300 items on whether it reads as a living world](https://mhsenkow.github.io/simearth/site/living.html)
-- [Currents — 200 items on everything that is supposed to move](https://mhsenkow.github.io/simearth/site/currents.html)
-- [Realism — 800 items on how the globe looks, and how to make it Earth](https://mhsenkow.github.io/simearth/site/realism.html)
-- [Landscape — 400 items on picking, drawing and shaping the land you start with](https://mhsenkow.github.io/simearth/site/landscape.html)
-- [Life — 400 items on an open morphospace: genomes, senses, and whether evolution here could have come out differently](https://mhsenkow.github.io/simearth/site/life.html)
-- [Surface — 400 items on why the picture has hard edges and why the world is striped](https://mhsenkow.github.io/simearth/site/surface.html)
-- [World space — 400 items on the palette of worlds: taxonomy, substrates, giants, landform grammar, epochs and the technosphere](https://mhsenkow.github.io/simearth/site/worldspace.html)
-- [Open world — 400 items on the machinery that keeps it open: world data, a material stack, palettes with provenance, an artefact detector and per-world art direction](https://mhsenkow.github.io/simearth/site/openworld.html)
-- [Thrive — 611 items on life that grows while you watch, and on planets that can regulate, fight, notice, and (when labelled) think](https://mhsenkow.github.io/simearth/site/thrive.html)
-- [World data — the join, the palette, the units, and the data-to-code scoreboard](https://mhsenkow.github.io/simearth/site/world-data.html)
+- [Pitch / site](https://mhsenkow.github.io/orrery/site/)
+- [VR / WebGL prototype](https://mhsenkow.github.io/orrery/vr/)
+- [Improvement backlog](https://mhsenkow.github.io/orrery/site/backlog.html)
+- [Worlds backlog — 200 real planets and moons](https://mhsenkow.github.io/orrery/site/worlds.html)
+- [Evolution & fidelity backlog — 200 ways to make evolution legible](https://mhsenkow.github.io/orrery/site/evolution.html)
+- [God-game backlog — 200 ways to act like a god](https://mhsenkow.github.io/orrery/site/godgame.html)
+- [The next 200 — what the last two backlogs left behind](https://mhsenkow.github.io/orrery/site/next.html)
+- [Tides & weather — 200 items on the two systems you cannot see](https://mhsenkow.github.io/orrery/site/tides-weather.html)
+- [Geology — 482 items: molding the starting world, then the mantle, the plates, and the geology each active planet actually does](https://mhsenkow.github.io/orrery/site/geology.html)
+- [Real parameters — 500 items to make every world match its measured values](https://mhsenkow.github.io/orrery/site/exoparams.html)
+- [Alive — 300 items on whether it reads as a living world](https://mhsenkow.github.io/orrery/site/living.html)
+- [Currents — 200 items on everything that is supposed to move](https://mhsenkow.github.io/orrery/site/currents.html)
+- [Realism — 800 items on how the globe looks, and how to make it Earth](https://mhsenkow.github.io/orrery/site/realism.html)
+- [Landscape — 400 items on picking, drawing and shaping the land you start with](https://mhsenkow.github.io/orrery/site/landscape.html)
+- [Life — 400 items on an open morphospace: genomes, senses, and whether evolution here could have come out differently](https://mhsenkow.github.io/orrery/site/life.html)
+- [Surface — 400 items on why the picture has hard edges and why the world is striped](https://mhsenkow.github.io/orrery/site/surface.html)
+- [World space — 400 items on the palette of worlds: taxonomy, substrates, giants, landform grammar, epochs and the technosphere](https://mhsenkow.github.io/orrery/site/worldspace.html)
+- [Open world — 400 items on the machinery that keeps it open: world data, a material stack, palettes with provenance, an artefact detector and per-world art direction](https://mhsenkow.github.io/orrery/site/openworld.html)
+- [Thrive — 611 items on life that grows while you watch, and on planets that can regulate, fight, notice, and (when labelled) think](https://mhsenkow.github.io/orrery/site/thrive.html)
+- [World data — the join, the palette, the units, and the data-to-code scoreboard](https://mhsenkow.github.io/orrery/site/world-data.html)
 
 ## Local
 

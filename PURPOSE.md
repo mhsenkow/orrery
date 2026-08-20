@@ -9,6 +9,12 @@ ORRERY is **four things at once**, on purpose — and each audience gets a diffe
 | **Scientific instrument (toy fidelity)** | Mechanisms that are *right in kind* — O₂ from burial, redox before morphology, adaptive deep time — with limits published beside the numbers. |
 | **Art piece** | Contingency you can feel: rewind the tape, watch two histories diverge. |
 
+## Name
+
+**Orrery** is the product, the repo, and the public URL. It is not SimEarth.
+
+**Cernunnos** is held as a future guide for the living-planet mood — herds, hunts, thickets — not as a shipped title. See [`briefs/cernunnos.md`](briefs/cernunnos.md).
+
 ## Prioritisation rule
 
 When these faces conflict:
