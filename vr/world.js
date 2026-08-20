@@ -315,8 +315,10 @@ export function generate(seed, ruleIn) {
   W.gaiaLastAct = null;
   W.gaiaObjective = null;
   W.gaiaTipProx = 0;
+  W.gaiaFailed = false;
   W._gaiaLifePrev = null;
   W.trail = null;
+  W.popBook = { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
 
   initDeepTime(W, rule);
 

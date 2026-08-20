@@ -120,7 +120,7 @@ Partial. Individuals now carry **energy**, **hunger** and **fear**; Kleiber meta
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
 | 41 | **Energy, so a life has a cost** <br>gives `energy` <br>needs `entsim` | Landed (first cut). `m.energy` / Kleiber spend / forage and hunt restore / death at zero. Not yet thermoregulation as a separate term. | Model | M | 3 |
-| 42 | **A drive vector, not a behaviour string** <br>gives `drivevec` <br>needs `energy` | Partial. Hunger and fear are continuous and pickBehav reads the loudest; rest/forage/hunt/flee fall out of that. Thirst, heat and crowding still missing. | Model | M | 3 |
+| 42 | **A drive vector, not a behaviour string** <br>gives `drivevec` <br>needs `energy` | Partial. Hunger, fear, thirst and heat are continuous; pickBehav reads the loudest. Crowding still open. | Model | M | 3 |
 | 43 | **Perception before decision** <br>gives `percept` <br>needs `drivevec` | A being currently reads `life`, `moist`, `ice`, `ash`, `dust` and `stormField` on its own cell and four neighbours, with perfect knowledge and no range. `sensory.js` already decides what a world delivers to which receptor. Gate what a being knows on what it can actually sense, and a blind burrower and a hawk stop making the same decision. | Model | M | 3 |
 | 44 | **A target, held across ticks** <br>needs `drivevec` | Every tick recomputes the best of five cells from scratch, so a being cannot cross a desert to reach a lake. One remembered destination and a heading turn Brownian shuffling into travel, and travel is the thing that reads as intent on screen. | Model | S | 3 |
 | 45 | **Memory of a few places** <br>gives `memory` <br>needs `drivevec` | Three or four remembered cells per being — where food was, where water is, where the danger was — at a few bytes each. This is what produces trails, home ranges, seasonal returns and avoidance, all from one small array. | Model | M | 3 |
@@ -148,7 +148,7 @@ Partial. `tryBirth` spends parent energy and writes `parentId`; deaths carry cau
 |---|---|---|---|---|---|
 | 61 | **Birth, so a population can grow** <br>gives `birth` <br>needs `energy` | Landed (first cut). `tryBirth` spends parent energy, writes `parentId`, inherits group. Thrive no longer tops up — growth is births only. | Model | M | 3 |
 | 62 | **Death, from something** <br>gives `death` <br>needs `energy` | Landed (first cut). Causes: starved, burned, hunted, old age, ice, heat. Detritus on the cell. Probe counts deaths. | Model | M | 3 |
-| 63 | **A population book per lineage** <br>gives `popbook` <br>needs `birth` `death` | `node.pop` counts occupied cells and `node.censusPop` is a Lotka–Volterra scalar. Neither is a count of anything that exists. Keep births, deaths, immigration and emigration per lineage per tick, and every population claim becomes an accounting identity that can be asserted. | Model | M | 3 |
+| 63 | **A population book per lineage** <br>gives `popbook` <br>needs `birth` `death` | Partial. `W.popBook` counts births, deaths, hunted. Per-lineage books and immigration still open. | Model | M | 3 |
 | 64 | **Reproductive strategy from the genome** <br>needs `birth` | The genome has axes for size, dispersal and defence, which is most of an r-versus-K position. Many cheap offspring with high mortality, or few expensive ones with care — that choice changes the shape of a population curve and it is already latent in the trait vector. | Model | M | 3 |
 | 65 | **Parental care, and what it buys** <br>needs `birth` `agestage` | Juvenile survival as a function of an adult staying nearby. It is a small behaviour with a large demographic consequence and it produces the visual the player wants: a small one following a big one. | Model | M | 2 |
 | 66 | **A carrying capacity a being can feel** | `carryingCapacityNPP` returns a per-cell number that only the field integrator reads. Beings should feel it through competition for food, not through a cap on a scalar, or the population curve will be smooth in a way real ones never are. | Model | M | 3 |
@@ -169,14 +169,14 @@ Partial. `tryBirth` spends parent energy and writes `parentId`; deaths carry cau
 
 ## Nothing hunts anything
 
-Partial. Predators chase within two cells; hits transfer mass×efficiency into energy and drop a carcass; misses raise `preyFear`. Overlays Fear and Carcass. Still open: long-range path, defence/cover as genome spend.
+Landed (first cut). Chase to five cells; defence trait + cover cut hits; carcass and fear on outcome. Pathfinding beyond rings still open.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
-| 81 | **A hunt that happens on a cell** <br>gives `hunt` <br>needs `entsim` `percept` | Partial. Predators acquire `preyId`, close within two cells, kill on a cover-aware roll. Misses cost energy and raise fear. Carcass + preyFear fields land with this slice. | Model | L | 3 |
+| 81 | **A hunt that happens on a cell** <br>gives `hunt` <br>needs `entsim` `percept` | Landed (first cut). Chase range five cells; cover + defence trait cuts hit chance; carcass and fear on outcome. | Model | L | 3 |
 | 82 | **Predation pressure as a field** <br>gives `preyfield` <br>needs `hunt` | Landed (first cut). `W.preyFear` accumulates on kills and misses, decays each trophic tick. Prey flee high cells; Fear overlay. Cascade demo still open. | Model | M | 3 |
 | 83 | **A pursuit the player can see** <br>needs `hunt` | Two sprites, a closing distance, an outcome. On the local grid this is the single most legible piece of behaviour possible, and it needs the predator and prey to be interpolated between cells — which `presentAgents` already does for movement. | Show | M | 3 |
-| 84 | **Hunts that fail** <br>needs `hunt` | Landed (first cut). Hit chance from cover (`life`/`moist`) and prey awareness (`fear`/flee). Misses increment `W.huntMisses` and write fear. Defence genome axis still unused. | Model | M | 3 |
+| 84 | **Hunts that fail** <br>needs `hunt` | Landed. Cover, awareness and `TRAITS.defence` reduce hit chance. Misses raise fear. | Model | M | 3 |
 | 85 | **A carcass, and everything that comes to it** <br>gives `carcass` <br>needs `hunt` | Landed (first cut). Discrete `W.carcasses` at kill sites; `carcassField` attracts foragers; decay feeds soil/N/P. Scavenging restores energy. Overlay Carcass. | Model | M | 3 |
 | 86 | **Grazing that eats the plants that are there** <br>needs `hunt` | A herbivore should remove biomass from `life[c]` on the cell it stands on. Today `W.herbivore` is `nppMean × 0.2`, planet-wide, so grazing has no location and cannot overgraze anything. Local grazing produces the grass–grazer oscillation, bare patches and the reason herds move. | Model | M | 3 |
 | 87 | **Overgrazing, and recovery** <br>needs `hunt` | A cell eaten below a threshold recovers slowly, so a herd that stays kills its own pasture. This is the mechanism behind migration, rotational grazing and desertification, and all three are things this product wants to show. | Model | M | 3 |
@@ -196,7 +196,7 @@ Partial. Predators chase within two cells; hits transfer mass×efficiency into e
 
 ## The word flock does not appear anywhere
 
-Landed (first cut). Named groups with `home`/`goal`; fission when oversized, fusion when small same-kind herds meet. Migration routes still open.
+Landed (first cut). Named groups with home/goal/leader; seasonal summer/winter cells; fission/fusion; trails.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
@@ -205,11 +205,11 @@ Landed (first cut). Named groups with `home`/`goal`; fission when oversized, fus
 | 103 | **Flocking for more than four kinds** | The nudge applies to kinds 6, 7, 14 and 15. Whether a body plan schools, herds, swarms, flocks or is solitary should come from the genome — sociality is a trait — not from a hardcoded list of four sprite indices. | Model | M | 3 |
 | 104 | **Sociality as a genome axis** <br>needs `group` | Solitary, pair, family, troop, herd, colony, superorganism. It is a categorical axis of exactly the kind `lifeGrammar.js` already carries, with real consequences for predation risk, disease, foraging efficiency and the path to a settlement. | Model | M | 3 |
 | 105 | **Group size that is selected, not set** <br>needs `group` | Bigger groups see predators sooner and eat their patch faster. That trade produces an optimum that depends on predation pressure and productivity, both of which are fields the world already has, so group size becomes a readout of the environment. | Model | M | 3 |
-| 106 | **A leader, and following** <br>needs `group` `memory` | One member holds the target and the rest weight its heading. This is how a herd crosses a barren stretch, which a centroid-averaging flock can never do, and it is the difference between milling and migrating. | Model | M | 3 |
+| 106 | **A leader, and following** <br>needs `group` `memory` | Landed (first cut). Highest-energy member is `leaderId`; others bias toward `leaderCell`. | Model | M | 3 |
 | 107 | **Groups that split and merge** <br>needs `group` | Landed (first cut). Fission when membership ≥ 12; fusion when two small same-kind herds share a cell or neighbour. `W.groupSplits` / `groupMerges` count the events. | Model | M | 2 |
 | 108 | **Swarm as a rendered mass, not N sprites** <br>needs `group` | A locust swarm is a million individuals. Draw the group as a density blob with a few resolved individuals at the edge — which is also the answer to the performance question, since one group of ten thousand costs one record and one sprite pass. | Show | L | 3 |
 | 109 | **A swarm on the globe** <br>needs `group` | From orbit a swarm is a dark moving smudge. Render groups above a size as a globe-scale mark that moves — the first thing on that sphere that moves for a biological reason rather than a meteorological one. | Show | M | 3 |
-| 110 | **Migration, along a route** <br>needs `group` `memory` | A seasonal round trip between two remembered regions, triggered by the seasonal phase `nppField` already computes for the green wave. A migration is the most legible large-scale animal behaviour there is and the globe is the right canvas for it. | Model | L | 3 |
+| 110 | **Migration, along a route** <br>needs `group` `memory` | Landed (first cut). Groups store `summerCell`/`winterCell` from lat extremes; `route` flips with `sin(season)`. | Model | L | 3 |
 | 111 | **Migration routes that persist and can be broken** <br>needs `group` | A route is a remembered path. Put a mountain across it, drop the sea level, remove a stopover, and the population that used it crashes. That is a god verb with an ecological consequence, which is the intersection this product is built on. | Play | M | 3 |
 | 112 | **Colonies and nests** <br>needs `group` | A group anchored to a place rather than moving through it: a rookery, a mound, a reef colony, a mat. It is the biological ancestor of a settlement and it should use the same record so the transition is continuous. | Model | M | 3 |
 | 113 | **A superorganism that engineers its cell** <br>needs `group` | `ecologyTick` already lets reefs raise the seafloor and life build soil. A colony that changes moisture, soil, albedo or height at its own cell is the same mechanism aimed at something visible at the scale a player is looking. | Model | M | 2 |
@@ -466,11 +466,11 @@ Evolution in this product is genetic and generational. The two faster loops are 
 
 ## Gaia is four if-statements
 
-Partial. The Gaia **button** cycles Regulator / Gardener / Experimenter (`gaiaDrive.js`). It reads mood, tip proximity, rate stress and resilience before nudging solar/CO₂. Still writes those two globals (not god verbs yet). Daisyworld is emergent; the cheat thermostat still pins when set.
+Landed (first cut). Gaia button cycles drives; acts through `setOrbit`/`injectGas`/`injectAerosol`; can set `gaiaFailed` when tips overwhelm. Daisyworld stays emergent; cheat thermostat still separate.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
-| 301 | **Four if-statements are the whole autopilot** <br>gives `gaiapolicy` | Partial. Replaced by `gaiaDrive.js`: mood, tips, rate stress and resilience tighten the comfort band. Still nudges solar/CO₂ directly. | Model | M | 3 |
+| 301 | **Four if-statements are the whole autopilot** <br>gives `gaiapolicy` | Landed (first cut). Replaced by drive-aware policy that calls `setOrbit` / `injectGas` / `injectAerosol` with quiet receipts. | Model | M | 3 |
 | 302 | **A controller that reads the whole state** <br>needs `gaiapolicy` | Landed (first cut). `gaiaPolicyTick` reads mood, tip proximity, rate stress, resilience and life trend. | Model | M | 3 |
 | 303 | **Say what it is optimising** <br>needs `gaiapolicy` | Landed (first cut). Regulator / Gardener / Experimenter each name an aim on `W.gaiaObjective`. Diversity/complexity objectives still open. | Model | M | 3 |
 | 304 | **Act before the tipping point, not after** <br>needs `gaiapolicy` | Landed (first cut). High `tipProximity` tightens bands and strengthens steps before elements trip. | Model | M | 3 |
@@ -480,10 +480,10 @@ Partial. The Gaia **button** cycles Regulator / Gardener / Experimenter (`gaiaDr
 | 308 | **The Medea option** | `medeaScore` already computes biosphere self-harm. A controller that pursues it is the counterweight to Gaia and it is a real hypothesis in the literature, not a joke setting. | Play | M | 2 |
 | 309 | **A log that says why** | `W.gaiaLog` keeps 60 entries of the form `raised solar — too cold`. With a real objective the log can state the cost, the alternative and the expected effect, which turns the autopilot into a demonstration of control theory rather than a black box. | Show | S | 3 |
 | 310 | **A voice for the biosphere** <br>gives `gaiavoice` <br>needs `gaiapolicy` | One sentence at a time, in the chronicle: what the biosphere is doing, what is limiting it, what it is about to lose. The narration should be generated from the state vector by templates over real numbers, never invented — and it is what makes a planet feel like it has a drive. | Show | M | 3 |
-| 311 | **Do not let the autopilot cheat** <br>needs `gaiapolicy` | `gaiaPolicyTick` writes `W.solar` and `W.gases.CO2` directly. A controller should act through the same verbs the player has — the god layer has 15 modules of them — with the same costs and the same receipts, or it is not a player of the game. | Model | M | 3 |
+| 311 | **Do not let the autopilot cheat** <br>needs `gaiapolicy` | Landed (first cut). Acts through `setOrbit`, `injectGas`, `injectAerosol` with throttled receipts. Budget costs still open. | Model | M | 3 |
 | 312 | **The energy budget as the constraint** | `W.energy`, `energyCap` and `energyIncome` exist and `god/economy.js` and `god/receipt.js` are already built. A controller on a budget has to choose, and choosing is what makes its behaviour interesting. | Model | M | 3 |
 | 313 | **Gaia versus the player** <br>needs `gaiapolicy` | Let the controller run while the player interferes, and show the two sets of actions in the same log. It is a game mode, a tutorial and a demonstration of feedback all at once. | Play | M | 3 |
-| 314 | **Regulation that fails visibly** <br>needs `gaiapolicy` | A controller pushed past what its verbs can fix should visibly lose — because that is the actual lesson of planetary regulation, and a controller that always wins teaches the opposite of the intended thing. | Model | M | 3 |
+| 314 | **Regulation that fails visibly** <br>needs `gaiapolicy` | Landed (first cut). `W.gaiaFailed` when tips are tripped and climate is past verbs; Lab shows overwhelmed. | Model | M | 3 |
 | 315 | **Daisyworld as the honest tutorial** | The daisyworld path already exists with N species, `gaiaMode = tutorial-feedback` and a rising sun. It is the one place regulation is genuinely emergent rather than controlled, and it should be presented as the reference case any controller is compared against. | Show | M | 2 |
 | 316 | **A planetary dashboard** | Resilience, feedback gain, rate stress, tipping proximity, biosphere trend, and what the controller intends to do next. Six numbers that already exist, in one place, is the difference between an instrumented planet and a green sphere. | Show | M | 3 |
 | 317 | **Feedback gain that is measured, not fitted** | `W.feedbackGain` is `weatheringFlux × 20 − rateStress`, clamped. Gain should be measured by perturbing the system and observing the response — which the fork machinery makes possible and which turns a fitted constant into an experiment. | Prove | M | 3 |

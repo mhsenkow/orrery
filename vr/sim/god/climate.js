@@ -27,20 +27,22 @@ export function setOrbit(opts = {}) {
     if (W.rule) W.rule.eccentricity = W.eccentricity;
   }
   if (opts.precession != null) W.precession = opts.precession;
-  issueReceipt({
-    tool: 'solar',
-    cell: 0,
-    intent: 'Orbit edit',
-    expected: `S=${W.solar.toFixed(2)} · ε=${((W.obliquity || 0) * 180 / Math.PI).toFixed(1)}° · e=${(W.eccentricity || 0).toFixed(3)}`,
-    delayYr: 1e4,
-    delayLabel: 'Orbital climate response settling',
-  });
-  chronLog(W.year, 'tool', 0, W.solar, 'Orbit elements set');
+  if (!opts.quiet) {
+    issueReceipt({
+      tool: 'solar',
+      cell: 0,
+      intent: 'Orbit edit',
+      expected: `S=${W.solar.toFixed(2)} · ε=${((W.obliquity || 0) * 180 / Math.PI).toFixed(1)}° · e=${(W.eccentricity || 0).toFixed(3)}`,
+      delayYr: 1e4,
+      delayLabel: 'Orbital climate response settling',
+    });
+    chronLog(W.year, 'tool', 0, W.solar, 'Orbit elements set');
+  }
   return { ok: true, solar: W.solar, obliquity: W.obliquity, eccentricity: W.eccentricity };
 }
 
 /** Aerosol with decay curve. Item 32. */
-export function injectAerosol(amount = 0.04, hemi = 0) {
+export function injectAerosol(amount = 0.04, hemi = 0, opts = {}) {
   W.gases.sulphate = Math.min(0.4, (W.gases.sulphate || 0) + amount);
   W.aerosolPulse = {
     peakAt: W.ageYr + 0.25,
@@ -49,15 +51,17 @@ export function injectAerosol(amount = 0.04, hemi = 0) {
     amount,
     born: W.ageYr,
   };
-  issueReceipt({
-    tool: 'aerosol',
-    cell: 0,
-    intent: 'Stratospheric aerosol',
-    expected: `Injection ${(amount * 100).toFixed(1)}% · peaks in a season · fades ~2–3 yr`,
-    delayYr: 3,
-    delayLabel: 'Aerosol pulse faded',
-  });
-  chronLog(W.year, 'tool', 0, amount, 'Aerosol injection');
+  if (!opts.quiet) {
+    issueReceipt({
+      tool: 'aerosol',
+      cell: 0,
+      intent: 'Stratospheric aerosol',
+      expected: `Injection ${(amount * 100).toFixed(1)}% · peaks in a season · fades ~2–3 yr`,
+      delayYr: 3,
+      delayLabel: 'Aerosol pulse faded',
+    });
+    chronLog(W.year, 'tool', 0, amount, 'Aerosol injection');
+  }
   return { ok: true };
 }
 

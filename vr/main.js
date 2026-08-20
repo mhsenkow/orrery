@@ -2399,6 +2399,7 @@ function refreshLab() {
       (W.carbon ? ` · Ω <b>${W.carbon.omegaAragonite.toFixed(2)}</b>` : '') +
       ` · mode <b>${W.gaiaMode || '—'}</b>` +
       ` · drive <b>${W.autopilot ? gaiaDriveOf(W).label : 'off'}</b>` +
+      (W.gaiaFailed ? ` · <b style="color:#c44">overwhelmed</b>` : '') +
       (W.gaiaObjective ? `<br>aims to <b>${W.gaiaObjective}</b>` : '') +
       (W.gaiaLastAct ? `<br>last: ${W.gaiaLastAct}` : '') +
       (W.mood?.label ? ` · mood <b>${W.mood.label}</b>` : '') +

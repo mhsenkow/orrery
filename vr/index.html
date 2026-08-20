@@ -60,6 +60,34 @@
   button[aria-pressed="true"] { background:var(--accent2); border-color:var(--accent); color:#fff; }
   button:disabled { opacity:.4; cursor:default; }
   button.tool-locked { opacity:.35; filter:grayscale(.6); cursor:not-allowed; }
+  /* Shared field chrome — every select (sandbox, catalogue, ribbon, docks) */
+  select {
+    font: inherit; font-size: 11px; color: var(--text); cursor: pointer;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 8px; max-width: 100%;
+    transition: border-color .25s var(--ease), box-shadow .25s var(--ease);
+  }
+  select:hover { border-color: rgba(110,160,255,.4); }
+  select:focus-visible {
+    outline: none; border-color: rgba(110,160,255,.65);
+    box-shadow: 0 0 0 2px rgba(110,160,255,.25);
+  }
+  select:disabled { opacity: .4; cursor: default; }
+  input[type="file"] {
+    font: inherit; font-size: 10.5px; color: var(--dim); max-width: 100%;
+  }
+  input[type="file"]::file-selector-button,
+  input[type="file"]::-webkit-file-upload-button {
+    font: inherit; font-size: 10.5px; color: var(--text); cursor: pointer;
+    background: rgba(255,255,255,.04); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 8px; margin-right: 8px;
+    -webkit-appearance: none; appearance: none;
+    transition: background .25s var(--ease), border-color .25s var(--ease);
+  }
+  input[type="file"]::file-selector-button:hover,
+  input[type="file"]::-webkit-file-upload-button:hover {
+    background: rgba(110,160,255,.14); border-color: rgba(110,160,255,.4);
+  }
   kbd { font:inherit; font-size:10px; background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.12);
         border-radius:3px; padding:0 4px; }
 
@@ -343,6 +371,11 @@
   .dock-foot { display:flex; gap:4px; flex-wrap:wrap; }
   .dock-foot button { font-size:11px; padding:5px 8px; }
   .hint-mini { font-size:10px; color:var(--dim); margin:6px 0 0; line-height:1.4; }
+  .field-label {
+    display:flex; align-items:center; gap:6px; margin:0;
+    font-size:10px; color:var(--dim); line-height:1.4;
+  }
+  .field-label select { flex:0 1 auto; }
 
   /* Lab instruments */
   .lab-card {
@@ -375,11 +408,6 @@
     flex: 1 1 auto;
   }
   #pane-lab.on { display: flex; }
-  #pane-lab select {
-    font: inherit; font-size: 11px; color: var(--text);
-    background: rgba(255,255,255,.04); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 8px; max-width: 100%;
-  }
   #labstats {
     flex: 1 1 auto;
     min-height: 0;
@@ -429,7 +457,7 @@
   .rib-era {
     flex:0 1 auto; max-width:52%; font:inherit; font-size:9.5px;
     background:rgba(255,255,255,.04); border:1px solid var(--line);
-    color:#e8eef8; border-radius:6px; padding:2px 6px; cursor:pointer;
+    color:#e8eef8; border-radius:8px; padding:2px 6px; cursor:pointer;
   }
   .rib-era:focus-visible { outline:none; border-color:rgba(110,160,255,.65); box-shadow:0 0 0 2px rgba(110,160,255,.25); }
   .rib-track {
@@ -529,7 +557,7 @@
     flex:1 1 auto; min-width:0; max-width:46%;
     font:inherit; font-size:9.5px; padding:2px 4px;
     background:rgba(255,255,255,.04); border:1px solid var(--line);
-    color:#e8eef8; border-radius:6px; cursor:pointer;
+    color:#e8eef8; border-radius:8px; cursor:pointer;
   }
   .rib-rate:focus-visible { outline:none; border-color:rgba(110,160,255,.65); }
   .rib-pause, .rib-ff {
@@ -759,8 +787,8 @@
   #pane-god input[placeholder],
   #pane-tools select, #pane-tools input[type="text"], #pane-tools input:not([type]),
   #pane-tools input[placeholder] {
-    flex:1; width:100%; font:11px inherit; background:#0c1018; color:#c8d6ef;
-    border:1px solid var(--line); border-radius:6px; padding:6px; margin-bottom:4px;
+    flex:1; width:100%; font:11px inherit; background:rgba(0,0,0,.35); color:#c8d6ef;
+    border:1px solid var(--line); border-radius:8px; padding:6px 8px; margin-bottom:4px;
   }
   #pane-god .view-row select, #pane-tools .view-row select { margin-bottom:0; width:auto; flex:1; min-width:0; }
   #genesisreport {
@@ -895,6 +923,12 @@
   #catq { width:100%; font:12px inherit; color:var(--text); background:rgba(0,0,0,.35);
     border:1px solid var(--line); border-radius:8px; padding:7px 9px; }
   #catq:focus { outline:none; border-color:rgba(110,160,255,.7); }
+  #cattools label {
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:10.5px; color:var(--dim); letter-spacing:.04em;
+  }
+  #catsort { font-size:10.5px; padding:4px 7px; background:rgba(0,0,0,.35); }
+  #catcsv { max-width:11rem; }
   #catlist { overflow:auto; flex:1; min-height:140px; display:flex; flex-direction:column; gap:3px; }
   .cat-item { text-align:left; padding:7px 8px; border-radius:8px; width:100%;
     display:grid; grid-template-columns:32px 1fr; gap:1px 8px; }
@@ -1723,7 +1757,7 @@
             <button type="button" id="autopilot" aria-pressed="false">Gaia</button>
           </div>
           <div class="dock-foot" style="margin-top:6px;flex-wrap:wrap;gap:8px">
-            <label class="hint-mini" style="display:flex;align-items:center;gap:6px;margin:0">
+            <label class="field-label">
               Sim cells
               <select id="simN" title="Simulation grid — climate, life, map. High N is RAM-cheap; ticks get slower." aria-label="Sim resolution">
                 <option value="32">N=32 ~313 km</option>
@@ -1738,7 +1772,7 @@
                 <option value="768">N=768 ~13 km</option>
               </select>
             </label>
-            <label class="hint-mini" style="display:flex;align-items:center;gap:6px;margin:0">
+            <label class="field-label">
               Globe quads
               <select id="globeSubd" title="Globe mesh density — visual only, instant" aria-label="Globe mesh">
                 <option value="1">1×</option>
@@ -1832,16 +1866,16 @@
     <div id="catkinds"></div>
     <input id="catq" type="search" placeholder="Search Earth, Europa, TRAPPIST…" autocomplete="off">
     <div id="cattools" class="cat-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0">
-      <label class="cm">Sort
-        <select id="catsort">
+      <label>Sort
+        <select id="catsort" aria-label="Sort worlds">
           <option value="id">catalogue</option>
           <option value="dist">nearest</option>
           <option value="obs">observable</option>
           <option value="known">best known</option>
         </select>
       </label>
-      <label class="cm">CSV
-        <input id="catcsv" type="file" accept=".csv,text/csv" style="max-width:11rem">
+      <label>CSV
+        <input id="catcsv" type="file" accept=".csv,text/csv" aria-label="Import catalogue CSV">
       </label>
     </div>
     <div id="catcats"></div>

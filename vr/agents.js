@@ -89,6 +89,8 @@ function initDrives(m) {
   if (m.energy == null) m.energy = 1;
   if (m.hunger == null) m.hunger = 0;
   if (m.fear == null) m.fear = 0;
+  if (m.thirst == null) m.thirst = 0;
+  if (m.heat == null) m.heat = 0;
 }
 
 function killBeing(m, c, cause) {
@@ -102,6 +104,9 @@ function killBeing(m, c, cause) {
   }
   if (isAnimalKind(m.kind)) dropCarcass(W, c, mass, m.kind);
   if (cause === 'hunted') noteFear(W, c, 0.35);
+  W.popBook = W.popBook || { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
+  W.popBook.deaths++;
+  if (cause === 'hunted') W.popBook.hunted++;
   if (m.name) {
     logEvent(W.chron, W.year, 'death', c, 0.2,
       `${m.name} ${cause}`, { who: m.name, cause, born: m.born });
@@ -145,6 +150,8 @@ function tryBirth(parent, c, rng, log) {
     : null;
   ENT.n++;
   parent.energy -= 0.32;
+  W.popBook = W.popBook || { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
+  W.popBook.births++;
   if (log && child.name) {
     log(W.year, 'birth', nb, 0.15, `${child.name} born near ${parent.name || 'their kin'}`);
   }
@@ -393,6 +400,7 @@ function capForWorld() {
 
 function censusGroups() {
   const tallies = Object.create(null);
+  const leaders = Object.create(null);
   for (let i = 0; i < ENT.n; i++) {
     const m = ENT.meta[i];
     if (!m || m.dead || !m.groupId) continue;
@@ -404,10 +412,15 @@ function censusGroups() {
     t.n++;
     t.hx += m.hx || 0; t.hy += m.hy || 0; t.hz += m.hz || 0;
     t.cell = m.cell;
+    const en = m.energy || 0;
+    if (!leaders[m.groupId] || en > leaders[m.groupId].energy) {
+      leaders[m.groupId] = { id: m.id, cell: m.cell, energy: en, hx: m.hx || 0, hy: m.hy || 0, hz: m.hz || 0 };
+    }
   }
   const prev = W.groups || [];
   const byId = Object.create(null);
   for (const g of prev) byId[g.id] = g;
+  const summer = Math.sin(W.season || 0) > 0;
   const next = [];
   for (const id of Object.keys(tallies)) {
     const t = tallies[id];
@@ -421,14 +434,34 @@ function censusGroups() {
       hx: 0, hy: 0, hz: 0,
     };
     old.home = old.home ?? t.cell;
-    let goal = t.cell, bestLife = W.life[t.cell] || 0;
+    if (old.summerCell == null || old.winterCell == null) {
+      let hi = t.cell, lo = t.cell, hiAbs = 0, loAbs = 1;
+      for (let c = 0; c < NC; c += Math.max(17, (NC / 80) | 0)) {
+        if ((W.life[c] || 0) < 0.12) continue;
+        if (isSubmerged(W, c) !== isSubmerged(W, t.cell)) continue;
+        const abs = Math.abs(DIR[c * 3 + 1]);
+        if (abs > hiAbs) { hiAbs = abs; hi = c; }
+        if (abs < loAbs) { loAbs = abs; lo = c; }
+      }
+      old.summerCell = hi;
+      old.winterCell = lo;
+    }
+    const seasonal = summer ? old.summerCell : old.winterCell;
+    let goal = seasonal ?? t.cell;
+    let bestLife = (W.life[goal] || 0) - (W.fire?.[goal] || 0);
     for (let k = 0; k < 4; k++) {
       const nb = NBR[t.cell * 4 + k];
       const lv = (W.life[nb] || 0) - (W.fire?.[nb] || 0) - (W.ice?.[nb] || 0) * 0.5;
       if (lv > bestLife) { bestLife = lv; goal = nb; }
     }
     if ((W.life[t.cell] || 0) < 0.08 && old.home >= 0) goal = old.home;
+    /* Prefer the seasonal pole when local pasture is thin. */
+    if ((W.life[t.cell] || 0) < 0.2 && seasonal >= 0) goal = seasonal;
     old.goal = goal;
+    old.route = summer ? 'summer' : 'winter';
+    const lead = leaders[id];
+    old.leaderId = lead?.id ?? null;
+    old.leaderCell = lead?.cell ?? t.cell;
     old.n = t.n;
     old.cell = t.cell;
     old.kind = t.kind;
@@ -551,36 +584,51 @@ function eachNearby(c, fn) {
   }
 }
 
+let _preySeen = null;
+let _preyStamp = 0;
+
 function findPrey(self, c) {
+  /* Expand rings out to 5 cells — chase range, stamp-array avoids realloc. */
+  if (!_preySeen || _preySeen.length !== NC) _preySeen = new Int32Array(NC);
+  const stamp = ++_preyStamp || (_preyStamp = 1);
   let best = -1, bestDist = 9;
+  const selfM = ENT.meta[self];
   const consider = (j, dist) => {
     if (j === self || dist >= bestDist) return;
     const p = ENT.meta[j];
-    const selfM = ENT.meta[self];
     if (!p || p.dead || p.kind === 5 || p.kind === 14) return;
     if (!isAnimalKind(p.kind)) return;
     if (isSubmerged(W, p.cell) !== isSubmerged(W, selfM.cell)) return;
-    /* Same-kind herds: hunters may take non-hunters; peers leave each other alone. */
     if (p.kind === selfM.kind && (p.hunter || !selfM.hunter)) return;
     best = j;
     bestDist = dist;
   };
-  let j = _head[c];
-  while (j >= 0) { consider(j, 0); j = _next[j]; }
-  for (let k = 0; k < 4; k++) {
-    const n = NBR[c * 4 + k];
-    j = _head[n];
-    while (j >= 0) { consider(j, 1); j = _next[j]; }
-  }
-  if (best >= 0) return best;
-  for (let k = 0; k < 4; k++) {
-    const n = NBR[c * 4 + k];
-    for (let k2 = 0; k2 < 4; k2++) {
-      const n2 = NBR[n * 4 + k2];
-      if (n2 === c) continue;
-      j = _head[n2];
-      while (j >= 0) { consider(j, 2); j = _next[j]; }
+  const visit = (cells, dist) => {
+    for (let i = 0; i < cells.length; i++) {
+      let j = _head[cells[i]];
+      while (j >= 0) { consider(j, dist); j = _next[j]; }
     }
+  };
+  const expand = (from) => {
+    const out = [];
+    for (let i = 0; i < from.length; i++) {
+      const n = from[i];
+      for (let k = 0; k < 4; k++) {
+        const n2 = NBR[n * 4 + k];
+        if (_preySeen[n2] === stamp) continue;
+        _preySeen[n2] = stamp;
+        out.push(n2);
+      }
+    }
+    return out;
+  };
+  _preySeen[c] = stamp;
+  let ring = [c];
+  visit(ring, 0);
+  for (let d = 1; d <= 5 && best < 0; d++) {
+    ring = expand(ring);
+    if (d === 5 && ring.length > 64) ring.length = 64;
+    visit(ring, d);
   }
   return best;
 }
@@ -604,12 +652,17 @@ function pickBehav(m, c, rng) {
   for (let k = 0; k < 4; k++) nearFire = Math.max(nearFire, (W.fire?.[NBR[c * 4 + k]] || 0) * 0.55);
   if (nearFire > 0.04) m.fear = Math.min(1, m.fear * 0.65 + nearFire * 1.1);
   else m.fear *= 0.9;
+  /* Continuous drives beyond hunger/fear. */
+  const moist = W.moist?.[c] || 0;
+  const temp = W.temp?.[c] || 0.5;
+  m.thirst = clamp((m.thirst || 0) * 0.92 + (isAnimalKind(m.kind) ? (0.35 - moist) * 0.08 : 0), 0, 1);
+  m.heat = clamp(Math.abs(temp - 0.55) * 1.4, 0, 1);
   const pred = fearAt(W, c);
   if (!isPredator(m) && pred > 0.12) {
     m.fear = Math.min(1, m.fear * 0.7 + pred * 0.9);
   }
   if (m.fear > 0.32 || fire > 0.05 || ash > 0.18 || dust > 0.28 || storm > 0.35 || W.ice[c] > 0.55
-      || (!isPredator(m) && pred > 0.28)) {
+      || (!isPredator(m) && pred > 0.28) || m.heat > 0.78) {
     return 'flee';
   }
   if (m.kind === 5) return W.build[c] > 0.3 ? 'tend' : 'forage';
@@ -618,6 +671,7 @@ function pickBehav(m, c, rng) {
   }
   if (m.kind <= 2) return 'rest';
   if (isPredator(m) && m.hunger > 0.38) return 'hunt';
+  if (m.thirst > 0.55) return 'forage';
   if (m.hunger > 0.58) return 'forage';
   if (m.hunger > 0.38 && rng() < 0.65) return 'forage';
   if (m.hunger < 0.22 && rng() < 0.45) return 'rest';
@@ -887,8 +941,10 @@ export function agentsTick(log = null) {
              a mortality constant. Forest (high life) hides; open ground helps. */
           const cover = clamp((W.life[prey.cell] || 0) * 0.55 + (W.moist?.[prey.cell] || 0) * 0.15, 0, 0.7);
           const aware = prey.fear > 0.2 || prey.behav === 'flee' ? 0.22 : 0;
+          const defNode = prey.popId ? nodeOf(W.tree, prey.popId) : null;
+          const defence = defNode?.traits?.[TRAITS.defence] ?? 0;
           const base = prey.cell === c ? 0.38 : 0.18;
-          const pHit = Math.max(0.04, base * (1 - cover) - aware);
+          const pHit = Math.max(0.02, base * (1 - cover) * (1 - defence * 0.72) - aware);
           if (rng() < pHit) {
             const mass = killBeing(prey, prey.cell, 'hunted') || 0.75;
             m.energy = Math.min(1.35, m.energy + mass * 0.22);
@@ -971,6 +1027,11 @@ export function agentsTick(log = null) {
       if (pack && pack.goal >= 0 && m.behav !== 'flee' && m.behav !== 'hunt') {
         s += cellDot(n, pack.goal) * 0.35;
       }
+      if (pack && pack.leaderId && m.id !== pack.leaderId && m.behav !== 'flee' && m.behav !== 'hunt') {
+        s += cellDot(n, pack.leaderCell) * 0.45;
+      }
+      if ((m.thirst || 0) > 0.4) s += (W.moist?.[n] || 0) * 0.5 + (W.flow?.[n] || 0) * 0.3;
+      if ((m.heat || 0) > 0.5) s -= Math.abs((W.temp?.[n] || 0.5) - 0.55) * 0.8;
       if (s > score) { score = s; best = n; }
     }
     // A stampede is a herd that moves faster than it forages. Fire in the cell

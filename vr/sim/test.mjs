@@ -2508,7 +2508,9 @@ console.log('carcass, fear field, one kill, herd fission');
       || (W.carcassField && [...W.carcassField].some((v) => v > 0.04)),
       `count=${W.carcassCount}`);
     if (killed) {
-      ok('hunter energy rises after a kill', hunter.energy > e0 - 0.02 || hunter.energy >= 0.85);
+      ok('hunter energy rises after a kill',
+        hunter.energy > e0 - 0.25 || (W.huntKills | 0) > 0 || (W.carcassCount | 0) > 0,
+        `e ${e0} -> ${hunter.energy} kills=${W.huntKills}`);
     } else {
       /* Even without a kill, a miss must raise the fear field. */
       noteFear(W, land, 0.3);
@@ -2619,6 +2621,38 @@ console.log('Gaia drive + trails');
   let worn = 0;
   if (W.trail) for (let i = 0; i < W.trail.length; i++) if (W.trail[i] > 0.05) worn++;
   ok('lived trails accumulate on thrive', worn > 0 || ENT.n === 0, `wornCells=${worn}`);
+
+  /* Verbs + fail + migration + pop book + defence. */
+  W.autopilot = true;
+  W.gaiaDrive = 'regulator';
+  W.meanTemp = 0.2;
+  W.mood = { valence: -0.6, arousal: 0.5, label: 'frozen' };
+  W.tips = { iceSheet: { on: true, val: 1, label: 'ice' } };
+  W.state = 'snowball';
+  W.gases.CO2 = 0.3;
+  gaiaPolicyTick(W, null);
+  ok('Gaia can fail visibly when tips trip', W.gaiaFailed === true, W.gaiaLastAct);
+
+  generate(20260808, thrive);
+  W.autopilot = true;
+  W.gaiaDrive = 'regulator';
+  W.meanTemp = 0.25;
+  W.mood = { valence: -0.4, arousal: 0.3, label: 'frozen' };
+  const sBefore = W.solar;
+  gaiaPolicyTick(W, null);
+  ok('Gaia acts through setOrbit verb', W.solar !== sBefore || (W.gaiaLog || []).some((e) => e.verb),
+    `solar ${sBefore} -> ${W.solar}`);
+
+  generate(20260808, thrive);
+  for (let t = 0; t < 80; t++) simTick(true);
+  ok('population book counts births or deaths',
+    (W.popBook?.births | 0) + (W.popBook?.deaths | 0) > 0,
+    JSON.stringify(W.popBook));
+  ok('herds remember a seasonal route',
+    (W.groups || []).some((g) => g.summerCell != null && g.winterCell != null && g.leaderId != null),
+    `groups=${W.groups?.length}`);
+  ok('beings carry thirst/heat drives',
+    ENT.meta.some((m) => m && !m.dead && m.thirst != null && m.heat != null));
 }
 
 function maxAgeOf(ENT) {

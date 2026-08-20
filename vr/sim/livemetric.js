@@ -52,6 +52,10 @@ export function livingMetrics(W, ent = ENT) {
     mood: W.mood?.label || null,
     huntKills: W.huntKills || 0,
     carcasses: W.carcassCount || 0,
+    popBirths: W.popBook?.births || 0,
+    popDeaths: W.popBook?.deaths || 0,
+    gaiaDrive: W.autopilot ? (W.gaiaDrive || null) : null,
+    gaiaFailed: !!W.gaiaFailed,
     ageYr: W.ageYr,
     meanLife: W.meanLife,
   };
