@@ -48,6 +48,7 @@ export function livingMetrics(W, ent = ENT) {
     plumeCells: W._plumeCells || 0,
     foodWebLinks: W.foodWeb?.links?.length || 0,
     foodWebDropped: W.foodWeb?.dropped || 0,
+    groups: W.groupCount || W.groups?.length || 0,
     ageYr: W.ageYr,
     meanLife: W.meanLife,
   };
@@ -65,5 +66,6 @@ export function formatLivingLine(m) {
     `fire ${m.fireCells}`,
     `lineages ${m.lineages}`,
     `sprites ${m.sprites}`,
+    `groups ${m.groups || 0}`,
   ].join(' · ');
 }

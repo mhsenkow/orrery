@@ -202,6 +202,7 @@ export function applyTiltDeg(deg) {
 /** Scrub seasonal phase (degrees of orbit). */
 export function applySeasonDeg(deg) {
   W.season = (clamp(deg, 0, 360) * Math.PI) / 180;
+  if ((W.clockFace || 'years') === 'years') W.seasonHold = W.season;
   W._gpgpuDirty = true;
   return { ok: true, season: W.season };
 }

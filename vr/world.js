@@ -53,6 +53,7 @@ import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
 import { isModernEarth, isDeepTimeEarth, cloneRuleForRun } from './sim/ruleMode.js';
+import { applySeasonPolicy, initClockFace, shouldHoldCalendar } from './sim/clockFace.js';
 import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
 import { agentsTick, resetEntities, packEntities, restoreEntities } from './agents.js';
@@ -336,6 +337,7 @@ export function generate(seed, ruleIn) {
   W._baseObliquity = rule.obliquity;
   W._solarMod = 1;
   W.season = 0;
+  initClockFace(W, rule);
   // Earth-like worlds keep a Luna; Selene / airless may not
   if (rule.earthLike && !rule.airless) {
     W.moon = { mass: 1, distance: 1, formed: 4.51e9 };
@@ -365,6 +367,9 @@ export function generate(seed, ruleIn) {
   W.cities = [];
   W.civPop = 0;
   W.meanBuild = 0;
+  W.builtFrac = 0;
+  W.builtCells = 0;
+  W.groupCount = 0;
   W._cityLights = 0;
   W.buildersActive = 0;
   W._agentTick = 0;
@@ -543,6 +548,8 @@ export function generate(seed, ruleIn) {
     for (let i = 0; i < 4; i++) simTick(true);
     W._spinup = false;
     W._pauseBio = false;
+    W._livedSeason0 = W.season || 0;
+    W._livedT = 0;
   }
 
   if (!rule.daisyworld && !rule.earthLike) {
@@ -681,7 +688,7 @@ export function simTick(silent = false) {
   const rate = multiRateMask(W);
 
   if (!rule.daisyworld) {
-    advanceClock(W, rule);
+    if (!shouldHoldCalendar(W, rule)) advanceClock(W, rule);
     if (!silent) hadeanTick(W, log);
   } else {
     W.dtYr = 10;
@@ -689,13 +696,7 @@ export function simTick(silent = false) {
     W.ageYr = W.year;
   }
 
-  // Advance season for phenology / snow line
-  // Holocene Earth: ~one orbital turn per sim year. Deep time keeps the slow crawl.
-  if (isModernEarth(rule)) {
-    W.season = (W.season || 0) + (W.dtYr || 10) * (Math.PI * 2) / 365.25;
-  } else {
-    W.season = (W.season || 0) + 0.02 * Math.min(1, (W.dtYr || 200) / 1e4);
-  }
+  applySeasonPolicy(W, rule);
 
   if (!rule.daisyworld && !rule.airless && !W.noSurface && rate.tectonics && !W._canvasMode) {
     tectonicsTick(W, W.chron, log);
@@ -946,6 +947,8 @@ export function serializeRun() {
     originCell: W.originCell ?? null,
     planetBiochem: W.planetBiochem || null,
     originDifficulty: W.originDifficulty ?? 1,
+    clockFace: W.clockFace || 'years',
+    seasonHold: W.seasonHold ?? null,
     buildB64: packFloatField(W.build),
     cities: (W.cities || []).map((c) => ({ ...c })),
     civPop: W.civPop ?? 0,
@@ -1011,6 +1014,11 @@ export function loadRunMeta(json) {
   if (data.builtFrac != null) W.builtFrac = data.builtFrac;
   if (data.meanBuild != null) W.meanBuild = data.meanBuild;
   if (data.entities?.list?.length) restoreEntities(data.entities);
+  if (data.clockFace) W.clockFace = data.clockFace;
+  if (data.seasonHold != null) {
+    W.seasonHold = data.seasonHold;
+    W.season = data.seasonHold;
+  }
   return data;
 }
 

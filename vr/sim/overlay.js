@@ -86,12 +86,13 @@ export const OVERLAYS = [
   { id: 'techno', label: 'Technosphere', icon: 'inspect', tip: 'Energy use and land use. Bright is watts and cropland; dark is unused. Giants have none.' },
   { id: 'fire', label: 'Fire', icon: 'volcano', tip: 'Orange is flame, grey is smoke and ash, dim red is fire danger — dry fuelled land that has not caught yet. A rate, not a state.' },
   { id: 'plume', label: 'Nutrient plume', icon: 'upwell', tip: 'Where animals fertilised the water. Surface-feeding whale-scale life brings N and P up; the green is the bloom that follows.' },
+  { id: 'behav', label: 'Behaviour', icon: 'seed', tip: 'What beings are doing on each cell — forage, flee, hunt, tend. The living layer as a map, not a sprite count.' },
 ];
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume',
+  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav',
   'faces', 'zonal', 'ecotone',
 ];
 
@@ -406,6 +407,17 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
         g = 20 + nut * 70 + p * 185;
         b = 40 + nut * 60 + p * 60;
       }
+    } else if (mode === 'behav') {
+      const code = W.behavMap?.[c] || 0;
+      if (!code) {
+        r = r * 0.22; g = g * 0.22; b = b * 0.25;
+      } else if (code === 3) { r = 255; g = 110; b = 40; }
+      else if (code === 4) { r = 220; g = 40; b = 50; }
+      else if (code === 5) { r = 240; g = 200; b = 70; }
+      else if (code === 6) { r = 40; g = 210; b = 200; }
+      else if (code === 2) { r = 90; g = 200; b = 80; }
+      else if (code === 7) { r = 120; g = 160; b = 255; }
+      else { r = 70; g = 80; b = 90; }
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

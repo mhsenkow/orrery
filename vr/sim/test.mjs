@@ -2354,6 +2354,64 @@ console.log('food web keeps strongest links');
   ok('weakest kept beats first dropped', kept[199].w >= links[200].w);
 }
 
+console.log('clock faces');
+{
+  const { applySeasonPolicy, livedTick, setClockFace, setSeasonHold } = await import('./clockFace.js');
+  const { icsRibbonHTML } = await import('./viz.js');
+  const pinned = { earthLike: true };
+  const Wnow = { clockFace: 'now', season: 0.4, dtYr: 10, seasonHold: null };
+  applySeasonPolicy(Wnow, pinned);
+  ok('pinned Now without livedTick still advances season', Wnow.season !== 0.4);
+
+  const Wlive = { clockFace: 'now', season: 1, dtYr: 10, _livedActive: true, _livedSeason0: 1, _livedT: 0 };
+  applySeasonPolicy(Wlive, pinned);
+  ok('lived Now does not spin season in simTick', Wlive.season === 1);
+  livedTick(Wlive, 12);
+  ok('lived Now moves season on the presentation clock', Wlive.season !== 1);
+
+  const Wy = { clockFace: 'years', season: 0.2, dtYr: 200, seasonHold: 1.2 };
+  applySeasonPolicy(Wy, { earthLike: true, thrive: true });
+  ok('Years holds the locked season', Math.abs(Wy.season - 1.2) < 1e-9);
+
+  setSeasonHold(Wy, 'jun');
+  ok('June hold is 90°', Math.abs(Wy.seasonHold - Math.PI / 2) < 1e-9);
+
+  const html = icsRibbonHTML({ eon: 'Phanerozoic', period: 'Quaternary' }, 'present', 0, { dt: '10 yr/tick', id: 'decade' }, {
+    clockFace: 'years', seasonHoldId: 'jun', rates: [], eras: [],
+  });
+  ok('ribbon has Now and Years', html.includes('data-clock-face="now"') && html.includes('data-clock-face="years"'));
+  ok('ribbon has season holds', html.includes('data-season-hold="jun"'));
+
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  generate(4242, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  const s0 = W.season;
+  const age0 = W.ageYr;
+  for (let i = 0; i < 20; i++) simTick(true);
+  ok('thrive Years keeps season still', W.season === s0, `${s0} -> ${W.season}`);
+  ok('thrive Years still advances the calendar', W.ageYr > age0);
+
+  setClockFace(W, 'now');
+  const age1 = W.ageYr;
+  const sea1 = W.season;
+  for (let i = 0; i < 12; i++) simTick(true);
+  ok('thrive Now holds the calendar', W.ageYr === age1);
+  ok('thrive Now without frames does not jump season', W.season === sea1);
+}
+
+console.log('named herds and behaviour overlay');
+{
+  const { W } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { overlayById } = await import('./overlay.js');
+  ok('behaviour overlay exists', overlayById('behav')?.id === 'behav');
+  let grouped = 0;
+  for (let i = 0; i < ENT.n; i++) if (ENT.meta[i]?.groupId) grouped++;
+  ok('herd members carry a group id', grouped > 0, `grouped=${grouped}`);
+  ok('groups are world objects', (W.groups?.length || 0) >= 1, `n=${W.groups?.length}`);
+  ok('behaviour map has activity', !!(W.behavMap && W.behavMap.some((v) => v > 0)));
+}
+
 function maxAgeOf(ENT) {
   let m = 0;
   for (let i = 0; i < ENT.n; i++) {

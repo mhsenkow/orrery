@@ -26,14 +26,24 @@ export function tidesTick(W) {
   const moon = W.moon;
   const sun = W._sunDir || [1, 0, 0];
 
-  // Lunar orbital angle — shared with render (synodic month ~13.4 / yr)
-  const lunarOrb = (W.ageYr || 0) * Math.PI * 2 * 13.4;
-  // Lunar day drift (~24h50m): slightly slower than solar
-  const lunarDay = lunarOrb * 0.966;
-  W.moonAngle = lunarDay;
-  W.moonPhase = (lunarOrb / (Math.PI * 2)) % 1; // 0 = new-ish relative to fixed ref
-  const mx = Math.cos(lunarDay), mz = Math.sin(lunarDay);
-  W._moonDir = [mx, 0, mz];
+  if ((W.clockFace || 'years') === 'now' && W._livedActive) {
+    // Moon angle owned by livedTick.
+  } else if (W.seasonHold != null && (W.clockFace || 'years') === 'years'
+    && (W.moonAngleHold != null || W.moonPhaseHold != null)) {
+    W.moonAngle = W.moonAngleHold ?? W.moonAngle ?? 0;
+    W.moonPhase = W.moonPhaseHold ?? W.moonPhase ?? 0;
+    const a = W.moonAngle;
+    W._moonDir = [Math.cos(a), 0, Math.sin(a)];
+  } else {
+    const lunarOrb = (W.ageYr || 0) * Math.PI * 2 * 13.4;
+    const lunarDay = lunarOrb * 0.966;
+    W.moonAngle = lunarDay;
+    W.moonPhase = (lunarOrb / (Math.PI * 2)) % 1;
+    const mx = Math.cos(lunarDay), mz = Math.sin(lunarDay);
+    W._moonDir = [mx, 0, mz];
+  }
+  const mx = W._moonDir?.[0] ?? 1;
+  const mz = W._moonDir?.[2] ?? 0;
 
   if (!moon || moon.mass < 0.05) {
     const solarAmp = 0.008;

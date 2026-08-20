@@ -24,13 +24,19 @@ export const ENT = {
   meta: new Array(MAX_ENT),
 };
 let _idSeq = 1;
+let _groupSeq = 1;
 let _occ = null;
+const BEHAV_CODE = { rest: 1, forage: 2, flee: 3, hunt: 4, tend: 5, surface: 6, travel: 7 };
 
 /** Drop population state — call before repopulating (world generate / load). */
 export function resetAgents() {
   ENT.n = 0;
   _idSeq = 1;
+  _groupSeq = 1;
   for (let i = 0; i < MAX_ENT; i++) ENT.meta[i] = null;
+  W.groups = [];
+  W.groupCount = 0;
+  if (W.behavMap) W.behavMap.fill(0);
 }
 
 const NAMES_A = ['Ash', 'Bri', 'Cor', 'Del', 'Fen', 'Gri', 'Hel', 'Jor', 'Kel', 'Lum', 'Mor', 'Nyx', 'Orn', 'Pyx', 'Quin', 'Ryn', 'Sol', 'Tor', 'Ulm', 'Vex'];
@@ -107,6 +113,7 @@ function tryBirth(parent, c, rng, log) {
   child.born = W.year;
   child.bornCell = nb;
   child.parentId = parent.id;
+  child.groupId = parent.groupId || 0;
   child.energy = 0.58;
   child.hunger = 0.35;
   child.fear = 0;
@@ -241,6 +248,7 @@ function writeEnt(n, c, kind, rng) {
     // a sprite flip in localview). Alignment needs a direction to average.
     hx: 0, hy: 0, hz: 0,
     herd: 0,
+    groupId: 0,
     prevCell: c,
     arriveAt: null,
     behav: kind === 5 ? 'tend' : (kind <= 2 ? 'rest' : 'forage'),
@@ -260,8 +268,12 @@ export function resetEntities() {
   ENT.meta.length = 0;
   ENT.meta.length = MAX_ENT;
   _idSeq = 1;
+  _groupSeq = 1;
   _plumeTouched.clear();
   resetMorphAtlas();
+  W.groups = [];
+  W.groupCount = 0;
+  if (W.behavMap) W.behavMap.fill(0);
 }
 
 /** Grazers arrive as a group.
@@ -270,15 +282,37 @@ export function resetEntities() {
  *  cells is a 2% density — a herd seeded one animal at a time never finds
  *  itself. Seeded together, the alignment term in `agentsTick` keeps it together.
  *  Returns how many slots were consumed, including the founder. */
+function habitatOk(m, n) {
+  const sea = isSubmerged(W, n);
+  if (m.kind === 14 || m.kind === 15) return sea;
+  if (m.kind === 5 || m.kind === 6 || m.kind === 7) {
+    return !sea && (W.ice?.[n] || 0) < 0.72;
+  }
+  return true;
+}
+
+function mintGroup(kind, cell) {
+  const id = _groupSeq++;
+  const what = kind === 14 || kind === 15 ? 'pod' : 'herd';
+  const name = `${nameFrom(W.seed, id + 800)} ${what}`;
+  return { id, kind, name, n: 0, cell, hx: 0, hy: 0, hz: 0 };
+}
+
 function writeHerd(n, c, kind, rng, cap) {
   let w = 0;
+  const g = mintGroup(kind, c);
   writeEnt(n + w++, c, kind, rng);
+  ENT.meta[n].groupId = g.id;
   const size = 4 + ((rng() * 5) | 0);
   for (let k = 0; k < size && n + w < cap; k++) {
     const nb = rng() < 0.45 ? c : NBR[c * 4 + ((rng() * 4) | 0)];
     if (W.h[nb] < W.seaLevel || W.ice[nb] > 0.35) continue;
     writeEnt(n + w++, nb, kind, rng);
+    ENT.meta[n + w - 1].groupId = g.id;
   }
+  g.n = w;
+  W.groups = W.groups || [];
+  W.groups.push(g);
   return w;
 }
 
@@ -318,6 +352,46 @@ export function respawnEntities() {
 
 function capForWorld() {
   return W.rule.earthLike ? Math.min(MAX_ENT, 560) : MAX_ENT;
+}
+
+function censusGroups() {
+  const tallies = Object.create(null);
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (!m || m.dead || !m.groupId) continue;
+    let t = tallies[m.groupId];
+    if (!t) {
+      t = { n: 0, cell: m.cell, kind: m.kind, hx: 0, hy: 0, hz: 0 };
+      tallies[m.groupId] = t;
+    }
+    t.n++;
+    t.hx += m.hx || 0; t.hy += m.hy || 0; t.hz += m.hz || 0;
+    t.cell = m.cell;
+  }
+  const prev = W.groups || [];
+  const byId = Object.create(null);
+  for (const g of prev) byId[g.id] = g;
+  const next = [];
+  for (const id of Object.keys(tallies)) {
+    const t = tallies[id];
+    if (t.n < 2) continue;
+    const old = byId[id] || {
+      id: +id,
+      kind: t.kind,
+      name: `${nameFrom(W.seed, +id + 800)} ${t.kind === 14 || t.kind === 15 ? 'pod' : 'herd'}`,
+      n: t.n,
+      cell: t.cell,
+      hx: 0, hy: 0, hz: 0,
+    };
+    old.n = t.n;
+    old.cell = t.cell;
+    old.kind = t.kind;
+    const l = Math.hypot(t.hx, t.hy, t.hz) || 1;
+    old.hx = t.hx / l; old.hy = t.hy / l; old.hz = t.hz / l;
+    next.push(old);
+  }
+  W.groups = next;
+  W.groupCount = next.length;
 }
 
 /** Fill empty slots without wiping living individuals. */
@@ -506,6 +580,8 @@ export function agentsTick(log = null) {
      ran every single tick, and on a fast clock they ran never. A tick counter
      costs one integer and means the same thing on every world. */
   const tick = (W._agentTick = (W._agentTick | 0) + 1);
+  if (!W.behavMap || W.behavMap.length !== NC) W.behavMap = new Uint8Array(NC);
+  else if ((tick & 1) === 0) W.behavMap.fill(0);
   if (tick % 64 === 0) topUpEntities();
   compactDead();
   rebuildBuckets();
@@ -523,6 +599,8 @@ export function agentsTick(log = null) {
     initDrives(m);
     m.hunger = Math.min(1, m.hunger + metabolicRate(m) * 0.32);
     m.behav = pickBehav(m, c, rng);
+    if (!W.behavMap || W.behavMap.length !== NC) W.behavMap = new Uint8Array(NC);
+    W.behavMap[c] = BEHAV_CODE[m.behav] || 1;
 
     if (m.kind === 5 && W.h[c] >= W.seaLevel && W.ice[c] < 0.35 && W.life[c] > 0.15) {
       const before = W.build[c];
@@ -613,6 +691,7 @@ export function agentsTick(log = null) {
         let bestF = c, bestDot = -2;
         for (let k = 0; k < 4; k++) {
           const nb = NBR[c * 4 + k];
+          if (!habitatOk(m, nb)) continue;
           const dot = (DIR[nb * 3] - DIR[c * 3]) * gx
             + (DIR[nb * 3 + 1] - DIR[c * 3 + 1]) * gy
             + (DIR[nb * 3 + 2] - DIR[c * 3 + 2]) * gz;
@@ -622,6 +701,12 @@ export function agentsTick(log = null) {
         const urge = m.behav === 'flee' ? 0.85 : 0.25;
         if (bestF !== c && bestDot > 0 && rng() < urge * Math.min(2, stride)) best = bestF;
         if (m.herd > herdBest) { herdBest = m.herd; herdCell = c; herdKind = m.kind; }
+        if (!m.groupId && m.herd >= 3) {
+          const g = mintGroup(m.kind, c);
+          m.groupId = g.id;
+          W.groups = W.groups || [];
+          W.groups.push(g);
+        }
       }
     }
 
@@ -671,6 +756,7 @@ export function agentsTick(log = null) {
 
     for (let k = 0; k < 4; k++) {
       const n = NBR[c * 4 + k];
+      if (!habitatOk(m, n)) continue;
       let s = m.kind === 5
         ? (frontier
           ? W.life[n] * 1.2 + W.moist[n] * 0.3 - W.ice[n] - W.build[n] * 0.9 + rng() * 0.08
@@ -769,6 +855,7 @@ export function agentsTick(log = null) {
   W.buildersActive = built;
   W.surfaceFeeders = plumeFed;
   W.herdMax = herdBest;
+  censusGroups();
   if (buildsDirty) W._buildsDirty = true;
   plumeDecay();
   if (tick % 4 === 0) {
@@ -782,9 +869,10 @@ export function agentsTick(log = null) {
      animals and does not deserve a line. */
   if (log && herdBest >= 8 && herdCell >= 0 && tick - (W._herdNamedTick | 0) > 120) {
     W._herdNamedTick = tick;
+    const named = (W.groups || []).find((g) => g.n >= 4 && g.kind === herdKind);
     const what = herdKind === 14 || herdKind === 15 ? 'pod' : 'herd';
     log(W.year, 'herd', herdCell, herdBest / 20,
-      `A ${what} of ${herdBest} moves together`);
+      named ? `${named.name} (${named.n}) moves together` : `A ${what} of ${herdBest} moves together`);
   }
   if (ENT.n < capForWorld() * 0.28) topUpEntities();
 }
@@ -827,9 +915,10 @@ export function packEntities() {
       hunger: m.hunger,
       fear: m.fear,
       parentId: m.parentId ?? null,
+      groupId: m.groupId || 0,
     });
   }
-  return { seq: _idSeq, list };
+  return { seq: _idSeq, list, groups: (W.groups || []).map((g) => ({ ...g })) };
 }
 
 /** Reload a packed population after `generate` + terrain restore. */
@@ -866,6 +955,7 @@ export function restoreEntities(packed) {
       hunger: rec.hunger ?? 0,
       fear: rec.fear ?? 0,
       parentId: rec.parentId ?? null,
+      groupId: rec.groupId || 0,
     };
     writePos(n, rec.cell);
     const o = n * 8;
@@ -881,5 +971,9 @@ export function restoreEntities(packed) {
   ENT.n = n;
   for (let i = n; i < MAX_ENT; i++) ENT.meta[i] = null;
   _idSeq = maxId + 1;
+  if (packed.groups?.length) {
+    W.groups = packed.groups.map((g) => ({ ...g }));
+    _groupSeq = W.groups.reduce((m, g) => Math.max(m, g.id || 0), 0) + 1;
+  }
   return n;
 }

@@ -6,6 +6,7 @@ import { TIME_RATES } from './god/observe.js';
 import {
   ERA_PRESETS, availableEras, eraPatch, currentEraId, ruleForEra,
 } from './epoch.js';
+import { nearestSeasonHold } from './clockFace.js';
 
 export {
   ERA_PRESETS, availableEras, eraPatch, currentEraId, ruleForEra,
@@ -15,6 +16,7 @@ export {
 /** Snapshot for the corner time ribbon. */
 export function timePanelState(W, S = {}) {
   const rule = W.rule || {};
+  const face = W.clockFace || 'years';
   return {
     mode: modeLabel(rule),
     eraId: currentEraId(rule) || W._epoch?.id || 'present',
@@ -23,5 +25,8 @@ export function timePanelState(W, S = {}) {
     rateId: W.timeRateId || 'auto',
     paused: !!S.paused,
     ff: !!W.fastForward,
+    clockFace: face,
+    seasonHoldId: nearestSeasonHold(W).id,
+    lived: face === 'now',
   };
 }

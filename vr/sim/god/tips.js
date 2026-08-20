@@ -142,7 +142,7 @@ export const PLAY_TIPS = {
   },
   timeribbon: {
     title: 'Time ribbon',
-    body: 'When: pick Present or From origin (regenerates the world). Speed: years per tick — Adaptive follows the era. ⏸ pause · ⏩ fast frames until an event. Keys: Space , .',
+    body: 'Now = days, seasons and the moon while the calendar holds. Years = centuries pass on one held season. Pick Mar/Jun/Sep/Dec to lock the month. Speed is years per tick. Keys: Space , .',
   },
   brushmask: {
     title: 'Only paint on…',
@@ -537,6 +537,14 @@ export const RIBBON_TIPS = {
   track: {
     title: 'Deep-time track',
     body: 'Hadean → Phanerozoic. Needle is now. On Holocene Earth this is a legend; the clock itself stays in years.',
+  },
+  face: {
+    title: 'Now or Years',
+    body: 'Now is lived time — terminator, seasons and the moon on the presentation clock, calendar frozen. Years lets the age advance while that season stays put, so cities and ice can move without the year strobing.',
+  },
+  hold: {
+    title: 'Held season',
+    body: 'Which month the planet is frozen in while years pass. The climate panel season slider writes the same lock.',
   },
 };
 

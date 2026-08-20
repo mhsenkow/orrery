@@ -1,6 +1,7 @@
 /** Rich instrument visuals — charts, towers, spectra as SVG. */
 
 import { DIR } from '../sphere.js';
+import { CLOCK_FACES, SEASON_HOLDS } from './clockFace.js';
 
 const GUILD_SHORT = {
   fermenter: 'ferment',
@@ -302,7 +303,14 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
   const rateOpts = rates.map((r) =>
     `<option value="${r.id}"${r.id === rateId ? ' selected' : ''}>${r.label}${r.dtYr == null ? '' : ' / tick'}</option>`).join('');
   const ff = panel.ff ? ' aria-pressed="true"' : ' aria-pressed="false"';
-  return `<div class="ics-ribbon${pausedCls}">
+  const face = panel.clockFace || 'years';
+  const lived = face === 'now';
+  const faceBtns = CLOCK_FACES.map((f) =>
+    `<button type="button" class="rib-face-btn${f.id === face ? ' on' : ''}" data-clock-face="${f.id}" title="${f.hint}">${f.label}</button>`).join('');
+  const holdId = panel.seasonHoldId || 'mar';
+  const holdBtns = SEASON_HOLDS.map((h) =>
+    `<button type="button" class="rib-hold-btn${h.id === holdId ? ' on' : ''}" data-season-hold="${h.id}" title="${h.title}">${h.label}</button>`).join('');
+  return `<div class="ics-ribbon${pausedCls}${lived ? ' is-now' : ' is-years'}">
     <div class="rib-head">
       <span class="rib-mode">${mode}</span>
       ${eras.length ? `<select class="rib-era" data-era-select aria-label="History era">${eraOpts}</select>` : ''}
@@ -310,13 +318,21 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
     <div class="rib-track">${segs}<div class="rib-needle" style="left:${needle}%"></div></div>
     <div class="rib-marks">${marks}</div>
     <div class="rib-meta"><span class="rib-age">${ageLabel}</span><span class="rib-era-line">${eraLine}</span></div>
+    <div class="rib-faces" role="tablist" aria-label="Time scale">
+      ${faceBtns}
+    </div>
+    <p class="rib-face-hint">${lived
+      ? 'Days, seasons and the moon · the calendar holds'
+      : 'Years pass · this season stays'}</p>
+    ${lived ? '' : `<div class="rib-hold" role="group" aria-label="Held season">${holdBtns}</div>`}
     <div class="rib-clock">
       <button type="button" class="rib-pause" data-time-pause aria-pressed="${paused ? 'true' : 'false'}" title="Pause (Space)">${paused ? '▶' : '⏸'}</button>
+      ${lived ? '' : `
       <button type="button" class="rib-step" data-rate-step="-1" title="Slower (,)" aria-label="Slower clock">−</button>
       <select class="rib-rate" data-rate-select aria-label="Years per tick">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
       <button type="button" class="rib-step" data-rate-step="1" title="Faster (.)" aria-label="Faster clock">+</button>
-      <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>
-      <span class="rib-dt">${dt}</span>
+      <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>`}
+      <span class="rib-dt">${lived ? 'lived' : dt}</span>
     </div>
   </div>`;
 }

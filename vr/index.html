@@ -409,7 +409,8 @@
     bottom: calc(var(--gutter) + var(--safe-b));
     width: min(320px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
   }
-  #timeribbon .rib-head, #timeribbon .rib-clock { pointer-events:auto; }
+  #timeribbon .rib-head, #timeribbon .rib-clock,
+  #timeribbon .rib-faces, #timeribbon .rib-hold { pointer-events:auto; }
   .ics-ribbon {
     padding:8px 10px 7px; border-radius:12px;
     background:var(--panel); backdrop-filter:blur(16px) saturate(1.1);
@@ -476,6 +477,44 @@
     color:var(--amber); font-size:9.5px; letter-spacing:.02em;
     text-align:right; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
+  .rib-faces {
+    display:flex; gap:4px; margin-top:8px;
+  }
+  .rib-face-btn, .rib-hold-btn {
+    font:inherit; cursor:pointer;
+    background:rgba(255,255,255,.04); border:1px solid var(--line);
+    color:#c5d4ec; border-radius:7px;
+    transition: background .2s var(--ease), border-color .2s var(--ease), color .2s var(--ease);
+  }
+  .rib-face-btn {
+    flex:1; height:26px; padding:0 8px;
+    font-family: Syne, sans-serif; font-weight:700; font-size:10.5px;
+    letter-spacing:.08em; text-transform:uppercase;
+  }
+  .rib-face-btn.on {
+    background:rgba(110,160,255,.2); border-color:rgba(110,160,255,.55); color:#fff;
+  }
+  .rib-face-hint {
+    margin:5px 0 0; font-size:9px; color:#6a7a94; letter-spacing:.02em; line-height:1.35;
+  }
+  .rib-hold {
+    display:flex; gap:3px; margin-top:6px;
+  }
+  .rib-hold-btn {
+    flex:1; height:22px; padding:0;
+    font-size:9px; letter-spacing:.04em; text-transform:uppercase; color:#8aa0c0;
+  }
+  .rib-hold-btn.on {
+    background:rgba(198,154,79,.18); border-color:rgba(198,154,79,.5); color:#f0d9a8;
+  }
+  .rib-face-btn:hover, .rib-hold-btn:hover {
+    background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4);
+  }
+  .rib-face-btn:focus-visible, .rib-hold-btn:focus-visible {
+    outline:none; border-color:rgba(110,160,255,.65);
+    box-shadow:0 0 0 2px rgba(110,160,255,.25);
+  }
+  .ics-ribbon.is-now .rib-dt { color:#9fc0ff; }
   .rib-clock {
     display:flex; align-items:center; gap:4px; margin-top:7px; padding-top:6px;
     border-top:1px solid rgba(120,160,220,.1);
