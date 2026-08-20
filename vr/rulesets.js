@@ -67,26 +67,48 @@ const landTerra = (t, m, l, e, ice, extra) => {
   return [lerp(r, 128, rock), lerp(g, 120, rock), lerp(b, 108, rock)];
 };
 
+/** Calibration target: 1 bar, 78/21, ~288 K, ~71% ocean, 23.4° obliquity.
+ *  Named so the demo Earth below can inherit it without a second copy. */
+const TERRA = {
+  id: 'terra', name: 'Earth', blurb: 'Modern Earth — calibration basis for life, time, tectonics.',
+  synthetic: true, earthLike: true,
+  relief: 0.028, solar: 1.04, freeze: 0.28, aridity: 0.05,
+  rotationPeriod: 1.0, obliquity: 23.4 * Math.PI / 180, eccentricity: 0.0167,
+  gravity: 1.0, magnetosphere: 1.0,
+  interior: { coreMassFrac: 0.32, coreRadiusFrac: 0.55, heatFlow: 1.0, conductivity: 1.0, lidMode: 'mobile', note: 'Fe–Ni core · active dynamo · mobile-lid plates' },
+  // Volume mixing ratios; CO₂ ~420 ppm. Greenhouse bias stands in for H₂O/GHG column.
+  gases: { N2: 0.7808, O2: 0.2095, CO2: 0.00042, CH4: 0.0000019, H2O: 0.01, dust: 0.0, sulphate: 0 },
+  ghBias: 0.085, minCO2: 0.00038,
+  totalWater: 0.92, continentFrac: 0.38, nPlates: 12,
+  targetLandFrac: 0.29, targetMeanTemp: 0.50,
+  atmo: [0.28, 0.50, 0.92], atmoStrength: 0.92, sky: [0.012, 0.035, 0.08],
+  signature: 'glacial',
+  // Open-ocean albedo ~0.06; the blue is sky. `d` is shallowness.
+  ocean: (d) => [4 + 16 * d, 10 + 28 * d, 18 + 38 * d],
+  land: landTerra,
+};
+
+/** Demo Earth. Identical physics, palette and seeded Holocene biosphere to
+ *  `terra`; the clock starts 2 Ma before the present so it actually advances,
+ *  and `isPinnedEarth` is false here so the ×0.12 settlement throttle and the
+ *  0.55 build ceiling lift. This is the world the living-planet demo opens.
+ *  Never calibrate against it — `terra` is the pinned target. */
+const EARTH_THRIVE = {
+  ...TERRA,
+  gases: { ...TERRA.gases },
+  interior: { ...TERRA.interior },
+  atmo: TERRA.atmo.slice(),
+  sky: TERRA.sky.slice(),
+  id: 'thrive', name: 'Earth Thrive',
+  blurb: 'Earth with the clock running — settlements light up, forests burn, herds run.',
+  thrive: true,
+  // 2.0 Ma BP → adaptiveTickYears gives 200 yr/tick, so ~11 ticks/s of real
+  // time is ~2 kyr/s and a ten-minute session never reaches the present clamp.
+  startAgeGa: 4.565,
+};
+
 export const RULESETS = [
-  {
-    // Calibration target: 1 bar, 78/21, ~288 K, ~71% ocean, 23.4° obliquity
-    id: 'terra', name: 'Earth', blurb: 'Modern Earth — calibration basis for life, time, tectonics.',
-    synthetic: true, earthLike: true,
-    relief: 0.028, solar: 1.04, freeze: 0.28, aridity: 0.05,
-    rotationPeriod: 1.0, obliquity: 23.4 * Math.PI / 180, eccentricity: 0.0167,
-    gravity: 1.0, magnetosphere: 1.0,
-    interior: { coreMassFrac: 0.32, coreRadiusFrac: 0.55, heatFlow: 1.0, conductivity: 1.0, lidMode: 'mobile', note: 'Fe–Ni core · active dynamo · mobile-lid plates' },
-    // Volume mixing ratios; CO₂ ~420 ppm. Greenhouse bias stands in for H₂O/GHG column.
-    gases: { N2: 0.7808, O2: 0.2095, CO2: 0.00042, CH4: 0.0000019, H2O: 0.01, dust: 0.0, sulphate: 0 },
-    ghBias: 0.085, minCO2: 0.00038,
-    totalWater: 0.92, continentFrac: 0.38, nPlates: 12,
-    targetLandFrac: 0.29, targetMeanTemp: 0.50,
-    atmo: [0.28, 0.50, 0.92], atmoStrength: 0.92, sky: [0.012, 0.035, 0.08],
-    signature: 'glacial',
-    // Open-ocean albedo ~0.06; the blue is sky. `d` is shallowness.
-    ocean: (d) => [4 + 16 * d, 10 + 28 * d, 18 + 38 * d],
-    land: landTerra,
-  },
+  TERRA,
   {
     id: 'vermis', name: 'Vermis', blurb: 'Silicate, no free water. Megafauna reshape terrain.',
     synthetic: true,
@@ -180,6 +202,7 @@ export const RULESETS = [
       return [clamp(r, 0, 255), clamp(g, 0, 255), clamp(b, 0, 255)];
     },
   },
+  EARTH_THRIVE,
 ];
 
 export function greenhouseFromGases(g, rule, liveP) {

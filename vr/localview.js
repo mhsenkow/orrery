@@ -17,8 +17,13 @@ import { isLand, isSubmerged } from './sim/cellSurface.js';
 import { squareSegments } from './sim/isoline.js';
 import { BRUSH } from './sim/god/brush.js';
 
-export const LOCAL_SIZES = [200, 280, 380, 500];
-export const LOCAL_SIZE_LABELS = ['S', 'M', 'L', 'XL'];
+/** Frame ladder: I (icon) → C (metrics chip) → S → M → L → XL → Full.
+ *  I/C are chrome modes; S–XL size the map. Panel width is locked to the
+ *  frame so legend/status text cannot stretch the dock. */
+export const LOCAL_SIZES = [56, 96, 200, 280, 380, 500];
+export const LOCAL_SIZE_LABELS = ['I', 'C', 'S', 'M', 'L', 'XL'];
+export const LOCAL_SIZE_S = 200;
+export const LOCAL_SIZE_M = 280;
 export const LOCAL_SNAPS = ['tl', 'tr', 'bl', 'br'];
 export const LOCAL_GLOBE = ['off', 'rim', 'wash', 'both'];
 export const LOCAL_RADII = [2, 3, 5, 8, 12, 18, 28, 42];
@@ -29,13 +34,33 @@ export const LOCAL_SEEK_LABELS = ['Stay', 'Life'];
 export function localFrameIndex(size, expanded) {
   if (expanded) return LOCAL_SIZES.length;
   const i = LOCAL_SIZES.indexOf(size | 0);
-  return i >= 0 ? i : 1;
+  return i >= 0 ? i : LOCAL_SIZES.indexOf(LOCAL_SIZE_M);
 }
 
 export function localFrameLabel(size, expanded) {
   if (expanded) return 'Full';
   const i = LOCAL_SIZES.indexOf(size | 0);
-  return LOCAL_SIZE_LABELS[i >= 0 ? i : 1] || 'M';
+  const fi = i >= 0 ? i : LOCAL_SIZES.indexOf(LOCAL_SIZE_M);
+  return LOCAL_SIZE_LABELS[fi] || 'M';
+}
+
+/** How much chrome the frame shows — icon map-only, chip metrics-first. */
+export function localChrome(size, expanded) {
+  if (expanded) return 'full';
+  const label = localFrameLabel(size, false);
+  if (label === 'I') return 'icon';
+  if (label === 'C') return 'chip';
+  return 'map';
+}
+
+/** Fixed outer width for a non-Full frame (padding included). */
+export function localPanelWidth(size, expanded) {
+  if (expanded) return null;
+  const chrome = localChrome(size, false);
+  const pad = 12; // #localpanel padding 6×2
+  if (chrome === 'icon') return (size | 0) + 8;
+  if (chrome === 'chip') return 280; // metrics strip; map is a peek
+  return (size | 0) + pad;
 }
 
 let _focusCache = { year: -1, grown: -1, cell: -1 };
@@ -408,17 +433,26 @@ export function layoutLocalPanel(panel, cvs, opts) {
   if (!panel || !cvs) return;
   const expanded = !!opts.expanded;
   const snap = opts.snap || 'br';
+  const frame = localFrameLabel(opts.size, expanded);
+  const chrome = localChrome(opts.size, expanded);
   panel.classList.toggle('expanded', expanded);
   panel.classList.remove('snap-tl', 'snap-tr', 'snap-bl', 'snap-br');
   if (!expanded) panel.classList.add('snap-' + snap);
-  panel.dataset.frame = localFrameLabel(opts.size, expanded);
+  panel.dataset.frame = frame;
+  panel.dataset.chrome = chrome;
 
   let size = opts.size | 0;
   if (expanded) {
     const pad = innerWidth < 640 ? 12 : 40;
-    const chrome = innerWidth < 640 ? 72 : 56;
-    const sideW = Math.min(innerWidth - pad * 2, innerHeight - 88 - chrome);
+    const chromeH = innerWidth < 640 ? 72 : 56;
+    const sideW = Math.min(innerWidth - pad * 2, innerHeight - 88 - chromeH);
     size = Math.max(innerWidth < 640 ? 220 : 360, Math.min(920, sideW | 0));
+    panel.style.width = '';
+  } else {
+    // Chip keeps a small live peek; icon is the whole instrument.
+    if (chrome === 'chip') size = 72;
+    const panelW = localPanelWidth(opts.size, false);
+    if (panelW != null) panel.style.width = panelW + 'px';
   }
   cvs.style.width = size + 'px';
   cvs.style.height = size + 'px';
@@ -745,7 +779,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
   patch.hoverCell = hoverCell;
   const statusCell = hoverCell >= 0 ? hoverCell : focus;
   const desc = describeCell(statusCell, alpha);
-  const scale = patchScale(side);
+  const scale = patchScale(side, W.rule);
   patch.status = {
     pinned: pin >= 0,
     seek,
@@ -784,13 +818,16 @@ const KIND_CENSUS = {
 /** Cover + moving life in this map window — not the crosshair cell. */
 function viewCensus(shares, nCells, beings, living, lifeSum) {
   const n = Math.max(1, nCells | 0);
-  const labels = Object.fromEntries(legendEntries(W).map((e) => [e.id, e.label]));
+  const entries = legendEntries(W);
+  const labels = Object.fromEntries(entries.map((e) => [e.id, e.label]));
+  const guildIds = new Set(entries.filter((e) => GUILD_RGB[e.id]).map((e) => e.id));
   const ranked = Object.entries(shares)
     .map(([id, count]) => ({
       id,
       n: count,
       pct: Math.round((count / n) * 100),
       label: labels[id] || id,
+      guild: guildIds.has(id),
     }))
     .filter((e) => e.n > 0 && e.pct >= 1)
     .sort((a, b) => b.n - a.n || a.id.localeCompare(b.id));
@@ -805,8 +842,12 @@ function viewCensus(shares, nCells, beings, living, lifeSum) {
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
     .map(([k, c]) => `${c} ${k}`);
-  const cover = ranked.slice(0, 4).map((e) => `${e.label} ${e.pct}%`);
-  const bits = cover.concat(critters);
+  const cover = ranked.filter((e) => !e.guild).slice(0, 4).map((e) => `${e.label} ${e.pct}%`);
+  const guild = ranked.filter((e) => e.guild).slice(0, 2).map((e) => `${e.label} ${e.pct}%`);
+  const bits = [];
+  if (cover.length) bits.push(`cover ${cover.join(' · ')}`);
+  if (guild.length) bits.push(`guild ${guild.join(' · ')}`);
+  if (critters.length) bits.push(critters.join(' · '));
   const lifePct = Math.round((living / n) * 100);
   if (!ranked.some((e) => e.id !== 'ocean' && e.id !== 'barren' && e.id !== 'desert' && e.id !== 'ice')
       && lifePct > 0 && lifePct < 96) {
@@ -815,6 +856,9 @@ function viewCensus(shares, nCells, beings, living, lifeSum) {
   return {
     ranked,
     line: bits.join(' · ') || 'empty',
+    coverLine: cover.join(' · '),
+    guildLine: guild.join(' · '),
+    critterLine: critters.join(' · '),
     lifePct,
     meanLife: lifeSum / n,
     beings: bag,
@@ -1856,14 +1900,14 @@ function stampBuildings(ctx, x, y, cellPx, c, build, cells, side, ix, iy, light,
 }
 
 function drawScaleBar(ctx, ox, oy, cellPx, side, dpr, censusLine) {
-  const { km, named } = patchScale(side);
+  const { km, named, earthLike } = patchScale(side, W.rule);
   const barCells = Math.max(1, Math.round(side * 0.28));
   const bw = barCells * cellPx;
   const x = ox + 6 * dpr;
   const y = oy + side * cellPx - 10 * dpr;
   const font = `${Math.max(8, 9 * dpr)}px ui-monospace, Menlo, monospace`;
   ctx.font = font;
-  const kmText = `${km | 0} km · ${named}`;
+  const kmText = earthLike ? `${km | 0} km · ${named}` : `${km | 0} km · ${named} patch`;
   const extra = censusLine ? Math.round(12 * dpr) : 0;
   const tw = Math.max(bw + 8, ctx.measureText(censusLine || kmText).width + 10, ctx.measureText(kmText).width + 10);
   ctx.fillStyle = 'rgba(6,8,14,0.55)';

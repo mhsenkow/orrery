@@ -1,0 +1,232 @@
+{
+  "version": 1,
+  "why": "A world definition is the join: which bedrock, which cover, which column recipe, how it is lit. Axes select a row; they are not the row. First match wins. Overrides are accidents of a specific orbit and they require a why — the count of overrides is the honest measure of how well the rules work.",
+  "units": {
+    "density": "kg/m³",
+    "albedo": "0–1",
+    "k": "W/m/K",
+    "thermalInertia": "J m⁻² K⁻¹ s⁻½",
+    "strength": "MPa",
+    "erode": "relative to Earth rain = 1",
+    "meltK": "K",
+    "boilK": "K",
+    "tripleK": "K",
+    "tripleBar": "bar",
+    "criticalK": "K",
+    "criticalBar": "bar",
+    "LsubJmol": "J/mol",
+    "convectK": "K",
+    "porosity": "0–1 void fraction",
+    "depthKm": "km",
+    "stackM": "m"
+  },
+  "definitions": [
+    {
+      "id": "earth",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Earth is the calibration world. The stack is W.rock; the column recipe stays silent so the golden core sample still reconstructs from crust types.",
+      "needs": { "earthLike": true },
+      "column": null,
+      "bedrock": "basalt",
+      "cover": null,
+      "look": {
+        "exposureBias": 0,
+        "limbSoft": 0.28,
+        "haze": 0.04,
+        "skyRgb": [140, 178, 230],
+        "sound": "earth"
+      }
+    },
+    {
+      "id": "envelope",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Giants have no ground. Pressure is the vertical coordinate; the stack is empty on purpose.",
+      "needs": { "interior": ["fluid"] },
+      "column": "envelope",
+      "bedrock": "envelope",
+      "cover": null,
+      "look": {
+        "exposureBias": 0.04,
+        "limbSoft": 1,
+        "haze": 0.32,
+        "skyRgb": [196, 168, 118],
+        "sound": "giant"
+      },
+      "paint": "jupiter"
+    },
+    {
+      "id": "magma",
+      "tag": "fitted",
+      "confidence": "inferred",
+      "why": "A furnace world is a chilled lid over melt. Not a stratigraphy and not a continent.",
+      "needs": { "interior": ["magma"] },
+      "column": "magma",
+      "bedrock": "silicate",
+      "cover": null,
+      "look": {
+        "exposureBias": -0.08,
+        "limbSoft": 0.45,
+        "haze": 0.22,
+        "skyRgb": [80, 36, 18],
+        "sound": "furnace"
+      },
+      "paint": "magma"
+    },
+    {
+      "id": "iceOrganics",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Titan class: organic sand over ice I over an ammonia-rich ocean. Gates are CH4 plus an atmosphere, not /titan/.",
+      "needs": { "iceShell": true, "notAirless": true, "volatile": ["CH4"] },
+      "column": "iceOrganics",
+      "bedrock": "waterIce",
+      "cover": "tholin",
+      "look": {
+        "exposureBias": 0.12,
+        "limbSoft": 0.82,
+        "haze": 0.72,
+        "hazeRgb": [210, 140, 70],
+        "skyRgb": [180, 110, 50],
+        "sound": "haze"
+      },
+      "paint": "titan"
+    },
+    {
+      "id": "n2Ice",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Pluto class: nitrogen ice sitting on water-ice bedrock. Soft enough to convect. The heart is a process, not a paint.",
+      "needs": { "volatile": ["N2"] },
+      "column": "iceShell",
+      "bedrock": "waterIce",
+      "cover": "n2Ice",
+      "look": {
+        "exposureBias": 0.18,
+        "limbSoft": 0.08,
+        "haze": 0.02,
+        "skyRgb": [8, 8, 14],
+        "sound": "airless"
+      },
+      "paint": "pluto"
+    },
+    {
+      "id": "iceShell",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Europa class: ice over ocean over rock. Lid and ocean thicknesses follow the shell fields per cell.",
+      "needs": { "iceShell": true },
+      "column": "iceShell",
+      "bedrock": "waterIce",
+      "cover": null,
+      "look": {
+        "exposureBias": 0.1,
+        "limbSoft": 0.06,
+        "haze": 0,
+        "skyRgb": [6, 8, 14],
+        "sound": "airless"
+      },
+      "paint": "europa"
+    },
+    {
+      "id": "heatpipe",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Io class. Sulfur is cover, not a column layer. The lithosphere is a thin silicate lid continually buried by lava.",
+      "needs": { "interior": ["heatpipe"] },
+      "column": "heatpipe",
+      "bedrock": "silicate",
+      "cover": "sulfur",
+      "look": {
+        "exposureBias": -0.06,
+        "limbSoft": 0.04,
+        "haze": 0.08,
+        "skyRgb": [12, 8, 6],
+        "sound": "airless"
+      },
+      "paint": "io"
+    },
+    {
+      "id": "runaway",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Venus class: a thick hot air over basalt, hot enough that the sky is the landscape. Dusty-basalt would steal this world without a temperature gate. Volatile may be CO2 or SO2.",
+      "needs": { "notAirless": true, "notIceShell": true, "notFluid": true, "notMagma": true, "minTeq": 400 },
+      "column": "rocky",
+      "bedrock": "basalt",
+      "cover": null,
+      "look": {
+        "exposureBias": -0.04,
+        "limbSoft": 0.55,
+        "haze": 0.48,
+        "hazeRgb": [220, 190, 140],
+        "skyRgb": [220, 196, 150],
+        "sound": "thick"
+      },
+      "paint": "venus"
+    },
+    {
+      "id": "dustyBasalt",
+      "tag": "measured",
+      "confidence": "inferred",
+      "why": "Mars class: basalt plus dust plus seasonal CO2 ice. An atmosphere thin enough to be a sky and thick enough to move dust.",
+      "needs": { "volatile": ["CO2"], "notAirless": true, "notIceShell": true, "notFluid": true, "notMagma": true, "maxTeq": 320 },
+      "column": "rocky",
+      "bedrock": "basalt",
+      "cover": "co2Ice",
+      "look": {
+        "exposureBias": 0.06,
+        "limbSoft": 0.16,
+        "haze": 0.14,
+        "hazeRgb": [180, 120, 70],
+        "skyRgb": [196, 148, 96],
+        "sound": "thin"
+      },
+      "paint": "mars"
+    },
+    {
+      "id": "airless",
+      "tag": "measured",
+      "confidence": "measured",
+      "why": "Moon class: metres of gardened dust over kilometres of shattered crust. A hard limb is the whole of the atmosphere.",
+      "needs": { "airless": true, "notIceShell": true, "notFluid": true, "notMagma": true },
+      "column": "airless",
+      "bedrock": "basalt",
+      "cover": "regolith",
+      "look": {
+        "exposureBias": -0.04,
+        "limbSoft": 0,
+        "haze": 0,
+        "skyRgb": [0, 0, 0],
+        "sound": "airless"
+      },
+      "paint": "airless"
+    },
+    {
+      "id": "rocky",
+      "tag": "fitted",
+      "confidence": "invented",
+      "why": "The honest default. A generic solid world has crust. Cover and landforms sit on top. Ninety-four exoplanets land here until a better rule claims them.",
+      "needs": { "notFluid": true, "notIceShell": true, "notMagma": true },
+      "column": "rocky",
+      "bedrock": "basalt",
+      "cover": null,
+      "look": {
+        "exposureBias": 0,
+        "limbSoft": 0.12,
+        "haze": 0.06,
+        "skyRgb": [40, 44, 56],
+        "sound": "thin"
+      },
+      "paint": "stagnant"
+    }
+  ],
+  "overrides": [
+    {
+      "body": "Iapetus",
+      "why": "The two-tone surface is a dust-sweeping accident of its orbit, not a volatile class. The rules would paint it as a generic ice moon.",
+      "look": { "exposureBias": 0.08, "limbSoft": 0 }
+    }
+  ]
+}

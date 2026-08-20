@@ -450,7 +450,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> ·
   <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> ·
   <a href="currents.html">Currents</a> ·
-  <a href="realism.html">Realism</a> · <a href="life.html">Life</a> · <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="../vr/">Prototype</a></p>
+  <a href="realism.html">Realism</a> · <a href="life.html">Life</a> · <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="openworld.html">Open world</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>${D.length}</dd></div>
     <div><dt>Done</dt><dd>${count(x=>x.st==='done')}<small>in vr/ prototype</small></dd></div>

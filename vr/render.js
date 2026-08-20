@@ -17,9 +17,11 @@ import { fillFlowStreaks } from './sim/flowviz.js';
 import { updateIsoline, fillRiverLines } from './sim/isoline.js';
 import { BRUSH } from './sim/god/brush.js';
 import { localSeaLevel, isSubmerged } from './sim/cellSurface.js';
+import { wantsRings } from './sim/plevel.js';
 import { meshForEntity } from './sim/mesh.js';
 import { initGpgpu } from './sim/gpgpu/index.js';
 import { slotWorldPos, tickTable } from './sim/orreryTable.js';
+import { illuminantGain, starTeffOf, isSunTeff } from './sim/illum.js';
 
 export let gl = null;
 export let canvas = null;
@@ -400,6 +402,44 @@ function ensureOrbitGuides(obliquity) {
   gl.bufferData(gl.ARRAY_BUFFER, eq, gl.STATIC_DRAW);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.orbitEcl);
   gl.bufferData(gl.ARRAY_BUFFER, ecl, gl.STATIC_DRAW);
+}
+
+let RING_COUNT = 0;
+let _ringsOn = false;
+
+/** Equatorial line annulus — Cassini gap as a missing band. Cheap, Saturn only. */
+function ensureRings(on) {
+  if (on === _ringsOn && buf.rings) return;
+  _ringsOn = on;
+  if (!on) { RING_COUNT = 0; return; }
+  const N = 96;
+  const bands = [[1.22, 1.52], [1.58, 1.92]];
+  const segs = bands.length * N * 4;
+  const ring = new Float32Array(segs * 6);
+  let w = 0;
+  for (const [r0, r1] of bands) {
+    for (let i = 0; i < N; i++) {
+      const a0 = (i / N) * Math.PI * 2;
+      const a1 = ((i + 1) / N) * Math.PI * 2;
+      const c0 = Math.cos(a0), s0 = Math.sin(a0);
+      const c1 = Math.cos(a1), s1 = Math.sin(a1);
+      ring[w++] = c0 * r0; ring[w++] = 0; ring[w++] = s0 * r0;
+      ring[w++] = c1 * r0; ring[w++] = 0; ring[w++] = s1 * r0;
+      ring[w++] = c0 * r1; ring[w++] = 0; ring[w++] = s0 * r1;
+      ring[w++] = c1 * r1; ring[w++] = 0; ring[w++] = s1 * r1;
+      const t = 0.35;
+      const rm = r0 + (r1 - r0) * t;
+      const rn = r0 + (r1 - r0) * (1 - t);
+      ring[w++] = c0 * rm; ring[w++] = 0; ring[w++] = s0 * rm;
+      ring[w++] = c1 * rm; ring[w++] = 0; ring[w++] = s1 * rm;
+      ring[w++] = c0 * rn; ring[w++] = 0; ring[w++] = s0 * rn;
+      ring[w++] = c1 * rn; ring[w++] = 0; ring[w++] = s1 * rn;
+    }
+  }
+  RING_COUNT = (w / 3) | 0;
+  if (!buf.rings) buf.rings = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buf.rings);
+  gl.bufferData(gl.ARRAY_BUFFER, ring.subarray(0, w), gl.STATIC_DRAW);
 }
 
 function drawOrbitLines(prog, mvp, buffer, count, rgba) {
@@ -1348,10 +1388,18 @@ export function refreshColours(alpha = 1) {
         lerp(48, 14, d),
       ];
       const base = R.ocean(1 - d);
+      const tint = W._epoch?.oceanRgb;
+      const seaCol = tint
+        ? [
+          base[0] * 0.45 + tint[0] * 0.55,
+          base[1] * 0.45 + tint[1] * 0.55,
+          base[2] * 0.45 + tint[2] * 0.55,
+        ]
+        : base;
       col = ice > 0.5 ? [222, 234, 246] : [
-        lerp(base[0], deep[0], 0.5),
-        lerp(base[1], deep[1], 0.5),
-        lerp(base[2], deep[2], 0.5),
+        lerp(seaCol[0], deep[0], 0.5),
+        lerp(seaCol[1], deep[1], 0.5),
+        lerp(seaCol[2], deep[2], 0.5),
       ];
       // Sea ice leads / polynyas — not a flat white sheet. Item 142.
       if (ice > 0.35 && ice < 0.85) {
@@ -1468,6 +1516,23 @@ export function refreshColours(alpha = 1) {
           lerp(col[2], 72, inter * 0.4),
         ];
       }
+    } else if (W.noSurface) {
+      const extra = {
+        lava: 0, vent: 0, rock: 0, dust: 0,
+        lat: Math.abs(DIR[c * 3 + 1]),
+        x: DIR[c * 3],
+        y: DIR[c * 3 + 1],
+        z: DIR[c * 3 + 2],
+        pSeen: W.pSeen?.[c],
+        chroma: W.chroma?.[c] || 0,
+        spot: W.spot?.[c] || 0,
+        converg: W.converg?.[c] || 0,
+        locked: !!R.tidallyLocked,
+        hotLon: W._hotspotLon || 0,
+        sunX: W._sunDir?.[0] ?? 1,
+        sunZ: W._sunDir?.[2] ?? 0,
+      };
+      col = R.land(temp, 0, 0, 0, ice, extra);
     } else {
       const e = (W.h[c] - sea) / (1 - sea + 1e-6);
       const extra = {
@@ -1586,7 +1651,7 @@ export function refreshColours(alpha = 1) {
             lerp(col[1], live[1], mix),
             lerp(col[2], live[2], mix),
           ];
-        } else if (R.earthLike) {
+        } else if (R.earthLike && !W._epoch?.noGrass) {
           let lush = [lerp(col[0], 22, k * 0.35), lerp(col[1], 140, k * 0.4), lerp(col[2], 48, k * 0.3)];
           if (pigment === 'bchl') lush = [lerp(lush[0], 140, 0.35), lerp(lush[1], 50, 0.35), lerp(lush[2], 120, 0.35)];
           if (pigment === 'retinal') lush = [lerp(lush[0], 180, 0.4), lerp(lush[1], 40, 0.4), lerp(lush[2], 140, 0.4)];
@@ -1636,19 +1701,19 @@ export function refreshColours(alpha = 1) {
       if (W.state === 'snowball' && life < 0.2) col = [lerp(col[0], 230, 0.5), lerp(col[1], 235, 0.5), lerp(col[2], 245, 0.5)];
       if (W.state === 'moist-greenhouse' && life < 0.2) col = [lerp(col[0], 200, 0.3), lerp(col[1], 100, 0.3), lerp(col[2], 60, 0.3)];
     }
-    if (W.dust[c] > 0.1) {
+    if (!W.noSurface && W.dust[c] > 0.1) {
       const d = W.dust[c];
       col = [lerp(col[0], 180, d), lerp(col[1], 140, d), lerp(col[2], 90, d)];
     }
-    if (W.albedoPaint?.[c] > 0.04) {
+    if (!W.noSurface && W.albedoPaint?.[c] > 0.04) {
       const a = clamp(W.albedoPaint[c], 0, 1) * 0.7;
       col = [lerp(col[0], 236, a), lerp(col[1], 232, a), lerp(col[2], 220, a)];
     }
-    if (!isSubmerged(W, c) && (W.moist[c] || 0) > 0.45 && ice < 0.35) {
+    if (!W.noSurface && !isSubmerged(W, c) && (W.moist[c] || 0) > 0.45 && ice < 0.35) {
       const wk = clamp((W.moist[c] - 0.45) / 0.55, 0, 1) * 0.16;
       col = [col[0] * (1 - wk), col[1] * (1 - wk), col[2] * (1 - wk * 0.7)];
     }
-    const fog = W.fog?.[c] || 0;
+    const fog = W.noSurface ? 0 : (W.fog?.[c] || 0);
     if (fog > 0.04 && ice < 0.4) {
       const fk = fog * 0.22;
       col = [lerp(col[0], 210, fk), lerp(col[1], 218, fk), lerp(col[2], 226, fk)];
@@ -1660,6 +1725,16 @@ export function refreshColours(alpha = 1) {
     _cellDat[o + 3] = u8round(clamp(temp, 0, 1) * 255);
   }
   if (overlayMode && overlayMode !== 'none') applyOverlay(W, _cellDat, null, NC, overlayMode);
+  const teff = starTeffOf(R);
+  if (!isSunTeff(teff)) {
+    const ig = illuminantGain(teff);
+    for (let c = 0; c < NC; c++) {
+      const o = c << 2;
+      _cellDat[o] = u8round(_cellDat[o] * ig[0]);
+      _cellDat[o + 1] = u8round(_cellDat[o + 1] * ig[1]);
+      _cellDat[o + 2] = u8round(_cellDat[o + 2] * ig[2]);
+    }
+  }
   applyInk(_cellDat, previewSet, strokeFade);
   spreadVertexDat();
   if (gl) {
@@ -1887,10 +1962,21 @@ export function uploadFieldTextures(alpha = 1) {
 }
 
 /** Atmosphere shell in planet-radii. Earth scale height / radius is ~0.0013;
- *  a visible limb is a few scale heights. Venus/Titan stay a fat cream. */
+ *  a visible limb is a few scale heights. Giants get a fatter H/He envelope. */
 function atmoShellMul(R) {
   const k = R?.atmoStrength || 0;
+  const soft = R?.look?.limbSoft;
+  if (soft != null) {
+    if (soft < 0.04 || R?.airless) return 1.002;
+    if (W?.noSurface) return 1.002 + soft * 0.044;
+    return 1.002 + soft * 0.024;
+  }
   if (k < 0.12 || R?.airless) return 1.002;
+  if (W?.noSurface) {
+    const H = R.scaleHeightKm || 20;
+    const rKm = Math.max(2000, (R.radiusEarth || 11) * 6371);
+    return 1 + clamp((H * 10) / rKm, 0.014, 0.048);
+  }
   if (k > 1.45) return 1.022;
   return 1.008;
 }
@@ -2028,10 +2114,15 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform1f(planetProg.u.uMag, mag);
   }
   if (planetProg.u.uTime) gl.uniform1f(planetProg.u.uTime, (S._t || 0) * 0.001);
-  if (planetProg.u.uHaze) gl.uniform1f(planetProg.u.uHaze, W.hazeAntiGreenhouse || 0);
-  // Physical-ish exposure from insolation (hdr lite) + eye adaptation
-  const baseExpo = clamp(0.85 + Math.log2(Math.max(0.05, W.solar || 1)) * 0.12, 0.55, 1.85);
-  const adapt = S.exposure != null ? S.exposure : baseExpo;
+  if (planetProg.u.uHaze) {
+    const haze = Math.max(W.hazeAntiGreenhouse || 0, R.look?.haze || 0);
+    gl.uniform1f(planetProg.u.uHaze, haze);
+  }
+  // Photographic exposure: stop down under a bright sun, open up in the dark.
+  // The 0.05 floor used to flatten Mercury and Pluto onto the same curve.
+  const ev = Math.log2(Math.max(1e-4, W.solar || 1));
+  const phys = clamp(0.92 - ev * 0.11 + (R.look?.exposureBias || 0), 0.36, 1.75);
+  const adapt = S.exposure != null ? S.exposure : phys;
   _exposure = adapt * (R.earthLike ? 1.28 : 1.12);
   if (planetProg.u.uExposure) gl.uniform1f(planetProg.u.uExposure, _exposure);
   // Sub-cell surface grain: off in XR (fill-rate) and off when the user has
@@ -2337,6 +2428,20 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       drawOrbitLines(flatProg, MVP, buf.orbitEcl, ORBIT_ECL_COUNT, [1.0, 0.78, 0.32, a * 0.85]);
       gl.depthMask(true); gl.disable(gl.BLEND); disableAll();
     }
+  }
+
+  /* Saturn rings — equatorial annulus with a Cassini gap. */
+  if (wantsRings(R)) {
+    ensureRings(true);
+    if (RING_COUNT && buf.rings) {
+      gl.useProgram(flatProg);
+      gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.depthMask(false);
+      drawOrbitLines(flatProg, MVP, buf.rings, RING_COUNT, [0.92, 0.84, 0.62, 0.42]);
+      gl.depthMask(true); gl.disable(gl.BLEND); disableAll();
+    }
+  } else if (_ringsOn) {
+    ensureRings(false);
   }
 
   /* Moon — orbit + phase synced to tidal lunar angle */

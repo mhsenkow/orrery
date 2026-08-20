@@ -11,6 +11,7 @@ import { whyDidThisHappen } from '../chronicle.js';
 import { rngOf } from './rng.js';
 import { describeSubstrate, phaseAtCell } from './substrateField.js';
 import { columnLayers } from './columnField.js';
+import { stackAt } from './colstack.js';
 
 const ROCK_NAMES = {
   0: 'basalt',
@@ -26,6 +27,44 @@ const ROCK_NAMES = {
 /** Drill a cell and read deposited strata. Item 183. */
 export function coreSample(W, cell) {
   const earth = !!(W.rule?.earthLike || W.rule?.daisyworld);
+  if (W.stackN?.[cell] > 0) {
+    const layers = stackAt(W, cell).map((L) => ({
+      depth: L.topKm,
+      name: L.name,
+      ageMyr: 0,
+      note: L.metres >= 1000 ? `${(L.metres / 1000).toFixed(L.metres >= 20000 ? 0 : 1)} km` : `${Math.round(L.metres)} m`,
+      rgb: L.rgb,
+    }));
+    if (earth) {
+      if (W.bifRock?.[cell] > 0.05) {
+        layers.push({
+          depth: 0.1, name: 'banded iron formation',
+          ageMyr: Math.max(1800, ageYrToMaBP(W.ageYr)),
+          note: `Fe deposit ${(W.bifRock[cell] * 100) | 0}%`,
+        });
+      }
+      if (W.fossils?.[cell]?.length) {
+        for (const f of W.fossils[cell].slice(0, 4)) {
+          layers.push({
+            depth: 0.15, name: `fossil: ${f.name}`,
+            ageMyr: ageYrToMaBP(f.ageYr), note: f.reason || 'burial',
+          });
+        }
+      }
+    }
+    layers.sort((a, b) => a.depth - b.depth);
+    return {
+      cell,
+      lat: DIR[cell * 3 + 1],
+      elev: W.h[cell],
+      biome: W.biome ? BIOMES[W.biome[cell]] : '—',
+      layers,
+      proxies: W.carbon ? {
+        d13C: W.carbon.d13C, d18O: W.carbon.d18O, d34S: W.carbon.d34S,
+        sr87: W.carbon.sr87, pH: W.carbon.surfacePH,
+      } : null,
+    };
+  }
   if (!earth) {
     const layers = columnLayers(W, cell);
     layers.sort((a, b) => a.depth - b.depth);

@@ -17,7 +17,7 @@ export function thermoCost(tool, magnitude = 1, opts = {}) {
     seed: 12, seedGuild: 10, design: 18, transplant: 15,
     raise: 22, lower: 18, flatten: 8, smooth: 6, sharpen: 7, roughen: 6, crust: 16, plume: 28, plate: 45,
     river: 8, gateway: 20, sealevel: 35, soil: 6, albedo: 10,
-    meteor: 60, volcano: 40, quake: 28, plague: 35, ice: 30,
+    meteor: 60, volcano: 40, quake: 28, plague: 35, ice: 30, ignite: 6,
     lip: 80, supernova: 70, flare: 25, clathrate: 55, buster: 200,
     shade: 40, aerosol: 18, magnet: 50, cloud: 4, moon: 50,
     refuge: 14, cull: 22, transition: 60, mutate: 8,
@@ -33,7 +33,7 @@ export function thermoCost(tool, magnitude = 1, opts = {}) {
   // Archetype modifiers. Item 111.
   const arch = W.archetype || 'gardener';
   if (arch === 'gardener' && (tool === 'seed' || tool === 'seedGuild' || tool === 'refuge')) cost *= 0.7;
-  if (arch === 'vandal' && (tool === 'meteor' || tool === 'plague' || tool === 'buster')) cost *= 0.7;
+  if (arch === 'vandal' && (tool === 'meteor' || tool === 'plague' || tool === 'buster' || tool === 'ignite')) cost *= 0.7;
   if (arch === 'scientist' && (tool === 'inspect' || tool === 'core' || tool === 'icecore')) cost = 0;
 
   return Math.max(0, Math.round(cost));

@@ -10,6 +10,9 @@ import { isGasKind, kindOf } from './planetKind.js';
 import {
   COLUMN_VERSION, COLUMN_LAYERS, COLUMN_BY_ID, COLUMN_RECIPES, RECIPE_BY_ID,
 } from './columnTable.js';
+import { envelopeDeckLayers, formatPlevel, deckAtPressure } from './plevel.js';
+import { formatStackAt, stackTop } from './colstack.js';
+import { SUBSTRATES } from './substrates.js';
 
 export {
   COLUMN_VERSION, COLUMN_LAYERS, COLUMN_BY_ID, COLUMN_RECIPES, RECIPE_BY_ID,
@@ -127,11 +130,7 @@ export function columnLayers(W, cell = 0) {
     });
   }
   if (col.noSurface) {
-    out.push({
-      depth: 0, name: 'no surface', ageMyr: 0,
-      note: 'envelope', rgb: col.rgb, noSurface: true,
-    });
-    return out;
+    return envelopeDeckLayers(W, cell);
   }
   for (const L of col.layers) {
     out.push({
@@ -182,12 +181,17 @@ export function formatColumn(W) {
   return bits.join(' · ');
 }
 
-/** Inspect line: names plus this cell's thicknesses. */
+/** Inspect line: names plus this cell's thicknesses. Live stack wins. */
 export function formatColumnAt(W, cell = 0) {
-  if (!W || W.rule?.earthLike) return '';
+  if (!W) return '';
+  if (W.stackN?.[cell] > 0) return formatStackAt(W, cell);
+  if (W.rule?.earthLike) return '';
   const col = columnAt(W, cell);
   if (col.silent) return '';
-  if (col.noSurface) return 'no surface · envelope';
+  if (col.noSurface) {
+    const live = formatPlevel(W, cell);
+    return live ? `no surface · ${live}` : 'no surface · envelope';
+  }
   return col.layers.map((L) => {
     const d = formatDepth(L.depthKm);
     return d ? `${L.name} ${d}` : L.name;
@@ -196,9 +200,17 @@ export function formatColumnAt(W, cell = 0) {
 
 /** Overlay colour: the top layer, or envelope. */
 export function columnRgbAt(W, cell = 0) {
+  if (W?.stackN?.[cell] > 0) {
+    const top = stackTop(W, cell);
+    return SUBSTRATES[top]?.rgb || [48, 46, 52];
+  }
   const col = columnAt(W, cell);
   if (col.silent) return null;
-  if (col.noSurface) return col.rgb || [48, 40, 72];
+  if (col.noSurface) {
+    const p = W.pSeen?.[cell];
+    if (p > 0) return deckAtPressure(W, p).rgb;
+    return col.rgb || [48, 40, 72];
+  }
   return col.layers[0]?.rgb || [48, 46, 52];
 }
 

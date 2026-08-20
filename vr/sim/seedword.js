@@ -6,6 +6,7 @@
  */
 
 import { hashTag } from './rng.js';
+import { EPOCH_BY_ID } from './epochTable.js';
 
 const WORDS = [
   'ember', 'coral', 'dune', 'frost', 'gale', 'haven', 'iris', 'jade',
@@ -78,16 +79,25 @@ export function wordsToSeed(parts) {
   return s >>> 0;
 }
 
-export function encodeWorldId(seed, landscape = 'auto') {
+const SKIP_EPOCH = new Set(['present', 'venus-now', 'mars-now']);
+
+export function encodeWorldId(seed, landscape = 'auto', epoch = null) {
   const body = seedToWords(seed).join('-');
   const land = landscape && landscape !== 'auto' ? `.${landscape}` : '';
-  return body + land;
+  const era = epoch && !SKIP_EPOCH.has(epoch) && EPOCH_BY_ID[epoch] ? `~${epoch}` : '';
+  return body + land + era;
 }
 
 export function decodeWorldId(str) {
   if (!str) return null;
   let raw = String(str).trim().toLowerCase();
   raw = raw.replace(/^orrery:\/\//, '');
+  let epoch = null;
+  const ep = raw.match(/^(.*)~([a-z0-9-]+)$/);
+  if (ep && EPOCH_BY_ID[ep[2]]) {
+    raw = ep[1];
+    epoch = ep[2];
+  }
   let landscape = 'auto';
   const suffix = raw.match(/^(.*)[./]([a-z]+)$/);
   if (suffix && LAND_IDS.has(suffix[2])) {
@@ -97,7 +107,7 @@ export function decodeWorldId(str) {
   const parts = raw.split(/[-_\s]+/).filter(Boolean);
   const seed = wordsToSeed(parts);
   if (seed == null) return null;
-  return { seed, landscape };
+  return { seed, landscape, epoch };
 }
 
 /** Name, number, word-id, URL, or `orrery:` genesis string. */
@@ -113,10 +123,12 @@ export function parseWorldInput(str) {
     if (world) return decodeWorldId(world) || parseWorldInput(world);
     const seedParam = u.searchParams.get('seed');
     const land = u.searchParams.get('land');
+    const era = u.searchParams.get('era');
     if (seedParam && /^\d+$/.test(seedParam)) {
       return {
         seed: parseInt(seedParam, 10) >>> 0,
         landscape: land && LAND_IDS.has(land) ? land : 'auto',
+        epoch: era && EPOCH_BY_ID[era] ? era : null,
       };
     }
   } catch { /* not a URL */ }
@@ -133,5 +145,9 @@ export function parseWorldInput(str) {
 
 export function worldIdOf(W) {
   const seed = (W.landSeed ?? W.seed) >>> 0;
-  return encodeWorldId(seed, W._landscape || W.rule?.landscape || 'auto');
+  return encodeWorldId(
+    seed,
+    W._landscape || W.rule?.landscape || 'auto',
+    W._epoch?.id || W.rule?.epochId || null,
+  );
 }

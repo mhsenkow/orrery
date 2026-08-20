@@ -48,7 +48,7 @@ export function gaiaTick(W, chronLog) {
   W.meanTemp = tSum / NC;
   W.iceFrac = iceSum / NC;
   W.meanLife = lifeSum / NC;
-  W.landFrac = land / NC;
+  W.landFrac = W.noSurface ? 0 : land / NC;
   W._forestFrac = land > 0 ? forest / land : 0;
   W._amoc = W.conveyor ?? W._amoc ?? 0.7;
   W._monsoon = W._monsoon ?? 0.5;

@@ -1,23 +1,18 @@
 /** Catalogue / ruleset → geology kind.
- *  Stamps live in planetTerrain.js; ice paints in iceshell.js.
  *
- *  Named Solar System bodies are validation cases. Unnamed fallbacks read
- *  `worldAxes` interior: fluid → gas, magma → magma, ice → europa, heatpipe
- *  + airless → Io. A temperate `iceshell` tag is not Europa. */
+ *  Named Solar System bodies are a table in kindRules.json. Unnamed fallbacks
+ *  read worldAxes: fluid → gas, magma → magma, ice → europa, heatpipe +
+ *  airless → Io. A temperate iceshell tag is not Europa. */
 
 import { worldAxes } from './worldAxes.js';
-
-const ICE_SHELL_KINDS = new Set([
-  'europa', 'enceladus', 'titan', 'pluto', 'triton', 'ganymede', 'callisto',
-  'miranda', 'mimas', 'rhea', 'uranian',
-]);
-const GAS_KINDS = new Set(['gas', 'jupiter', 'saturn', 'uranus', 'neptune']);
-const WHITTAKER_KINDS = new Set(['earth', 'daisy', 'generic']);
+import { GAS_KINDS, WHITTAKER_KINDS, matchNamedKind } from './kindTable.js';
+import { SHELL_BY_ID } from './shellTable.js';
 
 /** Whittaker biomes belong on Earth, Daisyworld, and unnamed temperate water worlds.
  *  Pass `W` when you have it: a generic world with a non-water volatile or a
  *  fluid/magma/ice interior is not a second Earth. */
 export function usesWhittakerCover(kind, W) {
+  if (W?.noSurface) return false;
   if (kind === 'earth' || kind === 'daisy' || !kind) return true;
   if (!WHITTAKER_KINDS.has(kind)) return false;
   const ax = W?._worldAxes;
@@ -58,8 +53,19 @@ export function isGasKind(kind) {
   return GAS_KINDS.has(kind);
 }
 
+/** Envelope worlds have no heightfield. Fluid interior or a gas kind is enough;
+ *  `rule.noSurface` is an extra catalogue flag and is not required. */
+export function hasSurface(W, rule = W?.rule) {
+  if (rule?.noSurface) return false;
+  const kind = W?._planetKind || rule?._planetKind;
+  if (isGasKind(kind)) return false;
+  const ax = W?._worldAxes || (rule ? worldAxes(rule) : null);
+  if (ax?.interior?.v === 'fluid') return false;
+  return true;
+}
+
 export function isIceShellKind(kind) {
-  return ICE_SHELL_KINDS.has(kind);
+  return !!SHELL_BY_ID[kind];
 }
 
 function catalogueCat(rule) {
@@ -70,37 +76,8 @@ function nameBlob(rule) {
   return `${rule.id || ''} ${rule.name || ''} ${rule._catalogueItem?.b || ''} ${rule._catalogueItem?.t || ''}`.toLowerCase();
 }
 
-/** Named Solar System bodies — stamps keyed off identity, not a fallback. */
-function namedKind(name, rule) {
-  const ident = `${rule?._catalogueItem?.b || ''} ${rule?.name || ''}`.toLowerCase();
-  if (/\bearth\b/.test(ident) && !/super/.test(ident)) return 'earth';
-  if (/\bjupiter\b/.test(name)) return 'jupiter';
-  if (/\bsaturn\b/.test(name) && !/rhea|dione|tethys|iapetus|mimas|enceladus|titan|hyperion/.test(name)) return 'saturn';
-  if (/\buranus\b/.test(name) && !/miranda|ariel|umbriel|titania|oberon|uranian/.test(name)) return 'uranus';
-  if (/\bneptune\b/.test(name) && !/triton/.test(name)) return 'neptune';
-  if (/\bio\b/.test(name) && !/ion/.test(name)) return 'io';
-  if (/venus/.test(name)) return 'venus';
-  if (/\bmars\b/.test(name)) return 'mars';
-  if (/mercury/.test(name)) return 'mercury';
-  if (/\bluna\b|\bmoon\b|selene/.test(name)) return 'moon';
-  if (/enceladus/.test(name)) return 'enceladus';
-  if (/\btitan\b/.test(name)) return 'titan';
-  if (/\bpluto\b/.test(name) && !/charon/.test(name)) return 'pluto';
-  if (/triton/.test(name)) return 'triton';
-  if (/ganymede/.test(name)) return 'ganymede';
-  if (/callisto/.test(name)) return 'callisto';
-  if (/europa/.test(name)) return 'europa';
-  if (/iapetus/.test(name)) return 'iapetus';
-  if (/miranda/.test(name)) return 'miranda';
-  if (/mimas/.test(name)) return 'mimas';
-  if (/charon/.test(name)) return 'charon';
-  if (/phobos|deimos/.test(name)) return 'phobos';
-  if (/ceres/.test(name)) return 'ceres';
-  if (/eris|sedna/.test(name)) return 'eris';
-  if (/arrokoth|bennu|67p/.test(name)) return 'smallbody';
-  if (/rhea|dione|tethys|hyperion/.test(name)) return 'rhea';
-  if (/ariel|umbriel|titania|oberon|uranian/.test(name)) return 'uranian';
-  return null;
+function identBlob(rule) {
+  return `${rule?._catalogueItem?.b || ''} ${rule?.name || ''}`.toLowerCase();
 }
 
 /** Kind plus the term that decided it — the Io bug was invisible without this. */
@@ -113,7 +90,7 @@ export function planetKindWhy(rule) {
   const lid = rule.interior?.lidMode || rule.lidMode || '';
   const cat = catalogueCat(rule);
 
-  const named = namedKind(name, rule);
+  const named = matchNamedKind(name, identBlob(rule));
   if (named) return { kind: named, why: `name:${named}` };
 
   const ax = worldAxes(rule);

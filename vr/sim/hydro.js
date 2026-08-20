@@ -57,6 +57,7 @@ export function liquidWaterOk(W) {
 
 /** What the hydro machinery is doing: liquid rain, frost/sublimation, or nothing. */
 export function cycleMode(W) {
+  if (W.noSurface) return 'none';
   if (W.rule?.airless) return 'none';
   if (liquidWaterOk(W)) return 'liquid';
   const mat = cycleMaterial(W);
@@ -403,6 +404,13 @@ function iceTickFromPhase(W, mat) {
  * Conserves total water mass (ocean column + moist + ice + vapour).
  */
 export function hydroTick(W) {
+  if (W.noSurface) {
+    if (W.precip) W.precip.fill(0);
+    if (W.flow) W.flow.fill(0);
+    if (W.lake) W.lake.fill(0);
+    if (W.fog) W.fog.fill(0);
+    return;
+  }
   const { h, temp, moist, precip, seaLevel, windU, windV, rule, gases, _m } = W;
   const canLiquid = liquidWaterOk(W);
   const mode = cycleMode(W);

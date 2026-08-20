@@ -7,6 +7,7 @@ import { NC, DIR } from '../sphere.js';
 import { setOrbit, setMoon } from './god/climate.js';
 import { tideBudget, ROCHE_DISTANCE } from './tides.js';
 import { circulationCellCount, windBandAt } from './wind.js';
+import { rhinesJetCount, maybeReseedJets } from './jets.js';
 import { synopticChartSVG, zonalMeanSVG } from './viz.js';
 import { issueReceipt } from './god/receipt.js';
 import { iconSVG } from './god/icons.js';
@@ -31,7 +32,9 @@ export function climateSnapshot(Wref = W) {
   const tide = tideBudget(Wref);
   const day = Wref.rotationPeriod || 1;
   const dayAbs = Math.abs(day);
-  const cells = Wref._windCells || circulationCellCount(dayAbs);
+  const cells = Wref.noSurface
+    ? (Wref._jetCount || rhinesJetCount(dayAbs, Wref.rule?.radiusEarth || 11))
+    : (Wref._windCells || circulationCellCount(dayAbs));
   const tiltDeg = ((Wref.obliquity || 0) * 180) / Math.PI;
   const seasonDeg = (((Wref.season || 0) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) * (180 / Math.PI);
   const moon = Wref.moon && Wref.moon.mass > 0.05 ? Wref.moon : null;
@@ -73,7 +76,9 @@ export function climateSnapshot(Wref = W) {
         : tide.phase === 'solar-only'
           ? 'No moon — solar tide only (~⅓ range)'
           : 'Between springs and neaps',
-    spinNote: cells <= 1
+    spinNote: Wref.noSurface
+      ? `${cells} zonal jets at a Rhines scale`
+      : cells <= 1
       ? 'Slow rotator — one wide Hadley cell to the pole'
       : cells <= 3
         ? 'Earth-like three-cell banding from pressure and spin, not a lookup'
@@ -164,15 +169,22 @@ export function applyDayLength(day) {
     W.magnetosphere = W.interior.dynamo;
     if (W.rule) W.rule.magnetosphere = W.interior.dynamo;
   }
-  const cells = circulationCellCount(spin);
+  maybeReseedJets(W);
+  const cells = W.noSurface
+    ? (W._jetCount || rhinesJetCount(spin, W.rule?.radiusEarth || 11))
+    : circulationCellCount(spin);
   const label = next < 0 ? `−${mag.toFixed(2)}× retro` : `${mag.toFixed(2)}×`;
   issueReceipt({
     tool: 'spin',
     cell: 0,
     intent: 'Day length',
-    expected: `Day ${prev.toFixed(2)}× → ${label} · ~${cells} cells/hem`,
+    expected: W.noSurface
+      ? `Day ${prev.toFixed(2)}× → ${label} · ~${cells} jets`
+      : `Day ${prev.toFixed(2)}× → ${label} · ~${cells} cells/hem`,
   });
-  chronLog(W.year, 'tool', 0, next, `Day → ${label} (${cells} bands)`);
+  chronLog(W.year, 'tool', 0, next, W.noSurface
+    ? `Day → ${label} (${cells} jets)`
+    : `Day → ${label} (${cells} bands)`);
   return { ok: true, day: next, cells };
 }
 
@@ -403,7 +415,9 @@ function setDesk(id) {
 
 function snapFrame(label) {
   const day = W.rotationPeriod || 1;
-  const cells = W._windCells || circulationCellCount(day);
+  const cells = W.noSurface
+    ? (W._jetCount || rhinesJetCount(Math.abs(day), W.rule?.radiusEarth || 11))
+    : (W._windCells || circulationCellCount(day));
   return {
     day,
     cells,
@@ -876,7 +890,9 @@ export function climateAtCell(cell) {
   const coast = coastAtCell(W, cell);
   const u = W.oceanU?.[cell] || 0, v = W.oceanV?.[cell] || 0;
   return {
-    band: windBandAt(lat, W._itczLat || 0, W._windCells || 3),
+    band: W.noSurface
+      ? ((W.converg?.[cell] || 0) < 0 ? 'belt (sinking)' : 'zone (rising)')
+      : windBandAt(lat, W._itczLat || 0, W._windCells || 3),
     press: W.press?.[cell],
     tide: W.tideHeight?.[cell],
     range: W.tideRange?.[cell],

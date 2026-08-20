@@ -18,6 +18,7 @@ import { attachSystem } from './sim/systemRecord.js';
 import { starForWorld, applyStarToRule, SOL } from './sim/star.js';
 import { interiorProfileFor, dynamoFromInterior } from './sim/core.js';
 import { applyPlanetLook } from './sim/planetLook.js';
+import { applyWorldLook } from './sim/definition.js';
 
 export const CATALOGUE_WORLDS = CATALOGUE.filter((x) => x.k === 'BODY');
 
@@ -393,6 +394,7 @@ export function rulesetFromCatalogue(item) {
   base.magnetosphere = dynamoFromInterior(base.interior, base.rotationPeriod || 1);
   base.panelRanges = panelRanges(record);
   applyPlanetLook(base);
+  applyWorldLook(base);
   return sanitize(base, { failMissing: true });
 }
 

@@ -9,6 +9,7 @@ import { lifeRGB, oceanLifeRGB, lifeLabel, dominantGuildAt, GUILD_RGB } from './
 import { isSubmerged, cellElev } from './cellSurface.js';
 import { currentSentence } from './ocean.js';
 import { usesWhittakerCover } from './planetKind.js';
+import { featureAt } from './definition.js';
 
 let _t = 0;
 let _reduced = false;
@@ -447,12 +448,19 @@ export function mixGuild(rgb, c, highlightGuild) {
 }
 
 const PLACE_KM = [
-  [400, 'a city'],
-  [900, 'a small country'],
-  [2000, 'Great Britain'],
-  [3500, 'the Mediterranean'],
-  [5200, 'Australia'],
-  [8000, 'Africa'],
+  [400, 'city-scale'],
+  [900, 'country-scale'],
+  [2000, '≈ Great Britain'],
+  [3500, '≈ the Mediterranean'],
+  [5200, '≈ Australia'],
+  [8000, '≈ Africa'],
+];
+
+const GENERIC_KM = [
+  [400, 'city-scale'],
+  [2000, 'regional'],
+  [6000, 'continental'],
+  [12000, 'hemisphere'],
 ];
 
 export function cellWidthKm() {
@@ -460,13 +468,16 @@ export function cellWidthKm() {
   return Math.sqrt((4 * Math.PI * R * R) / NC);
 }
 
-export function patchScale(side) {
+/** Width of the local map window in km. Earth place names are scale hints, not locations. */
+export function patchScale(side, rule = W?.rule) {
   const km = cellWidthKm() * side;
-  let named = 'a hemisphere';
-  for (const [lim, n] of PLACE_KM) {
+  const earthLike = !!(rule?.earthLike || rule?.daisyworld);
+  const tiers = earthLike ? PLACE_KM : GENERIC_KM;
+  let named = earthLike ? 'a hemisphere' : 'hemisphere';
+  for (const [lim, n] of tiers) {
     if (km < lim) { named = n; break; }
   }
-  return { km, cellKm: cellWidthKm(), named, side };
+  return { km, cellKm: cellWidthKm(), named, side, earthLike };
 }
 
 /** A sentence about a cell — the same data as the status strip, in words. */
@@ -490,7 +501,9 @@ export function placeSentence(c) {
       else if (landClass) bits.push(d.guild || 'plankton');
       else bits.push(label);
     }
-  } else {
+  }   else {
+    const feat = featureAt(W, c);
+    if (feat) bits.push(feat.name);
     const biome = d.biome && d.biome !== 'ice' ? d.biome.replace(/([A-Z])/g, ' $1').toLowerCase() : null;
     const kind = W._planetKind;
     if (!usesWhittakerCover(kind, W)) {

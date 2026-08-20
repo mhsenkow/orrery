@@ -15,9 +15,11 @@ export function cellElev(W, c) {
 }
 
 export function isSubmerged(W, c) {
+  if (W?.noSurface) return false;
   return cellElev(W, c) < 0;
 }
 
 export function isLand(W, c) {
+  if (W?.noSurface) return false;
   return !isSubmerged(W, c);
 }

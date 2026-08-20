@@ -130,6 +130,29 @@ export function nameAt(W, c) {
   return materialAt(W, c).name;
 }
 
+function lerp3(a, b, t) {
+  return [
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+    a[2] + (b[2] - a[2]) * t,
+  ];
+}
+
+/** A material colour against wetness and ice. One triple if no ramp was authored. */
+export function sampleMaterialRgb(mat, { moist = 0, ice = 0 } = {}) {
+  if (!mat) return [80, 80, 80];
+  let rgb = mat.rgb || [80, 80, 80];
+  const ramp = mat.ramp;
+  if (!ramp) return rgb;
+  if (ramp.wet && moist > 0.04) {
+    rgb = lerp3(ramp.dry || rgb, ramp.wet, Math.min(1, moist));
+  } else if (ramp.dry) {
+    rgb = ramp.dry;
+  }
+  if (ramp.ice && ice > 0.08) rgb = lerp3(rgb, ramp.ice, Math.min(1, ice));
+  return rgb;
+}
+
 /** "nitrogen ice over water-ice bedrock" when cover and bedrock differ. */
 export function describeSubstrate(W, c) {
   const top = materialAt(W, c);

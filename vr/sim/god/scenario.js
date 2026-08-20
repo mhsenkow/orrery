@@ -59,6 +59,41 @@ export const SCENARIOS = [
     fail: (W) => W.meanLife < 0.01 && W.iceFrac > 0.8,
   },
   {
+    id: 'keep-venus-wet',
+    title: 'Keep Venus wet',
+    blurb: 'A wet world under a bright star — the runaway is the default. Catalogue Venus has its own ocean epoch; this is the playable analog.',
+    ruleId: 'terra',
+    deepTime: true,
+    startAgeGa: 1.0,
+    landscape: 'ocean',
+    setup(W) {
+      W.solar = Math.max(W.solar, 1.45);
+      W._baseSolar = Math.max(W._baseSolar || 1, 1.45);
+    },
+    objective: 'Keep an ocean against a brightening star',
+    score(W) {
+      return report(W, {
+        land: W._landReport?.landFrac,
+        temp: W.meanTemp,
+        wet: (W._landReport?.landFrac || 1) < 0.85 && W.state !== 'moist-greenhouse',
+      });
+    },
+    fail: (W) => W.state === 'moist-greenhouse' || (W._landReport?.landFrac || 0) > 0.92,
+  },
+  {
+    id: 'permian-doorstep',
+    title: 'Get through the Permian',
+    blurb: 'One supercontinent, stressed climate. Keep the biosphere through the extinction window.',
+    ruleId: 'terra',
+    deepTime: true,
+    epochId: 'permian',
+    objective: 'Keep meanLife above 0.08 while Pangaea sits in the heat',
+    score(W) {
+      return report(W, { life: W.meanLife, o2: W.gases?.O2, landscape: W._landscape });
+    },
+    fail: (W) => W.meanLife < 0.01,
+  },
+  {
     id: 'daisy-tutorial',
     title: 'Daisyworld feedback',
     blurb: 'Learn ice–albedo with black and white daisies. Campaign step 1.',

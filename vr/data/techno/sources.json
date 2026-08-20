@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "why": "A technosphere is an energy budget. Sources carry power density, a CO2 intensity, a land footprint and a provenance tag. Waste heat is physics. Fusion and orbital collection are labelled invented. A Dyson swarm is not this cut.",
+  "tags": ["measured", "fitted", "invented"],
+  "earthAbsorbedW": 120000000000000000,
+  "holoceneWatts": 20000000000000,
+  "holoceneLandUse": 0.5,
+  "wasteHeatOnset": 0.01,
+  "postbioOnset": 0.1,
+  "sources": [
+    {
+      "id": "biomass",
+      "name": "Biomass",
+      "tag": "measured",
+      "powerDensityWm2": 0.4,
+      "co2KgPerJ": 0,
+      "landFootprint": 1,
+      "wasteHeatFrac": 1,
+      "why": "Firewood and crop residue. Power density is a field, not a plant. Carbon is already in the fast cycle so this source does not unbury rock carbon."
+    },
+    {
+      "id": "hydro",
+      "name": "Hydro",
+      "tag": "measured",
+      "powerDensityWm2": 3,
+      "co2KgPerJ": 0,
+      "landFootprint": 0.4,
+      "wasteHeatFrac": 1,
+      "why": "Dams convert potential energy. Density is a reservoir plus a river, and the land cost is the drowned valley."
+    },
+    {
+      "id": "fossil",
+      "name": "Fossil",
+      "tag": "measured",
+      "powerDensityWm2": 200,
+      "co2KgPerJ": 7e-8,
+      "landFootprint": 0.08,
+      "wasteHeatFrac": 1,
+      "why": "Coal, oil, gas. Oxidising buried organic carbon runs the carbon cycle backwards. Intensity is a coal-plant sketch, not a well-to-wake LCA."
+    },
+    {
+      "id": "fission",
+      "name": "Fission",
+      "tag": "measured",
+      "powerDensityWm2": 50,
+      "co2KgPerJ": 0,
+      "landFootprint": 0.05,
+      "wasteHeatFrac": 1,
+      "why": "Thermal plants still dump heat. Land is the exclusion zone, not the fuel. No waste-heat exemption."
+    },
+    {
+      "id": "fusion",
+      "name": "Fusion",
+      "tag": "invented",
+      "powerDensityWm2": 1000,
+      "co2KgPerJ": 0,
+      "landFootprint": 0.03,
+      "wasteHeatFrac": 1,
+      "why": "Engineering, not a measured source. Waste heat still equals input. Do not treat this as a claim that fusion exists on the planet."
+    },
+    {
+      "id": "orbital",
+      "name": "Orbital solar",
+      "tag": "invented",
+      "powerDensityWm2": 300,
+      "co2KgPerJ": 0,
+      "landFootprint": 0,
+      "wasteHeatFrac": 1,
+      "why": "Collectors off-world still deliver watts that become heat at the surface, or beam them elsewhere. Speculation. Not a Dyson swarm."
+    }
+  ]
+}

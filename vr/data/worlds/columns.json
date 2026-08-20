@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "why": "A world's surface is the top of a stack. Recipes are gated by axes and flags, not a name regex. Thicknesses are class numbers; ice-shell cells scale lid and ocean from the existing shell fields. Not a saved per-cell array and not deposition history.",
+  "why": "A world's surface is the top of a stack. Recipes are gated by axes and flags, not a name regex. Thicknesses are class numbers; ice-shell cells scale lid and ocean from the existing shell fields. stampStack writes the recipe once per cell as the initial condition; erosion and deposition then change it.",
   "tags": ["measured", "fitted", "invented"],
   "layers": [
     {
@@ -90,7 +90,7 @@
       "noSurface": true,
       "layers": [],
       "tag": "measured",
-      "why": "Giants and other envelopes have no heightfield to hang a column from. Pressure levels are the next pass."
+      "why": "Giants and other envelopes have no heightfield. The stack is cloud decks in bars: ammonia, ammonium hydrosulfide, water — or methane ice on the ice giants. The probe floor is 22 bar."
     },
     {
       "id": "magma",

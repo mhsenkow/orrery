@@ -788,7 +788,7 @@ footer{margin-top:64px; padding-top:22px; border-top:1px solid var(--rule);
   <a href="exoparams.html">Real parameters</a> · <a href="living.html">Alive</a> ·
   <a href="currents.html">Currents</a> · <a href="realism.html">Realism</a> ·
   <a href="landscape.html">Landscape</a> ·
-  <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="../vr/">Prototype</a></p>
+  <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="openworld.html">Open world</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>${D.length}<small>${CATS.length} categories</small></dd></div>
     <div><dt>Kind</dt><dd>${count((x) => x.k === 'MODEL')}/${count((x) => x.k === 'SHOW')}/${count((x) => x.k === 'PLAY')}<small>model · show · play</small></dd></div>

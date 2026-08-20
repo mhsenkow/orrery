@@ -44,7 +44,11 @@ export const CAM_DIST_MAX = 22;
 export const XR_SCALE_MIN = 0.035;
 export const XR_SCALE_MAX = 1.35;
 
-export function scaleRung(camDist) {
+export function scaleRung(camDist, noSurface = false) {
+  if (noSurface && camDist < 1.03) {
+    if (camDist <= 0.86) return 'Probe';
+    return 'Descent';
+  }
   if (camDist >= 10) return 'Dot';
   if (camDist >= 3.15) return 'Disc';
   if (camDist >= 1.35) return 'Hold';

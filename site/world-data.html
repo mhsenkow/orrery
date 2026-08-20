@@ -1,0 +1,275 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ORRERY — world data</title>
+<style>
+:root{ --ground:#0c0f16; --panel:#151a24; --rule:#252d3d; --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688; --accent:#c69a4f;
+  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif; --mono:ui-monospace,Menlo,monospace; }
+body{margin:0;background:var(--ground);color:var(--text);font:400 16px/1.55 var(--sans);}
+.wrap{max-width:1080px;margin:0 auto;padding:40px 26px 90px;}
+.eyebrow{font:500 10.5px/1 var(--mono);letter-spacing:.24em;text-transform:uppercase;color:var(--accent);}
+h1{font:700 42px/1.05 var(--sans);letter-spacing:-.03em;margin:12px 0 0;}
+.sub{color:var(--dim);max-width:56ch;margin-top:14px;}
+.nav{margin-top:18px;font:400 12.5px/1.7 var(--mono);color:var(--faint);}
+.nav a{color:var(--dim);}
+.tally{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:var(--rule);
+  border:1px solid var(--rule);border-radius:8px;margin-top:28px;}
+.tally>div{background:var(--panel);padding:14px 16px;}
+.tally dt{font:500 9.5px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--faint);}
+.tally dd{margin:8px 0 0;font:600 24px/1 var(--sans);}
+.tally small{display:block;font:400 11px/1.4 var(--mono);color:var(--faint);margin-top:6px;}
+h2{font:650 20px/1.2 var(--sans);border-bottom:1px solid var(--rule);padding-bottom:8px;margin:40px 0 14px;}
+p{color:var(--dim);max-width:74ch;font-size:14.5px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:8px;}
+.sw{background:var(--panel);border:1px solid var(--rule);border-radius:8px;padding:10px;}
+.sw i{display:block;height:36px;border-radius:5px;margin-bottom:8px;}
+.sw b{font-size:13px;}
+.sw small{display:block;color:var(--faint);font:400 11px/1.4 var(--mono);margin-top:3px;}
+.chip{display:inline-block;width:12px;height:12px;border-radius:3px;margin:6px 3px 0 0;border:1px solid var(--rule);}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+td,th{border-top:1px solid var(--rule);padding:8px 10px;vertical-align:top;color:var(--dim);}
+th{color:var(--faint);font:500 11px/1 var(--mono);text-align:left;}
+code{font:500 12px var(--mono);color:var(--accent);}
+footer{margin-top:48px;color:var(--faint);font:400 12px var(--mono);}
+</style>
+<div class="wrap">
+<p class="eyebrow">ORRERY · world data</p>
+<h1>The join</h1>
+<p class="sub">Five vocabulary tables, one definition that ties them to a world, a palette with ramps, and the scoreboard for moving appearance out of code.</p>
+<p class="nav">
+  <a href="fleet.html">Fleet contact</a> ·
+  <a href="thrive.html">Thrive</a> ·
+  <a href="openworld.html">Open world backlog</a> ·
+  <a href="worldspace.html">World space</a> ·
+  <a href="../vr/">Prototype</a>
+</p>
+<div class="tally">
+  <div><dt>Authored rows</dt><dd>194<small>materials, cover, processes, forms, layers, recipes, defs</small></dd></div>
+  <div><dt>Per-body functions</dt><dd>0<small>0 land* · 0 stamp* · 0 paint*</small></dd></div>
+  <div><dt>Data / code</dt><dd>194.00<small>dataratio — the migration scoreboard</small></dd></div>
+  <div><dt>New-world cost</dt><dd>0<small>code sites a Pluto still needs</small></dd></div>
+  <div><dt>Stack at N=96</dt><dd>2.58 MB<small>8 layers × 49 bytes × 55,296 cells</small></dd></div>
+  <div><dt>Overrides</dt><dd>1<small>22 named features · 7 ramps</small></dd></div>
+</div>
+
+<h2>Palette</h2>
+<p>Each material is a triple plus, where authored, a wet/dry/ice ramp and (for a few rocks) band reflectance. The overlay samples the ramp. Surface paint lives in <code>paint.json</code> and is evaluated, not lambdas in <code>planetLook.js</code>. Colour is reflectance × illuminant — the same basalt under three stars is the strip below. White balance is a camera calibrated to the Sun.</p>
+<div class="grid">
+<div class="sw"><i style="background:rgb(78,72,64)"></i><b>basalt</b><small>measured · rock</small><span class="chip" style="background:rgb(88,78,68)" title="dry"></span><span class="chip" style="background:rgb(58,52,46)" title="wet"></span><span class="chip" style="background:rgb(210,216,226)" title="ice"></span></div>
+<div class="sw"><i style="background:rgb(168,156,146)"></i><b>granite</b><small>measured · rock</small></div>
+<div class="sw"><i style="background:rgb(176,148,112)"></i><b>sediment</b><small>fitted · rock</small><span class="chip" style="background:rgb(186,160,118)" title="dry"></span><span class="chip" style="background:rgb(128,108,82)" title="wet"></span></div>
+<div class="sw"><i style="background:rgb(118,102,94)"></i><b>metamorphic</b><small>fitted · rock</small></div>
+<div class="sw"><i style="background:rgb(96,52,42)"></i><b>banded iron</b><small>measured · rock</small></div>
+<div class="sw"><i style="background:rgb(148,136,124)"></i><b>impact ejecta</b><small>fitted · rock</small></div>
+<div class="sw"><i style="background:rgb(36,34,32)"></i><b>coal measure</b><small>measured · rock</small></div>
+<div class="sw"><i style="background:rgb(176,168,158)"></i><b>glacial till</b><small>fitted · rock</small></div>
+<div class="sw"><i style="background:rgb(220,232,245)"></i><b>water ice</b><small>measured · ice</small><span class="chip" style="background:rgb(236,242,250)" title="dry"></span><span class="chip" style="background:rgb(186,206,224)" title="wet"></span></div>
+<div class="sw"><i style="background:rgb(236,240,248)"></i><b>carbon dioxide ice</b><small>measured · ice</small></div>
+<div class="sw"><i style="background:rgb(248,250,255)"></i><b>nitrogen ice</b><small>measured · ice</small><span class="chip" style="background:rgb(252,252,255)" title="dry"></span><span class="chip" style="background:rgb(210,218,232)" title="wet"></span></div>
+<div class="sw"><i style="background:rgb(214,200,168)"></i><b>methane ice</b><small>measured · ice</small></div>
+<div class="sw"><i style="background:rgb(200,220,214)"></i><b>ammonia–water ice</b><small>fitted · ice</small></div>
+<div class="sw"><i style="background:rgb(190,210,220)"></i><b>methane clathrate</b><small>fitted · ice</small></div>
+<div class="sw"><i style="background:rgb(132,68,36)"></i><b>tholin</b><small>invented · organics</small><span class="chip" style="background:rgb(148,78,40)" title="dry"></span><span class="chip" style="background:rgb(96,52,30)" title="wet"></span></div>
+<div class="sw"><i style="background:rgb(48,24,16)"></i><b>silicate melt</b><small>fitted · rock</small></div>
+<div class="sw"><i style="background:rgb(128,118,102)"></i><b>regolith</b><small>measured · rock</small><span class="chip" style="background:rgb(142,130,112)" title="dry"></span><span class="chip" style="background:rgb(96,88,78)" title="wet"></span></div>
+<div class="sw"><i style="background:rgb(228,198,48)"></i><b>sulfur</b><small>measured · salt</small><span class="chip" style="background:rgb(236,210,56)" title="dry"></span><span class="chip" style="background:rgb(168,96,32)" title="wet"></span></div>
+<div class="sw"><i style="background:rgb(220,210,188)"></i><b>evaporite</b><small>fitted · salt</small></div>
+<div class="sw"><i style="background:rgb(32,48,62)"></i><b>liquid methane</b><small>measured · fluid</small></div>
+<div class="sw"><i style="background:rgb(180,152,120)"></i><b>supercritical CO₂</b><small>measured · fluid</small></div>
+<div class="sw"><i style="background:rgb(90,80,70)"></i><b>iron</b><small>measured · metal</small></div>
+<div class="sw"><i style="background:rgb(42,42,44)"></i><b>graphite</b><small>fitted · organics</small></div>
+<div class="sw"><i style="background:rgb(196,168,118)"></i><b>envelope</b><small>invented · envelope</small></div>
+</div>
+
+<h2>Paint contact</h2>
+<p>CPU chips from <code>sampleLand</code>, not a GPU framebuffer. Eight kinds that must not collapse; three illuminants of one rock. The artefact this programme exists to catch is a catalogue that paints as one world.</p>
+<div class="grid">
+<div class="sw"><i style="background:rgb(232,168,38)"></i><b>io</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(227,227,231)"></i><b>europa</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(131,78,50)"></i><b>mars</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(173,159,133)"></i><b>venus</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(135,97,55)"></i><b>titan</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(120,121,130)"></i><b>moon</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(170,125,81)"></i><b>jupiter</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(49,88,163)"></i><b>neptune</b><small>PAINT · G2V</small></div>
+<div class="sw"><i style="background:rgb(118,72,48)"></i><b>G2V Sun</b><small>same basalt · 5772 K</small></div>
+<div class="sw"><i style="background:rgb(165,67,22)"></i><b>M dwarf</b><small>same basalt · 2560 K</small></div>
+<div class="sw"><i style="background:rgb(104,72,59)"></i><b>A0</b><small>same basalt · 10000 K</small></div>
+</div>
+
+<h2>Catalogue coverage</h2>
+<p>120 bodies resolved through the join. 0 with a stated gap (missing column, paint, or look). Named features are optional.</p>
+<table>
+<thead><tr><th>body</th><th>definition</th><th>paint</th><th>column</th><th>features</th><th>gaps</th></tr></thead>
+<tbody>
+<tr><td>Earth</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Venus</td><td><code>runaway</code></td><td>venus</td><td>rocky</td><td>1</td><td>—</td></tr>
+<tr><td>Mars</td><td><code>dustyBasalt</code></td><td>mars</td><td>rocky</td><td>3</td><td>—</td></tr>
+<tr><td>Mercury</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>1</td><td>—</td></tr>
+<tr><td>Jupiter</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>1</td><td>—</td></tr>
+<tr><td>Saturn</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>1</td><td>—</td></tr>
+<tr><td>Uranus</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Neptune</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Pluto</td><td><code>n2Ice</code></td><td>pluto</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Ceres</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>2</td><td>—</td></tr>
+<tr><td>Eris / Sedna</td><td><code>n2Ice</code></td><td>pluto</td><td>iceShell</td><td>0</td><td>—</td></tr>
+<tr><td>Arrokoth / Bennu / 67P</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Luna</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>1</td><td>—</td></tr>
+<tr><td>Io</td><td><code>heatpipe</code></td><td>io</td><td>heatpipe</td><td>1</td><td>—</td></tr>
+<tr><td>Europa</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Ganymede</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>0</td><td>—</td></tr>
+<tr><td>Callisto</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>0</td><td>—</td></tr>
+<tr><td>Titan</td><td><code>iceOrganics</code></td><td>titan</td><td>iceOrganics</td><td>2</td><td>—</td></tr>
+<tr><td>Enceladus</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Triton</td><td><code>n2Ice</code></td><td>pluto</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Miranda</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Iapetus</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>1</td><td>—</td></tr>
+<tr><td>Mimas</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Charon</td><td><code>n2Ice</code></td><td>pluto</td><td>iceShell</td><td>1</td><td>—</td></tr>
+<tr><td>Uranian moons</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>0</td><td>—</td></tr>
+<tr><td>Rhea / Dione / Tethys / Hyperion</td><td><code>iceShell</code></td><td>europa</td><td>iceShell</td><td>0</td><td>—</td></tr>
+<tr><td>Phobos / Deimos</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>0</td><td>—</td></tr>
+<tr><td>TRAPPIST-1 e</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TRAPPIST-1 f</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TRAPPIST-1 g, h</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TRAPPIST-1 d</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TRAPPIST-1 b, c</td><td><code>runaway</code></td><td>venus</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TRAPPIST-1 system</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Proxima Cen b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Proxima Cen d</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>LHS 1140 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TOI-700 d</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TOI-700 e</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Teegarden b, c, d</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Ross 128 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 273 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Wolf 1061 c / K2-3 d</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Gliese 12 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>TOI-715 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>LP 890-9 c</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 357 d</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-186 f</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-442 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-452 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-1649 c</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-62 e, f</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-22 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-438 b, 1229 b</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>tau Cet f</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kapteyn c</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Barnard b–e</td><td><code>rocky</code></td><td>stagnant</td><td>rocky</td><td>0</td><td>—</td></tr>
+<tr><td>55 Cnc e</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>K2-141 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>CoRoT-7 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-10 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-78 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 367 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>LHS 3844 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 1132 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 486 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>HD 219134 b / HD 3167 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>K2-137 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-1520 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>K2-22 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>TOI-849 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 9827 d</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>LP 791-18 d</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-36 b, c</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>51 Peg b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>HD 209458 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>HD 189733 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-12 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-76 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-121 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>KELT-9 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>TOI-2109 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-33 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-19 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-17 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>TrES-2 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-7 b / HAT-P-7 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>WASP-127 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>KELT-1 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 436 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 3470 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>HAT-P-11 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>LTT 9779 b</td><td><code>magma</code></td><td>magma</td><td>magma</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 1214 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>K2-18 b / TOI-270 d</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>HR 8799</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>beta Pic b, c</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>51 Eri b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>HIP 65426 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>GJ 504 b / HD 106906 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>AU Mic b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>V1298 Tau b / K2-33 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>HD 80606 b / HD 20782 b / Kepler-1704 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-11 / Kepler-90</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-444 / Kepler-1625 b</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-16 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Kepler-47 c, Kepler-1647 b, TOI-1338 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>PSO J318.5-22</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>WISE 0855-0714</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>SIMP J0136 / CFBDSIR 2149</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>OGLE-2016-BLG-1928</td><td><code>n2Ice</code></td><td>pluto</td><td>iceShell</td><td>0</td><td>—</td></tr>
+<tr><td>MOA-2011-BLG-262L b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>2M1207 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>Luhman 16 AB</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>OTS 44</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>WD 1856+534 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>WD J0914+1914</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>PSR B1257+12 b, c, d</td><td><code>airless</code></td><td>airless</td><td>airless</td><td>0</td><td>—</td></tr>
+<tr><td>PSR B1620-26 b</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>PSR J1719-1438 b / KOI-55</td><td><code>envelope</code></td><td>jupiter</td><td>envelope</td><td>0</td><td>—</td></tr>
+<tr><td>OGLE-2005-BLG-390L b</td><td><code>n2Ice</code></td><td>pluto</td><td>iceShell</td><td>0</td><td>—</td></tr>
+</tbody>
+</table>
+
+<h2>Definitions</h2>
+<p>First match wins. Gates are axes and flags, not a body name. 1 override — the count is how well the rules work. Coverage is the join fields that exist: column, bedrock, look, paint.</p>
+<table>
+<thead><tr><th>id</th><th>confidence</th><th>column</th><th>bedrock</th><th>paint</th><th>why</th></tr></thead>
+<tbody>
+<tr><td><code>earth</code></td><td>measured</td><td>—</td><td>basalt</td><td>—</td><td>Earth is the calibration world. The stack is W.rock; the column recipe stays silent so the golden core sample still reconstructs from crust types.</td></tr>
+<tr><td><code>envelope</code></td><td>measured</td><td>envelope</td><td>envelope</td><td>jupiter</td><td>Giants have no ground. Pressure is the vertical coordinate; the stack is empty on purpose.</td></tr>
+<tr><td><code>magma</code></td><td>inferred</td><td>magma</td><td>silicate</td><td>magma</td><td>A furnace world is a chilled lid over melt. Not a stratigraphy and not a continent.</td></tr>
+<tr><td><code>iceOrganics</code></td><td>measured</td><td>iceOrganics</td><td>waterIce</td><td>titan</td><td>Titan class: organic sand over ice I over an ammonia-rich ocean. Gates are CH4 plus an atmosphere, not /titan/.</td></tr>
+<tr><td><code>n2Ice</code></td><td>measured</td><td>iceShell</td><td>waterIce</td><td>pluto</td><td>Pluto class: nitrogen ice sitting on water-ice bedrock. Soft enough to convect. The heart is a process, not a paint.</td></tr>
+<tr><td><code>iceShell</code></td><td>measured</td><td>iceShell</td><td>waterIce</td><td>europa</td><td>Europa class: ice over ocean over rock. Lid and ocean thicknesses follow the shell fields per cell.</td></tr>
+<tr><td><code>heatpipe</code></td><td>measured</td><td>heatpipe</td><td>silicate</td><td>io</td><td>Io class. Sulfur is cover, not a column layer. The lithosphere is a thin silicate lid continually buried by lava.</td></tr>
+<tr><td><code>runaway</code></td><td>measured</td><td>rocky</td><td>basalt</td><td>venus</td><td>Venus class: a thick hot air over basalt, hot enough that the sky is the landscape. Dusty-basalt would steal this world without a temperature gate. Volatile may be CO2 or SO2.</td></tr>
+<tr><td><code>dustyBasalt</code></td><td>inferred</td><td>rocky</td><td>basalt</td><td>mars</td><td>Mars class: basalt plus dust plus seasonal CO2 ice. An atmosphere thin enough to be a sky and thick enough to move dust.</td></tr>
+<tr><td><code>airless</code></td><td>measured</td><td>airless</td><td>basalt</td><td>airless</td><td>Moon class: metres of gardened dust over kilometres of shattered crust. A hard limb is the whole of the atmosphere.</td></tr>
+<tr><td><code>rocky</code></td><td>invented</td><td>rocky</td><td>basalt</td><td>stagnant</td><td>The honest default. A generic solid world has crust. Cover and landforms sit on top. Ninety-four exoplanets land here until a better rule claims them.</td></tr>
+</tbody>
+</table>
+
+<h2>Units</h2>
+<table>
+<thead><tr><th>field</th><th>unit</th></tr></thead>
+<tbody>
+<tr><td><code>density</code></td><td>kg/m³</td></tr>
+<tr><td><code>albedo</code></td><td>0–1</td></tr>
+<tr><td><code>k</code></td><td>W/m/K</td></tr>
+<tr><td><code>thermalInertia</code></td><td>J m⁻² K⁻¹ s⁻½</td></tr>
+<tr><td><code>strength</code></td><td>MPa</td></tr>
+<tr><td><code>erode</code></td><td>relative to Earth rain = 1</td></tr>
+<tr><td><code>meltK</code></td><td>K</td></tr>
+<tr><td><code>boilK</code></td><td>K</td></tr>
+<tr><td><code>tripleK</code></td><td>K</td></tr>
+<tr><td><code>tripleBar</code></td><td>bar</td></tr>
+<tr><td><code>criticalK</code></td><td>K</td></tr>
+<tr><td><code>criticalBar</code></td><td>bar</td></tr>
+<tr><td><code>LsubJmol</code></td><td>J/mol</td></tr>
+<tr><td><code>convectK</code></td><td>K</td></tr>
+<tr><td><code>porosity</code></td><td>0–1 void fraction</td></tr>
+<tr><td><code>depthKm</code></td><td>km</td></tr>
+<tr><td><code>stackM</code></td><td>m</td></tr>
+</tbody>
+</table>
+
+<h2>Authored vs generated</h2>
+<p><code>substrates.json</code>, <code>cover.json</code>, <code>processes.json</code>, <code>landforms.json</code>, <code>columns.json</code>, <code>epochs.json</code>, <code>definitions.json</code>, <code>features.json</code> and <code>paint.json</code> are authored. <code>kinds.json</code> is a generated audit — do not edit it. Compiled modules live in <code>vr/sim/*Table.js</code> and <code>worldDef.js</code>. Nothing in <code>vr/sim/</code> may name a specific body except as a validation case or an override with a <code>why</code>.</p>
+<p>Compile: <code>node scripts/data.mjs</code> (370 ms this run). Epochs 15. Spectra 4. Named kinds 27. Named-kind regexes in planetKind: 0.</p>
+<footer>Generated from <code>scripts/data.mjs</code> — edit the source, not this file.</footer>
+</div>

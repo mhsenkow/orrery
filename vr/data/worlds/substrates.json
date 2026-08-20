@@ -2,6 +2,23 @@
   "version": 1,
   "why": "Surface materials. Indices 0–7 are Earth's ROCK_NAMES so W.rock can map without a translation table. Everything after is what the other hundred bodies are made of. tag is measured / fitted / invented for the row as a whole; why is one sentence.",
   "tags": ["measured", "fitted", "invented"],
+  "units": {
+    "density": "kg/m³",
+    "albedo": "0–1",
+    "k": "W/m/K",
+    "thermalInertia": "J m⁻² K⁻¹ s⁻½",
+    "strength": "MPa",
+    "erode": "relative to Earth rain = 1",
+    "meltK": "K",
+    "boilK": "K",
+    "tripleK": "K",
+    "tripleBar": "bar",
+    "criticalK": "K",
+    "criticalBar": "bar",
+    "LsubJmol": "J/mol",
+    "convectK": "K",
+    "porosity": "0–1 void fraction"
+  },
   "materials": [
     {
       "id": "basalt",
@@ -15,6 +32,8 @@
       "strength": 250,
       "erode": 0.5,
       "rgb": [78, 72, 64],
+      "ramp": { "dry": [88, 78, 68], "wet": [58, 52, 46], "ice": [210, 216, 226] },
+      "spectrum": { "nm": [450, 550, 650], "R": [0.06, 0.07, 0.09] },
       "tag": "measured",
       "why": "Oceanic crust and most terrestrial lava. Earth's seafloor and Mars's plains."
     },
@@ -44,6 +63,7 @@
       "strength": 40,
       "erode": 1.5,
       "rgb": [176, 148, 112],
+      "ramp": { "dry": [186, 160, 118], "wet": [128, 108, 82] },
       "tag": "fitted",
       "why": "Anything deposited. Erodes faster than the igneous rocks it came from."
     },
@@ -138,6 +158,8 @@
       "strength": 10,
       "erode": 0.8,
       "rgb": [220, 232, 245],
+      "ramp": { "dry": [236, 242, 250], "wet": [186, 206, 224] },
+      "spectrum": { "nm": [450, 550, 650], "R": [0.62, 0.68, 0.72] },
       "tag": "measured",
       "cite": "Wagner and Pruß 2002 IAPWS-95; triple 273.16 K, 611.657 Pa",
       "why": "Ice I. Bedrock on every cold moon; a glacier on Earth; vapour below the triple point. Strength at 250 K is ~10 MPa and rises sharply as it cools — at 100 K it is stronger than granite."
@@ -182,6 +204,7 @@
       "strength": 0.01,
       "erode": 3.0,
       "rgb": [248, 250, 255],
+      "ramp": { "dry": [252, 252, 255], "wet": [210, 218, 232] },
       "tag": "measured",
       "cite": "Fray and Schmitt 2009; convectK fitted after Umurhan / Trowbridge",
       "why": "Sputnik Planitia. Soft enough at 40 K to convect on geologic time (Umurhan / Trowbridge). Pluto's atmosphere is the vapour in equilibrium with this ice."
@@ -259,6 +282,8 @@
       "strength": 5,
       "erode": 1.3,
       "rgb": [132, 68, 36],
+      "ramp": { "dry": [148, 78, 40], "wet": [96, 52, 30] },
+      "spectrum": { "nm": [450, 550, 650], "R": [0.04, 0.08, 0.18] },
       "tag": "invented",
       "why": "Photochemical goo. Titan's dunes, Pluto's Cthulhu, every reddish outer-Solar-System stain. Strength is a guess; the colour is measured."
     },
@@ -290,6 +315,7 @@
       "porosity": 0.45,
       "erode": 2.0,
       "rgb": [128, 118, 102],
+      "ramp": { "dry": [142, 130, 112], "wet": [96, 88, 78] },
       "tag": "measured",
       "why": "Micrometeorite garden. Thermal inertia of ~50 is why the Moon swings hundreds of kelvin between noon and night."
     },
@@ -309,6 +335,8 @@
       "strength": 8,
       "erode": 1.6,
       "rgb": [228, 198, 48],
+      "ramp": { "dry": [236, 210, 56], "wet": [168, 96, 32] },
+      "spectrum": { "nm": [450, 550, 650], "R": [0.12, 0.52, 0.74] },
       "tag": "measured",
       "why": "Io. Yellow when fresh, brown when heated. Liquid in a narrow window; viscosity drops by orders of magnitude across it."
     },

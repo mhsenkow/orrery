@@ -204,7 +204,8 @@ export function advanceClock(W, rule) {
   W.dtYr = adaptiveTickYears(W.ageYr, { fixedDt });
   // Cap so a single tick never jumps an entire eon on modern Earth —
   // unless the player explicitly chose a geologic fixed rate.
-  if (rule.earthLike && !rule.deepTime && W.fixedDtYr == null) {
+  // `thrive` is the demo Earth: same physics, but the clock is not welded shut.
+  if (rule.earthLike && !rule.deepTime && !rule.thrive && W.fixedDtYr == null) {
     W.dtYr = Math.min(W.dtYr, 200);
     // Stay at the present for the calibration Earth
     if (W.ageYr >= PRESENT_YR) {

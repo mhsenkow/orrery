@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orrery.local/schemas/world-definition.json",
+  "title": "ORRERY world definition",
+  "description": "The join that turns five vocabulary tables into a sentence. Axes place a world; a definition describes it. Selection is by needs (axes and flags), never a body-name regex. Overrides are the exception and require a why.",
+  "type": "object",
+  "required": ["version", "why", "definitions"],
+  "properties": {
+    "version": { "type": "integer", "minimum": 1 },
+    "why": { "type": "string", "minLength": 20 },
+    "units": {
+      "type": "object",
+      "additionalProperties": { "type": "string" },
+      "description": "Unit of every quantity the tables carry. density kg/m³, k W/m/K, strength MPa, thermalInertia J m⁻² K⁻¹ s⁻½, pressures bar, temperatures K."
+    },
+    "definitions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/definition" }
+    },
+    "overrides": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/override" }
+    }
+  },
+  "$defs": {
+    "tag": { "type": "string", "enum": ["measured", "fitted", "invented"] },
+    "confidence": { "type": "string", "enum": ["measured", "inferred", "invented"] },
+    "rgb": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "items": { "type": "integer", "minimum": 0, "maximum": 255 }
+    },
+    "needs": {
+      "type": "object",
+      "description": "First match wins. Gates are axes and flags, not a name.",
+      "properties": {
+        "interior": { "type": "array", "items": { "type": "string" } },
+        "volatile": { "type": "array", "items": { "type": "string" } },
+        "airless": { "type": "boolean" },
+        "notAirless": { "type": "boolean" },
+        "iceShell": { "type": "boolean" },
+        "notIceShell": { "type": "boolean" },
+        "notFluid": { "type": "boolean" },
+        "notMagma": { "type": "boolean" },
+        "earthLike": { "type": "boolean" },
+        "minGravity": { "type": "number" },
+        "maxGravity": { "type": "number" },
+        "minTeq": { "type": "number", "description": "K. Distinguishes Venus from Mars." },
+        "maxTeq": { "type": "number" }
+      }
+    },
+    "look": {
+      "type": "object",
+      "description": "Art direction as data: lighting, limb, haze, sky. Not two lambdas.",
+      "properties": {
+        "exposureBias": { "type": "number", "minimum": -1, "maximum": 1 },
+        "limbSoft": { "type": "number", "minimum": 0, "maximum": 1 },
+        "haze": { "type": "number", "minimum": 0, "maximum": 1 },
+        "hazeRgb": { "$ref": "#/$defs/rgb" },
+        "skyRgb": { "$ref": "#/$defs/rgb" },
+        "sound": { "type": "string" },
+        "whiteBalance": {
+          "type": "string",
+          "enum": ["sun-camera", "adapted"],
+          "description": "sun-camera: chromaticity of the host star, luminance as the Sun would meter it. adapted: the eye white-balances to the star (not implemented)."
+        }
+      }
+    },
+    "definition": {
+      "type": "object",
+      "required": ["id", "tag", "confidence", "why", "column"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]+$" },
+        "tag": { "$ref": "#/$defs/tag" },
+        "confidence": { "$ref": "#/$defs/confidence" },
+        "why": { "type": "string", "minLength": 20 },
+        "needs": { "$ref": "#/$defs/needs" },
+        "column": { "type": "string", "description": "Id in columns.json recipes." },
+        "bedrock": { "type": ["string", "null"], "description": "Id in substrates.json." },
+        "cover": { "type": ["string", "null"], "description": "Optional cover substrate id." },
+        "look": { "$ref": "#/$defs/look" },
+        "paint": { "type": "string", "description": "Geology-kind id in paint.json. Kind-specific paint wins when that kind exists." }
+      }
+    },
+    "override": {
+      "type": "object",
+      "required": ["body", "why"],
+      "properties": {
+        "body": { "type": "string", "description": "Catalogue name. Count these; the count is how well the rules work." },
+        "why": { "type": "string", "minLength": 20 },
+        "look": { "$ref": "#/$defs/look" },
+        "column": { "type": "string" },
+        "bedrock": { "type": "string" }
+      }
+    },
+    "feature": {
+      "type": "object",
+      "required": ["id", "name", "key"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "key": { "type": "string", "description": "surfaceKeyAt id this name attaches to." },
+        "kind": { "type": "string" },
+        "lat": { "type": "number" },
+        "lon": { "type": "number" },
+        "rDeg": { "type": "number" },
+        "tag": { "$ref": "#/$defs/tag" },
+        "why": { "type": "string" }
+      }
+    }
+  }
+}

@@ -17,6 +17,9 @@ export const GLOSSARY = {
   Ekman: 'Wind-driven transport ninety degrees off the wind — right in the north, left in the south. It is why eastern coasts upwell.',
   Sverdrup: 'The interior of an ocean basin moves meridionally in proportion to the curl of the wind stress. Gyres fall out of this balance.',
   'western boundary': 'The return flow of a gyre concentrates into a narrow jet on the western edge of the basin — Gulf Stream, Kuroshio, Agulhas.',
+  stack: 'An ordered list of materials with thickness. The top is the surface; erosion peels it and deposition writes a new layer.',
+  unconformity: 'A gap in the stack — erosion removed layers and deposition resumed. The age jump is the story.',
+  illuminant: 'The light a surface is seen in. The same rock is a different colour under a 2,560 K dwarf than under the Sun. White balance here is a camera calibrated to the Sun — the star tints the picture; exposure handles brightness.',
   'rain shadow': 'Air forced up a windward slope rains out; the lee descends, warms and dries. Deserts sit in that shadow.',
   isostasy: 'Crust floats on the mantle. Thicken it and the surface rises; unload it and the remaining peaks rise too.',
   'Bjerknes': 'The coupling that makes El Niño: stronger trades deepen the east–west SST contrast, which strengthens the trades.',
@@ -97,8 +100,16 @@ export const TOOL_GATES = {
   buster: (W) => (W.attribution?.acts || 0) > 10,
 };
 
+const LAND_TOOLS = new Set([
+  'raise', 'lower', 'flatten', 'smooth', 'sharpen', 'roughen',
+  'crust', 'plume', 'plate', 'river',
+]);
+
 export function toolsUnlocked(W) {
   const out = {};
   for (const [id, gate] of Object.entries(TOOL_GATES)) out[id] = !!gate(W);
+  if (W?.noSurface) {
+    for (const id of LAND_TOOLS) out[id] = false;
+  }
   return out;
 }

@@ -2,7 +2,7 @@ import { tropicalFavor, midlatFavor } from './storms.js';
 import { DIR, NF } from '../sphere.js';
 import { nodeOf } from './evolve.js';
 import { SUBSTRATES } from './substrates.js';
-import { phaseAtCell } from './substrateField.js';
+import { phaseAtCell, sampleMaterialRgb } from './substrateField.js';
 import { coverAt } from './cover.js';
 import { landformAt } from './landform.js';
 import { columnRgbAt } from './columnField.js';
@@ -14,6 +14,20 @@ const SENSE_RGB = {
   electric: [80, 220, 210], acoustic: [200, 200, 230], chemical: [180, 140, 70],
   pressure: [90, 160, 200], thermalContact: [220, 120, 80],
 };
+
+/** Fire danger for paint only: the same inputs as `fireDanger` in sim/fire.js,
+ *  kept local so the overlay never reaches into a tick's RNG stream. */
+function fireDangerAt(W, c) {
+  if (W.h[c] < W.seaLevel) return 0;
+  if ((W.ice?.[c] || 0) > 0.25) return 0;
+  const fuel = W.life?.[c] || 0;
+  if (fuel < 0.1) return 0;
+  const moist = W.moist?.[c] || 0;
+  if (moist > 0.62) return 0;
+  const dry = 1 - Math.min(1, moist / 0.62);
+  const heat = Math.max(0, Math.min(1, ((W.temp?.[c] || 0.5) - 0.42) / 0.32));
+  return dry * (0.35 + heat * 0.65);
+}
 
 function dominantLineageId(W) {
   if (W._rangeId != null && W._rangeTick === W._tickIndex) return W._rangeId;
@@ -32,7 +46,7 @@ function dominantLineageId(W) {
 export const OVERLAYS = [
   { id: 'none', label: 'None', icon: 'inspect', tip: 'Clear the field paint and show the surface as-is.' },
   { id: 'temp', label: 'Temperature', icon: 'solar', tip: 'Hot → cold. Red is warm; blue is cold. Not the same as insolation.' },
-  { id: 'press', label: 'Pressure', icon: 'weather', tip: 'Surface pressure field that drives the synoptic chart and storm seeds.' },
+  { id: 'press', label: 'Pressure', icon: 'weather', tip: 'Surface pressure that drives the synoptic chart. On a giant this is the optical cloud deck in bars, not the SWE height field.' },
   { id: 'vapour', label: 'Vapour', icon: 'weather', tip: 'Atmospheric water. Wet windward coasts and dry interiors — continentality made visible.' },
   { id: 'fog', label: 'Fog', icon: 'weather', tip: 'Surface fog: high humidity, cool still air, usually near the coast.' },
   { id: 'ariver', label: 'Moisture river', icon: 'weather', tip: 'Poleward vapour filaments. Most of the moisture transport in a few corridors.' },
@@ -67,14 +81,17 @@ export const OVERLAYS = [
   { id: 'phase', label: 'Phase', icon: 'ice', tip: 'Phase of the dominant volatile: solid, convecting ice, liquid, gas, supercritical.' },
   { id: 'cover', label: 'Cover', icon: 'ice', tip: 'What is lying on the substrate — frost, dust, lag, tholin, sulfur, ejecta. Grain and weathering live here. Not the rock underneath.' },
   { id: 'forms', label: 'Landforms', icon: 'raise', tip: 'Which landform the grammar named on this cell — patera, scarp, dune, chaos. Stamps still own the heightfield; this overlay names the process.' },
-  { id: 'column', label: 'Column', icon: 'core', tip: 'Top of the vertical stack — organic sand, ice lid, regolith, envelope. Thicknesses live on inspect; this overlay names the recipe.' },
+  { id: 'column', label: 'Column', icon: 'core', tip: 'Top of the per-cell stack — what is actually under this square, not the world recipe. Inspect lists thicknesses in metres.' },
   { id: 'crustAge', label: 'Crust age', icon: 'deeptime', tip: 'Seafloor age. Young at ridges, old toward trenches — if plates are mobile.' },
+  { id: 'techno', label: 'Technosphere', icon: 'inspect', tip: 'Energy use and land use. Bright is watts and cropland; dark is unused. Giants have none.' },
+  { id: 'fire', label: 'Fire', icon: 'volcano', tip: 'Orange is flame, grey is smoke and ash, dim red is fire danger — dry fuelled land that has not caught yet. A rate, not a state.' },
+  { id: 'plume', label: 'Nutrient plume', icon: 'upwell', tip: 'Where animals fertilised the water. Surface-feeding whale-scale life brings N and P up; the green is the bloom that follows.' },
 ];
 
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto',
+  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume',
   'faces', 'zonal', 'ecotone',
 ];
 
@@ -114,8 +131,14 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       const t = W.temp[c];
       r = t * 255; g = (1 - Math.abs(t - 0.5) * 2) * 180; b = (1 - t) * 255;
     } else if (mode === 'press') {
-      const p = W.press?.[c] ?? (1 - W.temp[c]);
-      r = 40 + p * 80; g = 60 + (1 - p) * 120; b = 100 + (1 - p) * 140;
+      if (W.noSurface && W.pSeen) {
+        const p = W.pSeen[c] || 0.7;
+        const k = Math.max(0, Math.min(1, Math.log(p / 0.45) / Math.log(8)));
+        r = 220 - k * 140; g = 200 - k * 110; b = 170 - k * 40;
+      } else {
+        const p = W.press?.[c] ?? (1 - W.temp[c]);
+        r = 40 + p * 80; g = 60 + (1 - p) * 120; b = 100 + (1 - p) * 140;
+      }
     } else if (mode === 'vapour') {
       const v = Math.min(1, (W.vapour?.[c] || 0) / 0.08);
       r = 18 + v * 50;
@@ -279,7 +302,7 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 40 + th * 180; g = 50 + th * 100; b = 40 + (1 - th) * 80;
     } else if (mode === 'substrate') {
       const mat = SUBSTRATES[W.substrate?.[c] ?? W.rock?.[c] ?? 0];
-      const rgb = mat?.rgb || [80, 80, 80];
+      const rgb = sampleMaterialRgb(mat, { moist: W.moist?.[c] || 0, ice: W.ice?.[c] || 0 });
       r = rgb[0]; g = rgb[1]; b = rgb[2];
     } else if (mode === 'phase') {
       const ph = phaseAtCell(W, c);
@@ -352,6 +375,37 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = land ? 30 + e * 220 : 12;
       g = land ? 24 + e * 40 : 18;
       b = land ? 40 + e * 80 : 28;
+    } else if (mode === 'techno') {
+      const land = W.h[c] >= W.seaLevel;
+      const build = W.build?.[c] || 0;
+      const use = (W.techno?.landUseFrac || 0) * (0.25 + build);
+      const heat = Math.min(1, (W.techno?.wasteHeatFrac || 0) * 40);
+      if (!land || W.noSurface) {
+        r = 8; g = 10; b = 14;
+      } else {
+        r = 20 + build * 200 + heat * 80;
+        g = 18 + use * 90;
+        b = 22 + build * 40;
+      }
+    } else if (mode === 'fire') {
+      /* Three things at once, because they are three stages of one event:
+         danger (will burn), flame (burning), ash (has burned). */
+      const f = Math.min(1, W.fire?.[c] || 0);
+      const a = Math.min(1, W.ash?.[c] || 0);
+      const d = fireDangerAt(W, c);
+      r = 10 + d * 70 + a * 120 + f * 245;
+      g = 10 + d * 14 + a * 118 + f * 120;
+      b = 14 + a * 112 + f * 20;
+    } else if (mode === 'plume') {
+      const p = Math.min(1, W.nutrientPlume?.[c] || 0);
+      const land = W.h[c] >= W.seaLevel;
+      if (land) { r = 16; g = 18; b = 20; }
+      else {
+        const nut = Math.min(1, ((W.nutrientN?.[c] || 0) + (W.nutrientP?.[c] || 0)) * 0.5);
+        r = 8 + p * 40;
+        g = 20 + nut * 70 + p * 185;
+        b = 40 + nut * 60 + p * 60;
+      }
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

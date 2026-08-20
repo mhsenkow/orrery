@@ -14,11 +14,13 @@ import { fitSeaLevel, seedPolarIce, seedEarthBiosphere, primeEarthMoisture } fro
 import { refineEarthHypsometry } from './sim/earthTerrain.js';
 import { refinePlanetHypsometry } from './sim/planetTerrain.js';
 import { worldAxes } from './sim/worldAxes.js';
-import { cachePlanetKind } from './sim/planetKind.js';
+import { cachePlanetKind, hasSurface } from './sim/planetKind.js';
+import { applyWorldLook, definitionOf } from './sim/definition.js';
 import { stampSubstrate, packSubstrate, unpackSubstrate } from './sim/substrateField.js';
 import { stampCover } from './sim/cover.js';
 import { noteColumn } from './sim/columnSketch.js';
 import { stampColumn } from './sim/columnField.js';
+import { stampStack, packStack, unpackStack } from './sim/colstack.js';
 import { stampLandforms } from './sim/landform.js';
 import { reliefFromGravity } from './sim/exophysics.js';
 import { applyLandscape, landmassReport, nameWorld } from './sim/landscapes.js';
@@ -42,6 +44,7 @@ import { attachWorldRng } from './sim/rng.js';
 import { assertBudgets } from './sim/assert.js';
 import { initOcean, oceanTick } from './sim/ocean.js';
 import { geostrophicWind } from './sim/wind.js';
+import { giantTick } from './sim/jets.js';
 import { skyFromStarAtmosphere } from './sim/scatter.js';
 import { applyIceShell, iceShellTick } from './sim/iceshell.js';
 import { initTides, tidesTick } from './sim/tides.js';
@@ -50,6 +53,10 @@ import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
 import { isModernEarth, isDeepTimeEarth, cloneRuleForRun } from './sim/ruleMode.js';
+import { applyEpochAtGenerate } from './sim/epoch.js';
+import { seedTechnosphere, technoTick } from './sim/techno.js';
+import { agentsTick, resetEntities } from './agents.js';
+import { fireTick, resetFireState } from './sim/fire.js';
 
 function buf() { return new Float32Array(NC); }
 function ibuf() { return new Int32Array(NC); }
@@ -69,6 +76,7 @@ export function reallocateWorldFields(target = W) {
     'mantleU', 'mantleV', 'dynTopo', 'vapour', 'cont', 'coastDist', 'biomeMix',
     '_t', '_m', '_l', '_h', '_adv', 'prevTemp', 'prevLife', 'prevIce',
     'macroDens', 'cladeCount', 'hydrotherm', 'protoOrg', 'detritus',
+    'fire', 'nutrientPlume',
   ];
   for (const k of keys) target[k] = buf();
   target.rock = u8();
@@ -82,6 +90,7 @@ export function reallocateWorldFields(target = W) {
   target.drainTo = ibuf();
   target.drainTo2 = ibuf();
   target.storms = [];
+  target._fireCells = [];
   target.bound = new Int8Array(NC);
   target._order = new Int32Array(NC);
   target.shellLid = target.shellOcean = target.shellMantle = target.shellVent = null;
@@ -92,6 +101,13 @@ export function reallocateWorldFields(target = W) {
   target.oceanSurf = target.oceanDeep = target.oceanSalt = target.upwell = null;
   target.upwelling = null;
   target.vort = null;
+  target.pSeen = target.chroma = target.spot = null;
+  target._chromaTmp = null;
+  target._jetCount = 0;
+  target._jetSpin = null;
+  target._spotSeeded = false;
+  target._spotCell = 0;
+  target._hotspotLon = 0;
   target._tauE = target._tauN = null;
   target._iso0 = null;
   target._mantle = null;
@@ -143,7 +159,7 @@ export function createWorld() {
     flow: buf(), lake: buf(),
     windU: buf(), windV: buf(),
     life: buf(), lifeClass: u8(), soil: buf(), nutrientN: buf(), nutrientP: buf(), reef: buf(),
-    build: buf(),
+    build: buf(), fire: buf(), nutrientPlume: buf(),
     blackDaisy: buf(), whiteDaisy: buf(),
     _t: buf(), _m: buf(), _l: buf(), _h: buf(), _adv: buf(), _order: new Int32Array(NC),
 
@@ -176,8 +192,13 @@ function attachRng(seed) {
   attachWorldRng(W, seed);
 }
 
+function bootPhase(label, detail = '') {
+  if (typeof W._bootPhase === 'function') W._bootPhase(label, detail);
+}
+
 export function generate(seed, ruleIn) {
   const rule = cloneRuleForRun(ruleIn);
+  bootPhase('Forming world', rule.name || 'planet');
   W.seed = seed;
   W.landSeed = seed;
   W._sculpted = false;
@@ -189,6 +210,11 @@ export function generate(seed, ruleIn) {
   W._oxEvent = false;
   W.unlockedClass = 0;
   W.state = 'stable';
+  W.techno = null;
+  W._epoch = null;
+  W._epochStarted = false;
+  W._epochArrived = false;
+  W._postbio = false;
   W.plague = 0;
   W._moonImpact = false;
   W._zirconWater = false;
@@ -200,7 +226,6 @@ export function generate(seed, ruleIn) {
   W._lomagundi = false;
   W._tickIndex = 0;
   W._prevLiving = undefined;
-  W._extinctionPulse = 0;
   W.extinctionDebt = 0;
   W.endemicCount = 0;
   W.refuge = null;
@@ -256,6 +281,8 @@ export function generate(seed, ruleIn) {
   W.biomeCounts = null;
   W.ecotoneFrac = 0;
   W.herbivore = 0;
+  W.carnivore = 0;
+  W.trophic = null;
   W.biosphereWatts = 0;
   W.bioticTerm = 0;
   W.redQueen = 0;
@@ -286,6 +313,7 @@ export function generate(seed, ruleIn) {
     W.gases = { ...rule.gases };
   }
   W.carbon = createCarbonState(W.gases);
+  applyEpochAtGenerate(W, 'air');
   initRedox(W);
   initEvolution(W);
   initGod(W);
@@ -334,6 +362,15 @@ export function generate(seed, ruleIn) {
   W.gaiaLog = [];
   W.bookmarks = [];
   W.civ = null;
+  W.cities = [];
+  W.civPop = 0;
+  W.meanBuild = 0;
+  W._cityLights = 0;
+  W.buildersActive = 0;
+  W._agentTick = 0;
+  delete W._buildsDirty;
+  resetEntities();
+  resetFireState(W);
   W.plates = null;
   W.hotspots = null;
   W.volcanoes = [];
@@ -352,6 +389,13 @@ export function generate(seed, ruleIn) {
   W._hpIceFloor = false;
   W._oceanKm = 0;
   W.soil.fill(0); W.reef.fill(0);
+  resetFireState(W);
+  if (W.nutrientPlume) W.nutrientPlume.fill(0);
+  W._agentTick = 0;
+  W._cityLights = 0;
+  W.cities = [];
+  W.herdMax = 0;
+  W.surfaceFeeders = 0;
   W.blackDaisy.fill(0); W.whiteDaisy.fill(0);
   W.life.fill(0); W.lifeClass.fill(0);
   W.build.fill(0);
@@ -383,6 +427,7 @@ export function generate(seed, ruleIn) {
   W._venusOverturns = 0;
   if (W.hydrotherm) W.hydrotherm.fill(0);
 
+  bootPhase('Plates', 'interior · boundaries');
   // Interior before tectonics — vigor & dynamo shape the plates
   applyInterior(W, rule, rule._catalogueItem || null);
   W.rotationPeriod = rule.rotationPeriod ?? W.rotationPeriod;
@@ -390,24 +435,38 @@ export function generate(seed, ruleIn) {
   applyInterior(W, rule, rule._catalogueItem || null);
   W._worldAxes = worldAxes(rule);
   cachePlanetKind(rule, W);
+  applyWorldLook(rule);
+  W._worldDef = definitionOf(W);
+  W.noSurface = !hasSurface(W);
   if (rule.gravityLocked && Number.isFinite(rule.gravity) && !rule.earthLike) {
     rule.relief = reliefFromGravity(rule.gravity);
   }
   W._nonHydrostatic = !!(W._worldAxes.nonHydrostatic || rule.nonHydrostatic);
 
-  generateTectonics(W, seed, rule);
+  if (!W.noSurface) generateTectonics(W, seed, rule);
+  else {
+    W.plates = [];
+    W.volcanoes = [];
+    W.hotspots = [];
+  }
   initMantle(W, seed);
   W._seaBase = null;
-  W.seaLevel = -0.05 + rule.totalWater * 0.42;
-  // Archetype decides where the continents are; the ruleset still owns the rest
-  const ls = applyLandscape(W, seed, rule.landscape, rule);
-  const targetLand = rule.targetLandFrac ?? ls?.land ?? 0.29;
-  if (targetLand != null) fitSeaLevel(W, targetLand);
-  const waterK = rule._genesisWater ?? 1;
-  if (Math.abs(waterK - 1) > 0.02) {
-    W.seaLevel += (waterK - 1) * 0.045;
-    W.seaLevel = clamp(W.seaLevel, -0.55, 0.85);
-    W._seaBase = W.seaLevel;
+  let ls = null;
+  let targetLand = null;
+  if (W.noSurface) {
+    W.seaLevel = 0;
+    W._seaBase = 0;
+  } else {
+    W.seaLevel = -0.05 + rule.totalWater * 0.42;
+    ls = applyLandscape(W, seed, rule.landscape, rule);
+    targetLand = rule.targetLandFrac ?? ls?.land ?? 0.29;
+    if (targetLand != null) fitSeaLevel(W, targetLand);
+    const waterK = rule._genesisWater ?? 1;
+    if (Math.abs(waterK - 1) > 0.02) {
+      W.seaLevel += (waterK - 1) * 0.045;
+      W.seaLevel = clamp(W.seaLevel, -0.55, 0.85);
+      W._seaBase = W.seaLevel;
+    }
   }
   if (rule.earthLike) refineEarthHypsometry(W, seed, rule);
   else if (!rule.iceShell && !rule.daisyworld) refinePlanetHypsometry(W, seed, rule);
@@ -416,11 +475,11 @@ export function generate(seed, ruleIn) {
   for (let c = 0; c < NC; c++) {
     const lat = Math.abs(DIR[c * 3 + 1]);
     W.temp[c] = clamp(W.solar * (0.42 + 0.55 * (1 - lat)) + 0.08, 0.15, 1.2);
-    W.moist[c] = W.h[c] < W.seaLevel ? 1 : 0.25;
+    W.moist[c] = W.noSurface ? 0 : (W.h[c] < W.seaLevel ? 1 : 0.25);
     W.nutrientN[c] = 0.4; W.nutrientP[c] = 0.35;
   }
   if (rule.earthLike) seedPolarIce(W, rule);
-  else {
+  else if (!W.noSurface) {
     for (let c = 0; c < NC; c++) {
       if (W.temp[c] < rule.freeze + 0.08) {
         W.iceLand[c] = W.h[c] >= W.seaLevel ? 0.6 : 0;
@@ -430,6 +489,7 @@ export function generate(seed, ruleIn) {
     }
   }
   geostrophicWind(W);
+  giantTick(W, null);
 
   // Climate warmup. Ice albedo is off during spin-up so a fine grid cannot
   // snowball before heat has mixed: neighbour diffusion is per-cell, so the
@@ -440,6 +500,7 @@ export function generate(seed, ruleIn) {
   W._spinup = true;
   W._gpgpuOff = true;
   W._pauseBio = true;
+  bootPhase('Climate', 'warming atmosphere');
   if (deepOpen && W.ageYr < 0.5e9) {
     hadeanTick(W, chronLog);
     for (let i = 0; i < 8; i++) {
@@ -453,13 +514,19 @@ export function generate(seed, ruleIn) {
     // before the world even appears; golden tests stay on N=32/64 simTick path.
     if (SIM_N >= 192) {
       for (let i = 0; i < warm; i++) {
+        if (i % 8 === 0) bootPhase('Climate', `${i + 1} / ${warm}`);
         geostrophicWind(W);
+        giantTick(W, null);
         atmoTick(W, _sunDir);
       }
     } else {
-      for (let i = 0; i < warm; i++) simTick(true);
+      for (let i = 0; i < warm; i++) {
+        if (i % 8 === 0) bootPhase('Climate', `${i + 1} / ${warm}`);
+        simTick(true);
+      }
     }
   }
+  bootPhase('Rivers', 'drainage · coast');
   W._spinup = false;
   W._gpgpuOff = false;
   W._pauseBio = false;
@@ -472,7 +539,9 @@ export function generate(seed, ruleIn) {
   }
   if (rule.earthLike && !rule.deepTime) {
     W._pauseBio = true;
+    W._spinup = true;
     for (let i = 0; i < 4; i++) simTick(true);
+    W._spinup = false;
     W._pauseBio = false;
   }
 
@@ -516,7 +585,7 @@ export function generate(seed, ruleIn) {
     seedHoloceneTree(W);
     W.unlockedClass = unlockedClassFromPool(W);
     deriveLifeClass(W);
-  } else if (!rule.airless) {
+  } else if (!rule.airless && !W.noSurface) {
     // Sparse nuclei — or wait for abiogenesis in deep time
     if (!deepOpen) {
       const rng = W.rng;
@@ -559,6 +628,7 @@ export function generate(seed, ruleIn) {
   stampCover(W);
   noteColumn(W);
   stampColumn(W);
+  stampStack(W);
   // `initRedox` runs ~260 lines above this, before `applyLandscape` and every
   // `fitSeaLevel`, so `seedVents` saw provisional terrain — on a fresh process Ares
   // seeded 0 vents and on a second generate it seeded 8,630 against the previous
@@ -567,14 +637,20 @@ export function generate(seed, ruleIn) {
   W.vents = null;
   W._waterMass0 = W.waterMass;
 
-  W._landscape = ls?.id || rule.landscape || 'auto';
-  W._landReport = landmassReport(W);
+  W._landscape = W.noSurface ? 'envelope' : (ls?.id || rule.landscape || 'auto');
+  W._landReport = W.noSurface
+    ? { count: 0, sizes: [], largestShare: 0, islands: 0, landFrac: 0, coastKm: 0 }
+    : landmassReport(W);
   W.worldName = rule.worldName || nameWorld(seed, W._landscape);
   initLayerStack(W, { name: W._landscape });
 
   // Classify biomes once climate + drainage exist, so the opening picture
   // has membership, not a blank Uint8 field.
-  if (!rule.daisyworld && !rule.airless) ecologyTick(W, null);
+  if (!rule.daisyworld && !rule.airless && !W.noSurface) ecologyTick(W, null);
+
+  bootPhase('Ready', W.worldName || rule.name || '');
+  applyEpochAtGenerate(W, 'surface');
+  seedTechnosphere(W);
 
   // Refresh planetary means after seeding
   gaiaTick(W, null);
@@ -621,35 +697,46 @@ export function simTick(silent = false) {
     W.season = (W.season || 0) + 0.02 * Math.min(1, (W.dtYr || 200) / 1e4);
   }
 
-  if (!rule.daisyworld && !rule.airless && rate.tectonics && !W._canvasMode) {
+  if (!rule.daisyworld && !rule.airless && !W.noSurface && rate.tectonics && !W._canvasMode) {
     tectonicsTick(W, W.chron, log);
     erosionTick(W);
   }
   if (!rule.daisyworld) planetGeoTick(W, log);
   if (!rule.daisyworld) interiorTick(W, log);
-  if (!rule.daisyworld && !rule.airless) mantleTick(W);
+  if (!rule.daisyworld && !rule.airless && !W.noSurface) mantleTick(W);
 
   // CPU shallow-water wind always — hydro, storms and overlays read windU/V / converg / front.
   // GPGPU only replaces the thermal relaxation loop.
   geostrophicWind(W);
+  giantTick(W, log);
   const gpu = gpgpuClimateTick(W);
   if (!gpu) atmoTick(W, _sunDir);
   else atmoMetaTick(W);
   hydroTick(W);
   tsunamiTick(W);
-  if (!rule.airless) {
+  if (!rule.airless && !W.noSurface) {
     oceanTick(W);
     tidesTick(W);
     stormsTick(W, log);
   }
   if (W._iceShell) iceShellTick(W);
 
-  // Sky from star spectrum when available
+  // Sky from star spectrum, tinted toward authored look when a definition set one.
   if (rule.star?.teff && rule.atmoStrength > 0.05) {
-    rule.sky = skyFromStarAtmosphere(rule.star.teff, W.gases, rule.atmoStrength);
+    const phys = skyFromStarAtmosphere(rule.star.teff, W.gases, rule.atmoStrength);
+    const authored = rule.look?.skyRgb;
+    if (authored) {
+      rule.sky = [
+        authored[0] / 255 * 0.65 + phys[0] * 0.35,
+        authored[1] / 255 * 0.65 + phys[1] * 0.35,
+        authored[2] / 255 * 0.65 + phys[2] * 0.35,
+      ];
+    } else {
+      rule.sky = phys;
+    }
   }
 
-  if (!W._pauseBio) {
+  if (!W._pauseBio && !W.noSurface) {
     alienTick(W, log);
     if (rate.bio) {
       ecologyTick(W, log);
@@ -662,8 +749,20 @@ export function simTick(silent = false) {
       extinctionTick(W, log);
     }
   }
+  technoTick(W, log);
   gaiaTick(W, log);
   godTick(W, log);
+  /* Beings are part of the world, not part of the view. `agentsTick` used to be
+     called from the render loop in `main.js`, which put every individual, every
+     settlement and every behaviour outside `runHeadless`, outside the save and
+     outside the tests — and made the number of behaviour steps per simulated
+     year a function of frame rate. It runs here now, after ecology so beings
+     read this tick's life field, and it is skipped during generate's climate
+     spin-up where there is no biosphere to walk yet. */
+  if (!W._spinup && !rule.daisyworld && !W.noSurface) {
+    fireTick(W, log);
+    agentsTick(log);
+  }
   absorbSimDelta(W);
 
   // Conservation check every ~32 ticks (cheap enough, catches silent drift)
@@ -794,12 +893,12 @@ function unpackHeights(b64, into) {
   for (let i = 0; i < n; i++) into[i] = buf[i] / 8000;
 }
 
-/** Event-log save. Version 6 keeps the substrate byte. */
+/** Event-log save. Version 7 keeps the per-cell material stack. */
 export function serializeRun() {
   const land = W._landscape || W.rule?.landscape || 'auto';
   const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 6,
+    version: 7,
     seed: W.seed,
     landSeed,
     landscape: land,
@@ -808,6 +907,7 @@ export function serializeRun() {
     seaLevel: W.seaLevel,
     hB64: packHeights(W.h),
     subB64: packSubstrate(W.substrate),
+    stack: packStack(W),
     layers: packLayerStack(W.layerStack),
     ruleId: W.rule.id,
     deepTime: !!W.rule.deepTime,
@@ -862,6 +962,9 @@ export function loadRunMeta(json) {
   }
   if (data.subB64 && data.n === SIM_N && W.substrate) {
     unpackSubstrate(data.subB64, W.substrate);
+  }
+  if (data.stack && data.n === SIM_N) {
+    unpackStack(W, data.stack);
   }
   if (data.worldName) W.worldName = data.worldName;
   W.landSeed = (data.landSeed ?? data.seed) || 0;

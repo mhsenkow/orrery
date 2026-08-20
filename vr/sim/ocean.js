@@ -238,6 +238,7 @@ function mocStreamfunction(W, sea) {
 
 /** Wind-stress shallow water + conserved salt + diagnosed overturning. */
 export function oceanTick(W) {
+  if (W.noSurface) return;
   if (!W.oceanSurf) initOcean(W);
   if (!W.oceanU || W.oceanU.length !== NC) {
     W.oceanU = new Float32Array(NC);

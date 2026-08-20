@@ -623,7 +623,7 @@ footer{margin-top:70px; padding-top:22px; border-top:1px solid var(--rule);
   <a href="godgame.html">God layer</a> · <a href="next.html">The next 200</a> ·
   <a href="tides-weather.html">Tides &amp; weather</a> · <a href="geology.html">Geology</a> ·
   <a href="exoparams.html">Real parameters</a> · <a href="currents.html">Currents</a> ·
-  <a href="realism.html">Realism</a> · <a href="life.html">Life</a> · <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="../vr/">Prototype</a></p>
+  <a href="realism.html">Realism</a> · <a href="life.html">Life</a> · <a href="surface.html">Surface</a> · <a href="worldspace.html">World space</a> · <a href="openworld.html">Open world</a> · <a href="../vr/">Prototype</a></p>
   <dl class="tally">
     <div><dt>Items</dt><dd>${D.length}<small>${CATS.length} categories</small></dd></div>
     <div><dt>Kind</dt><dd>${count((x) => x.k === 'PIC')}/${count((x) => x.k === 'SIM')}/${count((x) => x.k === 'PLAY')}/${count((x) => x.k === 'ENG')}<small>pic · world · feel · eng</small></dd></div>

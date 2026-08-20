@@ -413,7 +413,7 @@ export function zonalMeanSVG(W, w = 292, h = 108) {
   const vMax = Math.max(0.01, ...vap);
   return `<svg class="chart" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
     <rect width="${w}" height="${h}" fill="#0c121c"/>
-    <text x="8" y="11" fill="#8aa0c0" font-size="9">zonal mean · T · u · vapour</text>
+    <text x="8" y="11" fill="#8aa0c0" font-size="9">${W.noSurface ? 'zonal mean · T · u' : 'zonal mean · T · u · vapour'}</text>
     ${line(t, tMin, tMax, '#e4b86a')}
     ${line(u.map((x) => (x + uAbs) / (2 * uAbs)), 0, 1, '#6ea0ff')}
     ${line(vap.map((x) => x / vMax), 0, 1, '#6fd6a4')}

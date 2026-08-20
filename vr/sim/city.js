@@ -3,6 +3,7 @@
 
 import { NC, DIR, NBR } from '../sphere.js';
 import { ENT } from '../agents.js';
+import { technoLights } from './techno.js';
 
 /** Scan build field into named settlements. */
 export function settleCities(W) {
@@ -69,12 +70,35 @@ export function settleCities(W) {
   for (let c = 0; c < NC; c += 7) mb += W.build[c];
   W.meanBuild = mb / Math.ceil(NC / 7);
   W.civPop = W.cities.reduce((s, x) => s + (x.pop || 0), 0);
+  /* Settled fraction of land. `cities.length` is capped at 48 by this scan, so
+     it saturates within a handful of ticks on any settled world and the night
+     side then stops changing — which is the opposite of what the player is
+     supposed to watch. Built area keeps growing long after the count stops. */
+  let built = 0, land = 0;
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] < W.seaLevel) continue;
+    land++;
+    if (W.build[c] > 0.12) built++;
+  }
+  W.builtFrac = land ? built / land : 0;
+  W.builtCells = built;
   return W.cities;
 }
 
-/** Night lights strength from cities. */
+/** Night lights strength from cities, scaled by the energy budget.
+ *
+ *  Driven by settled *area*, not settlement count: the count is capped at 48 by
+ *  `settleCities` and hits the cap almost immediately, which welded the night
+ *  side to full brightness a few ticks after the first village. Area and mean
+ *  build keep climbing for thousands of ticks, so the lights grow while you
+ *  watch — which is the whole point of looking at the dark side. */
 export function cityLights(W) {
   if (!W.cities?.length) return 0;
-  const popTerm = Math.min(0.5, Math.log10(1 + (W.civPop || 0)) / 8);
-  return Math.min(1, W.cities.length * 0.04 + (W.meanBuild || 0) * 0.8 + popTerm);
+  const area = W.builtFrac || 0;
+  const popTerm = Math.min(0.16, Math.log10(1 + (W.civPop || 0)) / 40);
+  // Coefficients set from a measured run: on the demo Earth this climbs from
+  // ~0.2 at the first villages to full brightness at ~25% of land settled,
+  // which is four to five minutes of watching rather than twenty seconds.
+  const fromCities = Math.min(1, area * 3.2 + (W.meanBuild || 0) * 2 + popTerm);
+  return technoLights(W, fromCities);
 }

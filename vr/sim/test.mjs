@@ -8,7 +8,7 @@ import { classifyBiome } from './ecology.js';
 import { kleiberDensity, nodeOf, addLineage, createTree, lineageAt, blankTraits, cellLifeSignal } from './evolve.js';
 import { deriveLifeClass } from './lifeclass.js';
 import { isModernEarth, isDeepTimeEarth, mergeRunRule } from './ruleMode.js';
-import { currentEraId, eraPatch } from './timePanel.js';
+import { currentEraId, eraPatch, availableEras, ruleForEra } from './timePanel.js';
 import { isSubmerged, isLand, localSeaLevel } from './cellSurface.js';
 import { thermoCost } from './god/economy.js';
 import { goldenRun } from './headless.mjs';
@@ -103,7 +103,8 @@ console.log('mode / surface');
   ok('mergeRunRule preserves clone', merged.deepTime && base.deepTime === false && base.gases !== merged.gases);
   ok('currentEra present', currentEraId({ earthLike: true, deepTime: false }) === 'present');
   ok('currentEra origin', currentEraId({ earthLike: true, deepTime: true, startAgeGa: 0 }) === 'origin');
-  ok('eraPatch cambrian', eraPatch('cambrian')?.startAgeGa === 0.541);
+  ok('eraPatch cambrian clock', eraPatch('cambrian')?.startMaBP === 541);
+  ok('eraPatch cambrian age is 541 Ma BP', Math.abs((eraPatch('cambrian')?.startAgeGa ?? 0) - 4.026) < 0.02);
   setResolution(32);
   const { W, generate, RULESETS } = await import('../world.js');
   generate(7, RULESETS[0]);
@@ -559,6 +560,9 @@ console.log('planet terrain');
   ok('kinds.json temperateIo is 0', kindsTable.temperateIo === 0);
   ok('kinds.json furnaceMars is 0', kindsTable.furnaceMars === 0);
   ok('kinds.json matches live audit', JSON.stringify(kindsTable.counts) === JSON.stringify(audit.counts));
+  const kindSrc = await (await import('node:fs/promises')).readFile(
+    new URL('./planetKind.js', import.meta.url), 'utf8');
+  ok('planetKind has no inline name regexes', !/if\s*\(\s*\//.test(kindSrc));
 
   function blank() {
     const W = {
@@ -596,6 +600,61 @@ console.log('planet terrain');
   refinePlanetHypsometry(io, 3, { name: 'Io', tidalHeat: 1.5, interior: io.interior });
   ok('io many vents', io.volcanoes.length > 20, String(io.volcanoes.length));
   ok('io young crust', io.age[0] < 20);
+
+  {
+    const { applyStampKind } = await import('./stampApply.js');
+    const { FIXTURES } = await import('./stampFixtures.js');
+    const meanH = (W) => {
+      let s = 0;
+      for (let c = 0; c < NC; c++) s += W.h[c];
+      return s / NC;
+    };
+    const rms = (a, b) => {
+      let s = 0;
+      for (let c = 0; c < NC; c++) { const d = a.h[c] - b.h[c]; s += d * d; }
+      return Math.sqrt(s / NC);
+    };
+    for (const kind of ['mars', 'mercury', 'moon']) {
+      const data = blank();
+      const fix = blank();
+      applyStampKind(data, kind, 11);
+      FIXTURES[kind](fix, 11);
+      ok(`stamp data ≈ fixture (${kind})`, rms(data, fix) < 1e-6,
+        `rms=${rms(data, fix)} mean ${meanH(data).toFixed(4)} vs ${meanH(fix).toFixed(4)}`);
+    }
+  }
+
+  {
+    const { applyShellKind } = await import('./shellApply.js');
+    const { FIXTURES: SHELL_FIX } = await import('./shellFixtures.js');
+    const { initIceShell } = await import('./iceshell.js');
+    const rmsField = (a, b, field) => {
+      let s = 0;
+      for (let c = 0; c < NC; c++) { const d = a[field][c] - b[field][c]; s += d * d; }
+      return Math.sqrt(s / NC);
+    };
+    const prep = () => {
+      const W = blank();
+      initIceShell(W);
+      W.moist = new Float32Array(NC);
+      W.age = new Float32Array(NC);
+      return W;
+    };
+    for (const kind of ['europa', 'enceladus', 'titan', 'pluto', 'triton', 'ganymede', 'callisto', 'miranda', 'mimas', 'rhea', 'uranian']) {
+      const data = prep();
+      const fix = prep();
+      const tidal = 0.2;
+      const seed = 11 ^ 0x49434553;
+      applyShellKind(data, kind, tidal, seed);
+      const fn = SHELL_FIX[kind];
+      if (kind === 'enceladus') fn(fix, tidal);
+      else fn(fix, tidal, seed);
+      const rh = rmsField(data, fix, 'h');
+      const rl = rmsField(data, fix, 'shellLid');
+      ok(`shell data ≈ fixture (${kind})`, rh < 1e-6 && rl < 1e-6,
+        `h=${rh} lid=${rl}`);
+    }
+  }
 
   const { applyIceShell } = await import('./iceshell.js');
   const eu = blank();
@@ -1013,6 +1072,8 @@ console.log('column field');
   const { overlayById } = await import('./overlay.js');
   const { DIR } = await import('../sphere.js');
   const { coreSample } = await import('./instruments.js');
+  const { worldAxes } = await import('./worldAxes.js');
+  const { cachePlanetKind, hasSurface } = await import('./planetKind.js');
   const {
     COLUMN_VERSION, COLUMN_LAYERS, COLUMN_RECIPES,
     recipeOf, columnAt, formatColumn, formatColumnAt, lidKmAt,
@@ -1025,8 +1086,10 @@ console.log('column field');
   generate(7, RULESETS[0]);
   ok('Earth has no column recipe', recipeOf(W) == null);
   ok('Earth column stays silent', formatColumn(W) === '');
+  ok('Earth has a live stack', (W.stackN?.[0] || 0) >= 1);
+  ok('Earth substrate matches stack top', W.substrate[0] === W.stackMat[0]);
   const earthCore = coreSample(W, 0);
-  ok('Earth core still names crust', /crust|basalt|granite|sediment/i.test(earthCore.layers[0]?.name || ''), earthCore.layers[0]?.name);
+  ok('Earth core still names crust', /crust|basalt|granite|sediment|ice|till/i.test(earthCore.layers[0]?.name || ''), earthCore.layers[0]?.name);
 
   generate(8, byName('Europa'));
   const eu = columnAt(W, 0);
@@ -1047,6 +1110,8 @@ console.log('column field');
   ok('Europa lid is 15–25 km class', lidMean >= 12 && lidMean <= 32, lidMean);
   ok('Europa ocean is ~100 km class', oceanMean >= 40 && oceanMean <= 200, oceanMean);
   ok('Europa chip has no ice VI', /lid/.test(formatColumn(W)) && !/ice VI/.test(formatColumn(W)), formatColumn(W));
+  ok('Europa live stack has several layers', W._stackMean > 2 && W.stackN[0] >= 3, `${W._stackMean}`);
+  ok('Europa substrate is the stack top', W.substrate[0] === W.stackMat[0]);
   const euCore = coreSample(W, 0);
   ok('Europa core reads the stack',
     euCore.layers.some((l) => /lid/.test(l.name)) && euCore.layers.some((l) => /ocean/.test(l.name)));
@@ -1078,6 +1143,88 @@ console.log('column field');
   ok('Jupiter column is no surface',
     recipeOf(W)?.noSurface && /no surface/.test(formatColumn(W)), formatColumn(W));
   ok('Jupiter core says envelope', coreSample(W, 0).layers.some((l) => /no surface/.test(l.name)));
+  ok('Jupiter has no surface flag', W.noSurface === true);
+  ok('Jupiter land fraction is zero', W.landFrac === 0, `${W.landFrac}`);
+  ok('Jupiter is not land', !isLand(W, 0) && !isSubmerged(W, 0));
+  ok('Jupiter has no plates', !W.plates?.length, `${W.plates?.length}`);
+  let jMoist = 0;
+  for (let c = 0; c < NC; c++) jMoist += W.moist[c];
+  ok('Jupiter is not a wet land world', jMoist < 1, `moist=${jMoist}`);
+  const { rhinesJetCount, countZonalJets } = await import('./jets.js');
+  const jn = rhinesJetCount(W.rotationPeriod, W.rule?.radiusEarth || 11);
+  ok('Jupiter Rhines count is a dozen-ish', jn >= 8 && jn <= 16, `${jn} rot=${W.rotationPeriod}`);
+  const flips = countZonalJets(W);
+  ok('Jupiter zonal wind alternates', flips >= 4, `flips=${flips} jets=${W._jetCount}`);
+  ok('Jupiter wind regime is jets', W._windRegime === 'zonal jets', W._windRegime);
+
+  const plevel = await import('./plevel.js');
+  const T1 = plevel.tempAtPressureK(W, 1);
+  const T22 = plevel.tempAtPressureK(W, 22);
+  ok('Jupiter 1 bar is ~165 K', T1 >= 140 && T1 <= 200, `${T1}`);
+  ok('Jupiter 22 bar is warmer (~430 K)', T22 >= 380 && T22 <= 480, `${T22}`);
+  ok('Galileo probe floor is 22 bar', plevel.probeFloorBar(W) === 22);
+  let pLo = 99, pHi = 0;
+  for (let c = 0; c < NC; c++) {
+    const p = W.pSeen?.[c] || 0;
+    if (p < pLo) pLo = p;
+    if (p > pHi) pHi = p;
+  }
+  ok('Jupiter pSeen sits in the cloud decks', pLo >= 0.4 && pHi <= 6 && pHi > pLo + 0.15,
+    `p=${pLo.toFixed(2)}–${pHi.toFixed(2)}`);
+  ok('Jupiter inspect names a deck', /bar/.test(plevel.formatPlevel(W, 0)), plevel.formatPlevel(W, 0));
+  ok('Jupiter core still says no surface',
+    coreSample(W, 0).layers.some((l) => /no surface/.test(l.name)));
+  ok('Jupiter core names a cloud deck',
+    coreSample(W, 0).layers.some((l) => /ammonia|hydrosulfide|water/.test(l.name)));
+  const slowN = rhinesJetCount(2, W.rule?.radiusEarth || 11);
+  ok('slower spin yields fewer jets', slowN < jn, `${slowN} vs ${jn}`);
+  const { maybeReseedJets } = await import('./jets.js');
+  const nBefore = W._jetCount;
+  W.rotationPeriod = 2;
+  maybeReseedJets(W);
+  ok('spin change reseeds the Rhines count', W._jetCount === slowN && W._jetCount !== nBefore,
+    `${W._jetCount} vs was ${nBefore}`);
+  W.rotationPeriod = 9.9 / 24;
+  maybeReseedJets(W);
+
+  ok('descent camera is allowed on a giant', plevel.camDistMin(W) < 1,
+    `${plevel.camDistMin(W)}`);
+  ok('rocky camera still stops at the surface', plevel.camDistMin({ noSurface: false }) >= 1.03);
+  ok('1.00 radii is 1 bar', Math.abs(plevel.pressureAtCamDist(1, W) - 1) < 0.05,
+    `${plevel.pressureAtCamDist(1, W)}`);
+  ok('closer is deeper', plevel.pressureAtCamDist(0.84, W) > plevel.pressureAtCamDist(0.95, W));
+  ok('probe floor is the descent cap',
+    plevel.pressureAtCamDist(0.84, W) >= plevel.PROBE_FLOOR_BAR * 0.9);
+
+  generate(8, byName('Neptune'));
+  let nepU = 0;
+  for (let c = 0; c < NC; c++) nepU += Math.abs(W.windU[c]);
+  nepU /= NC;
+  generate(9, byName('Uranus'));
+  let uraU = 0;
+  for (let c = 0; c < NC; c++) uraU += Math.abs(W.windU[c]);
+  uraU /= NC;
+  ok('Neptune is windier than Uranus (internal heat)', nepU > uraU * 1.15,
+    `Neptune ${nepU.toFixed(3)} Uranus ${uraU.toFixed(3)}`);
+  ok('ice giant decks include methane',
+    plevel.cloudDecks(W).some((d) => d.id === 'ch4'));
+
+  ok('Saturn wants rings', plevel.wantsRings({ _planetKind: 'saturn' }));
+  ok('Jupiter does not wear rings', !plevel.wantsRings({ _planetKind: 'jupiter' }));
+
+  let rockyGiants = 0;
+  for (const row of CATALOGUE_WORLDS) {
+    if (row.c !== 'giant') continue;
+    const rule = rulesetFromCatalogue(row);
+    cachePlanetKind(rule);
+    const fake = { rule, _planetKind: rule._planetKind, _worldAxes: worldAxes(rule) };
+    if (hasSurface(fake, rule)) rockyGiants++;
+  }
+  ok('catalogue giants have no surface', rockyGiants === 0, `${rockyGiants}`);
+
+  generate(7, RULESETS[0]);
+  ok('Earth still has a surface', hasSurface(W) && !W.noSurface && W.landFrac > 0.15,
+    `noSurface=${W.noSurface} land=${W.landFrac}`);
 
   generate(6, byName('Enceladus'));
   let south = 0, north = 0;
@@ -1110,6 +1257,18 @@ console.log('planet look / ticks');
   ok('iapetus bright trailing', bright && bright[0] > 180);
   const ju = sampleLand('jupiter', 0, 0, { x: 0, y: 0, z: 1 });
   const ju2 = sampleLand('jupiter', 0, 0, { x: 0, y: 0.5, z: 0.87 });
+  ok('Jupiter bands differ by latitude', ju[0] !== ju2[0] || ju[1] !== ju2[1]);
+  const juDeep = sampleLand('jupiter', 0, 0, { x: 0, y: 0, z: 1, pSeen: 5 });
+  const juTop = sampleLand('jupiter', 0, 0, { x: 0, y: 0, z: 1, pSeen: 0.7 });
+  ok('deeper deck is darker', juDeep[0] + juDeep[1] < juTop[0] + juTop[1]);
+  const dayHJ = sampleLand('jupiter', 0, 0, {
+    x: 1, y: 0, z: 0, locked: true, hotLon: 0.35, sunX: 1, sunZ: 0,
+  });
+  const nightHJ = sampleLand('jupiter', 0, 0, {
+    x: -1, y: 0, z: 0, locked: true, hotLon: 0.35, sunX: 1, sunZ: 0,
+  });
+  ok('locked giant dayside is brighter',
+    dayHJ[0] + dayHJ[1] > nightHJ[0] + nightHJ[1] + 40);
   ok('jupiter not green', ju && ju[1] < ju[0] && ju[1] < 200);
   ok('jupiter bands differ', JSON.stringify(ju) !== JSON.stringify(ju2));
   const ne = sampleLand('neptune', 0, 0, { x: 0, y: 0, z: 1 });
@@ -1181,7 +1340,15 @@ console.log('planet look / ticks');
   const { SCALE_PRESETS, scaleRung, applyScalePreset } = await import('./eoref.js');
   ok('scale presets', SCALE_PRESETS.length === 4);
   ok('iss is close', SCALE_PRESETS.find((p) => p.id === 'iss').camDist < 1.2);
+  const { patchScale } = await import('./present.js');
+  const earthScale = patchScale(32, { earthLike: true });
+  const marsScale = patchScale(32, { name: 'Mars', signature: 'dust' });
+  ok('Earth patch scale is earthLike', earthScale.earthLike === true);
+  ok('Mars patch scale avoids Earth placenames', !/Great Britain|Mediterranean/.test(marsScale.named), marsScale.named);
   ok('dot is far', scaleRung(16) === 'Dot');
+  ok('giant descent rung', scaleRung(0.92, true) === 'Descent');
+  ok('giant probe rung', scaleRung(0.84, true) === 'Probe');
+  ok('rocky close is still Surface', scaleRung(1.04) === 'Surface');
   const fakeS = { camDist: 3, sunAng: 0.6, dayWatch: true };
   applyScalePreset(fakeS, 'disc');
   ok('disc sun behind camera', Math.abs(fakeS.sunAng - Math.PI / 2) < 0.01 && fakeS.dayWatch === false);
@@ -1275,6 +1442,10 @@ console.log('landscape / seedword / brush');
   const id = encodeWorldId(s, 'shattered');
   const d = decodeWorldId(id);
   ok('world id roundtrip', d && d.seed === s && d.landscape === 'shattered', id);
+  const idEra = encodeWorldId(s, 'pangaea', 'cambrian');
+  const dEra = decodeWorldId(idEra);
+  ok('world id carries epoch', dEra && dEra.epoch === 'cambrian' && dEra.landscape === 'pangaea', idEra);
+
   ok('parse integer seed', parseWorldInput('42')?.seed === 42);
   const caty = parseWorldInput('caty');
   ok('text seed caty', caty?.label === 'caty' && caty.seed === parseWorldInput('caty')?.seed);
@@ -1594,6 +1765,7 @@ console.log('lessons');
   const {
     LESSONS, DOOR_IDS, TOUR_IDS, huntKeysOf, completeLesson, emptyLessonProgress,
     nextIncompleteLesson, nextTourAfter, huntMatches, lessonChipLabel, shouldOfferDoor,
+    offerTourAgain,
   } = await import('./teach.js');
   ok('seven lessons, four doors', LESSONS.length === 7 && DOOR_IDS.length === 4);
   ok('mars hunt is rust', huntKeysOf(LESSONS.find((l) => l.id === 'hunt-mars')).includes('rust'));
@@ -1610,6 +1782,8 @@ console.log('lessons');
   ok('tour ends after Titan', nextTourAfter('hunt-titan') == null);
   const allDone = LESSONS.reduce((p, l) => completeLesson(l.id, p), emptyLessonProgress());
   ok('tour complete label', /Tour complete/.test(lessonChipLabel(allDone)));
+  ok('hold-earth teaches the map', !!LESSONS.find((l) => l.id === 'hold-earth')?.winHint);
+  ok('offerTourAgain resets door', !offerTourAgain({ seenDoor: true, done: {}, current: null }).seenDoor);
 }
 
 console.log('generate is a full reset');
@@ -1660,6 +1834,268 @@ console.log('generate is a full reset');
   const carried = Object.keys({ ...swapped, ...direct }).filter((k) => swapped[k] !== direct[k]);
   ok('switching worlds does not carry the previous planet', carried.length === 0,
     carried.slice(0, 8).map((k) => `${k}: ${swapped[k]} -> ${direct[k]}`).join(' | '));
+}
+
+console.log('agents / settlements reset');
+{
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT, respawnEntities } = await import('../agents.js');
+  const terra = RULESETS.find((x) => x.id === 'terra');
+  generate(99, terra);
+  respawnEntities();
+  for (let i = 0; i < 120; i++) simTick();
+  const lastId = ENT.meta[ENT.n - 1]?.id ?? 0;
+  ok('entities exist after a run', ENT.n > 0 && lastId > 0);
+  W.cities = [{ cell: 0, pop: 999, stage: 'city' }];
+  W.civPop = 999;
+  W._cityLights = 0.8;
+  generate(99, terra);
+  ok('generate clears settlement readouts', !W.cities?.length && !W.civPop && !W._cityLights);
+  respawnEntities();
+  ok('respawn resets entity id sequence', (ENT.meta[0]?.id ?? 0) <= ENT.n + 1,
+    `id ${ENT.meta[0]?.id} n ${ENT.n} after ${lastId}`);
+}
+
+console.log('epoch / techno');
+{
+  const { generate, W, RULESETS } = await import('../world.js');
+  const { HOLOCENE_WATTS, insolationFrac } = await import('./techno.js');
+  const { overlaysForPicker } = await import('./overlay.js');
+  const { CATALOGUE_WORLDS, rulesetFromCatalogue } = await import('../catalogue-rules.js');
+
+  const venusRule = rulesetFromCatalogue(CATALOGUE_WORLDS.find((x) => x.b === 'Venus'));
+  const marsRule = rulesetFromCatalogue(CATALOGUE_WORLDS.find((x) => x.b === 'Mars'));
+  const venusEras = availableEras(venusRule).map((e) => e.id);
+  const marsEras = availableEras(marsRule).map((e) => e.id);
+  ok('Venus eras include ocean', venusEras.includes('venus-ocean') && venusEras.includes('venus-now'));
+  ok('Mars eras include wet', marsEras.includes('mars-wet') && marsEras.includes('mars-now'));
+  ok('Earth eras include hadean', availableEras({ earthLike: true }).some((e) => e.id === 'hadean'));
+
+  setResolution(32);
+  const terra = RULESETS.find((r) => r.id === 'terra');
+  generate(7, terra);
+  const presentO2 = W.gases.O2;
+  const presentCO2 = W.gases.CO2;
+  ok('Holocene energy ~20 TW', Math.abs(W.techno.watts - HOLOCENE_WATTS) / HOLOCENE_WATTS < 0.05, `${W.techno?.watts}`);
+  ok('Holocene energy is ~0.01% insolation',
+    insolationFrac(W.techno.watts, W) > 0.00005 && insolationFrac(W.techno.watts, W) < 0.0005,
+    `${insolationFrac(W.techno.watts, W)}`);
+  ok('Holocene techno is a readout', W.techno.calibrated === true && W._epochArrived === true);
+  ok('techno overlay exists', overlaysForPicker().some((o) => o.id === 'techno'));
+
+  generate(7, ruleForEra(terra, 'cambrian'));
+  ok('Cambrian O2 is not present and not zero', W.gases.O2 > 0.05 && Math.abs(W.gases.O2 - presentO2) > 0.04, `${W.gases.O2}`);
+  ok('Cambrian CO2 higher than Holocene', W.gases.CO2 > presentCO2 * 2, `${W.gases.CO2}`);
+  ok('Cambrian is started not arrived', W._epoch?.id === 'cambrian' && W._epochStarted && !W._epochArrived);
+  ok('Cambrian clock is Phanerozoic', W.ageYr > 4e9 && (4.567e9 - W.ageYr) / 1e6 < 600);
+
+  generate(7, ruleForEra(venusRule, 'venus-ocean'));
+  let wet = 0;
+  for (let c = 0; c < NC; c++) if (W.h[c] < W.seaLevel) wet++;
+  ok('wet Venus has an ocean', wet > NC * 0.15, `${wet}/${NC}`);
+  ok('wet Venus is not no-surface', W.noSurface === false);
+
+  generate(7, ruleForEra(marsRule, 'mars-wet'));
+  ok('early Mars thicker CO2', W.gases.CO2 > 0.1, `${W.gases.CO2}`);
+
+  const jup = rulesetFromCatalogue(CATALOGUE_WORLDS.find((x) => x.b === 'Jupiter'));
+  generate(5, jup);
+  ok('giants skip techno', !W.techno || W.techno.watts === 0);
+
+  generate(7, terra);
+  ok('Earth after epochs still Holocene', isModernEarth(W.rule) && W.gases.O2 > 0.18);
+}
+
+console.log('world definition / stack / look');
+{
+  const { SUBSTRATES, SUB_INDEX, sampleMaterialRgb } = await import('./substrateField.js');
+  const {
+    WORLD_DEFS, DEF_BY_ID, OVERRIDE_COUNT, UNITS, definitionOf, lookOf,
+    overrideOf, featureListOf, coverageOfDef, applyWorldLook, shareDefOf,
+  } = await import('./definition.js');
+  const {
+    STACK_DEPTH, STACK_BYTES_PER_CELL, stackBytes, allocStack, depositStack,
+    erodeStack, weatherStack, compactStack, meltStack, intrudeStack, stackTop,
+    stackAt, stackMeanLayers,
+  } = await import('./colstack.js');
+  const { CATALOGUE_WORLDS, rulesetFromCatalogue } = await import('../catalogue-rules.js');
+  const { sampleLand } = await import('./planetLook.js');
+  const { illuminateRgb, illuminantGain, rgbFromSpectrum, SUN_TEFF, WHITE_BALANCE } = await import('./illum.js');
+  const { paintDisc, distRgb } = await import('./pictureDisc.js');
+  const { W, generate, serializeRun, loadRunMeta } = await import('../world.js');
+
+  ok('definitions compiled', WORLD_DEFS.length >= 10 && DEF_BY_ID.iceOrganics);
+  ok('tables are frozen', Object.isFrozen(WORLD_DEFS) && Object.isFrozen(WORLD_DEFS[0]));
+  ok('units are stated', UNITS.density === 'kg/m³' && UNITS.strength === 'MPa');
+  ok('one Iapetus override', OVERRIDE_COUNT === 1);
+  ok('basalt has a ramp', Array.isArray(SUBSTRATES[0].ramp?.wet));
+  const dry = sampleMaterialRgb(SUBSTRATES[0], { moist: 0 });
+  const wet = sampleMaterialRgb(SUBSTRATES[0], { moist: 0.9 });
+  ok('wet basalt is darker', wet[0] + wet[1] + wet[2] < dry[0] + dry[1] + dry[2]);
+
+  const byName = (b) => rulesetFromCatalogue(CATALOGUE_WORLDS.find((x) => x.b === b));
+  const mars = byName('Mars');
+  const venus = byName('Venus');
+  const europa = byName('Europa');
+  const titan = byName('Titan');
+  const jup = byName('Jupiter');
+  const iap = byName('Iapetus');
+  const luna = byName('Luna');
+  ok('Mars is dustyBasalt', definitionOf({ rule: mars }).id === 'dustyBasalt', definitionOf({ rule: mars }).id);
+  ok('Mars definition names mars paint', definitionOf({ rule: mars }).paint === 'mars');
+  ok('Venus is runaway', definitionOf({ rule: venus }).id === 'runaway', definitionOf({ rule: venus }).id);
+  ok('shareable def is a query', /def=dustyBasalt/.test(shareDefOf({ rule: mars })), shareDefOf({ rule: mars }));
+  ok('Europa is iceShell', definitionOf({ rule: europa }).id === 'iceShell', definitionOf({ rule: europa }).id);
+  ok('Titan is iceOrganics', definitionOf({ rule: titan }).id === 'iceOrganics', definitionOf({ rule: titan }).id);
+  ok('Jupiter is envelope', definitionOf({ rule: jup }).id === 'envelope', definitionOf({ rule: jup }).id);
+  ok('Moon is airless', definitionOf({ rule: luna }).id === 'airless', definitionOf({ rule: luna }).id);
+  ok('Iapetus override exists', overrideOf({ rule: iap })?.body === 'Iapetus');
+  ok('Titan look is a soft orange limb', lookOf({ rule: titan }).limbSoft > 0.6 && lookOf({ rule: titan }).haze > 0.5);
+  ok('Moon look is a hard limb', lookOf({ rule: luna }).limbSoft === 0);
+  applyWorldLook(titan);
+  ok('Titan rule carries look', titan.look?.haze > 0.5 && titan.sky?.[0] > 0.4);
+  ok('Titan names Kraken', featureListOf({ rule: titan }).some((f) => f.id === 'kraken'));
+  ok('Mars names Valles', featureListOf({ rule: mars }).some((f) => /Valles/.test(f.name)));
+
+  let missing = 0;
+  for (const item of CATALOGUE_WORLDS) {
+    const rule = rulesetFromCatalogue(item);
+    if (!rule) continue;
+    const cov = coverageOfDef({ rule });
+    if (!cov.id) missing++;
+  }
+  ok('every catalogue body resolves a definition', missing === 0, `${missing} missing`);
+
+  ok('stack budget is 49 bytes a cell', STACK_BYTES_PER_CELL === 49 && STACK_DEPTH === 8);
+  ok('N=96 stack is under 3 MB', stackBytes(96 * 96 * 6) < 3 * 1024 * 1024,
+    `${(stackBytes(96 * 96 * 6) / 1e6).toFixed(2)} MB`);
+
+  const fake = { h: new Float32Array(4) };
+  allocStack(fake, 4);
+  depositStack(fake, 0, 0, 100);
+  depositStack(fake, 0, 2, 5);
+  ok('deposit stacks sediment on basalt', fake.stackN[0] === 2 && stackTop(fake, 0) === 2);
+  ok('same material merges', depositStack(fake, 0, 2, 3) === 3 && fake.stackM[0] === 8);
+  const peeled = erodeStack(fake, 0, 3);
+  ok('erode peels the top', peeled === 3 && fake.stackM[0] === 5);
+  erodeStack(fake, 0, 50);
+  ok('bedrock is never removed', fake.stackN[0] === 1 && stackTop(fake, 0) === 0);
+  weatherStack(fake, 0, SUB_INDEX.granite);
+  ok('weather transforms in place', stackTop(fake, 0) === SUB_INDEX.granite);
+  compactStack(fake, 0, 0.5);
+  ok('compact halves thickness', Math.abs(fake.stackM[0] - 50) < 1e-6);
+  const melted = meltStack(fake, 0, 10);
+  ok('melt reports the material', melted.mat === SUB_INDEX.granite && melted.metres === 0);
+  depositStack(fake, 0, 0, 40);
+  depositStack(fake, 1, 0, 20);
+  intrudeStack(fake, 1, SUB_INDEX.sediment, 4, 5);
+  ok('intrude adds a layer', fake.stackN[1] === 2);
+  ok('stackAt is surface-down', stackAt(fake, 0)[0].mat === 0);
+
+  const io = sampleLand('io', 0.55, 0);
+  const eu = sampleLand('europa', 0.55, 0);
+  const ma = sampleLand('mars', 0.55, 0);
+  const ve = sampleLand('venus', 0.7, 0);
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+  ok('Io is not Europa in paint', dist(io, eu) > 80, `${dist(io, eu).toFixed(1)}`);
+  ok('Mars is not Venus in paint', dist(ma, ve) > 40, `${dist(ma, ve).toFixed(1)}`);
+  const kinds = ['io', 'europa', 'mars', 'venus', 'titan', 'moon', 'jupiter', 'neptune'];
+  const samples = kinds.map((k) => sampleLand(k, 0.55, 0));
+  let twins = 0;
+  for (let i = 0; i < samples.length; i++) {
+    for (let j = i + 1; j < samples.length; j++) {
+      if (dist(samples[i], samples[j]) < 12) twins++;
+    }
+  }
+  ok('fleet paint is not collapsed', twins === 0, `${twins} near-identical pairs`);
+  {
+    const { readFile } = await import('node:fs/promises');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+    const basePath = join(dirname(fileURLToPath(import.meta.url)), '..', 'data', 'worlds', 'paint.baseline.json');
+    const base = JSON.parse(await readFile(basePath, 'utf8'));
+    let drift = 0;
+    for (const k of kinds) {
+      const want = base.rgb[k];
+      const got = samples[kinds.indexOf(k)];
+      if (!want || dist(got, want) > 8) drift++;
+    }
+    ok('fleet paint matches committed baseline', drift === 0, `${drift} kinds drifted`);
+  }
+
+  const sun = illuminateRgb([118, 72, 48], SUN_TEFF);
+  const mdwarf = illuminateRgb([118, 72, 48], 2560);
+  const a0 = illuminateRgb([118, 72, 48], 10000);
+  const ratio = (c) => c[0] / Math.max(1, c[2]);
+  ok('illuminant is identity under the Sun', dist([118, 72, 48], sun) < 0.6, dist([118, 72, 48], sun));
+  ok('M dwarf makes basalt redder', ratio(mdwarf) > ratio(sun) * 1.05, `${ratio(mdwarf).toFixed(2)} vs ${ratio(sun).toFixed(2)}`);
+  ok('hot star makes basalt bluer', ratio(a0) < ratio(sun) * 0.98, `${ratio(a0).toFixed(2)} vs ${ratio(sun).toFixed(2)}`);
+  ok('white balance is a sun-calibrated camera', WHITE_BALANCE === 'sun-camera');
+  ok('Sun gain is unit', {
+    g: illuminantGain(SUN_TEFF),
+  }.g.every((x) => Math.abs(x - 1) < 1e-6));
+  const specS = rgbFromSpectrum(SUBSTRATES.find((m) => m.id === 'sulfur').spectrum, SUN_TEFF);
+  const specB = rgbFromSpectrum(SUBSTRATES.find((m) => m.id === 'basalt').spectrum, SUN_TEFF);
+  ok('sulfur spectrum is yellower than basalt', specS[1] > specB[1] && specS[0] > specB[0]);
+
+  generate(11, mars);
+  depositStack(W, 0, SUB_INDEX.sediment ?? 2, 17);
+  const stacked = stackAt(W, 0).map((L) => ({ mat: L.mat, m: Math.round(L.metres) }));
+  const snap = serializeRun();
+  ok('save version 7 stores the stack', snap.version >= 7 && !!snap.stack?.n);
+  loadRunMeta(snap);
+  const restored = stackAt(W, 0).map((L) => ({ mat: L.mat, m: Math.round(L.metres) }));
+  ok('stack survives a save', restored.length === stacked.length
+    && restored[0].mat === stacked[0].mat
+    && Math.abs(restored[0].m - stacked[0].m) <= 1, JSON.stringify({ stacked, restored }));
+
+  const dMars = paintDisc(W, 48);
+  generate(13, venus);
+  const dVenus = paintDisc(W, 48);
+  generate(17, europa);
+  const dEuropa = paintDisc(W, 48);
+  ok('CPU disc has a filled globe', dMars.filled > 80, dMars.filled);
+  ok('Mars disc is not Venus', distRgb(dMars.mean, dVenus.mean) > 10,
+    `${distRgb(dMars.mean, dVenus.mean).toFixed(1)}`);
+  ok('Europa disc is not Mars', distRgb(dEuropa.mean, dMars.mean) > 10,
+    `${distRgb(dEuropa.mean, dMars.mean).toFixed(1)}`);
+}
+
+console.log('data layer hygiene');
+{
+  const { readdir, readFile } = await import('node:fs/promises');
+  const { createHash } = await import('node:crypto');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const { WORLDDEF_HASH } = await import('./definition.js');
+  const simDir = dirname(fileURLToPath(import.meta.url));
+  const root = join(simDir, '..', '..');
+  const defs = JSON.parse(await readFile(join(root, 'vr/data/worlds/definitions.json'), 'utf8'));
+  const feats = JSON.parse(await readFile(join(root, 'vr/data/worlds/features.json'), 'utf8'));
+  const hash = createHash('sha1')
+    .update(JSON.stringify({
+      definitions: defs.definitions, overrides: defs.overrides, features: feats.bodies,
+    }))
+    .digest('hex').slice(0, 12);
+  ok('worlddef module matches its JSON', hash === WORLDDEF_HASH, `${hash} vs ${WORLDDEF_HASH}`);
+
+  const guarded = new Set([
+    'colstack.js', 'illum.js', 'pictureDisc.js', 'definition.js',
+    'substrateField.js', 'columnField.js', 'worldDef.js',
+    'paintEval.js', 'planetLook.js',
+  ]);
+  const banned = /\bif\s*\(\s*kind\s*===\s*'(triton|iapetus|titan|europa|io|pluto|mars|venus|mercury)'/i;
+  const hits = [];
+  for (const f of await readdir(simDir)) {
+    if (!guarded.has(f)) continue;
+    const src = await readFile(join(simDir, f), 'utf8');
+    if (banned.test(src)) hits.push(f);
+  }
+  ok('join/stack/illum do not branch on a named body', hits.length === 0, hits.join(', '));
+  const lookSrc = await readFile(join(simDir, 'planetLook.js'), 'utf8');
+  ok('planetLook has no land* lambdas', !/^function land[A-Z]/m.test(lookSrc));
+  const { PAINT_BY_ID } = await import('./paintEval.js');
+  ok('paint table has the Solar System', !!PAINT_BY_ID.io && !!PAINT_BY_ID.neptune && !!PAINT_BY_ID.iapetus);
 }
 
 console.log('golden + calibrate');

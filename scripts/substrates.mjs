@@ -57,6 +57,15 @@ for (let i = 0; i < materials.length; i++) {
   if (!(m.density > 0)) problems.push(`${m?.id || i}: density must be > 0`);
   if (m.albedo < 0 || m.albedo > 1) problems.push(`${m?.id || i}: albedo must be 0–1`);
   if (m.erode < 0) problems.push(`${m?.id || i}: erode must be ≥ 0`);
+  if (m.ramp) {
+    for (const rk of ['dry', 'wet', 'ice']) {
+      const rgb = m.ramp[rk];
+      if (rgb && (!Array.isArray(rgb) || rgb.length !== 3
+        || rgb.some((c) => !Number.isInteger(c) || c < 0 || c > 255))) {
+        problems.push(`${m.id}: ramp.${rk} must be three integers 0–255`);
+      }
+    }
+  }
   for (const k of NUM) {
     if (m[k] != null && !Number.isFinite(m[k])) problems.push(`${m?.id || i}: ${k} is not finite`);
   }
@@ -105,7 +114,7 @@ const slim = materials.map((m) => {
   for (const k of [
     'meltK', 'boilK', 'tripleK', 'tripleBar', 'criticalK', 'criticalBar',
     'LsubJmol', 'convectK', 'thermalInertia', 'porosity', 'soluble', 'noSurface',
-    'cite',
+    'cite', 'ramp', 'spectrum',
   ]) {
     if (m[k] != null) o[k] = m[k];
   }

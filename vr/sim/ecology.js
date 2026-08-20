@@ -139,6 +139,12 @@ function softmaxTop(scores, ice) {
 
 export function ecologyTick(W, chronLog) {
   if (W.rule.daisyworld) return;
+  if (W.noSurface) {
+    if (W.npp) W.npp.fill(0);
+    W.biomeCounts = Object.create(null);
+    W.ecotoneFrac = 0;
+    return;
+  }
 
   computeUpwelling(W);
   nppField(W);

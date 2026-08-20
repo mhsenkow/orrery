@@ -86,6 +86,8 @@ export function forecastAct(tool, cell, horizon = [10, 100, 1000]) {
     meteor: { temp: 0.08, life: -0.25, ice: 0.05, co2: 0.01 },
     ice: { temp: -0.06, life: -0.04, ice: 0.12, co2: 0 },
     plague: { temp: 0, life: -0.2, ice: 0, co2: 0.001 },
+    // Fire clears biomass and vents it. Regrowth is on the biosphere, not here.
+    ignite: { temp: 0.01, life: -0.06, ice: 0, co2: 0.0008 },
     albedo: { temp: -0.025, life: 0, ice: 0.02, co2: 0 },
     shade: { temp: -0.03, life: -0.01, ice: 0.03, co2: 0 },
   };

@@ -6,6 +6,8 @@ import { NC, DIR, AREA, NBR } from '../sphere.js';
 import { clamp } from '../math.js';
 import { ensoEastness } from './ocean.js';
 import { stepShallowWater, geostrophyOf, divEN, curlEN } from './swe.js';
+import { hasSurface } from './planetKind.js';
+import { seedZonalJets, rhinesJetCount } from './jets.js';
 
 let _etaEq = null;
 let _drag = null;
@@ -39,8 +41,11 @@ export function geostrophicWind(W) {
   bufs();
 
   const rot = W.rotationPeriod || 1;
+  const surface = hasSurface(W);
   const fScale = clamp(1 / Math.max(0.2, Math.abs(rot)), 0.15, 4);
-  const nCells = circulationCellCount(rot);
+  const nCells = surface
+    ? circulationCellCount(rot)
+    : (W._jetCount || rhinesJetCount(rot, W.rule?.radiusEarth || 11));
   W._windCells = nCells;
   const season = W.season || 0;
   const locked = !!W.rule?.tidallyLocked;
@@ -63,7 +68,7 @@ export function geostrophicWind(W) {
   let tropLandT = 0, tropSeaT = 0, nLand = 0, nSea = 0;
 
   for (let c = 0; c < NC; c++) {
-    const isLand = W.h[c] >= W.seaLevel;
+    const isLand = surface && W.h[c] >= W.seaLevel;
     if ((W.temp[c] || 0) > 0.32) {
       if (isLand) { tropLandT += W.temp[c]; nLand++; }
       else { tropSeaT += W.temp[c]; nSea++; }
@@ -84,15 +89,15 @@ export function geostrophicWind(W) {
   fE.fill(0); fN.fill(0);
 
   for (let c = 0; c < NC; c++) {
-    const isLand = W.h[c] >= W.seaLevel;
+    const isLand = surface && W.h[c] >= W.seaLevel;
     const lat = DIR[c * 3 + 1];
     const landHeat = isLand ? (W.temp[c] - 0.5) * 0.12 : 0;
     let eq = (1 - W.temp[c]) * 0.55
-      + Math.max(0, W.h[c] - W.seaLevel) * 0.22
-      + (W.ice[c] || 0) * 0.18
+      + (surface ? Math.max(0, W.h[c] - W.seaLevel) * 0.22 : 0)
+      + (surface ? (W.ice[c] || 0) * 0.18 : 0)
       - landHeat;
 
-    if (!locked) {
+    if (!locked && surface) {
       const dItcz = Math.abs(lat - itczLat);
       eq -= Math.max(0, 0.22 - dItcz) * 0.48;
       if (Math.abs(lat) < 0.28) {
@@ -110,23 +115,28 @@ export function geostrophicWind(W) {
     }
 
     etaEq[c] = clamp(eq, 0, 1.4);
-    const elev = Math.max(0, W.h[c] - W.seaLevel);
-    drag[c] = 0.045 + (isLand ? 0.09 : 0) + elev * 0.28 + ((W.ice[c] || 0) > 0.55 ? 0.06 : 0);
+    const elev = surface ? Math.max(0, W.h[c] - W.seaLevel) : 0;
+    drag[c] = surface
+      ? 0.045 + (isLand ? 0.09 : 0) + elev * 0.28 + ((W.ice[c] || 0) > 0.55 ? 0.06 : 0)
+      : 0.018;
 
-    if ((W.ice[c] || 0) > 0.55 && elev > 0.05) {
+    if (surface && (W.ice[c] || 0) > 0.55 && elev > 0.05) {
       fN[c] = -Math.sign(lat || 1) * 0.12;
     }
-    if (elev > 0.04) {
+    if (surface && elev > 0.04) {
       fN[c] += -Math.sign(lat || 1) * elev * 0.08;
     }
   }
 
   if (!W._sweBoot) {
+    if (!surface) seedZonalJets(W);
     for (let c = 0; c < NC; c++) {
       W.press[c] = etaEq[c];
-      const [u0, v0] = geostrophyOf(etaEq, c, fScale);
-      W.windU[c] = clamp(u0, -1.85, 1.85);
-      W.windV[c] = clamp(v0, -1.85, 1.85);
+      if (surface) {
+        const [u0, v0] = geostrophyOf(etaEq, c, fScale);
+        W.windU[c] = clamp(u0, -1.85, 1.85);
+        W.windV[c] = clamp(v0, -1.85, 1.85);
+      }
     }
     W._sweBoot = true;
   }
@@ -190,7 +200,8 @@ export function geostrophicWind(W) {
   void jetU;
 
   W._jetLat = jetN > 1e-6 ? jetLat / jetN : 0.5 * Math.sign(itczLat || 1);
-  W._windRegime = locked ? 'substellar'
+  W._windRegime = !surface ? 'zonal jets'
+    : locked ? 'substellar'
     : nCells <= 1 ? 'single-cell'
     : nCells <= 2 ? 'wide Hadley'
     : nCells <= 3 ? 'three-cell'

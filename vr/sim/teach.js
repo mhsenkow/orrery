@@ -47,8 +47,9 @@ export const LESSONS = [
     door: true,
     kicker: 'Sandbox',
     title: 'Hold Earth',
-    body: 'A living planet in your hands. Spin it. Scroll in. Looking is always free.',
+    body: 'Hold a planet. This one is Earth. Spin it, scroll in, then click the coast to open the map — that is where you can stand.',
     action: 'Keep this Earth',
+    winHint: 'You spun it, came closer, and opened the map. Looking is always free.',
   },
   {
     id: 'daisy',
@@ -232,6 +233,11 @@ export function campaignBlurb(id) {
 
 export function shouldOfferDoor(progress = loadLessonProgress()) {
   return !progress.seenDoor;
+}
+
+/** Re-open the front door without wiping lesson progress. */
+export function offerTourAgain(progress = loadLessonProgress()) {
+  return { ...progress, seenDoor: false };
 }
 
 export function nextIncompleteLesson(progress = loadLessonProgress()) {

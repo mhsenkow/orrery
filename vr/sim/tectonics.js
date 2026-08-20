@@ -5,8 +5,11 @@ import { rngOf } from './rng.js';
 import { naturalizeHypsometry, softenPlateCrust } from './terrainShape.js';
 import { NC, NF, N, NBR, NBR8, DIR, AREA, dirToCell } from '../sphere.js';
 import { paintEdifice } from './planetTick.js';
-import { isGasKind, isIceShellKind } from './planetKind.js';
+import { isGasKind, isIceShellKind, hasSurface } from './planetKind.js';
 import { erodeFactor, slopeCap } from './substrateField.js';
+import { erodeStack, depositStack, heightToMetres, syncSubstrateCell } from './colstack.js';
+import { SUB_INDEX } from './substrates.js';
+import { PROCESS_BY_ID } from './landform.js';
 
 
 const MANTLE_DENS = 3.3;
@@ -552,8 +555,9 @@ export function reassignPlatesVoronoi(W) {
 
 /** Stream-power erosion + sediment deposition. */
 export function erosionTick(W) {
-  const kind = W._planetKind;
   if (W._canvasMode) return;
+  if (!hasSurface(W)) return;
+  const kind = W._planetKind;
   if (kind === 'io' || kind === 'moon' || kind === 'mercury' || kind === 'airless'
     || kind === 'magma' || isGasKind(kind) || kind === 'venus'
     || kind === 'iapetus' || kind === 'phobos' || kind === 'smallbody'
@@ -585,17 +589,30 @@ export function erosionTick(W) {
       _h[c] -= excess;
       _h[sink] += excess * 0.85;
     }
-    const erode = Math.min(0.004 * rate * local, discharge * maxSlope * maxSlope * 0.15 * rate * local) * erodeK;
+    const fluvialR = PROCESS_BY_ID.fluvial?.rate ?? 1;
+    const glacialR = W.rule?.earthLike ? 1 : (PROCESS_BY_ID.glacial?.rate ?? 1);
+    const erode = Math.min(0.004 * rate * local, discharge * maxSlope * maxSlope * 0.15 * rate * local) * erodeK * fluvialR;
     let lap = 0;
     for (let k = 0; k < 4; k++) lap += h[NBR[c * 4 + k]] - h[c];
     _h[c] += -erode + lap * 0.002 * rate * local;
     const ice = iceLand?.[c] || 0;
     let iceCarve = 0;
     if (ice > 0.12 && maxSlope > 0) {
-      iceCarve = ice * maxSlope * maxSlope * 0.012 * rate * local;
+      iceCarve = ice * maxSlope * maxSlope * 0.012 * rate * local * glacialR;
       _h[c] -= iceCarve;
     }
     const moved = erode + iceCarve;
+    if (moved > 1e-8 && W._stackLive) {
+      const metres = heightToMetres(moved);
+      const peeled = erodeStack(W, c, metres);
+      if (peeled > 0) {
+        syncSubstrateCell(W, c);
+        if (sink !== c) {
+          depositStack(W, sink, SUB_INDEX.sediment ?? 2, peeled * 0.85);
+          syncSubstrateCell(W, sink);
+        }
+      }
+    }
     if (sink !== c && moved > 0) {
       if (h[sink] < seaLevel) {
         _h[sink] = Math.min(seaLevel + 0.02, _h[sink] + moved * 0.7);

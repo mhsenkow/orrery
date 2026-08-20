@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "why": "Named landforms that make a Solar System world recognisable. Each name attaches to a surfaceKeyAt id the engine already paints, so a square called sputnik is Sputnik Planitia rather than a texture. Positions are IAU planetocentric for a future camera; the match today is the key.",
+  "bodies": {
+    "Mercury": [
+      { "id": "caloris", "name": "Caloris", "key": "caloris", "kind": "basin", "lat": 30.5, "lon": 189.8, "rDeg": 12, "tag": "measured", "why": "The giant basin. The antipode is chaotic terrain from the same impact." }
+    ],
+    "Venus": [
+      { "id": "aphrodite", "name": "Aphrodite Terra", "key": "tessera", "kind": "tessera", "lat": -5, "lon": 100, "rDeg": 18, "tag": "fitted", "why": "The type tessera highland. Older than the plains, not a continent." }
+    ],
+    "Mars": [
+      { "id": "olympus", "name": "Olympus Mons", "key": "volcano", "kind": "volcano", "lat": 18.65, "lon": -133.8, "rDeg": 8, "tag": "measured", "why": "The tallest shield. Any high volcano square is this family." },
+      { "id": "valles", "name": "Valles Marineris", "key": "canyon", "kind": "canyon", "lat": -14, "lon": -59, "rDeg": 14, "tag": "measured", "why": "The equatorial cut. A world with no names is a texture; this is why Mars is Mars." },
+      { "id": "hellas", "name": "Hellas", "key": "basin", "kind": "basin", "lat": -42.4, "lon": 70.5, "rDeg": 16, "tag": "measured", "why": "The deep low. Not a sea." }
+    ],
+    "Luna": [
+      { "id": "imbrium", "name": "Mare Imbrium", "key": "maria", "kind": "maria", "lat": 32.8, "lon": -15.6, "rDeg": 14, "tag": "measured", "why": "Flood basalt on the nearside. Dark because it is young iron-rich rock." }
+    ],
+    "Io": [
+      { "id": "loki", "name": "Loki Patera", "key": "patera", "kind": "patera", "lat": 13, "lon": 308.8, "rDeg": 8, "tag": "fitted", "why": "The type lava lake. The floor is black glass; the rim is sulfur." }
+    ],
+    "Europa": [
+      { "id": "conamara", "name": "Conamara Chaos", "key": "chaos", "kind": "chaos", "lat": 9.7, "lon": 273.1, "rDeg": 8, "tag": "fitted", "why": "Broken, rotated ice. The shell failed; the ocean almost showed." }
+    ],
+    "Enceladus": [
+      { "id": "stripes", "name": "tiger stripes", "key": "stripe", "kind": "stripe", "lat": -75, "lon": 0, "rDeg": 20, "tag": "measured", "why": "South-polar fissures. This is where the ocean vents into space." }
+    ],
+    "Titan": [
+      { "id": "kraken", "name": "Kraken Mare", "key": "methaneLake", "kind": "lake", "lat": 68, "lon": 310, "rDeg": 12, "tag": "measured", "why": "The largest methane sea. The hydrological cycle is real; the solvent is not water." },
+      { "id": "belet", "name": "Belet", "key": "dune", "kind": "dune", "lat": -5, "lon": 250, "rDeg": 16, "tag": "fitted", "why": "Equatorial dunes of solid organics." }
+    ],
+    "Pluto": [
+      { "id": "sputnik", "name": "Sputnik Planitia", "key": "sputnik", "kind": "basin", "lat": 20, "lon": 175, "rDeg": 16, "tag": "measured", "why": "Convecting nitrogen ice in the heart. The cells are the convection, not craters." }
+    ],
+    "Triton": [
+      { "id": "cantaloupe", "name": "cantaloupe terrain", "key": "cantaloupe", "kind": "ice", "lat": 0, "lon": 0, "rDeg": 20, "tag": "fitted", "why": "Dimpled ice. Diapirs, not impact saturation." }
+    ],
+    "Mimas": [
+      { "id": "herschel", "name": "Herschel", "key": "herschel", "kind": "crater", "lat": -1.4, "lon": 111.8, "rDeg": 10, "tag": "measured", "why": "The 130 km crater. A moon that looks like a Death Star because of one impact." }
+    ],
+    "Iapetus": [
+      { "id": "cassini", "name": "Cassini Regio", "key": "darkSide", "kind": "dust", "lat": 0, "lon": 90, "rDeg": 40, "tag": "measured", "why": "The leading face. Dust from Phoebe, kept dark by a thermal runaway." }
+    ],
+    "Charon": [
+      { "id": "mordor", "name": "Mordor Macula", "key": "mordor", "kind": "cap", "lat": 85, "lon": 0, "rDeg": 12, "tag": "measured", "why": "The red polar cap. Methane from Pluto, processed red. Not rust." }
+    ],
+    "Phobos": [
+      { "id": "stickney", "name": "Stickney", "key": "stickney", "kind": "crater", "lat": 1, "lon": 49.2, "rDeg": 12, "tag": "measured", "why": "The giant crater. The grooves are the tidal stress that will finish the moon." }
+    ],
+    "Ceres": [
+      { "id": "occator", "name": "Occator", "key": "brightSpot", "kind": "spot", "lat": 19.8, "lon": 239.3, "rDeg": 6, "tag": "measured", "why": "Carbonate salts. Brine that reached the surface and froze white." },
+      { "id": "ahuna", "name": "Ahuna Mons", "key": "cryovolcano", "kind": "volcano", "lat": -10.5, "lon": 316.2, "rDeg": 5, "tag": "measured", "why": "The cryovolcanic dome. Ice volcanism, not silicate." }
+    ],
+    "Jupiter": [
+      { "id": "grs", "name": "Great Red Spot", "key": "spot", "kind": "spot", "lat": -22, "lon": 0, "rDeg": 12, "tag": "measured", "why": "A long-lived anticyclone. The square is a pressure level, not land." }
+    ],
+    "Saturn": [
+      { "id": "hexagon", "name": "north polar hexagon", "key": "hexagon", "kind": "jet", "lat": 78, "lon": 0, "rDeg": 14, "tag": "measured", "why": "A standing wave in the polar jet, not a crater." }
+    ],
+    "Miranda": [
+      { "id": "verona", "name": "Verona Rupes", "key": "cliff", "kind": "scarp", "lat": -18, "lon": 347, "rDeg": 8, "tag": "measured", "why": "Among the tallest scarps known. Mismatched terrain jammed together." }
+    ]
+  }
+}

@@ -34,7 +34,10 @@ import {
   releasePathogen, theiaImpact,
 } from './sim/god/disaster.js';
 import { seedStorm } from './sim/storms.js';
+import { igniteFire, fireDanger, flammableAt } from './sim/fire.js';
 import { paintEdifice } from './sim/planetTick.js';
+import { maybeReseedJets } from './sim/jets.js';
+import { formatPlevel, seenPressureBar, deckAtPressure, tempAtPressureK } from './sim/plevel.js';
 
 export const TOOLS = [
   { id: 'inspect', name: 'Inspect', key: 'q', cost: 0, group: 'see' },
@@ -65,6 +68,7 @@ export const TOOLS = [
   { id: 'lip', name: 'LIP', key: '', cost: 80, group: 'dis' },
   { id: 'quake', name: 'Quake', key: 'g', cost: 28, group: 'dis' },
   { id: 'plague', name: 'Pathogen', key: 'p', cost: 35, group: 'dis' },
+  { id: 'ignite', name: 'Ignite', key: 'j', cost: 6, group: 'dis' },
   { id: 'ice', name: 'Ice meteor', key: 'i', cost: 30, group: 'dis', drag: true },
   { id: 'tilt', name: 'Tilt axis', key: 'y', cost: 35, group: 'clim' },
   { id: 'spin', name: 'Spin±', key: 'k', cost: 30, group: 'clim' },
@@ -413,6 +417,29 @@ export function useToolAt(cell, extra = {}) {
     case 'plague':
       releasePathogen(extra);
       break;
+    case 'ignite': {
+      // Cheapest disaster in the table on purpose: fire is the one the player
+      // should try twice — once in the wet season and once in the dry.
+      const lit = igniteFire(W, cell, extra.power ?? 1, extra.radius ?? 1);
+      const danger = fireDanger(W, cell);
+      if (!lit) {
+        result.said = flammableAt(W, cell)
+          ? 'Already burning here'
+          : (W.h[cell] < W.seaLevel ? 'Water does not burn'
+            : W.life[cell] < 0.1 ? 'Nothing here to burn'
+              : 'Too wet or too frozen to catch');
+      } else {
+        issueReceipt({
+          tool: 'ignite', cell, intent: 'Ignite',
+          expected: `Fire spreads while danger stays above ~0.12 (here ${danger.toFixed(2)})`,
+        });
+        chronLog(W.year, 'fire', cell, danger, `Fire set (danger ${danger.toFixed(2)})`);
+        result.said = `Alight — ${lit} cell${lit > 1 ? 's' : ''} burning, danger ${danger.toFixed(2)}`;
+      }
+      result.fireLit = lit;
+      result.fireDanger = danger;
+      break;
+    }
     case 'tilt': {
       const next = clamp(W.obliquity + (extra.delta ?? 0.1), 0, 0.8);
       setOrbit({ obliquity: next });
@@ -431,6 +458,7 @@ export function useToolAt(cell, extra = {}) {
       const next = sign * clamp(Math.abs(W.rotationPeriod || 1) * (extra.delta ?? 0.8), 0.15, 40);
       W.rotationPeriod = next;
       if (W.rule) W.rule.rotationPeriod = next;
+      maybeReseedJets(W);
       const label = (next < 0 ? '−' : '') + `${Math.abs(next).toFixed(2)}×`;
       issueReceipt({ tool: 'spin', cell, intent: 'Day length', expected: `Day → ${label}` });
       chronLog(W.year, 'tool', cell, next, `Day → ${label}`);
@@ -497,6 +525,9 @@ export function inspectCell(cell) {
       const f = landformAt(W, cell);
       return f ? explainForm(f) : undefined;
     })(),
+    fire: W.fire?.[cell] || 0,
+    fireDanger: fireDanger(W, cell),
+    nutrientPlume: W.nutrientPlume?.[cell] || 0,
     frost: W.frost?.[cell] || 0,
     lag: W.lag?.[cell] || 0,
     tideHeight: W.tideHeight?.[cell],
@@ -514,6 +545,10 @@ export function inspectCell(cell) {
     seedOk: refuse.ok,
     seedWhy: refuse.reasons,
     biomeGap: diagnoseBiome(cell),
+    pSeen: W.pSeen?.[cell],
+    plevel: W.noSurface ? formatPlevel(W, cell) : '',
+    deck: W.noSurface ? deckAtPressure(W, W.pSeen?.[cell] ?? seenPressureBar(W, cell)).name : '',
+    tBarK: W.noSurface ? tempAtPressureK(W, W.pSeen?.[cell] ?? seenPressureBar(W, cell)) : null,
   };
 }
 
@@ -529,6 +564,7 @@ export function fingerOfGod(cell, mode = 'boost') {
 }
 
 // Re-export advanced acts for UI panels
+export { igniteFire, fireDanger };
 export {
   setPlatePole, placePlume, setGateway, shiftSeaLevel, stampTerrain, paintSoil,
   paintCrustType, drawRift, forceOrogeny, cullClade, forceTransition,

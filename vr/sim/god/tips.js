@@ -137,8 +137,8 @@ export const TOOL_TIPS = {
 
 export const PLAY_TIPS = {
   guildsel: {
-    title: 'Life type',
-    body: 'Only used by Seed guild. Chooses which metabolism you plant — e.g. cyanobacteria make oxygen; methanogens need no O₂. Other tools ignore this menu.',
+    title: 'What Seed guild plants',
+    body: 'Lives next to the Seed guild verb. Cyanobacteria make oxygen; methanogens need none. Other tools ignore this.',
   },
   timeribbon: {
     title: 'Time ribbon',
@@ -191,6 +191,14 @@ export const PLAY_TIPS = {
   lessonchip: {
     title: 'Lesson',
     body: 'The Solar System is the tutorial. Click to start or resume the next hunt — rust on Mars, sulfur on Io, a crack on Europa, methane rain on Titan.',
+  },
+  tourbtn: {
+    title: 'Tour',
+    body: 'Re-open the front door or resume the next lesson. Hold Earth → Daisyworld → Mars → Io → Europa → Titan. Shortcut: ?',
+  },
+  landpickcontinue: {
+    title: 'Continue to lessons',
+    body: 'Keep this world and pick how you want to start — sandbox, lesson, tour, or crisis.',
   },
   genesisname: {
     title: 'World name',
@@ -474,13 +482,12 @@ export const PLAY_TIPS = {
 export const SUITE_TIPS = {
   tools: {
     verbs: { title: 'Verbs', body: 'The ones that change the world — seed, raise, strike. Looking and cores live in Lab → Station.' },
-    land: { title: 'Land', body: 'Landscaping: raise, lower, flatten, rivers, crust. The gold disc on the globe is the brush. Q looks (spin); cores live in Lab.' },
-    life: { title: 'Life', body: 'Seed a metabolism or declare a refuge. Reading a cell is Lab → Station.' },
+    land: { title: 'Land', body: 'The verb and the stroke on one desk: raise / flatten / rivers, then only-on, snap, edge. Height layers and land shape sit underneath.' },
+    life: { title: 'Life', body: 'What to plant, then the seed verb. Pick a metabolism, hit Seed guild, click the globe.' },
     strike: { title: 'Strike', body: 'Impacts, eruptions, quakes — and whole-planet climate levers. Attacks flash the cell; levers name the new number.' },
   },
   god: {
-    aim: { title: 'Life', body: 'Which metabolism Seed guild plants, plus undo / watch / bookmark.' },
-    brush: { title: 'Brush', body: 'Height layers, then mask and snap so Raise / Lower only hit land, coasts, plate edges.' },
+    aim: { title: 'Run', body: 'Undo the last stroke, watch without chrome, bookmark, cull. Origin is how hard first life is on this world.' },
     challenge: { title: 'Challenge', body: 'Optional goals with limits. Teaches the coupled systems; skip if you just want a sandbox.' },
     genesis: { title: 'Genesis', body: 'Author a named variant — seed, what-if preset, today’s world. Saves onto the local shelf.' },
   },
