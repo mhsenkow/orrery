@@ -16,7 +16,7 @@
  */
 
 import { clamp } from '../math.js';
-import { NC, NBR } from '../sphere.js';
+import { NC, NBR, DIR } from '../sphere.js';
 import { rngOf } from './rng.js';
 import { isPinnedEarth } from './ruleMode.js';
 
@@ -135,6 +135,7 @@ export function fireTick(W, log = null) {
   // Wind raises the spread rate. Direction is deliberately not modelled here:
   // a per-cell wind-aligned kernel costs four dots per neighbour and the front
   // already reads as a front. Stated so nobody mistakes this for a fire model.
+  // Wind raises spread rate and biases the front downwind. Rivers damp crossing.
   const next = [];
   let burnt = 0;
   for (let i = 0; i < active.length; i++) {
@@ -154,18 +155,29 @@ export function fireTick(W, log = null) {
     if (W.soil) W.soil[c] = clamp(W.soil[c] + consume * 0.05, 0, 1);
     burnt += consume;
 
-    const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
+    const wu = W.windU?.[c] || 0;
+    const wv = W.windV?.[c] || 0;
+    const wind = Math.hypot(wu, wv);
     const push = 0.7 + Math.min(1.3, wind * 1.6);
     for (let k = 0; k < 4; k++) {
       const n = NBR[c * 4 + k];
       if (fire[n] > OUT) continue;
+      if ((W.flow?.[n] || 0) > 0.32) continue;
       const d = fireDanger(W, n);
       if (d < 0.10) continue;
+      const dx = DIR[n * 3] - DIR[c * 3];
+      const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
+      const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
+      const dl = Math.hypot(dx, dy, dz) || 1;
+      let align = 0.65;
+      if (wind > 0.02) {
+        align += 0.55 * Math.max(0, (dx / dl) * (wu / wind) + (dy / dl) * (wv / wind));
+      }
       /* Tuned so a cell has roughly 1.5–3 expected offspring on the demo Earth:
          supercritical enough that a front runs, subcritical enough that it stops
          at the first wet valley. `(0.2 + d)` keeps a marginal cell reachable so
          the burn has a ragged edge instead of a circle. */
-      if (rng() < f * (0.2 + d) * push * 0.7) {
+      if (rng() < f * (0.2 + d) * push * 0.7 * align) {
         fire[n] = clamp(f * 0.9, 0, 1.2);
         next.push(n);
       }

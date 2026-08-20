@@ -2,17 +2,18 @@
  *  Density tracks life so forests fill in as blooms spread.
  *  Settlers (kind 5) raise visible builds on living land — watch towns grow. */
 
-import { mulberry32 } from './math.js';
+import { mulberry32, clamp } from './math.js';
 import { NC, DIR, NBR } from './sphere.js';
 import { W } from './world.js';
 import { logEvent } from './chronicle.js';
 import { KIND_RGB, cladeRGB } from './sim/lifeColour.js';
 import { rngOf } from './sim/rng.js';
 import { bodyPlanFromTraits, passesSilhouette, planOf } from './sim/morphology.js';
-import { lineageAt, cellLifeSignal } from './sim/evolve.js';
+import { lineageAt, cellLifeSignal, kleiberDensity, nodeOf, TRAITS } from './sim/evolve.js';
 import { isSubmerged, isLand, localSeaLevel } from './sim/cellSurface.js';
 import { isModernEarth, isPinnedEarth } from './sim/ruleMode.js';
 import { settleCities, cityLights } from './sim/city.js';
+import { carryingCapacityNPP } from './sim/ecology.js';
 import { presentTime, noteWear, isOutNow } from './sim/present.js';
 import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
@@ -45,6 +46,82 @@ function nameFrom(seed, i) {
 function isAnimalKind(kind) {
   return kind === 5 || kind === 6 || kind === 7 || kind === 8
     || kind === 14 || kind === 15 || kind >= 16;
+}
+
+function bodyMassTrait(m) {
+  if (m.plan?.massG) return clamp(Math.log10(Math.max(1, m.plan.massG)) / 6 + 1 / 3, 0.1, 0.9);
+  const node = m.popId ? nodeOf(W.tree, m.popId) : null;
+  return node?.traits?.[TRAITS.bodyMass] ?? 0.35;
+}
+
+function metabolicRate(m) {
+  return 0.003 + kleiberDensity(bodyMassTrait(m)) * 0.07;
+}
+
+function maxLifespan(m) {
+  return 60 + bodyMassTrait(m) * 420;
+}
+
+function isPredator(m) {
+  if (!isAnimalKind(m.kind) || m.kind === 5) return false;
+  const node = m.popId ? nodeOf(W.tree, m.popId) : null;
+  return (node?.traits?.[TRAITS.trophic] ?? 0) > 0.55;
+}
+
+function initDrives(m) {
+  if (m.energy == null) m.energy = 1;
+  if (m.hunger == null) m.hunger = 0;
+  if (m.fear == null) m.fear = 0;
+}
+
+function killBeing(m, c, cause) {
+  if (m.dead) return;
+  m.dead = true;
+  m.cause = cause;
+  m.died = W.year;
+  const mass = m.plan?.size || (m.kind === 7 ? 1.4 : 0.75);
+  if (W.detritus?.length === NC) {
+    W.detritus[c] = Math.min(1, (W.detritus[c] || 0) + 0.018 * mass);
+  }
+  if (m.name) {
+    logEvent(W.chron, W.year, 'death', c, 0.2,
+      `${m.name} ${cause}`, { who: m.name, cause, born: m.born });
+  }
+}
+
+function tryBirth(parent, c, rng, log) {
+  if (!isAnimalKind(parent.kind) || parent.kind === 5 || parent.dead) return false;
+  if (parent.energy < 0.68 || parent.age < 36) return false;
+  const cap = carryingCapacityNPP(W, c);
+  if (W.life[c] < cap * 0.25 && (W.npp?.[c] || 0) < 0.12) return false;
+  if (ENT.n >= capForWorld() - 1) return false;
+  if (rng() > 0.022 * (parent.energy - 0.45)) return false;
+  let nb = c;
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[c * 4 + k];
+    if (isSubmerged(W, n) === isSubmerged(W, c) && W.life[n] > 0.06) { nb = n; break; }
+  }
+  writeEnt(ENT.n, nb, parent.kind, rng);
+  const child = ENT.meta[ENT.n];
+  child.age = 0;
+  child.born = W.year;
+  child.bornCell = nb;
+  child.parentId = parent.id;
+  child.energy = 0.58;
+  child.hunger = 0.35;
+  child.fear = 0;
+  child.popId = parent.popId;
+  child.cladeName = parent.cladeName;
+  child.plan = parent.plan;
+  child.name = parent.name && rng() < 0.35
+    ? `${parent.name.split(/(?=[aeiou])/)[0] || parent.name}${NAMES_B[(rng() * NAMES_B.length) | 0]}`
+    : null;
+  ENT.n++;
+  parent.energy -= 0.32;
+  if (log && child.name) {
+    log(W.year, 'birth', nb, 0.15, `${child.name} born near ${parent.name || 'their kin'}`);
+  }
+  return true;
 }
 
 function kindForCell(c, rng) {
@@ -169,6 +246,9 @@ function writeEnt(n, c, kind, rng) {
     behav: kind === 5 ? 'tend' : (kind <= 2 ? 'rest' : 'forage'),
     dead: false,
     cause: null,
+    energy: 1,
+    hunger: 0,
+    fear: 0,
   };
 }
 
@@ -313,25 +393,28 @@ function headingOf(from, to) {
 }
 
 function pickBehav(m, c, rng) {
+  initDrives(m);
+  const fire = W.fire?.[c] || 0;
   const ash = W.ash?.[c] || 0;
   const dust = W.dust?.[c] || 0;
   const storm = W.stormField?.[c] || 0;
-  const fire = W.fire?.[c] || 0;
-  // Fire routes through the flee branch that already existed for ash and dust —
-  // the herd does not need a new behaviour, only a new reason.
-  if (fire > 0.05 || ash > 0.18 || dust > 0.28 || storm > 0.35 || W.ice[c] > 0.55) return 'flee';
+  let nearFire = fire;
+  for (let k = 0; k < 4; k++) nearFire = Math.max(nearFire, (W.fire?.[NBR[c * 4 + k]] || 0) * 0.55);
+  if (nearFire > 0.04) m.fear = Math.min(1, m.fear * 0.65 + nearFire * 1.1);
+  else m.fear *= 0.9;
+  if (m.fear > 0.32 || fire > 0.05 || ash > 0.18 || dust > 0.28 || storm > 0.35 || W.ice[c] > 0.55) {
+    return 'flee';
+  }
   if (m.kind === 5) return W.build[c] > 0.3 ? 'tend' : 'forage';
-  /* Surface feeding: a whale-scale marine animal working a productive patch.
-     Distinct from `forage` because it is where the nutrient plume is written.
-     Kind 15 is the swimmer; kind 14 is reef and stays put. */
   if (m.kind === 15 && (W.npp?.[c] || 0) > 0.22) {
-    return rng() < 0.55 ? 'surface' : 'forage';
+    return m.hunger > 0.35 ? 'surface' : (rng() < 0.45 ? 'surface' : 'forage');
   }
   if (m.kind <= 2) return 'rest';
-  if (!isOutNow(m.kind, c, m.id || 0) && rng() < 0.72) return 'rest';
-  const roll = rng();
-  if (roll < 0.18) return 'rest';
-  if (roll < 0.28) return 'travel';
+  if (isPredator(m) && m.hunger > 0.42) return 'hunt';
+  if (m.hunger > 0.58) return 'forage';
+  if (m.hunger > 0.38 && rng() < 0.65) return 'forage';
+  if (m.hunger < 0.22 && rng() < 0.45) return 'rest';
+  if (rng() < 0.2) return 'travel';
   return 'forage';
 }
 
@@ -437,6 +520,8 @@ export function agentsTick(log = null) {
     if (!m || m.dead) continue;
     m.age++;
     let c = m.cell;
+    initDrives(m);
+    m.hunger = Math.min(1, m.hunger + metabolicRate(m) * 0.32);
     m.behav = pickBehav(m, c, rng);
 
     if (m.kind === 5 && W.h[c] >= W.seaLevel && W.ice[c] < 0.35 && W.life[c] > 0.15) {
@@ -472,11 +557,16 @@ export function agentsTick(log = null) {
        rather than a permanent camp, and is what makes the lights spread. */
     const buildCap = isPinnedEarth(W.rule) ? 0.55 : 1;
     const frontier = m.kind === 5 && W.build[c] > buildCap * 0.85;
+    const coast = W.coastDist?.[c] ?? 0;
+    const river = W.flow?.[c] ?? 0;
+    const terrainCost = Math.max(0, (W.h[c] - W.seaLevel) * 0.08);
     let best = c;
     let score = m.kind === 5
       ? (frontier
         ? W.life[c] * 1.2 + W.moist[c] * 0.3 - W.ice[c] - W.build[c] * 0.9
-        : W.build[c] * 1.2 + W.life[c] * 0.5 - W.ice[c])
+          + (coast > 0 && coast < 0.12 ? 0.28 : 0) + Math.min(0.22, river * 0.45)
+        : W.build[c] * 1.2 + W.life[c] * 0.5 - W.ice[c]
+          + (coast > 0 && coast < 0.15 ? 0.18 : 0))
       : W.life[c] + W.moist[c] * 0.3 - W.ice[c] * 0.5;
 
     /* Cohesion, separation and — new — alignment. Without an alignment term a
@@ -545,6 +635,38 @@ export function agentsTick(log = null) {
       bumpNutrient(c, amt);
       for (let k = 0; k < 4; k++) bumpNutrient(NBR[c * 4 + k], amt * 0.45);
       plumeFed++;
+      m.energy = Math.min(1.2, m.energy + 0.09);
+      m.hunger = Math.max(0, m.hunger - 0.18);
+    }
+
+    if (m.behav === 'hunt') {
+      eachNearby(c, (j) => {
+        if (j === i || rng() > 0.18) return;
+        const prey = ENT.meta[j];
+        if (!prey || prey.dead || prey.kind === m.kind || prey.kind === 5) return;
+        if (!isAnimalKind(prey.kind)) return;
+        killBeing(prey, prey.cell, 'hunted');
+        m.energy = Math.min(1.35, m.energy + 0.28);
+        m.hunger = Math.max(0, m.hunger - 0.42);
+      });
+    }
+
+    const moveCost = metabolicRate(m) * (
+      m.behav === 'flee' ? 1.35 : m.behav === 'rest' ? 0.55 : m.behav === 'hunt' ? 1.1 : 0.95);
+    m.energy = Math.max(0, m.energy - moveCost);
+    if (m.behav === 'forage' && isAnimalKind(m.kind)) {
+      if (m.kind === 5) {
+        m.energy = Math.min(1.1, m.energy + 0.04);
+        m.hunger = Math.max(0, m.hunger - 0.1);
+      } else if (isLand(W, c) && W.life[c] > 0.05) {
+        const graze = Math.min(W.life[c] * 0.07, 0.035);
+        W.life[c] = Math.max(0, W.life[c] - graze);
+        m.energy = Math.min(1.25, m.energy + graze * 5);
+        m.hunger = Math.max(0, m.hunger - graze * 7);
+      } else if (isSubmerged(W, c) && (W.npp?.[c] || 0) > 0.08) {
+        m.energy = Math.min(1.15, m.energy + 0.06);
+        m.hunger = Math.max(0, m.hunger - 0.12);
+      }
     }
 
     for (let k = 0; k < 4; k++) {
@@ -552,8 +674,11 @@ export function agentsTick(log = null) {
       let s = m.kind === 5
         ? (frontier
           ? W.life[n] * 1.2 + W.moist[n] * 0.3 - W.ice[n] - W.build[n] * 0.9 + rng() * 0.08
+            + (W.coastDist?.[n] > 0 && W.coastDist[n] < 0.12 ? 0.22 : 0)
+            + Math.min(0.18, (W.flow?.[n] || 0) * 0.35)
           : W.build[n] * 1.2 + W.life[n] * 0.5 - W.ice[n] + rng() * 0.08)
         : W.life[n] + W.moist[n] * 0.3 - W.ice[n] * 0.5 + rng() * 0.05;
+      s -= terrainCost * 0.15;
       if (m.behav === 'flee') s -= (W.ash?.[n] || 0) * 2 + (W.dust?.[n] || 0) * 1.5 + (W.stormField?.[n] || 0);
       if (m.behav === 'rest') s -= 0.4;
       if (s > score) { score = s; best = n; }
@@ -622,15 +747,23 @@ export function agentsTick(log = null) {
       W.sediment[NBR[c * 4]] = Math.min(1, W.sediment[NBR[c * 4]] + 0.01);
     }
 
-    if (W.life[c] < 0.04 && m.kind < 10 && rng() < 0.12) {
-      m.dead = true;
-      m.cause = W.ice[c] > 0.4 ? 'ice' : (W.temp[c] > 0.75 ? 'heat' : 'starved');
-      m.died = W.year;
-      if (m.name) {
-        logEvent(W.chron, W.year, 'death', c, 0.2,
-          `${m.name} ${m.cause}`, { who: m.name, cause: m.cause, born: m.born });
-      }
+    if ((W.fire?.[c] || 0) > 0.18 || nearFire > 0.28) {
+      killBeing(m, c, 'burned');
+      continue;
     }
+    if (m.energy <= 0) {
+      killBeing(m, c, 'starved');
+      continue;
+    }
+    if (m.age > maxLifespan(m) && rng() < 0.07) {
+      killBeing(m, c, 'old age');
+      continue;
+    }
+    if (W.life[c] < 0.04 && m.kind < 10 && isAnimalKind(m.kind) && rng() < 0.1) {
+      killBeing(m, c, W.ice[c] > 0.4 ? 'ice' : (W.temp[c] > 0.75 ? 'heat' : 'starved'));
+      continue;
+    }
+    if (tick % 8 === (m.id & 7) && rng() < 0.025) tryBirth(m, c, rng, log);
   }
 
   W.buildersActive = built;
@@ -653,7 +786,7 @@ export function agentsTick(log = null) {
     log(W.year, 'herd', herdCell, herdBest / 20,
       `A ${what} of ${herdBest} moves together`);
   }
-  if (ENT.n < capForWorld() * 0.45) topUpEntities();
+  if (ENT.n < capForWorld() * 0.28) topUpEntities();
 }
 
 export function followTarget() {
@@ -690,6 +823,10 @@ export function packEntities() {
       heading: m.heading,
       stride: m.stride,
       prevCell: m.prevCell,
+      energy: m.energy,
+      hunger: m.hunger,
+      fear: m.fear,
+      parentId: m.parentId ?? null,
     });
   }
   return { seq: _idSeq, list };
@@ -725,6 +862,10 @@ export function restoreEntities(packed) {
       behav: rec.behav ?? 'forage',
       dead: false,
       cause: null,
+      energy: rec.energy ?? 1,
+      hunger: rec.hunger ?? 0,
+      fear: rec.fear ?? 0,
+      parentId: rec.parentId ?? null,
     };
     writePos(n, rec.cell);
     const o = n * 8;
@@ -738,6 +879,7 @@ export function restoreEntities(packed) {
     n++;
   }
   ENT.n = n;
+  for (let i = n; i < MAX_ENT; i++) ENT.meta[i] = null;
   _idSeq = maxId + 1;
   return n;
 }

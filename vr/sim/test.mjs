@@ -2272,14 +2272,13 @@ console.log('entity save round-trip (entsave)');
   const thrive = RULESETS.find((r) => r.id === 'thrive');
   generate(7777, cloneRuleForRun(thrive));
   for (let i = 0; i < 80; i++) simTick(true);
-  const n0 = ENT.n;
-  const sig0 = ENT.meta.slice(0, n0).filter((m) => m && !m.dead)
+  const save = serializeRun();
+  const n0 = save.entities.list.length;
+  const sig0 = save.entities.list
     .map((m) => `${m.id}:${m.cell}:${m.age}:${m.behav}`).join('|');
   const age0 = W.ageYr;
   const cities0 = W.cities?.length || 0;
-  const save = serializeRun();
-  ok('save v8 carries entities', save.version === 8 && save.entities?.list?.length > 0,
-    `${save.entities?.list?.length} beings`);
+  ok('save v8 carries entities', save.version === 8 && n0 > 0, `${n0} beings`);
   ok('save carries build and cities', save.buildB64 && Array.isArray(save.cities));
   loadRunMeta(JSON.stringify(save));
   const sig1 = ENT.meta.slice(0, ENT.n).filter((m) => m && !m.dead)
@@ -2288,6 +2287,61 @@ console.log('entity save round-trip (entsave)');
   ok('load restores clock and settlements', W.ageYr === age0 && (W.cities?.length || 0) === cities0);
   const lm = livingMetrics(W);
   ok('living metrics module', lm.alive > 0 && formatLivingLine(lm).includes('alive'));
+}
+
+console.log('metabolism, birth, death, hunt (slice F)');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { probeThrive, lightTheDriestForest } = await import('../../scripts/thrive-probe.mjs');
+  const thrive = cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive'));
+
+  generate(20260808, thrive);
+  let lifeBefore = 0;
+  for (let c = 0; c < W.life.length; c++) lifeBefore += W.life[c];
+  for (let t = 0; t < 400; t++) simTick(true);
+  let grazed = lifeBefore;
+  for (let c = 0; c < W.life.length; c++) grazed -= W.life[c];
+  ok('grazers trim biomass', grazed > 0, `life removed ${grazed.toFixed(4)}`);
+
+  const r = probeThrive({ seed: 8888, ruleId: 'thrive', ticks: 600 });
+  ok('population turns over', r.beings.died > 0 || r.beings.everSeen > ENT.n,
+    `died=${r.beings.died} ever=${r.beings.everSeen} alive=${r.beings.alive}`);
+  ok('beings carry energy state', ENT.meta.some((m) => m && !m.dead && m.energy != null));
+
+  generate(20260808, thrive);
+  for (let t = 0; t < 120; t++) simTick(true);
+  const { igniteFire, flammableAt } = await import('./fire.js');
+  let cell = -1;
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (m && !m.dead && m.kind === 7 && flammableAt(W, m.cell)) { cell = m.cell; break; }
+  }
+  if (cell < 0) {
+    for (let i = 0; i < ENT.n; i++) {
+      const m = ENT.meta[i];
+      if (m && !m.dead && flammableAt(W, m.cell)) { cell = m.cell; break; }
+    }
+  }
+  const lit = cell >= 0 ? igniteFire(W, cell, 1, 1) : 0;
+  let burned = 0;
+  for (let t = 0; t < 20; t++) {
+    simTick(true);
+    for (let i = 0; i < ENT.n; i++) {
+      if (ENT.meta[i]?.cause === 'burned') burned++;
+    }
+  }
+  ok('fire can kill beings', lit === 0 || burned > 0, `lit=${lit} burned=${burned}`);
+
+  let parents = 0;
+  for (let i = 0; i < ENT.n; i++) {
+    if (ENT.meta[i]?.parentId) parents++;
+  }
+  ok('births leave parent links', parents > 0 || r.beings.everSeen > r.beings.alive,
+    `parent links=${parents}`);
 }
 
 console.log('food web keeps strongest links');

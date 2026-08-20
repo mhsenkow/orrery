@@ -115,7 +115,7 @@ Landed (partial). `agentsTick()` now runs inside `simTick` in `vr/world.js`, so 
 
 ## A being with no inside
 
-An individual is 8 floats — position, scale, kind, three colour channels — plus a meta object holding `age`, `behav`, `plan`, `popId` and a name. `behav` is one of five strings picked by `pickBehav`, which is a probability roll against ash, dust, storm and ice. There is no energy, no hunger, no target, no memory of anywhere it has been, no relationship to any other being. Grep the whole of `vr/` for `hunger`, `territor`, `breed`, `offspring`, `colony` or `pheromone`: zero hits.
+Partial. Individuals now carry **energy**, **hunger** and **fear**; Kleiber metabolism, grazing, birth (`tryBirth`), death with cause (starved, burned, hunted, old age), and cell-local **hunt** for trophic > 0.55 lineages. Still missing: memory, territory, full behaviour genome, field↔being contract.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
@@ -142,7 +142,7 @@ An individual is 8 floats — position, scale, kind, three colour channels — p
 
 ## Nothing is born and nothing dies
 
-Measured over 300 deep-time ticks — 1.745 Gyr — with agents running: `ENT.n` goes 252 → 489, `dead` is **0**, and `maxAge` is 300, meaning every being alive at the end had been alive since the first tick. The 237 new beings were not born; `topUpEntities` wrote them into free slots from `life[c]`. Population is a rendering of a scalar field, so it cannot boom, crash, bottleneck, disperse or recover.
+Partial. `tryBirth` spends parent energy and writes `parentId`; deaths increment probe `died` with causes; fire kills; predators hunt adjacent prey. `topUpEntities` still backfills catastrophic dips — population is not yet a closed book.
 
 | # | Item | What and why | Kind | E | I |
 |---|---|---|---|---|---|
