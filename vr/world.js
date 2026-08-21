@@ -58,6 +58,16 @@ import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
 import { agentsTick, resetEntities, packEntities, restoreEntities } from './agents.js';
 import { fireTick, resetFireState } from './sim/fire.js';
+import { lightningTick, resetLightning } from './sim/lightning.js';
+import { anthroTick, resetAnthro } from './sim/anthro.js';
+import { ordnanceTick, resetOrdnance } from './sim/ordnance.js';
+import {
+  resetPolities, ensureOwner, seedPolitiesFromCities, claimTerritory,
+  splitDisconnected, packPolities, unpackPolities, remapOwner,
+} from './sim/polity.js';
+import { resetDiplomacy, diplomacyTick } from './sim/diplomacy.js';
+import { resetDeterrence, deterrenceTick } from './sim/deterrence.js';
+import { resetDark, darkTick } from './sim/dark.js';
 import { resetWear } from './sim/present.js';
 
 function buf() { return new Float32Array(NC); }
@@ -96,6 +106,35 @@ export function reallocateWorldFields(target = W) {
   target.drainTo2 = ibuf();
   target.storms = [];
   target._fireCells = [];
+  target._flashCells = [];
+  target._toxinCells = [];
+  target._radCells = [];
+  target._diseaseCells = [];
+  target._warCells = [];
+  target._tracerCells = [];
+  target.flight = [];
+  target.interceptors = [];
+  target.batteries = new Map();
+  target._battFatigue = new Map();
+  target.wars = [];
+  target.owner = new Int16Array(NC);
+  target.owner.fill(-1);
+  target.border = new Float32Array(NC);
+  target.fought = new Float32Array(NC);
+  target.polities = [];
+  target._polityIndex = null;
+  target.playerPolity = -1;
+  target.polityCount = 0;
+  target.borderLen = 0;
+  target.diplo = null;
+  target.doomsday = 0;
+  target.exchangesConsidered = 0;
+  target.exchangesLaunched = 0;
+  target.exchangesRetaliated = 0;
+  target.exchangesDeclined = 0;
+  target.darkToll = null;
+  target.warCrimes = [];
+  target.dark = null;
   target.bound = new Int8Array(NC);
   target._order = new Int32Array(NC);
   target.shellLid = target.shellOcean = target.shellMantle = target.shellVent = null;
@@ -149,8 +188,15 @@ export function reallocateWorldFields(target = W) {
 
 /** Change cube-sphere resolution; pair with remeshPlanet() in render. */
 export function changeResolution(n) {
+  const oldOwner = W.owner;
+  const oldN = SIM_N;
+  const savedPolities = W.polities ? W.polities.map((p) => ({ ...p })) : [];
+  const playerPolity = W.playerPolity;
   const r = setResolution(n);
   reallocateWorldFields(W);
+  W.owner = remapOwner(oldOwner, oldN, SIM_N);
+  W.polities = savedPolities;
+  W.playerPolity = playerPolity ?? -1;
   return r;
 }
 
@@ -164,7 +210,8 @@ export function createWorld() {
     flow: buf(), lake: buf(),
     windU: buf(), windV: buf(),
     life: buf(), lifeClass: u8(), soil: buf(), nutrientN: buf(), nutrientP: buf(), reef: buf(),
-    build: buf(), fire: buf(), nutrientPlume: buf(),
+    build: buf(), fire: buf(), nutrientPlume: buf(), flash: buf(),
+    toxin: buf(), rad: buf(), disease: buf(), warFront: buf(), immune: buf(), tracer: buf(),
     blackDaisy: buf(), whiteDaisy: buf(),
     _t: buf(), _m: buf(), _l: buf(), _h: buf(), _adv: buf(), _order: new Int32Array(NC),
 
@@ -273,6 +320,19 @@ export function generate(seed, ruleIn) {
   // `updateIsoline` reuses the buffer and only writes `coastCount * 3` floats, so the
   // tail keeps the previous planet's coastline. Harmless to the draw call, which uploads
   // a subarray, but it is stale world state and it breaks the reset contract.
+  // Same reset contract across *different* rules, not just a second generate of the
+  // same one: each of these is written with `??`/`== null`/`||` by its owner, so a
+  // leftover from the previous world survived into the next one.
+  W.magTilt = null;        // core.js: W.magTilt ?? …
+  W.lucaId = null;         // evolve.js stamps the first lineage id
+  W._angMom = null;        // assert.js latches the first reading as the reference
+  W._angMom0 = null;
+  W._carbonMass0 = null;
+  W.carbonDrift = 0;
+  W._waterProxy0 = null;   // assert.js latches the first reading it sees
+  W.waterProxy = 0;
+  W.waterProxyDrift = 0;
+  W._relaxScratch = null;  // redox.js relaxation scratch buffers
   W.coastLine = null;
   W.coastCount = 0;
   W._isoTick = -1;
@@ -361,13 +421,16 @@ export function generate(seed, ruleIn) {
   W.season = 0;
   initClockFace(W, rule);
   // Earth-like worlds keep a Luna; Selene / airless may not
+  W.obliquityWander = false;
   if (rule.earthLike && !rule.airless) {
     W.moon = { mass: 1, distance: 1, formed: 4.51e9 };
-    W.obliquityWander = false;
   } else if (rule.id === 'selene' || rule.airless) {
     W.moon = null;
   } else {
-    W.moon = W.moon || { mass: 0.6, distance: 1.2, formed: W.ageYr };
+    // Not `W.moon ||` — a generate for a moonless-by-default world inherited the
+    // previous planet's Luna, so switching worlds in one session gave a different
+    // planet than loading that world fresh (tides, obliquity, then climate).
+    W.moon = { mass: 0.6, distance: 1.2, formed: W.ageYr };
   }
   W.energy = W.energyCap;
   W.moments = {};
@@ -399,6 +462,22 @@ export function generate(seed, ruleIn) {
   resetEntities();
   resetWear();
   resetFireState(W);
+  resetLightning(W);
+  resetAnthro(W);
+  resetOrdnance(W);
+  resetPolities(W);
+  resetDiplomacy(W);
+  resetDeterrence(W);
+  resetDark(W);
+  W.flareGlow = 0;
+  W.auroraPower = 0;
+  W.auroraLat = 0.82;
+  W.epidemic = null;
+  // Chronicle rate-limiters. Objects and counters on W, so they must reset with
+  // the world or the next planet starts mid-throttle.
+  W._buildLogged = {};
+  W._springLogged = 0;
+  W._deathLogged = 0;
   W.plates = null;
   W.hotspots = null;
   W.volcanoes = [];
@@ -684,6 +763,11 @@ export function generate(seed, ruleIn) {
   // planet's coastline. Drop them here, once the terrain is final, and the next
   // `originTick` reseeds through `initOrigin` against the world that actually exists.
   W.vents = null;
+  /* Hydro's conservation reference, re-latched against the finished world —
+     after `fitSeaLevel` and the drainage prime, not against the provisional
+     terrain the spin-up saw. `W.waterMass` here is hydro's own inventory; the
+     read-only proxy in `assert.js` keeps its own reference and does not touch
+     these two. */
   W._waterMass0 = W.waterMass;
 
   W._landscape = W.noSurface ? 'envelope' : (ls?.id || rule.landscape || 'auto');
@@ -777,6 +861,9 @@ export function simTick(silent = false) {
     oceanTick(W);
     tidesTick(W);
     stormsTick(W, log);
+    // After storms, so this tick's cyclones can throw bolts, and before fire,
+    // which uses a strike as its ignition source.
+    lightningTick(W);
   }
   if (W._iceShell) iceShellTick(W);
 
@@ -819,6 +906,25 @@ export function simTick(silent = false) {
      read this tick's life field, and it is skipped during generate's climate
      spin-up where there is no biosphere to walk yet. */
   if (!W._spinup && !rule.daisyworld && !W.noSurface) {
+    /* Anthropogenic harm and anything in the air. Before fire, because both can
+       start fires, and after the biosphere so this tick's `life` and `build` are
+       what they damage. Sparse: a planet nobody has attacked costs five
+       array-length checks. */
+    ordnanceTick(W, log);
+    anthroTick(W, log);
+    if (!isPinnedEarth(W.rule) && (W.polities?.length || W.cities?.length)) {
+      const t = W._tickIndex | 0;
+      if (t % 4 === 0) {
+        seedPolitiesFromCities(W, log);
+        claimTerritory(W);
+        splitDisconnected(W, log);
+      }
+      if (W.polities?.length) {
+        diplomacyTick(W, log);
+        deterrenceTick(W, log);
+        darkTick(W, log);
+      }
+    }
     fireTick(W, log);
     /* Biology clock: life can sub-step inside one climate tick. Pinned terra
        stays at 1 for golden reproducibility; thrive / lived worlds use
@@ -831,8 +937,13 @@ export function simTick(silent = false) {
   }
   absorbSimDelta(W);
 
-  // Conservation check every ~32 ticks (cheap enough, catches silent drift)
-  if ((W.year | 0) % 32 === 0) assertBudgets(W);
+  /* Conservation check every 32 ticks. This was `(W.year | 0) % 32`, and
+     `W.year` is an absolute age up to 4.567e9 — past int32, so `| 0` wrapped it,
+     and `dtYr` ranges from 10 to 1e7, so the cadence was either every tick or
+     never depending on the world. On pinned Earth it was every tick: three full
+     NC sweeps plus a NaN scan, for a debug assertion. `_tickIndex` is the
+     counter `multiRateMask` already maintains. */
+  if ((W._tickIndex | 0) % 32 === 0) assertBudgets(W);
 
   if (!silent) {
     maybeNameEra(W.chron, W);
@@ -841,7 +952,14 @@ export function simTick(silent = false) {
       W._ensoEvent = null;
     }
     if (W._springEvent) {
-      chronLog(W.year, 'tide', 0, W.meanTideRange || 0, 'Spring tides');
+      /* Rate-limited. Springs recur twice a lunar month, and at 200 years a tick
+         every single tick contains thousands of them — this logged 288 identical
+         lines in 800 ticks. Keep it as an occasional reminder that the Moon is
+         there, not as a metronome. */
+      W._springLogged = (W._springLogged | 0) + 1;
+      if (W._springLogged % 24 === 1) {
+        chronLog(W.year, 'tide', 0, W.meanTideRange || 0, 'Spring tides');
+      }
       W._springEvent = false;
     }
     if (W._lastEulogy) {
@@ -906,28 +1024,6 @@ export function rerollTerrain(Wref = W) {
   return { ok: true, seed, landSeed: seed, report: rep };
 }
 
-export function applyImpact(cell, power, log = chronLog) {
-  const r = Math.max(1, power * 4);
-  for (let c = 0; c < NC; c++) {
-    const d = Math.acos(clamp(
-      DIR[c * 3] * DIR[cell * 3] + DIR[c * 3 + 1] * DIR[cell * 3 + 1] + DIR[c * 3 + 2] * DIR[cell * 3 + 2],
-      -1, 1
-    ));
-    if (d < r * 0.05) {
-      const f = 1 - d / (r * 0.05);
-      W.h[c] -= power * 0.12 * f;
-      W.temp[c] = Math.min(1.5, W.temp[c] + power * 0.3 * f);
-      W.life[c] *= 1 - 0.8 * f;
-      W.dust[c] = Math.min(1, W.dust[c] + power * 0.4 * f);
-    }
-  }
-  W.gases.dust = Math.min(0.5, W.gases.dust + power * 0.05);
-  W.gases.CO2 = Math.min(0.5, W.gases.CO2 + power * 0.01);
-  if (W.carbon) W.carbon.atmosphere += power * 1.5;
-  if (liquidWaterOk(W)) startTsunami(W, cell, power);
-  noteImpact(W, power);
-  if (log) log(W.year, 'impact', cell, power, `Impact (E=${power.toFixed(2)})`);
-}
 
 /** Rewind-the-tape fork. Item 12. */
 export function forkRun(label = 'fork') {
@@ -1020,6 +1116,15 @@ export function serializeRun() {
     builtFrac: W.builtFrac ?? 0,
     meanBuild: W.meanBuild ?? 0,
     entities: packEntities(),
+    polities: packPolities(W),
+    playerPolity: W.playerPolity ?? -1,
+    doomsday: W.doomsday ?? 0,
+    exchangesConsidered: W.exchangesConsidered | 0,
+    exchangesLaunched: W.exchangesLaunched | 0,
+    exchangesRetaliated: W.exchangesRetaliated | 0,
+    exchangesDeclined: W.exchangesDeclined | 0,
+    darkToll: W.darkToll ? { ...W.darkToll } : null,
+    warCrimes: (W.warCrimes || []).slice(-48),
   };
 }
 
@@ -1079,6 +1184,15 @@ export function loadRunMeta(json) {
   if (data.builtFrac != null) W.builtFrac = data.builtFrac;
   if (data.meanBuild != null) W.meanBuild = data.meanBuild;
   if (data.entities?.list?.length) restoreEntities(data.entities);
+  if (data.polities) unpackPolities(W, data.polities);
+  if (data.playerPolity != null) W.playerPolity = data.playerPolity;
+  if (data.doomsday != null) W.doomsday = data.doomsday;
+  if (data.exchangesConsidered != null) W.exchangesConsidered = data.exchangesConsidered;
+  if (data.exchangesLaunched != null) W.exchangesLaunched = data.exchangesLaunched;
+  if (data.exchangesRetaliated != null) W.exchangesRetaliated = data.exchangesRetaliated;
+  if (data.exchangesDeclined != null) W.exchangesDeclined = data.exchangesDeclined;
+  if (data.darkToll) W.darkToll = { ...data.darkToll };
+  if (data.warCrimes) W.warCrimes = data.warCrimes.map((x) => ({ ...x }));
   if (data.clockFace) W.clockFace = data.clockFace;
   if (data.seasonHold != null) {
     W.seasonHold = data.seasonHold;

@@ -182,13 +182,37 @@ export function stormsTick(W, log = null) {
   const genesis = clamp(ctl.genesis ?? 0.08, 0, 1);
   const vigor = clamp(ctl.vigor ?? 1, 0.4, 2);
 
-  // Spontaneous genesis only when chronicle is live (skip silent warm-up / goldens)
-  if (log && genesis > 0 && (W.storms.length < 5) && (W.ageYr | 0) % 7 === 0) {
-    const roll = rngOf(W, 'rngGod')();
-    if (roll > 1 - genesis) {
-      const c = (roll * NC * 17) | 0;
-      const f = Math.max(tropicalFavor(W, c % NC), midlatFavor(W, c % NC));
-      if (f > lerp(0.22, 0.5, ctl.strict ?? 0.7)) seedStorm(W, c % NC, { radius: 4, log });
+  /* Genesis. Three things kept this at zero, and the storm system — named
+     cyclones, tracks, landfall, surge, the storm overlay, the storm desk — had
+     therefore never once run in the shipped app:
+       · `log &&` meant storms could not form on a silent tick, so every headless
+         run, probe and test measured a planet with no weather. The intent was to
+         skip generate's warm-up; that is `W._spinup`.
+       · `(W.ageYr | 0) % 7` is the wrapped-year cadence bug. `ageYr` reaches
+         4.567e9, past int32, and on the pinned Earth it is a constant whose
+         residue is 6 — so the gate was permanently false there.
+       · One candidate cell was drawn per attempt from the whole planet, while
+         only ~3.5% of cells clear the favourability threshold. Combined with the
+         other two that is one storm per ~2 500 ticks.
+     Now: attempt every tick, and sample a handful of candidates and take the
+     most favourable, which is what a genesis model should do anyway — a basin is
+     a place, not a lottery ticket. At the default `genesis` of 0.08 and ~3.5% of
+     cells favourable, best-of-twelve gives roughly one storm per 36 ticks against
+     a lifetime of similar order, so there is usually weather somewhere.
+     Storms are the model's main precipitation source (`paintStorm` writes up to
+     0.7 into `precip`), so with none forming the planet had a global maximum
+     precipitation of 0.003 and the Miami NPP term saw a desert everywhere. */
+  if (!W._spinup && genesis > 0 && W.storms.length < 5) {
+    const rng = rngOf(W, 'rngGod');
+    if (rng() < genesis) {
+      const need = lerp(0.22, 0.5, ctl.strict ?? 0.7);
+      let bestC = -1, bestF = 0;
+      for (let i = 0; i < 12; i++) {
+        const c = (rng() * NC) | 0;
+        const f = Math.max(tropicalFavor(W, c), midlatFavor(W, c));
+        if (f > bestF) { bestF = f; bestC = c; }
+      }
+      if (bestC >= 0 && bestF > need) seedStorm(W, bestC, { radius: 4, log });
     }
   }
 

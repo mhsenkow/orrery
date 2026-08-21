@@ -1,11 +1,15 @@
 import { tropicalFavor, midlatFavor } from './storms.js';
-import { DIR, NF } from '../sphere.js';
+import { DIR, NF, NBR } from '../sphere.js';
 import { nodeOf } from './evolve.js';
 import { SUBSTRATES } from './substrates.js';
 import { phaseAtCell, sampleMaterialRgb } from './substrateField.js';
 import { coverAt } from './cover.js';
 import { landformAt } from './landform.js';
 import { columnRgbAt } from './columnField.js';
+// One definition of fire danger. The overlay used to carry its own near-copy,
+// which is two versions of the same physics free to drift apart. `fireDanger`
+// is pure — fields in, number out, no RNG — so the paint path can call it.
+import { fireDanger } from './fire.js';
 
 const SENSE_RGB = {
   uvc: [180, 80, 255], uvb: [140, 90, 255], violetBlue: [60, 90, 220],
@@ -14,20 +18,6 @@ const SENSE_RGB = {
   electric: [80, 220, 210], acoustic: [200, 200, 230], chemical: [180, 140, 70],
   pressure: [90, 160, 200], thermalContact: [220, 120, 80],
 };
-
-/** Fire danger for paint only: the same inputs as `fireDanger` in sim/fire.js,
- *  kept local so the overlay never reaches into a tick's RNG stream. */
-function fireDangerAt(W, c) {
-  if (W.h[c] < W.seaLevel) return 0;
-  if ((W.ice?.[c] || 0) > 0.25) return 0;
-  const fuel = W.life?.[c] || 0;
-  if (fuel < 0.1) return 0;
-  const moist = W.moist?.[c] || 0;
-  if (moist > 0.62) return 0;
-  const dry = 1 - Math.min(1, moist / 0.62);
-  const heat = Math.max(0, Math.min(1, ((W.temp?.[c] || 0.5) - 0.42) / 0.32));
-  return dry * (0.35 + heat * 0.65);
-}
 
 function dominantLineageId(W) {
   if (W._rangeId != null && W._rangeTick === W._tickIndex) return W._rangeId;
@@ -86,6 +76,13 @@ export const OVERLAYS = [
   { id: 'techno', label: 'Technosphere', icon: 'inspect', tip: 'Energy use and land use. Bright is watts and cropland; dark is unused. Giants have none.' },
   { id: 'fire', label: 'Fire', icon: 'volcano', tip: 'Orange is flame, grey is smoke and ash, dim red is fire danger — dry fuelled land that has not caught yet. A rate, not a state.' },
   { id: 'plume', label: 'Nutrient plume', icon: 'upwell', tip: 'Where animals fertilised the water. Surface-feeding whale-scale life brings N and P up; the green is the bloom that follows.' },
+  { id: 'beings', label: 'Beings', icon: 'seed', tip: 'Where the animals actually are. Bright clumps are herds and pods; a rate, not a habitat map — sprites are hidden at orbit, this is not.' },
+  { id: 'weather', label: 'Weather', icon: 'weather', tip: 'One picture of the sky: cloud grey, rain blue, cyclone cores white, lightning yellow. What you would see from a window, not a field.' },
+  { id: 'fallout', label: 'Fallout', icon: 'core', tip: 'Radiation — bursts, fallout, buried waste. Half-life of thousands of ticks: this outlives the civilisation that made it.' },
+  { id: 'toxin', label: 'Toxin', icon: 'aerosol', tip: 'Chemical contamination. Creeps downhill and downstream, kills slowly, and the ground never looks wrong.' },
+  { id: 'plague', label: 'Plague', icon: 'plague', tip: 'Epidemic intensity, and in dark green the immune. It travels between settlements, not across country, and burns out where it has been.' },
+  { id: 'borders', label: 'Borders', icon: 'plate', tip: 'Polity frontiers — cells whose owner differs from a neighbour. Colour follows the polity that holds the cell.' },
+  { id: 'war', label: 'War', icon: 'quake', tip: 'Contested ground and the tracks of anything in the air. Fronts move toward what is worth taking.' },
   { id: 'behav', label: 'Behaviour', icon: 'seed', tip: 'What beings are doing on each cell — forage, flee, hunt, tend. The living layer as a map, not a sprite count.' },
   { id: 'trophic', label: 'Trophic', icon: 'seedGuild', tip: 'Local food pyramid. Green is producers, gold grazers, red hunters. Ice and rainforest are no longer the same number.' },
   { id: 'fear', label: 'Fear', icon: 'seed', tip: 'Landscape of fear — where hunts and near-misses leave predation pressure. Prey flee the bright cells.' },
@@ -98,7 +95,8 @@ export const OVERLAYS = [
 const OVERLAY_ORDER = [
   'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'npp', 'guild', 'sense', 'range', 'proto', 'techno', 'fire', 'plume', 'behav', 'trophic', 'fear', 'carcass', 'trail',
+  'tide', 'storm', 'weather', 'npp', 'guild', 'beings', 'sense', 'range', 'proto', 'techno', 'fire', 'plume',
+  'fallout', 'toxin', 'plague', 'borders', 'war', 'behav', 'trophic', 'fear', 'carcass', 'trail',
   'lifefront', 'flux',
   'faces', 'zonal', 'ecotone',
 ];
@@ -400,10 +398,78 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
          danger (will burn), flame (burning), ash (has burned). */
       const f = Math.min(1, W.fire?.[c] || 0);
       const a = Math.min(1, W.ash?.[c] || 0);
-      const d = fireDangerAt(W, c);
+      const d = fireDanger(W, c);
       r = 10 + d * 70 + a * 120 + f * 245;
       g = 10 + d * 14 + a * 118 + f * 120;
       b = 14 + a * 112 + f * 20;
+    } else if (mode === 'fallout') {
+      const v = Math.min(1, W.rad?.[c] || 0);
+      const k = Math.pow(v, 0.5);
+      r = 14 + k * 200; g = 16 + k * 150; b = 22 + k * 230;
+    } else if (mode === 'toxin') {
+      const v = Math.min(1, W.toxin?.[c] || 0);
+      const k = Math.pow(v, 0.5);
+      r = 16 + k * 190; g = 20 + k * 210; b = 18 + k * 40;
+    } else if (mode === 'plague') {
+      const d = Math.min(1, W.disease?.[c] || 0);
+      const im = Math.min(1, W.immune?.[c] || 0);
+      const host = Math.min(1, (W.build?.[c] || 0) + (W.beingDens?.[c] || 0) * 0.4);
+      // Hosts in grey, the sick in red, the immune in green — an SIR picture.
+      r = 12 + host * 40 + Math.pow(d, 0.5) * 220;
+      g = 14 + host * 40 + im * 150;
+      b = 18 + host * 44;
+    } else if (mode === 'borders') {
+      /* Prefer W.border; else compute from owner neighbour differences. */
+      let onBorder = W.border?.[c] > 0;
+      const oid = W.owner?.[c] ?? -1;
+      if (!onBorder && oid >= 0 && W.owner) {
+        for (let k = 0; k < 4; k++) {
+          if (W.owner[NBR[c * 4 + k]] !== oid) { onBorder = true; break; }
+        }
+      }
+      if (oid < 0) {
+        r = r * 0.2; g = g * 0.2; b = b * 0.22;
+      } else {
+        const p = W._polityIndex?.get(oid);
+        const col = p?.color || [0.55, 0.55, 0.6];
+        const edge = onBorder ? 1 : 0.35;
+        r = 10 + col[0] * 240 * edge;
+        g = 10 + col[1] * 240 * edge;
+        b = 12 + col[2] * 240 * edge;
+      }
+    } else if (mode === 'war') {
+      const w = Math.min(1, W.warFront?.[c] || 0);
+      const t = Math.min(1, W.tracer?.[c] || 0);
+      const built = Math.min(1, W.build?.[c] || 0);
+      r = 14 + built * 40 + Math.pow(w, 0.5) * 210 + t * 190;
+      g = 16 + built * 40 + w * 70 + t * 226;
+      b = 20 + built * 46 + t * 255;
+    } else if (mode === 'beings') {
+      /* Animal density from `W.beingDens`, which `rebuildBuckets` fills as it
+         walks the population. Deliberately steep at the low end: one animal in
+         a cell should be findable, and eight should be obvious. */
+      const d = Math.min(1, (W.beingDens?.[c] || 0));
+      const land = W.h[c] >= W.seaLevel;
+      const base = land ? 22 : 14;
+      const k = Math.pow(d, 0.55);
+      r = base + k * 250;
+      g = base + k * 190;
+      b = base + k * 70;
+    } else if (mode === 'weather') {
+      /* Everything the sky is doing, in one frame. The individual fields already
+         have overlays; none of them is what a player means by "the weather". */
+      const cl = Math.min(1, W.clouds?.[c] || 0);
+      const pr = Math.min(1, (W.precip?.[c] || 0) * 6);
+      const st = Math.min(1, W.stormField?.[c] || 0);
+      const fl = Math.min(1, W.flash?.[c] || 0);
+      r = 16 + cl * 120;
+      g = 20 + cl * 126;
+      b = 30 + cl * 140;
+      // Rain cools the patch toward blue; a cyclone core goes bright white.
+      r = r * (1 - pr * 0.55); g = g * (1 - pr * 0.2); b = b + pr * 110;
+      r += st * 150; g += st * 160; b += st * 170;
+      // Lightning last so a bolt is never washed out by the cloud under it.
+      r += fl * 240; g += fl * 235; b += fl * 120;
     } else if (mode === 'plume') {
       const p = Math.min(1, W.nutrientPlume?.[c] || 0);
       const land = W.h[c] >= W.seaLevel;

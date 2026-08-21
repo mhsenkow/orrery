@@ -88,6 +88,19 @@ export function forecastAct(tool, cell, horizon = [10, 100, 1000]) {
     plague: { temp: 0, life: -0.2, ice: 0, co2: 0.001 },
     // Fire clears biomass and vents it. Regrowth is on the biosphere, not here.
     ignite: { temp: 0.01, life: -0.06, ice: 0, co2: 0.0008 },
+    /* Evil desk. Note the shapes differ: poison and waste barely move the
+       planetary averages and are devastating locally, which is exactly what
+       makes them worth having as separate verbs from a warhead. */
+    poison: { temp: 0, life: -0.02, ice: 0, co2: 0 },
+    waste: { temp: 0, life: -0.01, ice: 0, co2: 0 },
+    nuke: { temp: 0.02, life: -0.09, ice: 0.004, co2: 0.0004 },
+    icbm: { temp: 0.02, life: -0.1, ice: 0.005, co2: 0.0005 },
+    slbm: { temp: 0.015, life: -0.08, ice: 0.004, co2: 0.0004 },
+    airstrike: { temp: 0, life: -0.01, ice: 0, co2: 0.0001 },
+    swarm: { temp: 0, life: -0.03, ice: 0, co2: 0.0002 },
+    pandemic: { temp: 0, life: -0.12, ice: 0, co2: -0.0002 },
+    war: { temp: 0.005, life: -0.07, ice: 0, co2: 0.0006 },
+    flare: { temp: 0.01, life: -0.05, ice: 0, co2: 0 },
     albedo: { temp: -0.025, life: 0, ice: 0.02, co2: 0 },
     shade: { temp: -0.03, life: -0.01, ice: 0.03, co2: 0 },
   };

@@ -2,10 +2,12 @@
 
 import { NBR, NBR_E, NBR_N, AREA } from '../sphere.js';
 
-/** Tangent neighbour. Reuses one slot — copy fields out, do not hold the object. */
+/** Tangent neighbour. Reuses one slot — copy fields out, do not hold the object.
+ *  Internal now: `NBR_E` / `NBR_N` / `NBR_CHORD` on `sphere.js` are precomputed,
+ *  so a tick loop should index those directly rather than come through here. */
 const _en = { nb: 0, e: 0, n: 0 };
 
-export function neighbourEN(c, k) {
+function neighbourEN(c, k) {
   const i = c * 4 + k;
   _en.nb = NBR[i];
   _en.e = NBR_E[i];
@@ -40,52 +42,20 @@ export function neighbourMean(field, c) {
   return w > 0 ? sum / w : field[c];
 }
 
-/** Divergence of a geographic vector pair. Area-weighted; scale matches the old 4-neighbour sum. */
-export function divUV(uArr, vArr, c) {
-  let s = 0, w = 0;
-  for (let k = 0; k < 4; k++) {
-    const nb = NBR[c * 4 + k];
-    const an = AREA[nb] || 1;
-    s += ((uArr[nb] - uArr[c]) + (vArr[nb] - vArr[c])) * an;
-    w += an;
-  }
-  return w > 0 ? (s * 4) / w : 0;
-}
 
-/** Stress-curl sketch in the tangent frame. */
-export function curlTau(tauE, tauN, c) {
-  let curl = 0;
-  for (let k = 0; k < 4; k++) {
-    const { nb, e, n } = neighbourEN(c, k);
-    curl += (tauN[nb] - tauN[c]) * e - (tauE[nb] - tauE[c]) * n;
-  }
-  return curl;
-}
 
-export function eastNeighbour(c) {
-  let best = NBR[c * 4], bestE = -1;
-  for (let k = 0; k < 4; k++) {
-    const { nb, e } = neighbourEN(c, k);
-    if (e > bestE) { bestE = e; best = nb; }
-  }
-  return best;
-}
 
-export function westNeighbour(c) {
-  let best = NBR[c * 4], bestE = 1;
-  for (let k = 0; k < 4; k++) {
-    const { nb, e } = neighbourEN(c, k);
-    if (e < bestE) { bestE = e; best = nb; }
-  }
-  return best;
-}
 
+/** Most upwind of the four neighbours. Called per sea cell per advected field,
+ *  so it reads the precomputed tangent arrays rather than going via
+ *  `neighbourEN`. */
 export function upwindNeighbour(c, u, v) {
-  let best = NBR[c * 4], bestAlong = 1;
+  const b4 = c * 4;
+  let best = NBR[b4], bestAlong = 1;
   for (let k = 0; k < 4; k++) {
-    const { nb, e, n } = neighbourEN(c, k);
-    const along = u * e + v * n;
-    if (along < bestAlong) { bestAlong = along; best = nb; }
+    const i = b4 + k;
+    const along = u * NBR_E[i] + v * NBR_N[i];
+    if (along < bestAlong) { bestAlong = along; best = NBR[i]; }
   }
   return best;
 }

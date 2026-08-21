@@ -95,46 +95,115 @@ const LAND_CENTRES = [
   { id: 'tropRainforest', tC: 26, ppt: 2500, ts: 7, ps: 900 },
 ];
 
-/** Soft membership in Whittaker space. Weights sum to 1. */
-export function biomeMembership(t, m, ice, isSea, extras = {}) {
-  if (isSea) {
-    const scores = [];
-    const reef = extras.reef || 0;
-    const up = extras.upwelling || 0;
-    const depth = extras.depth || 0;
-    if (extras.vent) scores.push({ id: 'vent', s: 4 });
-    if (reef > 0.05) scores.push({ id: 'reef', s: reef * 8 });
-    if (up > 0.12) scores.push({ id: 'upwelling', s: up * 6 });
-    scores.push({ id: 'deep', s: Math.max(0.15, depth * 4) });
-    scores.push({ id: 'gyre', s: 1.1 });
-    return softmaxTop(scores, ice);
-  }
-  const tC = (t - 0.5) * 80 + 15;
-  const ppt = m * 2000;
-  const scores = LAND_CENTRES.map((row) => {
-    const dt = (tC - row.tC) / row.ts;
-    const dp = (ppt - row.ppt) / row.ps;
-    return { id: row.id, s: Math.exp(-0.5 * (dt * dt + dp * dp)) };
-  });
-  for (const s of scores) s.s = Math.pow(Math.max(s.s, 1e-12), 1.8);
-  return softmaxTop(scores, ice);
+/** `BIOMES` id → index. `BIOMES.indexOf` ran twice a cell every tick — a linear
+ *  string search over fifteen entries, 50 000 times a tick at N=64. */
+export const BIOME_INDEX = Object.freeze(Object.fromEntries(BIOMES.map((b, i) => [b, i])));
+
+const LAND_IDX = LAND_CENTRES.map((row) => BIOME_INDEX[row.id]);
+const I_VENT = BIOME_INDEX.vent, I_REEF = BIOME_INDEX.reef,
+  I_UPWELLING = BIOME_INDEX.upwelling, I_DEEP = BIOME_INDEX.deep,
+  I_GYRE = BIOME_INDEX.gyre, I_ICE = BIOME_INDEX.ice,
+  I_TUNDRA = BIOME_INDEX.tundra, I_BOREAL = BIOME_INDEX.boreal,
+  I_DESERT = BIOME_INDEX.desert, I_TROPSEASONAL = BIOME_INDEX.tropSeasonal,
+  I_SAVANNA = BIOME_INDEX.savanna;
+
+/** Per-biome cell tally, reused. `biomeCounts` is rebuilt from it once a tick
+ *  instead of doing a string-keyed object write per cell. */
+const _counts = new Int32Array(BIOMES.length);
+
+/* Allocation-free core.
+ *
+ * `biomeMembership` used to build nine or ten `{id, s}` objects, an array to hold
+ * them, then a second array of up to three `{id, w}` — per cell, every tick. At
+ * N=64 that is ~300 000 short-lived objects a tick and it was the single largest
+ * source of garbage in the simulation, plus a sort per cell. The maths is
+ * unchanged: same Gaussians, same 1.8 exponent, same ice candidate, same 0.04
+ * keep rule, same renormalisation over the kept entries. Candidates live in two
+ * preallocated arrays and the top three are found by three scans instead of a
+ * sort, which for n ≤ 10 is cheaper as well as garbage-free.
+ *
+ * Results are read from `_memI` / `_memW` / `_memN` immediately after the call.
+ * Not reentrant, and it does not need to be: nothing here yields.
+ */
+const CAND_MAX = 10;
+const _candI = new Int32Array(CAND_MAX);
+const _candS = new Float64Array(CAND_MAX);
+let _candN = 0;
+/** Top three, most-weighted first. `_memN` is how many survived the keep rule. */
+const _memI = new Int32Array(3);
+const _memW = new Float64Array(3);
+let _memN = 0;
+
+function pushCand(i, s) {
+  _candI[_candN] = i;
+  _candS[_candN] = s;
+  _candN++;
 }
 
-function softmaxTop(scores, ice) {
-  if (ice > 0.25) scores.push({ id: 'ice', s: Math.pow(clamp((ice - 0.25) / 0.45, 0, 1), 1.4) * 6 });
-  let sum = 0;
-  for (const s of scores) sum += s.s;
-  if (!(sum > 0)) return [{ id: scores[0]?.id || 'gyre', w: 1 }];
-  scores.sort((a, b) => b.s - a.s);
-  const out = [];
-  let wsum = 0;
-  for (let i = 0; i < Math.min(3, scores.length); i++) {
-    const w = scores[i].s / sum;
-    if (w < 0.04 && i > 0) break;
-    out.push({ id: scores[i].id, w });
-    wsum += w;
+function classifyCore(t, m, ice, isSea, reef, up, depth, vent) {
+  _candN = 0;
+  if (isSea) {
+    if (vent) pushCand(I_VENT, 4);
+    if (reef > 0.05) pushCand(I_REEF, reef * 8);
+    if (up > 0.12) pushCand(I_UPWELLING, up * 6);
+    pushCand(I_DEEP, Math.max(0.15, depth * 4));
+    pushCand(I_GYRE, 1.1);
+  } else {
+    const tC = (t - 0.5) * 80 + 15;
+    const ppt = m * 2000;
+    for (let i = 0; i < LAND_CENTRES.length; i++) {
+      const row = LAND_CENTRES[i];
+      const dt = (tC - row.tC) / row.ts;
+      const dp = (ppt - row.ppt) / row.ps;
+      const g = Math.exp(-0.5 * (dt * dt + dp * dp));
+      pushCand(LAND_IDX[i], Math.pow(g > 1e-12 ? g : 1e-12, 1.8));
+    }
   }
-  for (const o of out) o.w /= wsum || 1;
+  if (ice > 0.25) {
+    pushCand(I_ICE, Math.pow(clamp((ice - 0.25) / 0.45, 0, 1), 1.4) * 6);
+  }
+
+  let sum = 0;
+  for (let i = 0; i < _candN; i++) sum += _candS[i];
+  if (!(sum > 0)) {
+    _memI[0] = _candN > 0 ? _candI[0] : I_GYRE;
+    _memW[0] = 1;
+    _memN = 1;
+    return;
+  }
+
+  /* Top three by scan. Strict `>` keeps the first of an exact tie, which is what
+     V8's stable sort did — the degenerate all-1e-12 land case must still pick
+     tundra, the first `LAND_CENTRES` row. */
+  _memN = 0;
+  let wsum = 0;
+  let prev = -1;
+  for (let rank = 0; rank < 3 && rank < _candN; rank++) {
+    let best = -1, bestS = -Infinity;
+    for (let i = 0; i < _candN; i++) {
+      if (i === prev || _candS[i] === -Infinity) continue;
+      if (_candS[i] > bestS) { bestS = _candS[i]; best = i; }
+    }
+    if (best < 0) break;
+    const w = bestS / sum;
+    if (w < 0.04 && rank > 0) break;
+    _memI[rank] = _candI[best];
+    _memW[rank] = w;
+    _memN = rank + 1;
+    wsum += w;
+    _candS[best] = -Infinity; // taken
+  }
+  for (let i = 0; i < _memN; i++) _memW[i] /= wsum || 1;
+}
+
+/** Soft membership in Whittaker space. Weights sum to 1.
+ *  Object-returning wrapper for callers outside the tick — panels, tests,
+ *  Inspect. `ecologyTick` uses `classifyCore` and reads the scratch directly. */
+export function biomeMembership(t, m, ice, isSea, extras = {}) {
+  classifyCore(t, m, ice, isSea,
+    extras.reef || 0, extras.upwelling || 0, extras.depth || 0, !!extras.vent);
+  const out = [];
+  for (let i = 0; i < _memN; i++) out.push({ id: BIOMES[_memI[i]], w: _memW[i] });
   return out;
 }
 
@@ -157,28 +226,39 @@ export function ecologyTick(W, chronLog) {
   const counts = Object.create(null);
   const whittaker = usesWhittakerCover(W._planetKind, W);
 
+  _counts.fill(0);
+  const upA = W.upwell || W.upwelling;
+  const landPlants = !!W.transitions?.landPlants;
   for (let c = 0; c < NC; c++) {
     const isSea = W.h[c] < W.seaLevel;
-    let mem;
+    let topI, secondI, topW;
     if (whittaker) {
-      mem = biomeMembership(W.temp[c], clamp((W.moist[c] || 0) * 0.82 + Math.min(1, (W.precip[c] || 0) * 6) * 0.18, 0, 1), W.ice[c], isSea, {
-        reef: W.reef[c],
-        upwelling: W.upwell?.[c] || W.upwelling?.[c] || 0,
-        depth: isSea ? W.seaLevel - W.h[c] : 0,
-        vent: W.bound[c] === 0 && isSea,
-      });
+      classifyCore(
+        W.temp[c],
+        clamp((W.moist[c] || 0) * 0.82 + Math.min(1, (W.precip[c] || 0) * 6) * 0.18, 0, 1),
+        W.ice[c], isSea,
+        W.reef[c], upA?.[c] || 0,
+        isSea ? W.seaLevel - W.h[c] : 0,
+        W.bound[c] === 0 && isSea,
+      );
+      topI = _memI[0];
+      topW = _memW[0];
+      secondI = _memN > 1 ? _memI[1] : topI;
       if (!isSea && W.h[c] > W.seaLevel + 0.35 && W.temp[c] < 0.4) {
-        const alpine = W.moist[c] > 0.25 ? 'boreal' : 'tundra';
-        mem = [{ id: alpine, w: 0.7 }, { id: mem[0].id, w: 0.3 }];
+        // Alpine override: the lapse rate beats the Whittaker cell.
+        secondI = topI;
+        topI = W.moist[c] > 0.25 ? I_BOREAL : I_TUNDRA;
+        topW = 0.7;
       }
     } else {
-      mem = [{ id: W.ice[c] > 0.55 ? 'ice' : (isSea ? 'deep' : 'desert'), w: 1 }];
+      topI = W.ice[c] > 0.55 ? I_ICE : (isSea ? I_DEEP : I_DESERT);
+      secondI = topI;
+      topW = 1;
     }
-    const b = mem[0].id;
-    W.biome[c] = BIOMES.indexOf(b);
-    W.biome2[c] = BIOMES.indexOf(mem[1]?.id || b);
-    W.biomeMix[c] = mem[0].w;
-    counts[b] = (counts[b] || 0) + 1;
+    W.biome[c] = topI;
+    W.biome2[c] = secondI;
+    W.biomeMix[c] = topW;
+    _counts[topI]++;
 
     if (!isSea) {
       landN++;
@@ -186,14 +266,17 @@ export function ecologyTick(W, chronLog) {
     }
 
     // Ecosystem engineers. Item 70.
-    if (whittaker && b === 'reef' && W.life[c] > 0.2) {
+    if (whittaker && topI === I_REEF && W.life[c] > 0.2) {
       W.h[c] = Math.min(W.seaLevel - 0.01, W.h[c] + 0.00002);
     }
-    if (whittaker && !isSea && W.life[c] > 0.5 && W.transitions?.landPlants) {
+    if (whittaker && !isSea && W.life[c] > 0.5 && landPlants) {
       W.soil[c] = clamp(W.soil[c] + 0.002, 0, 1);
     }
   }
   W.landLifeFrac = landN ? landLife / landN : 0;
+  for (let i = 0; i < BIOMES.length; i++) {
+    if (_counts[i]) counts[BIOMES[i]] = _counts[i];
+  }
   W.biomeCounts = counts;
   let ecoN = 0;
   if (landN) {
@@ -225,9 +308,9 @@ export function ecologyTick(W, chronLog) {
     if (m > 0.22 && m < 0.4) {
       if (W.life[c] > 0.45) {
         W.moist[c] = Math.min(0.55, m + 0.002); // trees make rain
-        W.biome[c] = BIOMES.indexOf('tropSeasonal');
+        W.biome[c] = I_TROPSEASONAL;
       } else if (W.life[c] < 0.2) {
-        W.biome[c] = BIOMES.indexOf('savanna');
+        W.biome[c] = I_SAVANNA;
       }
     }
   }

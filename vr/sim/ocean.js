@@ -1,7 +1,7 @@
 /** Circulating ocean: wind-stress SWE, salt, overturning, ENSO, waves.
  *  Currents backlog: oceanvel, ekman, gyre, wbc, salt, moc, enso, mixedlayer, wavefield. */
 
-import { NC, DIR, NBR, AREA } from '../sphere.js';
+import { NC, DIR, LON, NBR, AREA } from '../sphere.js';
 import { clamp } from '../math.js';
 import { advectField } from './atmo.js';
 import { upwindNeighbour } from './vecop.js';
@@ -124,7 +124,7 @@ function fetchLength(W, c, u, v) {
 export function ensoEastness(W, c) {
   const mid = W._ensoBasinLon;
   if (mid == null || !(W._ensoBasinN > 12)) return DIR[c * 3];
-  let d = Math.atan2(DIR[c * 3 + 2], DIR[c * 3]) - mid;
+  let d = LON[c] - mid;
   if (d > Math.PI) d -= Math.PI * 2;
   if (d < -Math.PI) d += Math.PI * 2;
   return clamp(d / 1.4, -1, 1);

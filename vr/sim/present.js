@@ -47,7 +47,11 @@ export function presentAdvance(dt) {
   const rate = _reduced ? 0.12 : 1;
   _t += Math.max(0, dt) * rate;
   _seedPhase = ((W.seed | 0) * 2.399 + (W.year | 0) * 0.00017) % (Math.PI * 2);
-  wearTick(Math.pow(0.972, Math.max(0.2, dt * 60)));
+  /* Wear used to decay here, on the presentation clock, so a trodden path faded
+     at a rate set by frame rate and did not fade at all in a headless run — the
+     field saturated at 1.0 across a quarter of the planet. It is a world field
+     (ground that has been walked on), so `agentsTick` decays it now, on the same
+     clock as the walking. */
 }
 
 export function presentTime() { return _t; }

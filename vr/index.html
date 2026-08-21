@@ -3,7 +3,7 @@
 <title>ORRERY</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
 <style>
   :root { color-scheme: dark;
     --bg: #03050a;
@@ -291,10 +291,10 @@
   .dock-pane.on { display:block; }
   @keyframes paneIn { from { opacity:0; transform:translateY(4px); } to { opacity:1; transform:none; } }
   .tools { display:flex; gap:4px; flex-wrap:wrap; }
-  #toolsLand, #toolsLife, #toolsStrike, #toolsClimate {
+  #toolsLand, #toolsLife, #toolsStrike, #toolsClimate, #toolsEvil {
     display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:4px;
   }
-  #toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button {
+  #toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsEvil button {
     width:100%; justify-content:flex-start; min-width:0; min-height:30px;
   }
   .tools button, .dock-foot button, .god-actions button, .god-primary {
@@ -366,6 +366,22 @@
     font-family: Syne, sans-serif; font-weight:700; font-size:13px; color:#f0f4ff;
     letter-spacing:.02em; display:block; margin-bottom:2px;
   }
+  #darkhud {
+    display:none; position:fixed; top:calc(58px + var(--safe-t)); left:calc(var(--gutter) + var(--safe-l));
+    z-index:40; max-width:min(280px, 42vw); padding:8px 10px; border-radius:10px;
+    background:rgba(8,12,20,.82); border:1px solid rgba(120,160,220,.22);
+    font-size:11px; line-height:1.45; color:#9eb0cc; pointer-events:none;
+  }
+  #darkhud .dark-h { margin-top:6px; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#7a90b0; }
+  #darkhud .dark-toll { color:#e8a090; }
+  #darkhud .dark-toll b, #darkhud .dark-doom b { color:#f0d8d0; font-weight:600; }
+  #darkhud .dark-muted { color:#6a7a94; }
+  #darkhud .dark-in { color:#a8e0f0; }
+  #darkhud .dark-ix { color:#c8d0ff; }
+  #darkhud .dark-rel.bad { color:#e08070; }
+  #darkhud .dark-rel.good { color:#7dff9a; }
+  #darkhud .dark-rel.mid { color:#b0c0d8; }
+  body.letitrun #darkhud { opacity:0; }
   #inspect { display:none; margin-top:8px; padding:8px; border-radius:8px;
     background:rgba(0,0,0,.28); border:1px solid var(--line);
     font-size:11px; line-height:1.5; color:#b8c8e0; }
@@ -622,6 +638,53 @@
     box-shadow: 0 0 24px rgba(110,200,140,.45);
   }
 
+  /* Cernunnos train-of-thought — top-right margin, left-aligned prose */
+  #thought {
+    pointer-events:none; position:absolute; z-index:7;
+    top: calc(54px + var(--safe-t) + 10px);
+    right: calc(var(--gutter) + var(--safe-r) + 4px);
+    left: auto;
+    width: min(22rem, 36vw);
+    max-width: calc(100vw - 2 * var(--gutter) - var(--safe-l) - var(--safe-r) - 12px);
+    text-align: left;
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity .85s var(--ease), transform 1s var(--ease);
+  }
+  #thought.show {
+    opacity: 1; transform: translateY(0);
+  }
+  #thought.warn .th-kicker { color: #e8a070; }
+  #thought.wild .th-kicker { color: #9fe8c8; }
+  #thought.quiet .th-kicker,
+  #thought.soft .th-kicker { color: #9aa6b8; }
+  #thought .th-kicker {
+    font-family: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+    font-size: 8.5px; letter-spacing: .28em; text-transform: uppercase;
+    color: #8a9a88; margin-bottom: 8px; font-weight: 500;
+  }
+  #thought .th-text {
+    font-family: Literata, "Source Serif 4", "Iowan Old Style", Palatino, Georgia, serif;
+    font-weight: 500;
+    font-size: clamp(15px, 1.55vw, 19px);
+    line-height: 1.45;
+    color: rgba(236, 240, 248, 0.94);
+    text-shadow: 0 2px 24px rgba(0,0,0,.7), 0 0 1px rgba(0,0,0,.5);
+    letter-spacing: 0.01em;
+    font-optical-sizing: auto;
+  }
+  #thought .th-trail {
+    margin-top: 10px; font-size: 11.5px;
+    color: rgba(150, 168, 188, 0.5);
+    font-family: Literata, Georgia, serif;
+    font-style: italic;
+    font-weight: 400;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+    max-height: 3.2em; overflow: hidden;
+  }
+  body.ceremony #thought { opacity: 0 !important; }
+
   /* First-run reveal */
   #reveal {
     position:absolute; left:50%; bottom:12%; transform:translateX(-50%);
@@ -867,49 +930,59 @@
     inset: calc(54px + var(--safe-t)) var(--gutter) calc(var(--gutter) + var(--safe-b)) var(--gutter);
     width: auto; max-width: none; margin: 0;
     max-height: none;
-    background:var(--panel); backdrop-filter:blur(18px); border:1px solid var(--line);
-    border-radius:14px; padding:8px 10px 10px; pointer-events:auto;
-    flex-direction:column; gap:6px; box-shadow: 0 16px 48px rgba(0,0,0,.45);
+    background:rgba(8,10,16,.94); backdrop-filter:blur(18px); border:1px solid var(--line);
+    border-radius:10px; padding:10px 12px 12px; pointer-events:auto;
+    flex-direction:column; gap:8px; box-shadow: 0 16px 48px rgba(0,0,0,.45);
     overflow:hidden;
   }
   #localkey.open { display:flex; animation: dockIn .4s var(--ease); }
-  #localkey .lk-head { display:flex; align-items:center; justify-content:space-between; gap:10px; flex:0 0 auto; }
-  #localkey h1 { font-family: Syne, sans-serif; font-size:13px; margin:0; letter-spacing:.04em; }
-  #localkey .lk-sub { color:var(--dim); font-size:11px; margin:2px 0 0; line-height:1.3; }
+  #localkey .lk-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex:0 0 auto; padding-bottom:8px; border-bottom:1px solid rgba(140,160,190,.18); }
+  #localkey h1 { font-family: Syne, sans-serif; font-size:14px; margin:0; letter-spacing:.08em; text-transform:uppercase; font-weight:700; }
+  #localkey .lk-sub { color:var(--dim); font-size:11px; margin:4px 0 0; line-height:1.4; max-width:54em; }
   #localkeylist {
     overflow:auto; flex:1 1 auto; min-height:0;
-    display:flex; flex-direction:column; gap:5px;
+    display:flex; flex-direction:column; gap:2px;
   }
   #localkey .lk-sec {
-    font-family: Syne, sans-serif; font-size:8.5px; font-weight:700;
-    letter-spacing:.16em; text-transform:uppercase; color:#9fc0ff;
-    margin:4px 0 0;
+    font-family: Syne, sans-serif; font-size:9px; font-weight:700;
+    letter-spacing:.18em; text-transform:uppercase; color:#c8d6ee;
+    margin:14px 0 0; padding-top:10px; border-top:1px solid rgba(140,160,190,.16);
   }
+  #localkey .lk-sec:first-child { margin-top:2px; padding-top:0; border-top:0; }
   #localkey .lk-blurb {
-    font-size:11px; color:#9aacc4; line-height:1.35; margin:0 0 2px;
+    font-size:11px; color:#8fa0b8; line-height:1.35; margin:2px 0 6px;
   }
   #localkey .lk-grid {
     display:grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap:3px 6px; flex:0 0 auto;
+    gap:0; flex:0 0 auto;
   }
   #localkey .lk-grid.guilds { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  #localkey .lk-grid.marks {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+  #localkey .lk-grid.marks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #localkey .lk-grid.primer {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap:6px; margin-bottom:4px;
   }
   #localkey .lk-row {
-    display:grid; grid-template-columns:12px 1fr; gap:1px 8px; align-items:start;
-    text-align:left; width:100%; padding:6px 8px; border-radius:6px;
-    background:rgba(0,0,0,.22); border:1px solid var(--line);
+    display:grid; grid-template-columns:18px 1fr; gap:2px 10px; align-items:start;
+    text-align:left; width:100%; padding:7px 8px; border-radius:0;
+    background:transparent; border:0; border-bottom:1px solid rgba(120,140,170,.12);
     color:#c5d4ec; font:inherit; cursor:pointer;
   }
-  #localkey .lk-row:hover { border-color:rgba(110,160,255,.4); }
+  #localkey .lk-grid.primer .lk-row {
+    border:1px solid rgba(140,160,190,.22); border-radius:6px;
+    background:rgba(0,0,0,.28); padding:8px 9px;
+  }
+  #localkey .lk-row:hover { background:rgba(110,160,255,.08); }
   #localkey .lk-row.on {
-    border-color:rgba(110,160,255,.55); background:rgba(110,160,255,.12);
+    background:rgba(110,160,255,.12);
+    box-shadow: inset 2px 0 0 rgba(140,190,255,.85);
   }
+  #localkey .lk-row.nolock { cursor:default; }
   #localkey .lk-swatch {
-    width:10px; height:10px; border-radius:2px; margin-top:3px;
-    display:block; flex:0 0 auto;
+    width:12px; height:12px; border-radius:2px; margin-top:2px;
+    display:block; flex:0 0 auto; position:relative;
   }
+  #localkey .lk-swatch.block { border-radius:2px; }
   #localkey .lk-swatch.frame {
     background:transparent; box-shadow: inset 0 0 0 2px rgb(232,200,120);
   }
@@ -917,17 +990,121 @@
     background:#080a10; box-shadow: inset 0 0 0 1px rgba(180,140,80,.75);
   }
   #localkey .lk-swatch.dot {
-    width:7px; height:7px; border-radius:50%; margin:4px 1px 0;
+    width:8px; height:8px; border-radius:50%; margin:4px 2px 0;
+  }
+  #localkey .lk-swatch.cross {
+    background:transparent; width:14px; height:14px; margin-top:1px;
+    box-shadow: none;
+  }
+  #localkey .lk-swatch.cross::before,
+  #localkey .lk-swatch.cross::after {
+    content:""; position:absolute; left:50%; top:50%;
+    width:12px; height:2px; background:currentColor; border-radius:1px;
+    transform:translate(-50%,-50%) rotate(45deg);
+  }
+  #localkey .lk-swatch.cross::after { transform:translate(-50%,-50%) rotate(-45deg); }
+  #localkey .lk-swatch.rim {
+    background:transparent; border-radius:50%;
+    box-shadow: inset 0 0 0 2px rgb(255,210,90);
+  }
+  #localkey .lk-swatch.light {
+    border-radius:50%; box-shadow: 0 0 6px 1px currentColor;
+  }
+  #localkey .lk-swatch.streak {
+    height:3px; width:14px; border-radius:2px; margin-top:6px;
+    background: linear-gradient(90deg, transparent, currentColor 35%, currentColor 65%, transparent);
+  }
+  #localkey .lk-swatch.spark {
+    background:transparent; border-radius:50%;
+    box-shadow: inset 0 0 0 1.5px currentColor;
+  }
+  #localkey .lk-swatch.wedge {
+    background:transparent; width:0; height:0; margin:3px 0 0 1px;
+    border-style:solid; border-width:5px 0 5px 10px;
+    border-color: transparent transparent transparent currentColor;
+    box-shadow:none;
+  }
+  #localkey .lk-swatch.dashes {
+    background:transparent; width:12px; height:10px; margin-top:2px;
+    box-shadow:
+      inset 0 2px 0 0 currentColor,
+      inset 0 -2px 0 0 currentColor;
+  }
+  #localkey .lk-swatch.leaf {
+    border-radius:50% 50% 50% 0; transform: rotate(-45deg); margin-top:4px;
+  }
+  #localkey .lk-swatch.tend {
+    background:transparent; box-shadow: inset 0 0 0 1.5px currentColor;
+  }
+  #localkey .lk-swatch.arc {
+    background:transparent; border-radius:50%;
+    box-shadow: inset 0 -2px 0 0 currentColor;
+  }
+  #localkey .lk-swatch.glyph-tri {
+    background:transparent; width:0; height:0; margin:2px 0 0 1px;
+    border-style:solid; border-width:0 5px 9px 5px;
+    border-color: transparent transparent currentColor transparent;
+    box-shadow:none;
+  }
+  #localkey .lk-swatch.glyph-sq { border-radius:1px; }
+  #localkey .lk-swatch.glyph-ell {
+    width:12px; height:7px; border-radius:50%; margin-top:4px;
+  }
+  #localkey .lk-swatch.glyph-circ { border-radius:50%; }
+  #localkey .lk-swatch.tree {
+    background:transparent; width:12px; height:14px; margin-top:0;
+    box-shadow:none;
+  }
+  #localkey .lk-swatch.tree::before {
+    content:""; position:absolute; left:50%; bottom:0; width:2px; height:5px;
+    background: #6a4a28; transform:translateX(-50%);
+  }
+  #localkey .lk-swatch.tree::after {
+    content:""; position:absolute; left:50%; top:0; width:0; height:0;
+    border-style:solid; border-width:0 6px 10px 6px;
+    border-color: transparent transparent currentColor transparent;
+    transform:translateX(-50%);
+  }
+  #localkey .lk-swatch.scrub {
+    background:transparent; width:12px; height:12px; margin-top:1px;
+    box-shadow:
+      2px 8px 0 -4px currentColor,
+      6px 6px 0 -4px currentColor,
+      10px 8px 0 -4px currentColor;
+  }
+  #localkey .lk-swatch.roof {
+    background:transparent; width:12px; height:12px; margin-top:1px;
+    box-shadow:none;
+  }
+  #localkey .lk-swatch.roof::before {
+    content:""; position:absolute; left:1px; bottom:1px; width:10px; height:6px;
+    background: #c8b8a0;
+  }
+  #localkey .lk-swatch.roof::after {
+    content:""; position:absolute; left:0; bottom:6px; width:0; height:0;
+    border-style:solid; border-width:0 6px 5px 6px;
+    border-color: transparent transparent #c04038 transparent;
   }
   #localkey .lk-name {
-    font-size:12px; color:#e8f0ff; font-weight:600; font-family: Syne, sans-serif;
-    line-height:1.2;
+    font-size:12px; color:#eef3ff; font-weight:650; font-family: Syne, sans-serif;
+    line-height:1.2; display:flex; align-items:baseline; gap:6px; flex-wrap:wrap;
   }
-  #localkey .lk-why { font-size:10.5px; color:#9aacc4; line-height:1.32; margin-top:2px; }
+  #localkey .lk-where {
+    font-size:8px; font-weight:700; letter-spacing:.1em; text-transform:uppercase;
+    color:#7a90b0; border:1px solid rgba(122,144,176,.35); border-radius:2px;
+    padding:1px 4px; line-height:1.2; font-family: ui-monospace, Menlo, monospace;
+  }
+  #localkey .lk-where.globe { color:#9fe8c8; border-color:rgba(159,232,200,.4); }
+  #localkey .lk-where.map { color:#e8c48a; border-color:rgba(232,196,138,.4); }
+  #localkey .lk-why {
+    font-size:10.5px; color:#8fa0b8; line-height:1.3; margin-top:2px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
   @media (max-width: 900px) {
     #localkey .lk-grid,
     #localkey .lk-grid.guilds,
-    #localkey .lk-grid.marks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #localkey .lk-grid.marks,
+    #localkey .lk-grid.primer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   #catpanel .cat-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
   #catpanel h1 { font-family: Syne, sans-serif; font-size:11px; letter-spacing:.2em; text-transform:uppercase; margin:0; color:#9fc0ff; font-weight:700; }
@@ -1344,7 +1521,8 @@
     .clim-compare { grid-template-columns: 1fr; }
     #localkey .lk-grid,
     #localkey .lk-grid.guilds,
-    #localkey .lk-grid.marks { grid-template-columns: 1fr; }
+    #localkey .lk-grid.marks,
+    #localkey .lk-grid.primer { grid-template-columns: 1fr; }
 
     #timeribbon {
       left: calc(var(--gutter) + var(--safe-l));
@@ -1383,6 +1561,11 @@
       width: min(420px, calc(100vw - 16px - var(--safe-l) - var(--safe-r)));
     }
     #moment { top: 18%; width: min(92vw, 28rem); padding: 0 8px; box-sizing: border-box; }
+    #thought {
+      top: calc(48px + var(--safe-t) + 6px);
+      right: calc(var(--gutter) + var(--safe-r));
+      width: min(18rem, 52vw);
+    }
   }
 
   @media (max-width: 820px) and (max-height: 480px) {
@@ -1444,6 +1627,7 @@
           <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="land" aria-pressed="true" title="Raise, flatten, rivers — and the stroke that paints them"></button>
           <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="life" aria-pressed="false" title="What to plant, then seed or refuge"></button>
           <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="strike" aria-pressed="false" title="Impacts, eruptions, climate levers"></button>
+          <button type="button" class="suite-desk-tab" data-suite="tools" data-desk="evil" aria-pressed="false" title="Harm with an author — poison, waste, warheads, war, plague"></button>
         </div>
         <div class="suite-desk on" data-suite-panel="tools" data-desk-panel="land">
           <p class="god-note" style="margin:0 0 8px">Pick a verb, then right-drag the globe. Brush size follows zoom. <kbd>Q</kbd> looks.</p>
@@ -1555,6 +1739,12 @@
           <div class="tools" id="toolsStrike"></div>
           <p class="god-note" style="margin:12px 0 8px">Whole planet — click anywhere.</p>
           <div class="tools" id="toolsClimate"></div>
+        </div>
+        <div class="suite-desk" data-suite-panel="tools" data-desk-panel="evil" hidden>
+          <p class="god-note" style="margin:0 0 8px">Everything on the Strike desk is something a planet does to itself. These have an author. Click the <b>target</b>; launchers pick their own silo.</p>
+          <div class="tools" id="toolsEvil"></div>
+          <p class="god-note" style="margin:12px 0 0">A launch takes ticks to arrive and can be shot down — watch the track. Overlays: <b>Fallout</b>, <b>Toxin</b>, <b>Plague</b>, <b>War</b>.</p>
+          <div id="darkhud-dock" class="god-note" style="margin-top:10px"></div>
         </div>
       </div>
       <div class="dock-pane" id="pane-god">
@@ -1728,9 +1918,13 @@
           <div class="sec-h" data-sec-icon="orbitguides">Guides</div>
           <div class="tools clim-actions" style="margin-bottom:8px">
             <button type="button" id="viewOrbitGuides" aria-pressed="true" title="Cyan axis · white equator · gold ecliptic">Axis guides</button>
+            <button type="button" id="viewThought" aria-pressed="true" title="Cernunnos — floating train of thought about the view">Thought</button>
           </div>
           <div class="sec-h" data-sec-icon="keys">Keys</div>
-          <p class="hint-mini"><kbd>scroll</kbd> zoom · drag spin · <kbd>shift-drag</kbd> park · <kbd>Home</kbd> recenter · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>,.</kbd> clock · ribbon = era + rate</p>
+          <p class="hint-mini">Open <b>key</b> on the map panel for globe crosses, night lights, map glyphs, hunt wedges, and cover colours. Keyboard: <kbd>scroll</kbd> zoom · drag spin · <kbd>shift-drag</kbd> park · <kbd>Home</kbd> recenter · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>,.</kbd> clock</p>
+          <div class="tools clim-actions" style="margin-top:6px">
+            <button type="button" id="viewOpenKey" title="Globe & map legend">Globe &amp; map key</button>
+          </div>
         </div>
       </div>
       <div class="dock-pane" id="pane-lab">
@@ -1820,6 +2014,12 @@
     <div class="m-sub"></div>
   </div>
 
+  <div id="thought" aria-live="polite" hidden>
+    <div class="th-kicker">Cernunnos</div>
+    <div class="th-text"></div>
+    <div class="th-trail"></div>
+  </div>
+
   <div id="reveal" hidden>
     <div class="rv-kicker">Welcome</div>
     <div class="rv-progress" id="revealdots" hidden></div>
@@ -1862,7 +2062,7 @@
   <div id="localkey" role="dialog" aria-modal="true" aria-labelledby="localkeytitle">
     <div class="lk-head">
       <div>
-        <h1 id="localkeytitle">Map squares</h1>
+        <h1 id="localkeytitle">Globe &amp; map</h1>
         <p class="lk-sub" id="localkeysub"></p>
       </div>
       <button type="button" id="localkeyclose">Close</button>
@@ -1930,7 +2130,7 @@
     </div>
     <div id="locallegendrow">
       <div id="locallegend"></div>
-      <button type="button" id="localkeybtn" title="What the squares mean" aria-haspopup="dialog" aria-controls="localkey" aria-pressed="false">key</button>
+      <button type="button" id="localkeybtn" title="What globe marks and map squares mean" aria-haspopup="dialog" aria-controls="localkey" aria-pressed="false">key</button>
     </div>
     <div id="localstatus"></div>
   </div>
@@ -1941,4 +2141,4 @@
   </div>
 </div>
 <div id="err"></div>
-    <script type="module" src="./main.js?v=alive52"></script>
+    <script type="module" src="./main.js?v=alive57"></script>

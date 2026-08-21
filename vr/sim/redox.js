@@ -141,36 +141,46 @@ export function initSpeciesFields(W) {
   relaxSpeciesFields(W, 1.5, true);
 }
 
+/** Equilibrium is read once per cell and never retained, so one shared vector
+ *  indexed by SPECIES_KEYS order replaces 24k object allocations per tick. */
+const EQ_AT = Object.fromEntries(SPECIES_KEYS.map((k, n) => [k, n]));
+const EQV = new Float64Array(SPECIES_KEYS.length);
+const I_H2 = EQ_AT.H2, I_H2S = EQ_AT.H2S, I_Fe2 = EQ_AT.Fe2, I_Fe3 = EQ_AT.Fe3,
+  I_CH4 = EQ_AT.CH4, I_NH4 = EQ_AT.NH4, I_NO3 = EQ_AT.NO3, I_NO2 = EQ_AT.NO2,
+  I_SO4 = EQ_AT.SO4, I_CO2 = EQ_AT.CO2, I_O2 = EQ_AT.O2, I_orgC = EQ_AT.orgC,
+  I_N2 = EQ_AT.N2, I_H2O = EQ_AT.H2O, I_lignin = EQ_AT.lignin,
+  I_light = EQ_AT.light, I_none = EQ_AT.none, I_ATP = EQ_AT.ATP;
+
 function speciesEquilibrium(W, c) {
-  const { h, seaLevel, bound, gases, moist, temp, life } = W;
+  const { h, seaLevel, gases, moist, temp, life } = W;
   const isSea = h[c] < seaLevel;
   const shallow = isSea && (seaLevel - h[c]) < 0.12;
   const lit = isSea
     ? Math.max(0, 1 - (seaLevel - h[c]) * 8) * Math.max(0.1, temp[c])
     : Math.max(0.15, temp[c]);
-  const eq = {};
+  const eq = EQV;
   // Serpentinisation: olivine + water → H2. provenance: measured-shape
   const ultra = (W.rock?.[c] === 0) ? 1 : 0.25;
-  eq.H2 = isSea ? 0.02 * (0.6 + ultra) : 0.001;
+  eq[I_H2] = isSea ? 0.02 * (0.6 + ultra) : 0.001;
   // provenance: fitted — anoxygenic photosynthesis viable on lit shelves (yield 0.28, maint 0.04)
-  eq.H2S = (shallow && lit > 0.5) ? 0.22 : (isSea ? 0.03 : 0.002);
-  eq.Fe2 = isSea ? (W.fe2Ocean || 0.3) : 0.01;
-  eq.Fe3 = isSea ? 0.05 : 0.1;
-  eq.CH4 = isSea ? clamp((gases.CH4 || 0) * 10, 0, 1) : 0;
-  eq.NH4 = 0.04;
-  eq.NO3 = gases.O2 > 0.01 ? 0.08 : 0.001;
-  eq.NO2 = gases.O2 > 0.01 ? 0.02 : 0.001;
-  eq.SO4 = gases.O2 > 0.005 ? 0.15 : 0.01;
+  eq[I_H2S] = (shallow && lit > 0.5) ? 0.22 : (isSea ? 0.03 : 0.002);
+  eq[I_Fe2] = isSea ? (W.fe2Ocean || 0.3) : 0.01;
+  eq[I_Fe3] = isSea ? 0.05 : 0.1;
+  eq[I_CH4] = isSea ? clamp((gases.CH4 || 0) * 10, 0, 1) : 0;
+  eq[I_NH4] = 0.04;
+  eq[I_NO3] = gases.O2 > 0.01 ? 0.08 : 0.001;
+  eq[I_NO2] = gases.O2 > 0.01 ? 0.02 : 0.001;
+  eq[I_SO4] = gases.O2 > 0.005 ? 0.15 : 0.01;
   // saturation sketch: atmospheric CO₂ mapped to dissolved 0–1
-  eq.CO2 = clamp(gases.CO2 * 20, 0, 1);
-  eq.O2 = isSea ? gases.O2 * 0.7 : gases.O2;
-  eq.orgC = life[c] * 0.3;
-  eq.N2 = gases.N2;
-  eq.H2O = isSea || moist[c] > 0.2 ? 1 : moist[c];
-  eq.lignin = W.transitions?.landPlants ? life[c] * 0.2 : 0;
-  eq.light = lit;
-  eq.none = 1;
-  eq.ATP = 0.5;
+  eq[I_CO2] = clamp(gases.CO2 * 20, 0, 1);
+  eq[I_O2] = isSea ? gases.O2 * 0.7 : gases.O2;
+  eq[I_orgC] = life[c] * 0.3;
+  eq[I_N2] = gases.N2;
+  eq[I_H2O] = isSea || moist[c] > 0.2 ? 1 : moist[c];
+  eq[I_lignin] = W.transitions?.landPlants ? life[c] * 0.2 : 0;
+  eq[I_light] = lit;
+  eq[I_none] = 1;
+  eq[I_ATP] = 0.5;
   return eq;
 }
 
@@ -182,35 +192,55 @@ function seedVentChemistry(W) {
 export function relaxSpeciesFields(W, dt, init = false) {
   const { species, h, seaLevel, bound } = W;
   const diffuseRate = init ? 0 : 0.04 * dt;
-  const scratch = init ? null : Object.fromEntries(SPECIES_KEYS.map((k) => [k, new Float32Array(NC)]));
+  let scratch = null;
+  if (!init) {
+    scratch = W._relaxScratch;
+    if (!scratch || scratch.length !== SPECIES_KEYS.length || scratch[0].length !== NC) {
+      scratch = SPECIES_KEYS.map(() => new Float32Array(NC));
+      W._relaxScratch = scratch; // reused every tick — this was 1.6 MB of garbage
+    }
+  }
+  // Field, rate and neighbour policy are per species, not per cell: resolve them
+  // once instead of 24k × 18 string lookups.
+  const plan = [];
+  for (let k = 0; k < SPECIES_KEYS.length; k++) {
+    const key = SPECIES_KEYS[k];
+    const arr = species[key];
+    if (!arr) continue;
+    const r = RELAX[key] ?? 0.1;
+    plan.push({
+      arr,
+      out: init ? arr : scratch[k],
+      idx: k,
+      rate: r * dt,
+      dfac: (!init && diffuseRate > 0 && key !== 'orgC' && key !== 'lignin')
+        ? diffuseRate * (r > 0.5 ? 0.8 : 0.15) : 0,
+      vent: key === 'H2' ? 0.08 * dt : key === 'H2S' ? 0.05 * dt : key === 'Fe2' ? 0.04 * dt : 0,
+    });
+  }
+  const np = plan.length;
   for (let c = 0; c < NC; c++) {
-    const isSea = h[c] < seaLevel;
     const eq = speciesEquilibrium(W, c);
-    for (const key of SPECIES_KEYS) {
-      const arr = species[key];
-      if (!arr) continue;
-      const r = RELAX[key] ?? 0.1;
-      let v = init ? eq[key] ?? 0 : arr[c] + ((eq[key] ?? 0) - arr[c]) * r * dt;
-      if (!init && diffuseRate > 0 && key !== 'orgC' && key !== 'lignin') {
-        let sum = 0;
-        for (let k = 0; k < 4; k++) sum += arr[NBR[c * 4 + k]];
-        v += (sum / 4 - v) * diffuseRate * (r > 0.5 ? 0.8 : 0.15);
+    const venting = bound[c] === 0 && h[c] < seaLevel;
+    const b = c * 4;
+    const n0 = NBR[b], n1 = NBR[b + 1], n2 = NBR[b + 2], n3 = NBR[b + 3];
+    for (let p = 0; p < np; p++) {
+      const P = plan[p];
+      const arr = P.arr;
+      const target = eq[P.idx];
+      let v = target;
+      if (!init) {
+        v = arr[c] + (target - arr[c]) * P.rate;
+        if (P.dfac > 0) {
+          v += ((arr[n0] + arr[n1] + arr[n2] + arr[n3]) * 0.25 - v) * P.dfac;
+        }
       }
-      if (bound[c] === 0 && isSea) {
-        if (key === 'H2') v = Math.min(1, v + 0.08 * dt);
-        if (key === 'H2S') v = Math.min(1, v + 0.05 * dt);
-        if (key === 'Fe2') v = Math.min(1, v + 0.04 * dt);
-      }
-      v = clamp(v, 0, 1);
-      if (init) arr[c] = v;
-      else scratch[key][c] = v;
+      if (venting && P.vent > 0) v = Math.min(1, v + P.vent);
+      P.out[c] = v < 0 ? 0 : v > 1 ? 1 : v;
     }
   }
   if (!init) {
-    for (const key of SPECIES_KEYS) {
-      const arr = species[key];
-      if (arr) arr.set(scratch[key]);
-    }
+    for (let p = 0; p < np; p++) plan[p].arr.set(plan[p].out);
   }
 }
 
@@ -221,29 +251,52 @@ function markTransition(W, key, chronLog, label) {
   if (chronLog && label) chronLog(W.year, 'evolution', 0, 1, label);
 }
 
-function guildViable(g, sp, c, W) {
-  if (g.oxygenic && !W.transitions.oxygenicPhotosynthesis) return 0;
-  if (g.id === 'aerobe' && !W.transitions.aerobicRespiration) return 0;
-  if (g.id === 'decomposer' && !W.transitions.landPlants) return 0;
+/** Per-tick view of a guild: fields, gates and scales resolved once so the
+ *  24k-cell loop does array indexing instead of string lookups. */
+function prepareGuilds(W) {
+  const { species, guildDens, transitions } = W;
+  const prep = [];
+  for (let i = 0; i < GUILDS.length; i++) {
+    const g = GUILDS[i];
+    prep.push({
+      id: g.id,
+      yield: g.yield,
+      dens: guildDens[g.id],
+      donor: species[g.donor] || null,
+      acc: g.acceptor === 'none' ? null : (species[g.acceptor] || null),
+      accOne: g.acceptor === 'none',
+      o2: species.O2,
+      blocked: (g.oxygenic && !transitions.oxygenicPhotosynthesis)
+        || (g.id === 'aerobe' && !transitions.aerobicRespiration)
+        || (g.id === 'decomposer' && !transitions.landPlants),
+      maintScale: MAINT_SCALE[g.id] ?? 1,
+      nFix: !!g.nFix,
+      vent: !!g.vent,
+      oxygenic: !!g.oxygenic,
+      makesCH4: g.makes === 'CH4',
+    });
+  }
+  return prep;
+}
 
-  const donor = sp[g.donor]?.[c] ?? 0;
-  const acc = g.acceptor === 'none' ? 1 : (sp[g.acceptor]?.[c] ?? 0);
+/** T and rate come from the cell, not the guild — the caller computes them once. */
+function guildViable(P, c, W, T, rate) {
+  if (P.blocked) return 0;
+
+  const donor = P.donor ? P.donor[c] : 0;
+  const acc = P.accOne ? 1 : (P.acc ? P.acc[c] : 0);
   if (donor < 0.01 || acc < 0.01) return 0;
 
   // Nitrogenase is poisoned by oxygen and costs 16 ATP/N2. provenance: measured
-  if (g.nFix && (sp.O2[c] || 0) > 0.05) return donor * acc * 0.02;
+  if (P.nFix && (P.o2[c] || 0) > 0.05) return donor * acc * 0.02;
 
-  const T = W.temp[c];
-  const TK = tempKOf(W, c);
-  const rate = bioRateScale(TK, W.solvent || solventOf(W.rule));
-  const maintScale = MAINT_SCALE[g.id] ?? 1;
-  const maint = (0.04 + Math.max(0, 0.5 - T) * 0.08) * maintScale;
+  const maint = (0.04 + Math.max(0, 0.5 - T) * 0.08) * P.maintScale;
   // ΔG sketch: yield × Q, Q from concentrations already on the cell. provenance: fitted
   const Q = Math.max(1e-4, donor * acc);
-  let energy = g.yield * Q * (0.6 + T * 0.5) * rate;
-  if (g.nFix) energy *= 0.45; // ATP bill
+  let energy = P.yield * Q * (0.6 + T * 0.5) * rate;
+  if (P.nFix) energy *= 0.45; // ATP bill
   let ventPenalty = 1;
-  if (g.vent) {
+  if (P.vent) {
     const hot = W.bound[c] === 0
       || (W.hydrotherm?.[c] || 0) > 0.2
       || (W.shellVent?.[c] || 0) > 0.2;
@@ -267,8 +320,10 @@ export function redoxTick(W, chronLog) {
   originTick(W, chronLog);
   maybeInvent(W, chronLog, roll);
 
-  const means = {};
-  for (const g of GUILDS) means[g.id] = 0;
+  const prep = prepareGuilds(W);
+  const solvent = W.solvent || solventOf(W.rule);
+  const temp = W.temp;
+  const means = new Float64Array(GUILDS.length);
 
   let photosynthProxy = 0;
   let ch4Prod = 0;
@@ -277,17 +332,24 @@ export function redoxTick(W, chronLog) {
 
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
-    let bestFit = 0, bestId = 'fermenter';
     let cellBio = 0;
+    // Cell-wide, not guild-wide: computing these inside the guild loop meant 17
+    // redundant Arrhenius exponentials per cell.
+    const T = temp[c];
+    const rate = bioRateScale(tempKOf(W, c), solvent);
+    const b4 = c * 4;
+    const n0 = NBR[b4], n1 = NBR[b4 + 1], n2 = NBR[b4 + 2], n3 = NBR[b4 + 3];
 
-    for (const g of GUILDS) {
-      let fit = guildViable(g, species, c, W);
+    for (let gi = 0; gi < prep.length; gi++) {
+      const P = prep[gi];
+      const dens = P.dens;
+      let fit = guildViable(P, c, W, T, rate);
       if (fit <= 0) {
-        guildDens[g.id][c] *= Math.max(0, 1 - 0.08 * dt);
+        dens[c] *= Math.max(0, 1 - 0.08 * dt);
         continue;
       }
       // Syntrophy: AOM needs methanotroph + sulfateReducer nearby. Item 27.
-      if (g.id === 'methanotroph' && gases.O2 < 0.01) {
+      if (P.id === 'methanotroph' && gases.O2 < 0.01) {
         const syn = guildDens.sulfateReducer[c];
         fit *= 0.3 + syn * 2;
       }
@@ -296,31 +358,26 @@ export function redoxTick(W, chronLog) {
       // The old `+ fit*0.15*dt − 0.02*dt` was net-negative for every anoxygenic
       // phototroph (fit ≈ 0.02), which is why meanLife fell for 3 Gyr.
       // provenance: fitted
-      const neigh = Math.max(
-        guildDens[g.id][NBR[c * 4]], guildDens[g.id][NBR[c * 4 + 1]],
-        guildDens[g.id][NBR[c * 4 + 2]], guildDens[g.id][NBR[c * 4 + 3]]
-      );
-      let d = guildDens[g.id][c];
+      const neigh = Math.max(dens[n0], dens[n1], dens[n2], dens[n3]);
+      let d = dens[c];
       const colonise = (0.07 + d * 0.55 + neigh * 0.12) * fit * dt;
-      const death = (0.006 + (fit <= 0 ? 0.1 : 0)) * d * dt;
+      const death = 0.006 * d * dt; // fit > 0 here, so the old dead-guild term was always 0
       d = clamp(d + colonise - death, 0, 1);
       produced += colonise * AREA[c];
       died += death * AREA[c];
-      guildDens[g.id][c] = d;
-      means[g.id] += d * AREA[c];
-      cellBio += d * g.yield;
-
-      if (fit > bestFit) { bestFit = fit; bestId = g.id; }
+      dens[c] = d;
+      means[gi] += d * AREA[c];
+      cellBio += d * P.yield;
 
       // Consume donors / produce products
       if (d > 0.05) {
-        if (species[g.donor]) species[g.donor][c] = Math.max(0, species[g.donor][c] - d * 0.02 * dt);
-        if (g.makes === 'CH4') ch4Prod += d * AREA[c] * 0.00001 * dt;
-        if (g.oxygenic) photosynthProxy += d * AREA[c];
-        if (g.id === 'purpleSulfur' || g.id === 'greenSulfur') {
+        if (P.donor) P.donor[c] = Math.max(0, P.donor[c] - d * 0.02 * dt);
+        if (P.makesCH4) ch4Prod += d * AREA[c] * 0.00001 * dt;
+        if (P.oxygenic) photosynthProxy += d * AREA[c];
+        if (P.id === 'purpleSulfur' || P.id === 'greenSulfur') {
           species.H2S[c] = Math.max(0, species.H2S[c] - d * 0.03 * dt);
         }
-        if (g.id === 'ironOxidizer' || g.id === 'photoferrotroph') {
+        if (P.id === 'ironOxidizer' || P.id === 'photoferrotroph') {
           // BIF deposition. Item 24.
           const drop = d * species.Fe2[c] * 0.04 * dt;
           W.bifRock[c] = clamp(W.bifRock[c] + drop, 0, 1);
@@ -328,17 +385,17 @@ export function redoxTick(W, chronLog) {
           W.fe2Ocean = Math.max(0, (W.fe2Ocean || 0) - drop * 0.00001);
           if (W.rock && drop > 0.01) W.rock[c] = 4; // BIF rock type
         }
-        if (g.id === 'nFixer') {
+        if (P.id === 'nFixer') {
           W.nutrientN[c] = clamp(W.nutrientN[c] + d * 0.02 * dt, 0, 1);
         }
-        if (g.id === 'nitrifier') {
+        if (P.id === 'nitrifier') {
           species.NO3[c] = clamp(species.NO3[c] + d * 0.02 * dt, 0, 1);
           species.NH4[c] = Math.max(0, species.NH4[c] - d * 0.02 * dt);
         }
-        if (g.id === 'denitrifier' || g.id === 'anammox') {
+        if (P.id === 'denitrifier' || P.id === 'anammox') {
           species.NO3[c] = Math.max(0, species.NO3[c] - d * 0.02 * dt);
         }
-        if (g.id === 'sulfateReducer' && gases.O2 < 0.05) {
+        if (P.id === 'sulfateReducer' && gases.O2 < 0.05) {
           // Canfield ocean euxinia. Item 23.
           species.H2S[c] = clamp(species.H2S[c] + d * 0.03 * dt, 0, 1);
         }
@@ -380,7 +437,7 @@ export function redoxTick(W, chronLog) {
     }
   }
 
-  for (const g of GUILDS) W.guilds[g.id] = means[g.id] / NC;
+  for (let gi = 0; gi < GUILDS.length; gi++) W.guilds[GUILDS[gi].id] = means[gi] / NC;
 
   // Methanogen haze. Item 17.
   if (ch4Prod > 0) {

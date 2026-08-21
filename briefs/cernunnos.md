@@ -1,32 +1,29 @@
-# Cernunnos — future guide (held, not shipped)
+# Cernunnos — voice of the living layer
 
-**Status:** parked. The product, repo, and URLs are **Orrery**. This note keeps a name that almost became the title, so it can still steer tone later without renaming anything now.
+**Status:** active as a *voice*, not a product name. The product, repo, and URLs stay **Orrery**.
 
 ## What it is
 
-**Cernunnos** (standard spelling; not “Cerunnos”) is the antlered Celtic figure usually read as lord of beasts and wild places — fertility, animals, the living thicket. One clear inscription; a lot of later projection. Use the *image*, not a reconstructed theology.
+**Cernunnos** (standard spelling) is the antlered figure usually read as lord of beasts and wild places. Here it names the floating train-of-thought over the globe — dense, animal, seasonal — not a storefront brand.
 
-## Why it almost fit
+## What shipped
 
-Orrery is already the right public name: you hold worlds. Cernunnos named something Orrery still wants in the *living* layer — herds that move, hunts that land, fronts that advance, a planet that feels inhabited rather than painted.
+In the VR prototype (`View → Guides → Thought`, on by default):
 
-| Orrery (now) | Cernunnos (later guide) |
-|---|---|
-| Hold the table of worlds | Be the wild that fills one of them |
-| Toy / instrument / lesson | Mood of the biosphere when you lean in |
-| Product, repo, Pages | Internal north star for thrive / Gaia / tile life |
+- Soft lines float in space about **what you are looking at** (the map patch / focus cell).
+- They keep a short **thread** — herds named earlier, hunts that landed, chronicle echoes — so the next line can remember the last.
+- **Diagnosis**: if life is painted but nothing walks, a herd was named with no globe cross, fire with no flee, etc., the voice says so in-character. That is as much a debugger as mood.
 
-## How to use it later (if at all)
+Ceremony moments (first oxygen, lessons) still use the big `#moment` toast. Dawn/dusk ambient prefers Cernunnos when Thought is on.
 
-- **Do not** rename the product or GitHub repo to Cernunnos unless the whole pitch goes myth-first.
-- **Do** borrow it as a voice for living-planet work: dense, animal, seasonal, antlered — not sterile “ecosystem sim.”
-- Optional surfaces if the guide earns a public face: a thrive mode label, a lesson track, an art-direction brief, a subtitle (*Orrery — Cernunnos*) — never the storefront alone.
-- Keep prior-art language honest: SimEarth stays a citation, not a brand we wear.
+## Voice rules
+
+- Story first; instrument second.
+- Never rename the product to Cernunnos.
+- Prefer concrete place + motion (“blood on the square”, “antlers of motion from orbit”) over HUD jargon.
+- Warnings stay readable for diagnosis — do not bury “nothing walks” in metaphor alone.
 
 ## Not for
 
-- Neopagan cosplay as the default UI voice.
-- Replacing Orrery in URLs, packages, or README titles.
-- Shipping anything under this filename until someone deliberately promotes it.
-
-When thrive or Gaia needs a one-word mood board again, start here.
+- Neopagan cosplay as default UI chrome.
+- Replacing Orrery in URLs or README titles.

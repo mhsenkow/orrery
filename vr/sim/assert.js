@@ -34,7 +34,16 @@ export function assertSpeciesScale(W) {
   }
 }
 
-/** Area-weighted water proxy: ocean depth + moisture on land + ice. */
+/** Area-weighted water proxy: ocean depth + moisture on land + ice.
+ *
+ *  Deliberately *not* `hydroTick`'s water mass. `hydro.js` keeps its own
+ *  inventory on a different scale (it weights vapour ×50 and depth ×0.5) and it
+ *  acts on the result — a drift above 0.5 nudges `gases.H2O` and clamps the
+ *  routed mass. The two used to share `W._waterMass0` and `W.waterMass`, so
+ *  whichever ran last won the latch, and a debug assertion could hand hydro a
+ *  reference on the wrong scale and make it push water into the air to close a
+ *  gap that did not exist. This one is read-only: it publishes `waterProxy*`
+ *  and nothing in the simulation reads those. */
 export function waterMass(W) {
   let m = 0;
   const sea = W.seaLevel;
@@ -65,13 +74,11 @@ export function carbonMass(W) {
  */
 export function assertBudgets(W) {
   const warnings = [];
-  if (W._waterMass0 == null) {
-    W._waterMass0 = waterMass(W);
-  }
+  if (W._waterProxy0 == null) W._waterProxy0 = waterMass(W);
   const w = waterMass(W);
-  W.waterMass = w;
-  const drift = W._waterMass0 > 1e-9 ? (w - W._waterMass0) / W._waterMass0 : 0;
-  W.waterDrift = drift;
+  W.waterProxy = w;
+  const drift = W._waterProxy0 > 1e-9 ? (w - W._waterProxy0) / W._waterProxy0 : 0;
+  W.waterProxyDrift = drift;
   if (Math.abs(drift) > 0.35) {
     warnings.push(`water drift ${(drift * 100).toFixed(1)}%`);
   }
@@ -90,7 +97,8 @@ export function assertBudgets(W) {
     if (!Number.isFinite(v) || v < -EPS) warnings.push(`gas ${k}=${v}`);
   }
 
-  if ((W._droppedTicks || 0) > 0 && (W.year | 0) % 64 === 0) {
+  // Tick counter, not the wrapping absolute year — see the note in `simTick`.
+  if ((W._droppedTicks || 0) > 0 && (W._tickIndex | 0) % 64 === 0) {
     warnings.push(`droppedTicks=${W._droppedTicks} reason=${W._dropReason || '?'}`);
   }
   try {

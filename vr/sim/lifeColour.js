@@ -279,66 +279,160 @@ export function legendEntries(W) {
 
 export function legendMarks() {
   return [
-    { id: 'focus', label: 'focus', rgb: [232, 200, 120], swatch: 'frame',
-      tip: 'Gold frame on the watched cell',
-      why: 'Gold inner frame. The cell this patch is looking at — the crosshair, not a biome.' },
-    { id: 'hole', label: 'corner hole', rgb: [8, 10, 16], swatch: 'hole',
-      tip: 'Cube-sphere corner the unwrap cannot fill',
-      why: 'Dark square with a tan edge. A cube-sphere corner the flat unwrap cannot fill. Not ocean — empty.' },
-    { id: 'daisyBlack', label: 'black daisy', rgb: KIND_RGB[12],
-      tip: 'Black daisies',
-      why: 'Daisyworld. Dark albedo, warms the cell. A tutorial metabolism, not a guild.' },
-    { id: 'daisyWhite', label: 'white daisy', rgb: KIND_RGB[13],
-      tip: 'White daisies',
-      why: 'Daisyworld. Light albedo, cools the cell. The pair is the lesson.' },
-    { id: 'stromatolite', label: 'strom', rgb: [110, 130, 90],
-      tip: 'Stromatolites',
-      why: 'Layered microbial mounds stamped on the square. A structure, not a cover class.' },
+    { id: 'focus', label: 'focus', rgb: [232, 200, 120], swatch: 'frame', where: 'map', lock: false,
+      tip: 'Watched cell', why: 'Gold frame — the cell this patch is reading.' },
+    { id: 'hover', label: 'hover', rgb: [255, 220, 140], swatch: 'frame', where: 'map', lock: false,
+      tip: 'Pointer', why: 'Brighter outline under the cursor.' },
+    { id: 'hole', label: 'hole', rgb: [8, 10, 16], swatch: 'hole', where: 'map', lock: false,
+      tip: 'Empty corner', why: 'Cube-sphere hole. Not ocean — the unwrap cannot fill it.' },
+    { id: 'daisyBlack', label: 'black daisy', rgb: KIND_RGB[12], where: 'both',
+      tip: 'Black daisy', why: 'Daisyworld — dark albedo, warms the cell.' },
+    { id: 'daisyWhite', label: 'white daisy', rgb: KIND_RGB[13], where: 'both',
+      tip: 'White daisy', why: 'Daisyworld — light albedo, cools the cell.' },
+    { id: 'stromatolite', label: 'strom', rgb: [110, 130, 90], where: 'map',
+      tip: 'Stromatolite', why: 'Layered microbial mound stamp.' },
+  ];
+}
+
+/** Six things everyone needs before the catalogue. */
+export function legendPrimer() {
+  return [
+    { id: 'primerCover', label: 'fill', rgb: [40, 120, 70], swatch: 'block', where: 'both', lock: false,
+      tip: 'Square fill', why: 'Colour of the cell — ice, sea, forest, desert. Same on globe and map.' },
+    { id: 'primerTree', label: 'trees', rgb: [40, 110, 55], swatch: 'tree', where: 'map', lock: false,
+      tip: 'Trees on the map', why: 'Little canopy sprites mean plants growing there — not a separate biome chip.' },
+    { id: 'primerHerd', label: 'herd', rgb: [140, 240, 120], swatch: 'cross', where: 'globe', lock: false,
+      tip: 'Green cross', why: 'A herd or pod moving together. Read from orbit.' },
+    { id: 'primerTown', label: 'town', rgb: [255, 184, 90], swatch: 'light', where: 'both', lock: false,
+      tip: 'Amber lights / roofs', why: 'Settlements. Night lights on the globe; roofs on the map.' },
+    { id: 'primerRim', label: 'rim', rgb: [255, 210, 90], swatch: 'rim', where: 'globe', lock: false,
+      tip: 'Gold rim', why: 'The map’s window drawn on the sphere.' },
+    { id: 'primerHunt', label: 'hunt', rgb: [255, 70, 55], swatch: 'wedge', where: 'map', lock: false,
+      tip: 'Red wedge', why: 'That body is hunting right now.' },
+  ];
+}
+
+/** Orbit-readable marks — herds, lights, the map patch rim. */
+export function legendGlobeMarks() {
+  return [
+    { id: 'herdCross', label: 'herd', rgb: [140, 240, 120], swatch: 'cross', where: 'globe', lock: false,
+      tip: 'Herd / pod', why: 'Green pulsing cross for a herd or pod of four+. Off on pinned Earth.' },
+    { id: 'carcassMark', label: 'carcass', rgb: [160, 120, 90], swatch: 'cross', where: 'globe', lock: false,
+      tip: 'Carcass', why: 'Smaller, quieter cross — a body large enough to matter from orbit.' },
+    { id: 'nightLights', label: 'lights', rgb: [255, 184, 90], swatch: 'light', where: 'globe', lock: false,
+      tip: 'Night lights', why: 'Amber on the dark side = built land. Day hides them.' },
+    { id: 'patchRim', label: 'map rim', rgb: [255, 210, 90], swatch: 'rim', where: 'globe', lock: false,
+      tip: 'Map rim', why: 'Gold outline = exactly what the flat map shows.' },
+    { id: 'lifeNight', label: 'glow', rgb: [50, 200, 140], swatch: 'light', where: 'globe', lock: false,
+      tip: 'Life glow', why: 'Cool green on the night side where life is dense — not cities.' },
+    { id: 'flowStreak', label: 'flow', rgb: [115, 224, 242], swatch: 'streak', where: 'globe', lock: false,
+      tip: 'Currents', why: 'Cyan streaks = ocean motion; white when Wind overlay is on.' },
+    { id: 'orbitSprite', label: 'close-in', rgb: KIND_RGB[7], swatch: 'dot', where: 'globe', lock: false,
+      tip: 'Zoom bodies', why: 'Sprites hide at far orbit; zoom in and they match the map.' },
+  ];
+}
+
+/** Map living layer — what stampLife / beings actually draw. */
+export function legendMapLife() {
+  return [
+    { id: 'stampCanopy', label: 'trees', rgb: [40, 110, 55], swatch: 'tree', where: 'map', lock: false,
+      tip: 'Canopy trees', why: 'Blocky tree / crown sprites on a green square. Forest cover you can count.' },
+    { id: 'stampScrub', label: 'scrub', rgb: [90, 150, 50], swatch: 'scrub', where: 'map', lock: false,
+      tip: 'Scrub & grass', why: 'Short stalks and scrub sprites — open cover, not closed canopy.' },
+    { id: 'stampReef', label: 'reef life', rgb: [30, 190, 170], swatch: 'glyph-ell', where: 'map', lock: false,
+      tip: 'Reef & fish', why: 'Teal polyps and fish in shallow water cells.' },
+    { id: 'buildings', label: 'roofs', rgb: [200, 160, 110], swatch: 'roof', where: 'map', lock: false,
+      tip: 'Roofs & paths', why: 'Little buildings and roads. Same places light up amber on the night globe.' },
+    { id: 'glyphSettler', label: 'settler', rgb: KIND_RGB[5], swatch: 'glyph-sq', where: 'map', lock: false,
+      tip: 'Settler body', why: 'Moving square — a person, not the roof stamp.' },
+    { id: 'glyphFauna', label: 'animal', rgb: KIND_RGB[7], swatch: 'glyph-circ', where: 'map', lock: false,
+      tip: 'Animal body', why: 'Disc or soft shape — grazer, hunter, worm. Moves between cells.' },
+    { id: 'glyphMarine', label: 'marine', rgb: KIND_RGB[15], swatch: 'glyph-ell', where: 'map', lock: false,
+      tip: 'Marine body', why: 'Flat ellipse swimming — distinct from reef cover colour.' },
+    { id: 'actHunt', label: 'hunt', rgb: [255, 70, 55], swatch: 'wedge', where: 'map', lock: false,
+      tip: 'Hunting', why: 'Red wedge beside a body.' },
+    { id: 'actFlee', label: 'flee', rgb: [255, 170, 70], swatch: 'dashes', where: 'map', lock: false,
+      tip: 'Fleeing', why: 'Orange dashes — panic from fire or predators.' },
+    { id: 'actForage', label: 'forage', rgb: [120, 230, 110], swatch: 'leaf', where: 'map', lock: false,
+      tip: 'Foraging', why: 'Green leaf-dot — browsing. Second dot = already fed.' },
+    { id: 'actTend', label: 'tend', rgb: [240, 210, 80], swatch: 'tend', where: 'map', lock: false,
+      tip: 'Tending', why: 'Gold open square — settler at camp or crops.' },
+    { id: 'actSurface', label: 'surface', rgb: [80, 200, 255], swatch: 'arc', where: 'map', lock: false,
+      tip: 'Surfacing', why: 'Cyan arc — marine body rising into light.' },
+    { id: 'sparkBirth', label: 'birth', rgb: [140, 255, 180], swatch: 'spark', where: 'map', lock: false,
+      tip: 'Birth ring', why: 'Expanding green ring — just born.' },
+    { id: 'sparkHunt', label: 'strike', rgb: [255, 90, 70], swatch: 'spark', where: 'map', lock: false,
+      tip: 'Hunt ring', why: 'Expanding red ring — a strike just landed.' },
+    { id: 'sparkOther', label: 'event', rgb: [200, 120, 255], swatch: 'spark', where: 'map', lock: false,
+      tip: 'Event ring', why: 'Purple ring — dispersal or flock join.' },
   ];
 }
 
 function bodyEntries() {
   return [
-    { id: 'bodies', label: 'bodies', rgb: KIND_RGB[2], swatch: 'dot',
-      tip: 'Open morphospace',
-      why: 'Sprites on the square are genomes from the open morphospace — symmetry, organs, receptor bands — not sixteen stamps. A pentaradial body is five of whatever it has. 1.6×10²⁸ distinguishable plans; this planet visits a handful.' },
-    { id: 'pigmentRetinal', label: 'retinal', rgb: [180, 50, 140],
-      tip: 'Retinal pigment',
-      why: 'Planet-wide purple. Bacteriorhodopsin / retinal, not chlorophyll. An Archean ocean can be this colour.' },
-    { id: 'pigmentBchl', label: 'BChl', rgb: [120, 45, 110],
-      tip: 'Bacteriochlorophyll',
-      why: 'Anoxygenic green/purple. The phototrophs that do not split water.' },
-    { id: 'pigmentChla', label: 'Chl a', rgb: [30, 120, 70],
-      tip: 'Chlorophyll a',
-      why: 'Oxygenic green. The pigment of the guild that invents free O₂.' },
+    { id: 'bodies', label: 'bodies', rgb: KIND_RGB[2], swatch: 'dot', where: 'map', lock: false,
+      tip: 'Open morphospace', why: 'Bodies are genomes (symmetry, organs), not a fixed stamp set.' },
+    { id: 'pigmentRetinal', label: 'retinal', rgb: [180, 50, 140], where: 'both',
+      tip: 'Retinal', why: 'Planet-wide purple — not chlorophyll.' },
+    { id: 'pigmentBchl', label: 'BChl', rgb: [120, 45, 110], where: 'both',
+      tip: 'BChl', why: 'Anoxygenic green/purple wash.' },
+    { id: 'pigmentChla', label: 'Chl a', rgb: [30, 120, 70], where: 'both',
+      tip: 'Chl a', why: 'Oxygenic green — free O₂ guild.' },
   ];
 }
 
-/** Full map-square glossary — cover, the redox tower, grammar bodies, marks. */
+function shortCover(e) {
+  const tip = e.tip || e.label;
+  const why = (e.why || '').split(/[.—]/)[0].trim();
+  return { ...e, tip, why: why.length > 72 ? `${why.slice(0, 70)}…` : why, where: 'both' };
+}
+
+function shortGuild(e) {
+  const tip = e.tip || e.label;
+  const why = (e.why || '').replace(/\s*Same palette as Seed guild\.?/i, '').trim();
+  return { ...e, tip, why, where: 'both' };
+}
+
+/** Full glossary — primer first, then each display, then catalogues. */
 export function legendGlossary(W) {
   const kind = W?._planetKind;
   const alien = !usesWhittakerCover(kind, W);
   return [
     {
-      id: 'cover', title: alien ? 'Surface' : 'Cover', highlight: true,
+      id: 'primer', title: 'Start here', highlight: true, grid: 'primer',
+      blurb: 'Same language on the sphere and the patch. Gold rim = map window. Hover a coloured row to light matching cells.',
+      entries: legendPrimer(),
+    },
+    {
+      id: 'globe', title: 'On the globe', highlight: true, grid: 'marks',
+      blurb: 'Marks you can read from orbit.',
+      entries: legendGlobeMarks(),
+    },
+    {
+      id: 'maplife', title: 'On the map', highlight: true, grid: 'marks',
+      blurb: 'Stamps on the squares, then moving bodies and what they are doing.',
+      entries: legendMapLife(),
+    },
+    {
+      id: 'cover', title: alien ? 'Surface colour' : 'Cover colour', highlight: true,
       blurb: alien
-        ? `This world’s own ground — not Whittaker biomes. ${kind} squares are geology and ices, the same paint the globe uses.`
-        : 'The square fill: ice, rock, water, Whittaker plant cover, built land. Same cell on every world.',
-      entries: coverEntries(W),
+        ? `Cell fill on globe and map — ${kind} geology and ices, not Earth biomes.`
+        : 'Cell fill on globe and map — ice, sea, Whittaker cover, settlements.',
+      entries: coverEntries(W).map(shortCover),
     },
     {
       id: 'guild', title: 'Metabolisms', highlight: true, grid: 'guilds',
-      blurb: 'The universal system. Colour is which redox couple won the cell — not a kingdom, not an Earth biome. Seventeen guilds; Seed guild and the Guild overlay use this palette.',
-      entries: guildEntries(),
+      blurb: 'Which redox couple won the cell. Seed guild uses this palette.',
+      entries: guildEntries().map(shortGuild),
     },
     {
-      id: 'bodies', title: 'Bodies', highlight: true, grid: 'marks',
-      blurb: 'Drawn on top of the square when you zoom in. The grammar, not the cover.',
+      id: 'bodies', title: 'Pigments', highlight: true, grid: 'marks',
+      blurb: 'Planet-wide washes and the body grammar.',
       entries: bodyEntries(),
     },
     {
-      id: 'marks', title: 'Marks', highlight: true, grid: 'marks',
-      blurb: 'Frames and tutorial overlays. Not biomes.',
+      id: 'marks', title: 'Chrome', highlight: true, grid: 'marks',
+      blurb: 'Frames, holes, Daisyworld.',
       entries: legendMarks(),
     },
   ];
@@ -389,6 +483,10 @@ export function cellMatchesLegend(W, c, key) {
   if (key === 'daisyBlack') return (W.blackDaisy?.[c] || 0) > 0.1;
   if (key === 'daisyWhite') return (W.whiteDaisy?.[c] || 0) > 0.1;
   if (key === 'stromatolite') return (W.stromatolite?.[c] || 0) > 0.15;
+  if (key === 'stampCanopy' || key === 'primerTree') {
+    return (W.life[c] || 0) > 0.08 && W.h[c] >= W.seaLevel && (W.ice[c] || 0) < 0.45;
+  }
+  if (key === 'buildings' || key === 'primerTown') return (W.build?.[c] || 0) > 0.12;
   if (key === 'bodies') return (W.life[c] || 0) > 0.08 || !!dominantGuildAt(W, c);
   if (key === 'pigmentRetinal') return W.dominantPigment === 'retinal';
   if (key === 'pigmentBchl') return W.dominantPigment === 'bchl';

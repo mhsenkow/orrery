@@ -18,6 +18,10 @@ export function thermoCost(tool, magnitude = 1, opts = {}) {
     raise: 22, lower: 18, flatten: 8, smooth: 6, sharpen: 7, roughen: 6, crust: 16, plume: 28, plate: 45,
     river: 8, gateway: 20, sealevel: 35, soil: 6, albedo: 10,
     meteor: 60, volcano: 40, quake: 28, plague: 35, ice: 30, ignite: 6,
+    // Evil desk. Priced by how much of the planet you spend, not by how bad it
+    // is: a warhead is cheap physics and expensive consequence.
+    poison: 14, waste: 22, nuke: 90, icbm: 110, slbm: 120,
+    airstrike: 18, swarm: 40, pandemic: 70, war: 55, flare: 45,
     lip: 80, supernova: 70, flare: 25, clathrate: 55, buster: 200,
     shade: 40, aerosol: 18, magnet: 50, cloud: 4, moon: 50,
     refuge: 14, cull: 22, transition: 60, mutate: 8,
@@ -33,7 +37,9 @@ export function thermoCost(tool, magnitude = 1, opts = {}) {
   // Archetype modifiers. Item 111.
   const arch = W.archetype || 'gardener';
   if (arch === 'gardener' && (tool === 'seed' || tool === 'seedGuild' || tool === 'refuge')) cost *= 0.7;
-  if (arch === 'vandal' && (tool === 'meteor' || tool === 'plague' || tool === 'buster' || tool === 'ignite')) cost *= 0.7;
+  const VANDAL_CHEAP = new Set(['meteor', 'plague', 'buster', 'ignite',
+    'poison', 'waste', 'nuke', 'icbm', 'slbm', 'airstrike', 'swarm', 'pandemic', 'war']);
+  if (arch === 'vandal' && VANDAL_CHEAP.has(tool)) cost *= 0.7;
   if (arch === 'scientist' && (tool === 'inspect' || tool === 'core' || tool === 'icecore')) cost = 0;
 
   return Math.max(0, Math.round(cost));
@@ -55,6 +61,8 @@ const COOLDOWN_YR = {
   meteor: 500, lip: 1e6, supernova: 1e7, buster: 1e9,
   plate: 2e6, plume: 1e6, magnet: 1e7, shade: 50,
   co2: 200, o2: 200, aerosol: 5,
+  // A war and a pandemic take time to be worth starting again.
+  nuke: 200, icbm: 300, slbm: 300, pandemic: 5e3, war: 2e3, flare: 500,
 };
 
 export function initEconomy(W) {

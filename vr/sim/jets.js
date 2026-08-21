@@ -156,7 +156,8 @@ export function giantTick(W, log) {
   advectChroma(W);
   tickVortex(W);
   tickHotspot(W);
-  if (log && ((W.year | 0) % 900 === 40)) {
+  // Tick counter, not the wrapping absolute year — see the note in `simTick`.
+  if (log && ((W._tickIndex | 0) % 900 === 40)) {
     log(W.year, 'climate', W._spotCell | 0, W.spot?.[W._spotCell | 0] || 0,
       'A long-lived vortex still holds between the jets');
   }

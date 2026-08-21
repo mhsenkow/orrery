@@ -18,7 +18,7 @@ import {
   noteGraze, noteHunt, noteFear, dropCarcass, scavengeAt, fearAt, carcassAt,
 } from './sim/trophicField.js';
 import { updateSwarmMarks, noteLifeSpark, ageLifeSparks } from './sim/lifeFront.js';
-import { presentTime, noteWear, wearAt, isOutNow } from './sim/present.js';
+import { presentTime, noteWear, wearAt, isOutNow, wearTick } from './sim/present.js';
 import { morphTileOf, resetMorphAtlas } from './sprites.js';
 
 export const MAX_ENT = 1400;
@@ -73,6 +73,11 @@ function metabolicRate(m) {
   return m.kind === 5 ? base * 0.55 : base;
 }
 
+/** Largest share of the being cap any one sprite kind may hold, and the share
+ *  below which a kind counts as scarce and may be born even at the cap. */
+const KIND_SHARE = 0.42;
+const KIND_FLOOR = 0.05;
+
 function maxLifespan(m) {
   return 220 + bodyMassTrait(m) * 520;
 }
@@ -113,9 +118,17 @@ function killBeing(m, c, cause) {
   W.popBook = W.popBook || { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
   W.popBook.deaths++;
   if (cause === 'hunted') W.popBook.hunted++;
+  /* A history, not a syslog. Every named death was logged — 576 lines in 800
+     ticks, most of them "X old age" — which drowned the storms, eruptions and
+     extinctions in routine mortality. A violent or unusual death is a story; a
+     long life ending is one every so often. */
   if (m.name) {
-    logEvent(W.chron, W.year, 'death', c, 0.2,
-      `${m.name} ${cause}`, { who: m.name, cause, born: m.born });
+    const routine = cause === 'old age' || cause === 'starved';
+    W._deathLogged = (W._deathLogged | 0) + 1;
+    if (!routine || W._deathLogged % 8 === 0) {
+      logEvent(W.chron, W.year, 'death', c, 0.2,
+        `${m.name} ${cause}`, { who: m.name, cause, born: m.born });
+    }
   }
   return mass;
 }
@@ -127,10 +140,28 @@ function tryBirth(parent, c, rng, log) {
   const cap = carryingCapacityNPP(W, c);
   if (parent.kind !== 5 && W.life[c] < cap * 0.25 && (W.npp?.[c] || 0) < 0.12) return false;
   if (parent.kind === 5 && W.build[c] < 0.08 && W.life[c] < 0.12) return false;
-  if (ENT.n >= capForWorld() - 1) return false;
+  /* `MAX_ENT` and `capForWorld` are array sizes, not an ecology, and letting one
+     global cap arbitrate births let the fastest breeder take every slot:
+     measured on the demo Earth, grazers reached 376 of 560 and settlers were
+     squeezed from 26 to zero — the world lost its towns to a decision about
+     buffer length. Two rules fix that without pretending the cap is ecology.
+     A ceiling: no kind may hold more than `KIND_SHARE` of the cap. And a floor:
+     a kind below `KIND_FLOOR` is scarce and may still be born at the cap, so the
+     buffer can never be the thing that extinguishes a lineage. Overshoot is
+     bounded by the floor itself and hard-stopped at `MAX_ENT`. */
+  const slots = capForWorld();
+  if (ENT.n >= MAX_ENT - 1) return false;
+  const scarce = _kindN[parent.kind] < slots * KIND_FLOOR;
+  if (ENT.n >= slots - 1 && !scarce) return false;
+  if (_kindN[parent.kind] > slots * KIND_SHARE) return false;
+  /* Per-attempt, and attempts come every fourth tick. At the measured mean
+     energy of ~1.16 that is 0.25 × birthP × 0.76 per tick; over an adult span of
+     `maxLifespan` − 36 ≈ 360 ticks the live-world rate gives ~2.5 offspring per
+     adult, comfortably above replacement so the ecological gate above and the
+     being cap decide the population rather than this number. */
   const birthP = parent.kind === 5
-    ? (isPinnedEarth(W.rule) ? 0.012 : 0.08)
-    : (isPinnedEarth(W.rule) ? 0.022 : 0.11);
+    ? (isPinnedEarth(W.rule) ? 0.012 : 0.032)
+    : (isPinnedEarth(W.rule) ? 0.022 : 0.036);
   if (rng() > birthP * (parent.energy - 0.4)) return false;
   let nb = c;
   for (let k = 0; k < 4; k++) {
@@ -251,7 +282,11 @@ function writeEnt(n, c, kind, rng) {
   ENT.data[o + 3] = scale;
   ENT.data[o + 4] = kind;
   // Clade tint from lineage id when plan exists
-  const rgb = KIND_RGB[kind] || [200, 200, 200];
+  let rgb = KIND_RGB[kind] || [200, 200, 200];
+  /* Kind 7 is the large-body slot and its palette entry is Vermis purple, which
+     is right for Vermis worms and wrong for a herd of grazers on Earth. Same
+     sprite, warm hide. */
+  if (kind === 7 && W.rule?.signature !== 'worms') rgb = [186, 138, 84];
   let v = 0.85 + rng() * 0.2;
   let cr = rgb[0], cg = rgb[1], cb = rgb[2];
   if (plan && node) {
@@ -310,6 +345,8 @@ function writeEnt(n, c, kind, rng) {
  *  population, its name counter or its plumes — `ENT` is a module singleton and
  *  a second `generate()` in one process used to carry all three across. */
 export function resetEntities() {
+  // Published fields die with the population that wrote them.
+  if (W.beingDens) W.beingDens.fill(0);
   ENT.n = 0;
   ENT.meta.length = 0;
   ENT.meta.length = MAX_ENT;
@@ -375,6 +412,23 @@ function writeHerd(n, c, kind, rng, cap) {
   return w;
 }
 
+/** Spread a founding cohort across its lifespan.
+ *
+ *  `writeEnt` starts every being at `age: 0`, so a world seeded in one pass held
+ *  a single cohort: measured on the demo Earth, 560 beings born at tick 0 all
+ *  reached `maxLifespan` within a few hundred ticks of each other and 501 of them
+ *  died of old age between tick 300 and 600. A population is not a cohort — give
+ *  the founders the age structure they would have if they had been born over the
+ *  preceding few centuries. */
+function stagger(rng, from = 0) {
+  for (let i = from; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (!m || !isAnimalKind(m.kind)) continue;
+    m.age = (rng() * maxLifespan(m) * 0.85) | 0;
+    m.born = W.year - m.age;
+  }
+}
+
 export function respawnEntities() {
   resetAgents();
   resetMorphAtlas();
@@ -407,6 +461,7 @@ export function respawnEntities() {
     }
   }
   ENT.n = n;
+  stagger(rng);
 }
 
 function capForWorld() {
@@ -536,11 +591,21 @@ function maybeSplitMerge(rng) {
   if ((W.groupMerges | 0) > 0 || (W.groupSplits | 0) > 0) censusGroups();
 }
 
-/** Fill empty slots without wiping living individuals. */
-function topUpEntities() {
+/** Fill empty slots without wiping living individuals.
+ *
+ *  Two jobs, and the second is why this runs on live worlds again. On the pinned
+ *  Earth it is the whole population mechanism. On a live world births own the
+ *  population, and this is *immigration*: a kind that has gone locally extinct
+ *  can be refounded where the world can support it. Without that, settlers could
+ *  only ever be born beside an existing settler, so once the last settlement
+ *  emptied there was no path back — measured on the demo Earth, settlers went
+ *  26 → 0 by tick 600 and the night lights faded with them, while 760 land cells
+ *  sat above the 0.28 life a settler needs. `scarceOnly` keeps it to that job. */
+function topUpEntities(scarceOnly = false) {
   const rng = rngOf(W, 'rngAgents');
   const cap = capForWorld();
-  if (ENT.n >= cap * 0.85) return;
+  if (!scarceOnly && ENT.n >= cap * 0.85) return;
+  if (scarceOnly && ENT.n >= MAX_ENT - 8) return;
   if (!_occ || _occ.length !== NC) _occ = new Uint8Array(NC);
   _occ.fill(0);
   for (let i = 0; i < ENT.n; i++) {
@@ -548,13 +613,33 @@ function topUpEntities() {
     if (m && !m.dead) _occ[m.cell] = 1;
   }
   const stride = Math.max(3, (NC / (cap * 2)) | 0);
-  for (let c = 0; c < NC && ENT.n < cap; c += stride) {
+  const ceiling = scarceOnly ? MAX_ENT - 4 : cap;
+  const floorN = cap * KIND_FLOOR;
+  let added = 0;
+  for (let c = 0; c < NC && ENT.n < ceiling; c += stride) {
     if (_occ[c]) continue;
-    if (W.life[c] < 0.12 && (W.reef[c] || 0) < 0.2 && (W.build[c] || 0) < 0.1) continue;
+    /* 0.08, not 0.12. `respawnEntities` builds its pool at `life > 0.08` and this
+       refused anything under 0.12, and the demo Earth settles with mean life
+       around 0.10 — so a being could be created at generate and never replaced,
+       for no stated reason. One threshold. */
+    if (W.life[c] < 0.08 && (W.reef[c] || 0) < 0.2 && (W.build[c] || 0) < 0.1) continue;
     const kind = kindForCell(c, rng);
     if (kind < 0) continue;
-    if (kind === 6 || kind === 7) { ENT.n += writeHerd(ENT.n, c, kind, rng, cap); continue; }
+    if (scarceOnly && _kindN[kind] >= floorN) continue;
+    if (kind === 6 || kind === 7) {
+      const wrote = writeHerd(ENT.n, c, kind, rng, ceiling);
+      _kindN[kind] += wrote;
+      ENT.n += wrote;
+      added += wrote;
+      continue;
+    }
     writeEnt(ENT.n++, c, kind, rng);
+    _kindN[kind]++;
+    added++;
+  }
+  if (added) {
+    W.popBook = W.popBook || { births: 0, deaths: 0, hunted: 0, immigrated: 0, emigrated: 0 };
+    W.popBook.immigrated += added;
   }
 }
 
@@ -574,18 +659,33 @@ function compactDead() {
 
 let _head = null;
 let _next = null;
+/** Living count per sprite kind. Filled on the pass `rebuildBuckets` already
+ *  makes, so the per-kind share check in `tryBirth` costs nothing. */
+const _kindN = new Int32Array(64);
+
 function rebuildBuckets() {
   if (!_head || _head.length !== NC) {
     _head = new Int32Array(NC);
     _next = new Int32Array(MAX_ENT);
   }
   _head.fill(-1);
+  _kindN.fill(0);
+  if (!W.beingDens || W.beingDens.length !== NC) W.beingDens = new Float32Array(NC);
+  const dens = W.beingDens;
+  dens.fill(0);
   for (let i = 0; i < ENT.n; i++) {
     const m = ENT.meta[i];
     if (!m || m.dead) continue;
     const c = m.cell;
     _next[i] = _head[c];
     _head[c] = i;
+    if (m.kind >= 0 && m.kind < 64) _kindN[m.kind]++;
+    /* Where the animals are, as a field. Nothing published this: the only way
+       to find out where life was *doing* something was to look for sprites,
+       which are hidden at orbit. Animals count double so a herd outweighs a
+       stand of trees. Free — this pass already visits every being. */
+    if (isAnimalKind(m.kind)) dens[c] += 0.34;
+    else dens[c] += 0.12;
   }
 }
 
@@ -676,7 +776,21 @@ function pickBehav(m, c, rng) {
   if (!isPredator(m) && pred > 0.12) {
     m.fear = Math.min(1, m.fear * 0.7 + pred * 0.9);
   }
+  /* Poison and fallout join the list. Nothing new had to be taught: this branch
+     already existed for ash, dust and storms, and an animal that will run from
+     smoke will run from a hot zone. Radiation is weighted hardest because it is
+     the one that kills without any other warning. */
+  /* Only look when there is something to find. `_anyHarm` is set once a tick from
+     the sparse hazard counters, so a planet nobody has attacked pays one boolean
+     here instead of three optional-chained typed-array reads per being per tick —
+     and the same again per neighbour in the movement scorer below, which is where
+     it actually cost: 9.5 ms a tick at N=64 for fields that were all zero. */
+  const anyHarm = W._anyHarm;
+  const rad = anyHarm ? (W.rad[c] || 0) : 0;
+  const tox = anyHarm ? (W.toxin[c] || 0) : 0;
+  const war = anyHarm ? (W.warFront[c] || 0) : 0;
   if (m.fear > 0.32 || fire > 0.05 || ash > 0.18 || dust > 0.28 || storm > 0.35 || W.ice[c] > 0.55
+      || rad > 0.08 || tox > 0.2 || war > 0.12
       || (!isPredator(m) && pred > 0.28) || m.heat > 0.78) {
     return 'flee';
   }
@@ -816,9 +930,13 @@ export function agentsTick(log = null) {
      ran every single tick, and on a fast clock they ran never. A tick counter
      costs one integer and means the same thing on every world. */
   const tick = (W._agentTick = (W._agentTick | 0) + 1);
+  /* One boolean for the whole population instead of a field probe per being per
+     neighbour. Set from the hazard counters `anthroTick` publishes. */
+  const harmOn = !!W.toxin && ((W.radCells | 0) + (W.toxinCells | 0) + (W.warCells | 0)) > 0;
+  W._anyHarm = harmOn;
   if (!W.behavMap || W.behavMap.length !== NC) W.behavMap = new Uint8Array(NC);
   else if ((tick & 1) === 0) W.behavMap.fill(0);
-  if (isPinnedEarth(W.rule) && tick % 64 === 0) topUpEntities();
+  if (tick % 64 === 0) topUpEntities(!isPinnedEarth(W.rule));
   compactDead();
   rebuildBuckets();
   const groupById = Object.create(null);
@@ -856,9 +974,21 @@ export function agentsTick(log = null) {
         built++;
         m.age = Math.max(m.age, 1);
       }
-      const stages = [0.3, 0.55, 0.85];
+      /* Only the milestones a chronicle should carry. Every crossing used to be
+         logged, camps and villages included, and with settlement working there
+         were 1 622 "Settlers founded a village" lines out of 3 411 events in 800
+         ticks — the log became unreadable and buried the storms, eruptions and
+         extinctions in it. Towns and cities only. */
+      const stages = [0.55, 0.85];
       for (const t of stages) {
         if (before < t && W.build[c] >= t) {
+          /* Rate-limited as well as filtered. Once settlement works, hundreds of
+             cells cross each threshold — 908 lines in 800 ticks even after
+             dropping camps and villages. The first few of a kind are news; the
+             hundredth is wallpaper, and it buries the storms and extinctions. */
+          const stageName = stageLabel(W.build[c]);
+          const seenN = (W._buildLogged[stageName] = (W._buildLogged[stageName] | 0) + 1);
+          if (seenN > 3 && seenN % 25 !== 0) continue;
           const who = m.name || 'Settlers';
           logEvent(W.chron, W.year, 'build', c, W.build[c],
             `${who} founded a ${stageLabel(W.build[c])}`);
@@ -1063,6 +1193,8 @@ export function agentsTick(log = null) {
         : W.life[n] + W.moist[n] * 0.3 - W.ice[n] * 0.5 + rng() * 0.05;
       s -= terrainCost * 0.15;
       if (m.behav === 'flee') s -= (W.ash?.[n] || 0) * 2 + (W.dust?.[n] || 0) * 1.5 + (W.stormField?.[n] || 0);
+      // Harm is avoided whether or not the animal is already fleeing.
+      if (harmOn) s -= W.rad[n] * 2.5 + W.toxin[n] * 1.2 + W.warFront[n] * 1.8;
       if (m.behav === 'flee' && !isPredator(m)) s -= fearAt(W, n) * 1.6;
       if (!isPredator(m) && carcassAt(W, n) > 0.12 && m.hunger > 0.4) s += carcassAt(W, n) * 0.5;
       /* Desire lines: herds and foragers prefer worn paths. */
@@ -1161,9 +1293,21 @@ export function agentsTick(log = null) {
       killBeing(m, c, W.ice[c] > 0.4 ? 'ice' : (W.temp[c] > 0.75 ? 'heat' : 'starved'));
       continue;
     }
-    if (animal && tick % 4 === (m.id & 3) && rng() < 0.045) tryBirth(m, c, rng, log);
+    /* One attempt every fourth tick, spread across ids so the work is even.
+       There used to be a second `rng() < 0.045` gate here on top of `birthP`
+       inside `tryBirth` — two nested magic probabilities for one event, and
+       together they gave 9.4e-4 births per being per tick against an adult span
+       of ~360 ticks: 0.34 offspring per lifetime, a third of replacement. The
+       population could only decay. `birthP` is the single knob now; what limits
+       it is the carrying-capacity gate in `tryBirth` and the being cap, which
+       are the two things that should. */
+    if (animal && tick % 4 === (m.id & 3)) tryBirth(m, c, rng, log);
   }
 
+  /* Paths fade. Decay is per sim tick now (see `present.js`), tuned so a trail
+     stays legible for roughly forty ticks — long enough to read as a route, short
+     enough that the planet does not end up uniformly trodden. */
+  wearTick(0.955);
   W.buildersActive = built;
   W.surfaceFeeders = plumeFed;
   W.herdMax = herdBest;
@@ -1187,7 +1331,7 @@ export function agentsTick(log = null) {
     log(W.year, 'herd', herdCell, herdBest / 20,
       named ? `${named.name} (${named.n}) moves together` : `A ${what} of ${herdBest} moves together`);
   }
-  if (isPinnedEarth(W.rule) && ENT.n < capForWorld() * 0.28) topUpEntities();
+  if (isPinnedEarth(W.rule) && ENT.n < capForWorld() * 0.28) topUpEntities(false);
   updateSwarmMarks(W);
   ageLifeSparks(W);
 }

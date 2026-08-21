@@ -46,7 +46,11 @@ export function updateLifeFront(W) {
 }
 
 /** Long-range dispersal: wind / flow can seed a cell two hops away. */
-export function disperseLife(W, rng = Math.random) {
+/* `rng` is required. It used to default to `Math.random`, which meant one
+   forgetful caller anywhere would silently make every run irreproducible — the
+   seed string, the twin-world control and rewind-the-tape all depend on this
+   never happening. `bio.js` passes `rngOf(W, 'rngBio')`. */
+export function disperseLife(W, rng) {
   if (!W.life || isPinnedEarth(W.rule)) return 0;
   const life = W.life;
   let seeds = 0;
@@ -130,7 +134,7 @@ export function fillLifeMarks(out, W) {
     if (c < 0 || c >= NC) continue;
     const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
     const rr = lift(c);
-    const rad = m.type === 'swarm' ? 0.018 + Math.min(0.04, (m.n || 4) * 0.003) : 0.012;
+    const rad = m.type === 'swarm' ? 0.022 + Math.min(0.05, (m.n || 4) * 0.0035) : 0.014;
     /* Small cross on the sphere — readable as a moving biological mark. */
     const ux = -y, uy = x, uz = 0;
     const ul = Math.hypot(ux, uy, uz) || 1;

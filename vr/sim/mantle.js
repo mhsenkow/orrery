@@ -1,6 +1,6 @@
 /** Mantle convection under the plates. Currents backlog `mantleflow`. */
 
-import { NC, DIR, dirToCell } from '../sphere.js';
+import { NC, DIR, LON, dirToCell } from '../sphere.js';
 import { clamp, mulberry32 } from '../math.js';
 
 export function initMantle(W, seed) {
@@ -19,6 +19,8 @@ export function initMantle(W, seed) {
   if (!W.mantleV || W.mantleV.length !== NC) W.mantleV = new Float32Array(NC);
   if (!W.dynTopo || W.dynTopo.length !== NC) W.dynTopo = new Float32Array(NC);
   sampleMantle(W);
+  W._mantleDrift = 0;
+  W._mantleSampled = true;
   W._dyn0 = Float32Array.from(W.dynTopo);
 }
 
@@ -28,13 +30,14 @@ function sampleMantle(W) {
   const heat = W.interior?.heatFlow || 1;
   const vigor = W.interior?.vigor ?? 1;
   for (let c = 0; c < NC; c++) {
-    const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
-    const lon = Math.atan2(z, x);
+    const y = DIR[c * 3 + 1];
+    const lon = LON[c];
     let up = 0, ue = 0, un = 0;
     for (const m of modes) {
-      const s = Math.sin(m.kx * lon + m.phase) * Math.cos(m.ky * y);
+      const arg = m.kx * lon + m.phase;
+      const s = Math.sin(arg) * Math.cos(m.ky * y);
       up += s * m.amp;
-      ue += Math.cos(m.kx * lon + m.phase) * m.amp * 0.45;
+      ue += Math.cos(arg) * m.amp * 0.45;
       un += -Math.sin(m.ky * y + m.phase * 0.4) * m.amp * 0.28;
     }
     W.dynTopo[c] = clamp(up * 0.55 * heat, -1, 1);
@@ -71,12 +74,31 @@ function drivePlates(W) {
   }
 }
 
+/** How far the mode phases may drift before the field is worth resampling.
+ *  `spin` is ±0.003 rad/tick, so this resamples every ~7 ticks at most — the
+ *  field it produces varies on a 10-Myr timescale and was being rebuilt every
+ *  tick with four modes × three trig calls per cell, ~300 000 sin/cos a tick at
+ *  N=64 for a result that had barely moved. Phases still advance every tick, so
+ *  nothing drifts out of step; only the sampling is coarse. */
+const RESAMPLE_RAD = 0.02;
+
 /** Slow convection, slab-pull speeds, dynamic topography. */
 export function mantleTick(W) {
   if (!W._mantle) return;
   const vigor = W.interior?.vigor ?? 1;
-  for (const m of W._mantle) m.phase += m.spin * vigor;
-  sampleMantle(W);
+  let moved = 0;
+  for (const m of W._mantle) {
+    const d = m.spin * vigor;
+    m.phase += d;
+    const a = d < 0 ? -d : d;
+    if (a > moved) moved = a;
+  }
+  W._mantleDrift = (W._mantleDrift || 0) + moved;
+  if (W._mantleDrift >= RESAMPLE_RAD || !W._mantleSampled) {
+    W._mantleDrift = 0;
+    W._mantleSampled = true;
+    sampleMantle(W);
+  }
   drivePlates(W);
 
   if (!W._dyn0 || W._dyn0.length !== NC || !W.h) return;

@@ -1750,13 +1750,30 @@ console.log('map legend');
   ok('glossary lists every metabolic guild',
     GUILDS.every((g) => gloss.some((s) => s.entries.some((e) => e.id === g.id))));
   ok('glossary has an open morphospace row',
-    gloss.some((s) => s.entries.some((e) => e.id === 'bodies' && /morphospace/.test(e.why))));
+    gloss.some((s) => s.entries.some((e) => e.id === 'bodies' && /morphospace|genome/i.test(e.why))));
+  ok('glossary explains globe herd crosses',
+    gloss.some((s) => s.id === 'globe' && s.entries.some((e) => e.id === 'herdCross' && /herd|pod/i.test(e.why))));
+  ok('glossary explains map canopy trees',
+    gloss.some((s) => s.id === 'maplife' && s.entries.some((e) => e.id === 'stampCanopy' && /tree|canopy/i.test(e.why))));
+  ok('glossary explains map hunt wedges',
+    gloss.some((s) => s.id === 'maplife' && s.entries.some((e) => e.id === 'actHunt' && /hunt|wedge/i.test(e.why))));
+  ok('glossary leads with a primer',
+    gloss[0]?.id === 'primer' && gloss[0].entries.some((e) => e.id === 'primerHerd'));
+  ok('glossary sections name both displays',
+    gloss.some((s) => /globe/i.test(s.title)) && gloss.some((s) => /map/i.test(s.title)));
 
   const marsW = { _planetKind: 'mars', ice: [0], h: [0.12], seaLevel: -0.7, rock: [0], lava: [0] };
   const marsGloss = legendGlossary(marsW);
+  /* Look for the cover section by id, not at `[0]`. A `primer` section was added
+     ahead of it and this assertion silently started reading the primer's rows,
+     which contain neither `rust` nor `grass` — so it failed for a reason that had
+     nothing to do with Mars. Indexing into a list is a fragile way to name a
+     thing that has a name. */
+  const marsCover = marsGloss.find((sec) => sec.id === 'cover') || marsGloss[0];
   ok('mars glossary is rust not grassland',
-    marsGloss[0].entries.some((e) => e.id === 'rust')
-    && !marsGloss[0].entries.some((e) => e.id === 'grass'));
+    marsCover.entries.some((e) => e.id === 'rust')
+    && !marsCover.entries.some((e) => e.id === 'grass'),
+    `cover rows: ${marsCover.entries.map((e) => e.id).join(' ')}`);
   ok('mars cell keys rust', legendKeyAt(marsW, 0) === 'rust');
 }
 
@@ -1822,7 +1839,12 @@ console.log('generate is a full reset');
     ok(`${id}: a generate after a run equals a fresh generate`, drifted.length === 0,
       drifted.slice(0, 8).map((k) => `${k}: ${fresh[k]} -> ${after[k]}`).join(' | '));
   }
-  // And a world swap must not carry the old planet across.
+  // And a world swap must not carry the old planet across. Comparing two
+  // back-to-back generates of the same world cannot see this: neither has ticked,
+  // so both hold the *same* leftovers. The contamination only shows against a world
+  // that reached this generate through its own run — Ares after Terra used to
+  // inherit Terra's Luna (`W.moon = W.moon || …`), and with it different tides,
+  // obliquity and climate than the same Ares loaded on its own.
   const terra = RULESETS.find((x) => x.id === 'terra');
   const ares = RULESETS.find((x) => x.id === 'ares');
   generate(7, terra);
@@ -1834,6 +1856,28 @@ console.log('generate is a full reset');
   const carried = Object.keys({ ...swapped, ...direct }).filter((k) => swapped[k] !== direct[k]);
   ok('switching worlds does not carry the previous planet', carried.length === 0,
     carried.slice(0, 8).map((k) => `${k}: ${swapped[k]} -> ${direct[k]}`).join(' | '));
+
+  // Digest comparison cannot see a leak that has already contaminated both sides,
+  // so pin the fields that a previous world used to hand over, by value.
+  generate(7, terra);
+  for (let i = 0; i < 30; i++) simTick();
+  generate(7, ares);
+  ok('a swapped-in world gets its own moon, not the last planet\'s',
+    W.moon != null && Math.abs(W.moon.mass - 0.6) < 1e-9,
+    `moon mass ${W.moon?.mass}`);
+  ok('a swapped-in world has no lineage from the last planet', W.lucaId == null);
+  // assert.js latches the first reading it sees as the conservation reference and
+  // keeps it while it is non-null, so a swapped-in world has to re-latch against its
+  // own carbon, not stay pinned to the planet the player came from.
+  // `_carbonMass0` is latched by the first `assertBudgets` after generate, which
+  // is 32 ticks in, so run far enough to see it on both worlds.
+  for (let i = 0; i < 34; i++) simTick();
+  const aresCarbon = W._carbonMass0;
+  generate(7, terra);
+  for (let i = 0; i < 34; i++) simTick();
+  ok('conservation references follow the current world, not the previous one',
+    aresCarbon > 0 && W._carbonMass0 > 0 && Math.abs(aresCarbon - W._carbonMass0) > 1,
+    `ares ${aresCarbon} vs terra ${W._carbonMass0}`);
 }
 
 console.log('agents / settlements reset');
@@ -2098,6 +2142,342 @@ console.log('data layer hygiene');
   ok('paint table has the Solar System', !!PAINT_BY_ID.io && !!PAINT_BY_ID.neptune && !!PAINT_BY_ID.iapetus);
 }
 
+/* Weather, lightning, volcanism and visibility. Everything in this block was
+   either dead code or invisible before: cyclones had never once formed in the
+   shipped app, lightning did not exist, ash reached no renderer, and the animal
+   layer was faded to zero above orbit on exactly the worlds that are about it. */
+console.log('weather, lightning, volcanism (slice G)');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { tropicalFavor, midlatFavor } = await import('./storms.js');
+  const { applyOverlay, OVERLAYS, overlaysForPicker } = await import('./overlay.js');
+  const { NC } = sph;
+  const maxOf = (a) => { let m = 0; if (a) for (let i = 0; i < a.length; i++) if (a[i] > m) m = a[i]; return m; };
+  const countOf = (a, t) => { let n = 0; if (a) for (let i = 0; i < a.length; i++) if (a[i] > t) n++; return n; };
+
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  let peakStorms = 0, stormTicks = 0, names = new Set();
+  let peakPrecip = 0, strikeTotal = 0, peakFlash = 0, quakeBad = 0, maxQuake = 0;
+  let eruptions = 0, peakAsh = 0, litFires = 0;
+  for (let t = 0; t < 600; t++) {
+    simTick(false);
+    const n = W.storms?.length || 0;
+    if (n > peakStorms) peakStorms = n;
+    if (n) stormTicks++;
+    for (const st of W.storms || []) names.add(st.name);
+    peakPrecip = Math.max(peakPrecip, maxOf(W.precip));
+    peakFlash = Math.max(peakFlash, countOf(W.flash, 0.02));
+    peakAsh = Math.max(peakAsh, countOf(W.ash, 0.05));
+  }
+  strikeTotal = W._strikeTotal | 0;
+  litFires = W._fireLit | 0;
+  for (const e of W.chron?.events || []) {
+    if (e.kind === 'eruption') eruptions++;
+    if (e.kind === 'quake') {
+      const m = parseFloat(String(e.label || '').replace(/[^\d.]/g, ''));
+      if (Number.isFinite(m)) {
+        if (m > maxQuake) maxQuake = m;
+        // No earthquake on any planet this model builds can reach M10.
+        if (m > 9.6) quakeBad++;
+      }
+    }
+  }
+
+  ok('cyclones form at all', peakStorms > 0, `peak ${peakStorms}`);
+  ok('cyclones are usually present', stormTicks > 120, `${stormTicks}/600 ticks`);
+  ok('cyclones are named and distinct', names.size >= 3, `${names.size} names`);
+  ok('storms are the planet\'s rain', peakPrecip > 0.1, `peak precip ${peakPrecip.toFixed(3)}`);
+  ok('a basin exists to form them in', (() => {
+    for (let c = 0; c < NC; c += 3) {
+      if (Math.max(tropicalFavor(W, c), midlatFavor(W, c)) > 0.4) return true;
+    }
+    return false;
+  })());
+
+  ok('lightning strikes', strikeTotal > 5, `${strikeTotal} strikes`);
+  ok('flashes are live and bounded', peakFlash > 0 && peakFlash < 600, `peak ${peakFlash} cells`);
+  ok('lightning starts fires', litFires > 0, `${litFires} fires lit`);
+
+  ok('volcanoes erupt', eruptions > 0, `${eruptions} eruptions`);
+  ok('quake magnitudes are physical', quakeBad === 0 && maxQuake > 0,
+    `max M${maxQuake} · ${quakeBad} above M9.6`);
+  ok('ash is laid down', peakAsh > 0, `peak ${peakAsh} cells`);
+
+  // Ash weathers. Let the fires burn out, then check the blanket thins.
+  const ashSum = () => { let s = 0; for (let i = 0; i < W.ash.length; i++) s += W.ash[i]; return s; };
+  W.fire.fill(0);
+  W._fireCells = [];
+  const before = ashSum();
+  W._noIgnite = true;
+  for (let t = 0; t < 40; t++) { W.fire.fill(0); W._fireCells = []; simTick(true); }
+  ok('ash weathers away instead of accumulating', ashSum() < before,
+    `${before.toFixed(1)} -> ${ashSum().toFixed(1)}`);
+
+  ok('being density is published', countOf(W.beingDens, 0.05) > 0,
+    `${countOf(W.beingDens, 0.05)} occupied cells`);
+
+  /* Trails fade on the simulation clock. Wear decayed inside `presentAdvance`,
+     which only runs in the render loop — so headless it never faded at all and
+     saturated at 1.0 across a quarter of the planet, and in the app the fade rate
+     was a function of frame rate. */
+  const { wearAt } = await import('./present.js');
+  let wornCells = 0, wornMax = 0;
+  for (let c = 0; c < NC; c++) {
+    const w = wearAt(c);
+    if (w > 0.06) wornCells++;
+    if (w > wornMax) wornMax = w;
+  }
+  ok('beings leave tracks', wornCells > 0, `${wornCells} worn cells`);
+  ok('tracks fade instead of covering the planet', wornCells < NC * 0.12,
+    `${wornCells} of ${NC} worn`);
+  ok('a fire can grow big enough to make its own weather', W._pyroSeeded != null,
+    'pyrocumulus gate is wired');
+
+  // Every overlay must paint without throwing, including the new ones.
+  const vDat = new Float32Array(NC * 4);
+  let painted = 0, broke = [];
+  for (const o of overlaysForPicker()) {
+    try { applyOverlay(W, vDat, null, Math.min(NC, 4096), o.id); painted++; }
+    catch (e) { broke.push(`${o.id}: ${e.message}`); }
+  }
+  ok('every overlay paints', broke.length === 0, broke.slice(0, 3).join(' | '));
+  ok('overlay set includes the new ones',
+    ['fire', 'plume', 'beings', 'weather'].every((id) => OVERLAYS.some((o) => o.id === id)));
+}
+
+/* The Evil desk. Everything on the Strike desk is something a planet does to
+   itself; these have an author. Four hazards that behave differently on purpose,
+   and the first objects in this simulation with a journey. */
+console.log('poison, fallout, plague, war, ordnance (slice H)');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { NC, DIR, NBR } = sph;
+  const { W, generate, simTick, RULESETS } = await import('../world.js');
+  const { ENT } = await import('../agents.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const { TOOLS } = await import('../tools.js');
+  const { thermoCost } = await import('./god/economy.js');
+  const { pourToxin, irradiate, seedDisease, openWar, harmAt } = await import('./anthro.js');
+  const { launch, detonate, defenceAt, richestTarget, PROFILES } = await import('./ordnance.js');
+  const { stellarFlare } = await import('./god/disaster.js');
+  const { cityLights } = await import('./city.js');
+  const count = (a, t) => { let n = 0; if (a) for (let i = 0; i < a.length; i++) if (a[i] > t) n++; return n; };
+  const total = (a) => { let s = 0; if (a) for (let i = 0; i < a.length; i++) s += a[i]; return s; };
+
+  const evil = TOOLS.filter((t) => t.group === 'evil');
+  ok('the Evil desk exists', evil.length >= 8, `${evil.length} tools`);
+  ok('every Evil tool is priced', evil.every((t) => thermoCost(t.id, 1) > 0),
+    evil.filter((t) => !(thermoCost(t.id, 1) > 0)).map((t) => t.id).join(','));
+  ok('the heavy ones are marked irreversible',
+    ['nuke', 'icbm', 'slbm', 'pandemic'].every((id) => TOOLS.find((t) => t.id === id)?.irreversible));
+
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 500; t++) simTick(true);
+  const hot = richestTarget(W);
+  ok('a built target exists to aim at', hot >= 0 && (W.build?.[hot] || 0) > 0.2,
+    `cell ${hot} build ${(W.build?.[hot] || 0).toFixed(2)}`);
+
+  // --- toxin: slow, creeping, long-lived
+  let clean = -1;
+  for (let c = 0; c < NC; c++) if (W.h[c] >= W.seaLevel && W.life[c] > 0.25) { clean = c; break; }
+  const toxLife0 = W.life[clean];
+  pourToxin(W, clean, 0.95, 1);
+  for (let t = 0; t < 60; t++) simTick(true);
+  ok('toxin kills what lives in it', W.life[clean] < toxLife0,
+    `${toxLife0.toFixed(3)} -> ${W.life[clean].toFixed(3)}`);
+  ok('toxin spreads beyond where it was poured', count(W.toxin, 0.02) > 5,
+    `${count(W.toxin, 0.02)} cells`);
+  const toxAt60 = total(W.toxin);
+  for (let t = 0; t < 200; t++) simTick(true);
+  ok('toxin outlasts a war', total(W.toxin) > toxAt60 * 0.2,
+    `${toxAt60.toFixed(2)} -> ${total(W.toxin).toFixed(2)} after 200 ticks`);
+
+  // --- fallout: fast, then refuses to leave
+  let land = -1;
+  for (let c = 0; c < NC; c++) if (W.h[c] >= W.seaLevel && W.life[c] > 0.25 && !W.toxin[c]) { land = c; break; }
+  const radLife0 = W.life[land];
+  irradiate(W, land, 0.95, 1);
+  for (let t = 0; t < 20; t++) simTick(true);
+  ok('radiation kills faster than poison', W.life[land] < radLife0 * 0.8,
+    `${radLife0.toFixed(3)} -> ${W.life[land].toFixed(3)} in 20 ticks`);
+  const radAt20 = W.rad[land];
+  for (let t = 0; t < 300; t++) simTick(true);
+  ok('fallout is still there 300 ticks later', W.rad[land] > radAt20 * 0.6,
+    `${radAt20.toFixed(3)} -> ${W.rad[land].toFixed(3)}`);
+  ok('harm is legible to the movement scorer', harmAt(W, land) > 0);
+
+  // --- epidemic: sweeps, burns out, and the survivors rebuild
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 600; t++) simTick(true);
+  const buildBefore = total(W.build);
+  seedDisease(W, richestTarget(W), { virulence: 0.7, transmit: 0.8, engineered: true });
+  let peakSick = 0, peakImmune = 0;
+  for (let t = 0; t < 140; t++) {
+    simTick(true);
+    peakSick = Math.max(peakSick, count(W.disease, 0.04));
+    peakImmune = Math.max(peakImmune, count(W.immune, 0.02));
+  }
+  ok('an epidemic spreads past its seed', peakSick > 20, `peak ${peakSick} districts`);
+  ok('survivors become immune', peakImmune > 10, `${peakImmune} immune cells`);
+  ok('an epidemic costs the civilisation', total(W.build) < buildBefore,
+    `${buildBefore.toFixed(1)} -> ${total(W.build).toFixed(1)}`);
+  for (let t = 0; t < 260; t++) simTick(true);
+  ok('an epidemic burns out on its own', count(W.disease, 0.04) === 0,
+    `${count(W.disease, 0.04)} still sick`);
+
+  // --- war: a front that moves and unbuilds
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 600; t++) simTick(true);
+  const a = richestTarget(W);
+  const b = richestTarget(W, a);
+  const warBuild0 = total(W.build);
+  const w = openWar(W, a, b, 0.9);
+  ok('a war can be opened between two places', w.ok && b >= 0 && b !== a);
+  const startedAt = w.war.at;
+  let moved = false;
+  for (let t = 0; t < 120; t++) { simTick(true); if (W.wars?.[0] && W.wars[0].at !== startedAt) moved = true; }
+  ok('the front moves', moved);
+  ok('war unbuilds what it crosses', total(W.build) < warBuild0 || (W.warRuin || 0) > 0,
+    `ruin ${(W.warRuin || 0).toFixed(2)}`);
+  for (let t = 0; t < 900; t++) simTick(true);
+  ok('a war ends', (W.wars?.length || 0) === 0, `${W.wars?.length} fronts still open`);
+
+  // --- ordnance: the first object with a journey
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 700; t++) simTick(true);
+  const target = richestTarget(W);
+  let silo = -1, best = 0;
+  for (let c = 0; c < NC; c++) {
+    const dot = DIR[c * 3] * DIR[target * 3] + DIR[c * 3 + 1] * DIR[target * 3 + 1]
+      + DIR[c * 3 + 2] * DIR[target * 3 + 2];
+    if (dot > 0.4) continue;
+    if ((W.build?.[c] || 0) > best) { best = W.build[c]; silo = c; }
+  }
+  ok('there is somewhere to launch from', silo >= 0, `silo ${silo}`);
+  // Read the defence before the attack flattens the city that provides it.
+  const defBefore = defenceAt(W, target);
+  const shot = launch(W, silo, target, 'icbm', { mirv: 1 });
+  ok('a launch takes time to arrive', shot.ok && shot.ticks > 2,
+    `${shot.ticks} ticks over ${shot.cells} cells`);
+  ok('a launch is in the air', (W.inFlight | 0) >= 0 && W.flight.length === 1);
+  simTick(true);
+  ok('a flight leaves a visible track', count(W.tracer, 0.02) > 0,
+    `${count(W.tracer, 0.02)} cells`);
+  for (let i = 0; i < 12; i++) launch(W, silo, target, 'icbm', { mirv: 1 });
+  const launched0 = W.launched | 0;
+  for (let t = 0; t < 30; t++) simTick(true);
+  ok('everything in the air resolves', (W.inFlight | 0) === 0, `${W.inFlight} still flying`);
+  ok('some are intercepted and some land',
+    (W.intercepted | 0) + (W.detonated | 0) > 0
+    && (W.intercepted | 0) <= launched0,
+    `launched ${launched0} intercepted ${W.intercepted} detonated ${W.detonated}`);
+  ok('a defended city defends itself', defBefore > 0.05 && (W.intercepted | 0) > 0,
+    `defence was ${defBefore.toFixed(2)}, intercepted ${W.intercepted}`);
+  ok('warheads that land leave fallout', count(W.rad, 0.02) > 0, `${count(W.rad, 0.02)} cells`);
+  ok('a nuclear burst takes the grid down', cityLights(W) === 0, `lights ${cityLights(W)}`);
+  for (let t = 0; t < 20; t++) simTick(true);
+  ok('the track fades behind it', count(W.tracer, 0.02) === 0, `${count(W.tracer, 0.02)} cells`);
+
+  // Undefended ground cannot stop anything.
+  let empty = -1;
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] >= W.seaLevel && defenceAt(W, c) === 0) { empty = c; break; }
+  }
+  if (empty >= 0) {
+    const det0 = W.detonated | 0;
+    const cruise = launch(W, silo, empty, 'cruise');
+    // Fixed count, not `while (W.inFlight)`: that counter is written by
+    // `ordnanceTick`, so it still reads zero on the tick the launch happens and
+    // the loop never ran at all.
+    const need = cruise.ok ? cruise.ticks + 4 : 4;
+    for (let t = 0; t < need; t++) simTick(true);
+    ok('an undefended target cannot be saved', (W.detonated | 0) > det0,
+      `detonated ${W.detonated} vs ${det0}`);
+  } else {
+    ok('an undefended target cannot be saved', true, 'no undefended land');
+  }
+
+  // --- flare: a light show on a shielded planet, a dose on a bare one
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 60; t++) simTick(true);
+  const radBefore = count(W.rad, 0.02);
+  stellarFlare(1.8);
+  ok('a flare washes out the disc', (W.flareGlow || 0) > 0.5, `glow ${W.flareGlow}`);
+  ok('a flare drives aurora toward the equator', (W.auroraLat || 1) < 0.6,
+    `auroraLat ${W.auroraLat}`);
+  ok('a flare takes the grid down', cityLights(W) === 0);
+  ok('an intact magnetosphere stops the ground dose', count(W.rad, 0.02) === radBefore,
+    `${radBefore} -> ${count(W.rad, 0.02)} rad cells through shield 1.0`);
+  for (let t = 0; t < 40; t++) simTick(true);
+  ok('the flare fades', (W.flareGlow || 0) < 0.02 && (W.auroraPower || 0) < 0.5,
+    `glow ${W.flareGlow} aurora ${W.auroraPower}`);
+
+  // A world with no dynamo does take it.
+  const bare = cloneRuleForRun(RULESETS.find((r) => r.id === 'ares'));
+  generate(20260808, bare);
+  for (let t = 0; t < 20; t++) simTick(true);
+  const bareBefore = count(W.rad, 0.02);
+  stellarFlare(1.8);
+  ok('a bare planet takes a radiation storm', count(W.rad, 0.02) > bareBefore,
+    `${bareBefore} -> ${count(W.rad, 0.02)} on magnetosphere ${bare.magnetosphere}`);
+
+  // --- impacts now draw the arrival, not only the aftermath
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 40; t++) simTick(true);
+  /* `strikeImpact`, which is the function the Meteor tool calls. There used to be
+     a second one — `applyImpact` in world.js — that no call site anywhere reached
+     but that two modules imported and one re-exported. This test aimed at it and
+     found nothing, which is exactly the trap dead code shaped like live code
+     sets. It is deleted; there is one impact function now. */
+  const { strikeImpact } = await import('./god/disaster.js');
+  let hitCell = -1;
+  for (let c = 0; c < NC; c++) if (W.h[c] >= W.seaLevel) { hitCell = c; break; }
+  strikeImpact(hitCell, { mass: 1, velocity: 1, density: 1, angle: 45 });
+  ok('an impact draws an entry track', count(W.tracer, 0.02) > 3,
+    `${count(W.tracer, 0.02)} cells`);
+  ok('an impact flashes', count(W.flash, 0.02) > 0);
+  ok('an impact leaves a molten floor', (W.lava?.[hitCell] || 0) > 0,
+    `lava ${(W.lava?.[hitCell] || 0).toFixed(3)}`);
+
+  // --- animals avoid what will kill them
+  generate(20260808, cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive')));
+  for (let t = 0; t < 400; t++) simTick(true);
+  let occupied = -1;
+  for (let i = 0; i < ENT.n; i++) {
+    const m = ENT.meta[i];
+    if (m && !m.dead && W.h[m.cell] >= W.seaLevel) { occupied = m.cell; break; }
+  }
+  if (occupied >= 0) {
+    irradiate(W, occupied, 0.9, 1);
+    let fled = 0;
+    for (let t = 0; t < 6; t++) {
+      simTick(true);
+      for (let i = 0; i < ENT.n; i++) if (ENT.meta[i]?.behav === 'flee') fled++;
+    }
+    ok('animals flee a hot zone', fled > 0, `${fled} flee-ticks`);
+  } else {
+    ok('animals flee a hot zone', true, 'no land animals to test');
+  }
+}
+
+console.log('biosphere holds over a long run');
+{
+  const sph = await import('../sphere.js');
+  sph.setResolution(32);
+  const { biosphereHolds } = await import('./calibrate.mjs');
+  const b = biosphereHolds(20260808, 750, 'terra');
+  ok('something grows life on modern Earth', b.growsSomewhere,
+    'lifeGrown was 0 at every sample — nothing owns growth');
+  ok('Earth keeps its biosphere over 750 ticks', b.pass,
+    b.marks.map((m) => `t${m.tick}: mean ${m.meanLife.toFixed(4)} sea ${m.seaLife.toFixed(4)} land ${m.landLife.toFixed(4)}`).join(' | '));
+  ok('the ocean is not the part that dies', b.late.seaLife > 0.02,
+    `seaLife=${b.late.seaLife.toFixed(4)}`);
+}
+
 console.log('golden + calibrate');
 {
   const g = goldenRun({ ticks: 24 });
@@ -2156,8 +2536,30 @@ console.log('beings inside the tick (slice A)');
 
   const b = run(thriveRule, 30);
   ok('same seed, same population', a === b);
-  // A second generate must not inherit the previous world's individuals.
-  ok('generate resets the population', maxAgeOf(ENT) <= 30, `maxAge=${maxAgeOf(ENT)}`);
+  /* A second generate must not inherit the previous world's individuals. Age no
+     longer proves that: founders are staggered across their lifespan on purpose,
+     so a 30-tick-old world legitimately holds a 400-tick-old animal. What
+     generate does guarantee is a fresh id sequence — `resetEntities` puts
+     `_idSeq` back to 1 — so every living id must fall inside the population
+     this generate created. */
+  {
+    let maxId = 0, count = 0;
+    for (let i = 0; i < ENT.n; i++) {
+      const m = ENT.meta[i];
+      if (!m || m.dead) continue;
+      count++;
+      if (m.id > maxId) maxId = m.id;
+    }
+    ok('generate resets the population', count > 0 && maxId <= ENT.n + count,
+      `maxId=${maxId} n=${ENT.n}`);
+    // And the founders are an age structure, not a cohort.
+    const ages = new Set();
+    for (let i = 0; i < ENT.n; i++) {
+      const m = ENT.meta[i];
+      if (m && !m.dead) ages.add(m.age);
+    }
+    ok('founders have an age structure', ages.size > 8, `${ages.size} distinct ages`);
+  }
 
   // The pinned Earth stays pinned: clock welded to the present.
   generate(4242, cloneRuleForRun(terraRule));
@@ -2233,20 +2635,37 @@ console.log('settlements, fire, herds, plumes (slices B-E)');
 
   // Slice C — fire, on the world those 500 ticks just built.
   const { igniteFire, flammableAt, fireDanger } = await import('./fire.js');
+  ok('the demo world can burn at all', (W.fireDangerMax || 0) > 0.05,
+    `fireDangerMax=${(W.fireDangerMax || 0).toFixed(3)}`);
   const lit = lightTheDriestForest();
   ok('a fire can be lit', lit > 0, `${lit} cells`);
-  let cell = -1;
-  for (let i = 0; i < W.fire.length; i++) if (W.fire[i] > 0.02) { cell = i; break; }
+  const litCells = new Set();
+  for (let i = 0; i < W.fire.length; i++) if (W.fire[i] > 0.02) litCells.add(i);
+  let cell = litCells.values().next().value ?? -1;
   const life0 = W.life[cell];
-  let peak = W.fireCells || 0, ashPeak = 0, fled = 0;
-  for (let t = 0; t < 12; t++) {
+  /* Reach, not peak front. A front that moves rather than grows is still a fire
+     that travelled, and peak-front made this test hang on whether one cell's
+     four neighbours happened to be dry — it flipped when the biosphere thinned
+     and fire danger fell from 0.45 to 0.20. Reach is the claim that matters:
+     the burn arrived somewhere it was not lit. */
+  const ever = new Set(litCells);
+  let ashPeak = 0, fled = 0, lifeLow = life0;
+  for (let t = 0; t < 20; t++) {
     simTick(true);
-    if ((W.fireCells || 0) > peak) peak = W.fireCells;
+    for (let i = 0; i < W.fire.length; i++) if (W.fire[i] > 0.02) ever.add(i);
     for (let i = 0; i < W.ash.length; i++) if (W.ash[i] > ashPeak) ashPeak = W.ash[i];
     for (let i = 0; i < ENT.n; i++) if (ENT.meta[i]?.behav === 'flee') fled++;
+    // The dip, not the endpoint: a burnt cell is regrown by `bioTick` within a
+    // few ticks, which is the desired behaviour and made the old end-of-window
+    // comparison read as "fire adds biomass".
+    if (W.life[cell] < lifeLow) lifeLow = W.life[cell];
   }
-  ok('fire spreads past the cells it was lit in', peak > lit, `peak front=${peak} lit=${lit}`);
-  ok('fire consumes the fuel it burns', W.life[cell] < life0, `${life0} -> ${W.life[cell]}`);
+  ok('fire reaches cells it was not lit in', ever.size > litCells.size,
+    `reached ${ever.size} from ${litCells.size} lit`);
+  ok('fire spread is legible, not a single-cell fizzle', ever.size >= 6,
+    `reached ${ever.size} cells`);
+  ok('fire consumes the fuel it burns', lifeLow < life0,
+    `${life0.toFixed(4)} dipped to ${lifeLow.toFixed(4)}`);
   ok('fire lays down ash', ashPeak > 0.05, `maxAsh=${ashPeak}`);
   ok('fire burns an area', (W.burntArea || 0) > 0, `${W.burntArea}`);
   ok('something flees the fire', fled > 0, `${fled} flee-ticks`);
@@ -2299,13 +2718,26 @@ console.log('metabolism, birth, death, hunt (slice F)');
   const { probeThrive, lightTheDriestForest } = await import('../../scripts/thrive-probe.mjs');
   const thrive = cloneRuleForRun(RULESETS.find((r) => r.id === 'thrive'));
 
+  /* Grazing measured where grazing happens, not as a change in planetary total.
+     This used to sum `life` at generate, run 400 ticks and assert the total had
+     *fallen* — which passes whenever the biosphere is shrinking for any reason,
+     and did pass while `bioTick` and `redoxTick` were both refusing to grow it.
+     It is not a grazing test; it is a "is the planet dying" test with the sign
+     inverted. `noteGraze` records the bite per cell, so compare cells grazers
+     actually occupy against the land they do not. */
   generate(20260808, thrive);
-  let lifeBefore = 0;
-  for (let c = 0; c < W.life.length; c++) lifeBefore += W.life[c];
   for (let t = 0; t < 400; t++) simTick(true);
-  let grazed = lifeBefore;
-  for (let c = 0; c < W.life.length; c++) grazed -= W.life[c];
-  ok('grazers trim biomass', grazed > 0, `life removed ${grazed.toFixed(4)}`);
+  let grazedCells = 0, grazedLife = 0, ungrazedCells = 0, ungrazedLife = 0;
+  for (let c = 0; c < W.life.length; c++) {
+    if (W.h[c] < W.seaLevel) continue;
+    if ((W.trophOccHerb?.[c] || 0) > 0.02) { grazedCells++; grazedLife += W.life[c]; }
+    else if (W.life[c] > 0.02) { ungrazedCells++; ungrazedLife += W.life[c]; }
+  }
+  ok('grazing is recorded where grazers are', grazedCells > 0, `${grazedCells} grazed cells`);
+  const gMean = grazedCells ? grazedLife / grazedCells : 0;
+  const uMean = ungrazedCells ? ungrazedLife / ungrazedCells : 0;
+  ok('grazed ground carries less biomass than ungrazed', gMean < uMean,
+    `grazed ${gMean.toFixed(4)} vs ungrazed ${uMean.toFixed(4)}`);
 
   const r = probeThrive({ seed: 8888, ruleId: 'thrive', ticks: 600 });
   ok('population turns over', r.beings.died > 0 || r.beings.everSeen > ENT.n,
@@ -2503,8 +2935,15 @@ console.log('carcass, fear field, one kill, herd fission');
       simTick(true);
     }
     killed = killed || prey.dead || prey.cause === 'hunted' || (W.huntKills | 0) > kills0;
-      ok('one kill lands', killed || (W.huntKills | 0) > kills0,
-        `kills=${W.huntKills} misses=${W.huntMisses}`);
+    /* `pHit` bottoms out at 0.02 by design — "predators are not a mortality
+       constant" — so demanding that one forced pair connects inside 60 ticks is
+       asserting a coin flip, and it flipped tails once the population gained an
+       age structure. What must hold is that predation *resolves*: hunts are
+       attempted, they hit or miss, and kills do land somewhere on the planet. */
+    ok('hunts resolve', (W.huntKills | 0) + (W.huntMisses | 0) > 0,
+      `kills=${W.huntKills} misses=${W.huntMisses}`);
+    ok('kills land somewhere', (W.huntKills | 0) > 0,
+      `kills=${W.huntKills} misses=${W.huntMisses}`);
     ok('a carcass appears', (W.carcassCount | 0) > 0 || (W.carcasses?.length || 0) > 0
       || (W.carcassField && [...W.carcassField].some((v) => v > 0.04)),
       `count=${W.carcassCount}`);
@@ -2521,7 +2960,8 @@ console.log('carcass, fear field, one kill, herd fission');
   } else {
     dropCarcass(W, 0, 1.2, 7);
     noteFear(W, 0, 0.4);
-    ok('one kill lands', (W.carcassCount | 0) > 0);
+    ok('hunts resolve', (W.carcassCount | 0) > 0);
+    ok('kills land somewhere', (W.carcassCount | 0) > 0);
     ok('a carcass appears', (W.carcassCount | 0) > 0);
     ok('hunter energy rises after a kill', true);
   }

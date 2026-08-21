@@ -3,7 +3,7 @@
 import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, lookRay, showErr } from './math.js';
 import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
 import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
-import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js?v=49';
+import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js';
 import { setClockFace, setSeasonHold, livedTick } from './sim/clockFace.js';
 import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed } from './world.js';
 import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
@@ -24,12 +24,13 @@ import { formatTechno, formatMega } from './sim/techno.js';
 import { landformAt, explainForm, formatPalette } from './sim/landform.js';
 import { noteDroppedTicks } from './sim/meta.js';
 import { detectEnding, finaleArtefact, formatFinaleMarkdown } from './sim/finale.js';
+import { refreshDarkHud } from './sim/darkHud.js';
 import {
   skipReveal, campaignBlurb,
   LESSONS, DOOR_IDS, loadLessonProgress, lessonById, setCurrentLesson,
   completeLesson, lessonDone, shouldOfferDoor, nextIncompleteLesson,
   lessonChipLabel, huntMatches, offerTourAgain, markDoorSeen, saveLessonProgress,
-} from './sim/teach.js?v=24';
+} from './sim/teach.js';
 import { ENT, respawnEntities, followTarget, presentAgents } from './agents.js';
 import { initGL, gl, canvas, rebuildGeometry, refreshColours, uploadEntities, drawScene, vIdx, updateLocalHighlight, setGuildHighlight, setLocalHover, setOverlayMode, remeshPlanet, rebuildScatterLUTs, setGlobeSubd, GLOBE_SUBD, GLOBE_SUBD_ALLOWED, globeN, globeVertexCount, recommendGlobeSubd, effectiveGlobeSubd } from './render.js';
 import {
@@ -91,6 +92,7 @@ import {
   localFrameIndex, localFrameLabel,
 } from './localview.js';
 import { presentAdvance, placeSentence, cellSun } from './sim/present.js';
+import { considerThought, thoughtView, resetThought, thoughtMemory } from './sim/thought.js';
 import { currentsAtCell } from './sim/ocean.js';
 import { stepFlow, resetFlow } from './sim/flowviz.js';
 import { CATALOGUE, CATALOGUE_CATS, CATALOGUE_KIND } from './catalogue.js';
@@ -151,6 +153,7 @@ const S = {
   localPin: -1,       // >=0 pins the local window; -1 = auto-track
   localSeek: 'life',  // stay = hold densest; life = jump to recent growth
   dayWatch: false,
+  thoughtOn: true,
   faceCell: -1,
   faceUntil: 0,
   localExpanded: false,
@@ -238,11 +241,61 @@ function maybeDayMoment(cell) {
   const sun = cellSun(cell);
   const sign = sun > 0.04 ? 1 : sun < -0.04 ? -1 : _sunSign;
   if (sign !== _sunSign && _sunSign !== 0) {
-    if (sign > 0) showMoment('Dawn', placeSentence(cell) || 'The light returns', S.dayWatch ? 'Watching a day' : '');
-    else showMoment('Dusk', 'The valley goes dark', S.dayWatch ? 'Watching a day' : '');
+    // When Cernunnos thought is on, dawn/dusk ride that voice instead of the big toast.
+    if (S.thoughtOn && !S.dayWatch) {
+      /* thought softBeat handles dusk/dawn on focus */
+    } else if (sign > 0) {
+      showMoment('Dawn', placeSentence(cell) || 'The light returns', S.dayWatch ? 'Watching a day' : '');
+    } else {
+      showMoment('Dusk', 'The valley goes dark', S.dayWatch ? 'Watching a day' : '');
+    }
   }
   _sunSign = sign;
 }
+
+let _thoughtTimer = 0;
+let _thoughtAcc = 0;
+
+function showThought(line) {
+  const el = document.getElementById('thought');
+  if (!el || !line?.text) return;
+  el.hidden = false;
+  el.classList.remove('warn', 'wild', 'quiet', 'soft', 'show');
+  el.classList.add(line.tone || 'soft');
+  el.querySelector('.th-kicker').textContent = line.kicker || 'Cernunnos';
+  el.querySelector('.th-text').textContent = line.text;
+  const trail = el.querySelector('.th-trail');
+  if (trail) {
+    const prev = thoughtMemory().lines.slice(-3, -1);
+    trail.textContent = prev.length ? prev.join(' · ') : '';
+  }
+  // Reflow before show so the transition runs.
+  void el.offsetWidth;
+  el.classList.add('show');
+  clearTimeout(_thoughtTimer);
+  const hold = line.tone === 'warn' ? 5200 : line.tone === 'wild' ? 4800 : 5600;
+  _thoughtTimer = setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, 900);
+  }, hold);
+}
+
+function tickThoughtVoice(dt) {
+  if (!S.thoughtOn || doorIsOpen() || localKeyOpen() || S.pitchShot) return;
+  if (document.body.classList.contains('ceremony')) return;
+  const moment = document.getElementById('moment');
+  if (moment?.classList.contains('show') && !_pitchHoldMoment) return;
+  _thoughtAcc += dt;
+  if (_thoughtAcc < 0.45) return;
+  _thoughtAcc = 0;
+  const view = thoughtView({
+    cell: S._localFocus >= 0 ? S._localFocus : (S.localPin >= 0 ? S.localPin : -1),
+    paused: S.paused,
+  });
+  const line = considerThought(view);
+  if (line) showThought(line);
+}
+
 const VIEW = m4(), PROJ = m4();
 let lastT = 0, simAcc = 0, agentAcc = 0, geomDirty = false;
 let dragging = false, panning = false, lastX = 0, lastY = 0, grabbing = false;
@@ -505,7 +558,7 @@ function loadTableSlot(slot) {
   }
 }
 
-const TOOL_BTN_SEL = '#toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsSample button';
+const TOOL_BTN_SEL = '#toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsSample button, #toolsEvil button';
 
 function refreshToolGates() {
   const unlocked = toolsUnlocked(W);
@@ -1090,6 +1143,16 @@ function updateHUD() {
   announceNewMoments();
   refreshToolGates();
 
+  if (!updateHUD._dark || performance.now() - updateHUD._dark > 500) {
+    updateHUD._dark = performance.now();
+    refreshDarkHud(W);
+    const dock = document.getElementById('darkhud-dock');
+    if (dock && document.querySelector('.suite-desk[data-desk-panel="evil"].on')) {
+      const floating = document.getElementById('darkhud');
+      if (floating?.innerHTML) dock.innerHTML = floating.innerHTML;
+    }
+  }
+
   // Keep Sky / Rock panels live when open
   if (document.getElementById('pane-climate')?.classList.contains('on')) {
     if (!updateHUD._clim || performance.now() - updateHUD._clim > 400) {
@@ -1293,6 +1356,9 @@ function topGuild(cell) {
   return best;
 }
 
+// Frame-loop element handles — looked up once, not 60× a second.
+let _lvEl = null, _rungEl = null;
+
 function update(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
   lastT = t;
@@ -1375,15 +1441,24 @@ function update(t) {
     ? (camWorld ? (Math.hypot(camWorld[0] - S.posXR[0], camWorld[1] - S.posXR[1], camWorld[2] - S.posXR[2]) / S.scaleXR - 1) : 1.2)
     : (S.camDist - 1);
   S.detail = clamp(1 - (alt - 0.08) / 1.2, 0, 1);
-  // Hide sprites at orbit — Earth biomes carry the look
-  S.entFade = clamp(1 - (alt - 0.38) / 0.55, 0, 1);
-  if (W.rule?.earthLike) S.entFade = alt > 0.85 ? 0 : S.entFade * 0.55;
-  // LOD: surface shows more entities; orbital fades to density field (biome colour)
-  if (alt > 0.9) S.entFade *= 0.15;
-  else if (alt > 0.5) S.entFade *= 0.55;
+  /* Beings at every scale, not only from the ground.
+     This used to read "Hide sprites at orbit — Earth biomes carry the look":
+     `entFade` was forced to 0 above alt 0.85 on any Earth-like world and
+     multiplied by 0.55 twice below it, so the animal layer was invisible from
+     orbit and at 30% opacity in the regional view. That is a defensible look for
+     a calibration render and the wrong one for a planet whose point is that it
+     is alive. There is a floor now, and sprites grow with distance
+     (`S.entGain`) so a being stays a few pixels across instead of shrinking to
+     nothing — the layer thins with altitude rather than vanishing. */
+  S.entFade = clamp(1 - (alt - 0.38) / 1.6, 0.34, 1);
+  if (W.rule?.earthLike) S.entFade *= 0.82;
+  if (alt > 0.9) S.entFade *= 0.72;
+  else if (alt > 0.5) S.entFade *= 0.86;
+  // Roughly constant apparent size out to orbit, then held so it cannot bloat.
+  S.entGain = clamp(1 + Math.min(alt, 1.6) * 1.35, 1, 3.2);
   S.tier = alt > 8 ? 'Dot' : alt > 1.1 ? 'Orbital' : alt > 0.45 ? 'Regional' : alt > 0.16 ? 'Local' : 'Surface';
   brushForTier(S.tier === 'Dot' ? 'Orbital' : S.tier, S.camDist);
-  const rungEl = document.getElementById('scalerung');
+  const rungEl = _rungEl || (_rungEl = document.getElementById('scalerung'));
   if (rungEl) {
     const rung = scaleRung(S.camDist, W.noSurface);
     const down = W.noSurface && S.camDist < 1.08 ? formatDescent(S.camDist, W) : '';
@@ -1399,11 +1474,12 @@ function update(t) {
   audioUpdate(S._localFocus);
 
   if (!xrSession) {
-    const lv = document.getElementById('localview');
+    const lv = _lvEl || (_lvEl = document.getElementById('localview'));
     if (lv) {
       const hoverKey = S.localLegendLock || S.localHoverKey;
-      const lvOn = lv.offsetWidth > 8 && lv.offsetHeight > 8
-        && getComputedStyle(lv).display !== 'none';
+      // A laid-out box already proves the panel is displayed; the old
+      // getComputedStyle() forced a style recalc on every frame.
+      const lvOn = lv.offsetWidth > 8 && lv.offsetHeight > 8;
       const patch = lvOn ? drawLocalView(lv, S.inspect, {
         radius: S.localRadius,
         pin: S.localPin,
@@ -1436,6 +1512,8 @@ function update(t) {
       checkLessonProgress();
     }
   }
+
+  tickThoughtVoice(dt);
 
   if (!S.pitchShot && !doorIsOpen()) maybeTeachWindow(t);
 
@@ -1568,7 +1646,7 @@ function setupTips() {
     'budget', 'autopilot',
     'pause', 'newseed', 'catbtn', 'catprev', 'catnext', 'worldchip',
     'docktoggle', 'vrbtn', 'tourbtn',
-    'opacity', 'grid', 'xray', 'xrayAmt', 'viewClear', 'viewGhost', 'viewOrbitGuides',
+    'opacity', 'grid', 'xray', 'xrayAmt', 'viewClear', 'viewGhost', 'viewOrbitGuides', 'viewOpenKey', 'viewThought',
     'lookPhoto', 'lookDiagram', 'cloudFree', 'canvasmode', 'rerolland', 'landshape', 'landpickbtn',
     'layeradd', 'layerdup', 'layerdel', 'layerup', 'layerdown', 'layerflatten',
     'layeropacity', 'layerblend', 'layerpaint', 'layerclipland', 'layerclearmask',
@@ -1579,6 +1657,7 @@ function setupTips() {
     'climDay', 'climTilt', 'climSeason', 'climMoonOn', 'climMoonMass', 'climMoonDist',
     'stormGenesis', 'stormStrict', 'stormSize', 'stormVigor',
     'rockHeat', 'rockMag',
+    'localkeybtn',
     'localSeek',
   ];
   for (const id of ids) {
@@ -1620,6 +1699,7 @@ function setupTips() {
       land: ['raise', 'Land'],
       life: ['seedGuild', 'Life'],
       strike: ['meteor', 'Strike'],
+      evil: ['plague', 'Evil'],
     },
     god: {
       aim: ['godwatch', 'Run'],
@@ -2540,6 +2620,7 @@ function showMoment(kicker, title, sub, rgb = null) {
 function resetMomentAnnouncer() {
   _announcedMoments = new Set();
   _announcedDrama = new Set();
+  resetThought();
 }
 
 let _taughtAlive = false;
@@ -2767,12 +2848,15 @@ function openLocalKey(focusId = null) {
   if (!panel || !list) return;
   closeLandPicker();
   if (sub) {
-    sub.textContent = `Each square is one sim cell (~${cellKm(N)} km). Colour is cover, or the metabolism that won it. Sprites on top are genomes from an open morphospace — not sixteen stamps.`;
+    sub.textContent = `One language. Fill colour is shared. Trees on the map are plants; green crosses on the globe are herds; amber is towns; gold rim is this map window.`;
   }
   const highlightable = new Set();
   for (const sec of legendGlossary(W)) {
     if (sec.highlight === false) continue;
-    for (const e of sec.entries) highlightable.add(e.id);
+    for (const e of sec.entries) {
+      if (e.lock === false) continue;
+      highlightable.add(e.id);
+    }
   }
   const highlight = (focusId && highlightable.has(focusId)) ? focusId : null;
   if (highlight) {
@@ -2799,31 +2883,51 @@ function openLocalKey(focusId = null) {
     return g;
   };
   const addRow = (parent, e) => {
+    const canLock = e.lock !== false;
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'lk-row';
+    b.className = 'lk-row' + (canLock ? '' : ' nolock');
     b.dataset.key = e.id;
     const sw = document.createElement('i');
-    sw.className = 'lk-swatch' + (e.swatch ? ` ${e.swatch}` : '');
-    if (!e.swatch || e.swatch === 'dot') {
-      sw.style.background = `rgb(${e.rgb[0]},${e.rgb[1]},${e.rgb[2]})`;
+    const swatch = e.swatch || '';
+    sw.className = 'lk-swatch' + (swatch ? ` ${swatch}` : '');
+    const rgb = e.rgb || [180, 190, 200];
+    const css = `rgb(${rgb[0]},${rgb[1]},${rgb[2]})`;
+    const shapeOnly = /^(frame|hole|cross|rim|spark|wedge|dashes|tend|arc|glyph-tri|tree|scrub|roof)$/.test(swatch);
+    if (!shapeOnly) sw.style.background = css;
+    if (/cross|rim|light|streak|spark|wedge|dashes|leaf|tend|arc|glyph-|tree|scrub|block/.test(swatch) || !swatch) {
+      sw.style.color = css;
     }
     const body = document.createElement('div');
-    body.innerHTML = `<div class="lk-name">${e.tip || e.label}</div><div class="lk-why">${e.why || ''}</div>`;
+    const where = e.where === 'globe' || e.where === 'map' ? e.where : '';
+    const whereHtml = where
+      ? `<span class="lk-where ${where}">${where}</span>`
+      : '';
+    body.innerHTML = `<div class="lk-name"><span>${e.tip || e.label}</span>${whereHtml}</div><div class="lk-why">${e.why || ''}</div>`;
     b.append(sw, body);
-    b.addEventListener('pointerenter', () => {
-      S.localLegendLock = e.id;
-      S.localHoverKey = e.id;
+    const paintOn = () => {
       for (const row of list.querySelectorAll('.lk-row')) {
         row.classList.toggle('on', row.dataset.key === e.id);
       }
+    };
+    b.addEventListener('pointerenter', () => {
+      if (canLock) {
+        S.localLegendLock = e.id;
+        S.localHoverKey = e.id;
+      }
+      paintOn();
     });
     b.addEventListener('pointerleave', () => {
-      if (S.localLegendLock === e.id) S.localLegendLock = null;
+      if (canLock && S.localLegendLock === e.id) S.localLegendLock = null;
     });
     b.addEventListener('click', () => {
+      if (!canLock) {
+        paintOn();
+        return;
+      }
       S.localLegendLock = e.id;
       S.localHoverKey = e.id;
+      paintOn();
     });
     parent.appendChild(b);
   };
@@ -2839,6 +2943,9 @@ function openLocalKey(focusId = null) {
   document.getElementById('localkeybtn')?.setAttribute('aria-pressed', 'true');
   if (highlight) {
     list.querySelector(`.lk-row[data-key="${highlight}"]`)?.scrollIntoView({ block: 'nearest' });
+  } else if (focusId) {
+    list.querySelector(`.lk-row[data-key="${focusId}"]`)?.scrollIntoView({ block: 'nearest' });
+    list.querySelector(`.lk-row[data-key="${focusId}"]`)?.classList.add('on');
   } else {
     list.scrollTop = 0;
   }
@@ -2940,11 +3047,13 @@ export function boot() {
     life: 'life',
     dis: 'strike',
     clim: 'strike',
+    evil: 'evil',
   };
   const deskEls = {
     land: document.getElementById('toolsLand'),
     life: document.getElementById('toolsLife'),
     strike: document.getElementById('toolsStrike'),
+    evil: document.getElementById('toolsEvil'),
     clim: document.getElementById('toolsClimate'),
     see: document.getElementById('toolsSample'),
   };
@@ -3014,6 +3123,23 @@ export function boot() {
       viewGuides.setAttribute('aria-pressed', S.orbitGuides ? 'true' : 'false');
     });
   }
+  const viewThought = document.getElementById('viewThought');
+  if (viewThought) {
+    decorateButton(viewThought, 'viewThought', 'Thought');
+    viewThought.setAttribute('aria-pressed', S.thoughtOn ? 'true' : 'false');
+    viewThought.addEventListener('click', () => {
+      S.thoughtOn = !S.thoughtOn;
+      viewThought.setAttribute('aria-pressed', S.thoughtOn ? 'true' : 'false');
+      if (!S.thoughtOn) {
+        const el = document.getElementById('thought');
+        if (el) { el.classList.remove('show'); el.hidden = true; }
+      }
+    });
+  }
+  document.getElementById('viewOpenKey')?.addEventListener('click', () => {
+    if (localKeyOpen()) closeLocalKey();
+    else openLocalKey();
+  });
 
   // Dock tabs
   document.querySelectorAll('.dock-tabs button').forEach((b) => {

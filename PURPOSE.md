@@ -13,7 +13,7 @@ ORRERY is **four things at once**, on purpose — and each audience gets a diffe
 
 **Orrery** is the product, the repo, and the public URL. It is not SimEarth.
 
-**Cernunnos** is held as a future guide for the living-planet mood — herds, hunts, thickets — not as a shipped title. See [`briefs/cernunnos.md`](briefs/cernunnos.md).
+**Cernunnos** is the living-layer voice — floating train-of-thought about the view, with diagnosis when life goes quiet. See [`briefs/cernunnos.md`](briefs/cernunnos.md). Not the product name.
 
 ## Prioritisation rule
 

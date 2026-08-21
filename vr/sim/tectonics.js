@@ -450,10 +450,20 @@ export function tectonicsTick(W, chron, log) {
     if (boundRate > 0 && (bound[c] === TRANS || bound[c] === CONV)) {
       strain[c] = Math.min(2, strain[c] + 0.008 * vigor * boundRate);
       if (strain[c] > 1.1 && rng() < strain[c] * 0.002 * vigor * boundRate) {
-        const mag = strain[c];
+        const release = strain[c];
         strain[c] = 0.1;
-        if (log) log(W.year, 'quake', c, mag, `Quake M${(4 + mag * 3).toFixed(1)}`);
-        h[c] -= mag * 0.008;
+        /* Gutenberg–Richter, not `4 + strain × 3`. `strain` is capped at 2 and
+           the event fires above 1.1, so every quake the chronicle ever logged
+           was M7.3 to M10.0 — 406 of them in 800 ticks, all bigger than any
+           earthquake in recorded history, and M10 exceeds what fault lengths on
+           this planet can produce. Magnitude is log-frequency: for every M7
+           there are roughly ten M6. Draw from that tail, let accumulated strain
+           set the ceiling, and only log what is worth a line. */
+        const cap = 5.2 + release * 2.1;
+        const mag = Math.min(cap, 4.2 + Math.log10(1 / Math.max(1e-4, rng())));
+        if (log && mag > 5.5) log(W.year, 'quake', c, mag / 10, `Quake M${mag.toFixed(1)}`);
+        // Terrain still moves with the strain released, not with the label.
+        h[c] -= release * 0.008;
       }
     }
     age[c] += 0.02 * Math.max(0.2, vigor);
@@ -489,10 +499,17 @@ export function tectonicsTick(W, chron, log) {
       const power = dumped;
       const plume = power * (explosive ? 1.35 : 0.4) * (0.5 + v.volatiles);
       paintEdifice(W, v.cell, power, visc, caldera);
+      /* Explosive vents glow too. Both of these branches wrote ash and no lava,
+         so a caldera collapse and a Plinian column were drawn as grey ground —
+         and on the night side, as nothing at all. A fountaining vent is
+         incandescent whatever its silica content; this is the light, and `ash`
+         above is still the plume. */
       if (caldera) {
         W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.9);
+        W.lava[v.cell] = Math.max(W.lava[v.cell] || 0, Math.min(0.85, power * 0.3));
       } else if (explosive) {
         W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.7);
+        W.lava[v.cell] = Math.max(W.lava[v.cell] || 0, Math.min(0.7, power * 0.22));
       } else {
         W.lava[v.cell] = Math.min(1, (W.lava[v.cell] || 0) + power * 0.55);
         W.ash[v.cell] = Math.min(1, (W.ash[v.cell] || 0) + power * 0.18);

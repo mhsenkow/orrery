@@ -38,6 +38,10 @@ console.log('dock / html chrome');
   ok('climate pane', html.includes('id="pane-climate"'));
   ok('rock pane', html.includes('id="pane-rock"'));
   ok('lab station desk', html.includes('data-suite="lab"') && html.includes('data-desk="station"') && html.includes('id="toolsSample"'));
+  // The Evil desk: tab, panel and mount point all have to line up or the tools
+  // render into nothing and the group silently disappears from the UI.
+  ok('evil desk tab', html.includes('data-suite="tools" data-desk="evil"'));
+  ok('evil desk panel', html.includes('data-desk-panel="evil"') && html.includes('id="toolsEvil"'));
   ok('lab holds station HUD', html.includes('id="labStation"') && html.includes('id="stats"') && html.includes('id="inspect"'));
   ok('tools has no station desk', !html.includes('data-suite="tools" data-desk="station"'));
 }

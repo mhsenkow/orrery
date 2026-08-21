@@ -8,7 +8,7 @@ import { showErr } from './math.js';
 import { lifeRGB, oceanLifeRGB, GUILD_RGB, dominantGuildAt } from './sim/lifeColour.js';
 import { GUILDS } from './sim/redox.js';
 import { BIOMES } from './sim/ecology.js';
-import { GROUND, presentTime, tidePhase, waterStage, hash01 } from './sim/present.js';
+import { GROUND, presentTime, tidePhase, waterStage, hash01, wearAt } from './sim/present.js';
 import { usesWhittakerCover } from './sim/planetKind.js';
 import { getSpriteAtlas, ATLAS_COLS, morphAtlasDirty } from './sprites.js';
 import { buildTransmittanceLUT, uploadScatterLUT, buildMultipleScatterLUT, updateScatterLUT } from './sim/scatter.js';
@@ -17,6 +17,7 @@ import { fillFlowStreaks } from './sim/flowviz.js';
 import { fillLifeMarks } from './sim/lifeFront.js';
 import { isPinnedEarth } from './sim/ruleMode.js';
 import { updateIsoline, fillRiverLines } from './sim/isoline.js';
+import { flightArcPoints } from './sim/flightGeom.js';
 import { BRUSH } from './sim/god/brush.js';
 import { localSeaLevel, isSubmerged } from './sim/cellSurface.js';
 import { wantsRings } from './sim/plevel.js';
@@ -123,8 +124,11 @@ let _lifeMarkBuf = null;
 let FLOW_COUNT = 0;
 let COAST_COUNT = 0;
 let RIVER_LINE_COUNT = 0;
+let FLIGHT_LINE_COUNT = 0;
+let WARHEAD_PT_COUNT = 0;
 let _isoBufTick = -1;
 let _riverScratch = null;
+let _warheadCells = null;
 
 let weldGroups = [];
 
@@ -857,6 +861,11 @@ void main(){
   entProg = prog(V_HEAD + `
 in vec3 aCorner; in vec3 iPos; in float iScale; in float iTile; in vec3 iTint;
 uniform mat4 uMVP; uniform vec3 uCamLocal; uniform float uCols; uniform float uXRay;
+/* Apparent-size gain. A sprite is ~0.011 planet radii, so from orbit it is two
+   or three pixels and the entire animal layer reads as noise or as nothing.
+   Growing it with distance keeps beings legible at every scale instead of
+   throwing them away at the one where the planet is most watchable. */
+uniform float uEntGain;
 out vec2 vUV; out vec3 vTint; out vec3 vUp; out float vHide;
 void main(){
   vec3 up=normalize(iPos);
@@ -876,8 +885,9 @@ void main(){
   r=normalize(r);
   vec3 f=cross(r,up);
   // aCorner: x=side, y=up, z=extrusion (-0.5..0.5)
-  float thick=iScale*0.18;
-  vec3 p=iPos + r*aCorner.x*iScale + up*aCorner.y*iScale + f*aCorner.z*thick;
+  float sc=iScale*uEntGain;
+  float thick=sc*0.18;
+  vec3 p=iPos + r*aCorner.x*sc + up*aCorner.y*sc + f*aCorner.z*thick;
   gl_Position=uMVP*vec4(p,1.0);
   float tx=mod(iTile,uCols), ty=floor(iTile/uCols);
   vUV=(vec2(aCorner.x+0.5, 1.0-aCorner.y)+vec2(tx,ty))/uCols;
@@ -916,7 +926,8 @@ in float vM; out vec4 o;
 void main(){ vec2 d=gl_PointCoord-0.5; float a=smoothstep(0.5,0.05,length(d)); o=vec4(vec3(0.78,0.84,1.0)*vM*a,a); }`);
 
   flatProg = prog(V_HEAD + `
-in vec3 aPos; uniform mat4 uMVP; void main(){ gl_Position=uMVP*vec4(aPos,1.0); }
+in vec3 aPos; uniform mat4 uMVP;
+void main(){ gl_Position=uMVP*vec4(aPos,1.0); gl_PointSize=5.5; }
 `, F_HEAD + `
 uniform vec4 uCol; out vec4 o; void main(){ o=uCol; }`);
 
@@ -999,6 +1010,8 @@ void main(){
     localRim: gl.createBuffer(),
     coastLine: gl.createBuffer(),
     riverLine: gl.createBuffer(),
+    flightLine: gl.createBuffer(),
+    warheadPts: gl.createBuffer(),
     flowStreaks: gl.createBuffer(),
     cloud: gl.createBuffer(), cloudCov: gl.createBuffer(),
   };
@@ -1289,6 +1302,25 @@ function syncIsolines() {
   }
 }
 
+/** Elevated flight / interceptor arcs + warhead points (dark-400 §82, 321–322, 330). */
+function syncFlightArcs() {
+  FLIGHT_LINE_COUNT = 0;
+  WARHEAD_PT_COUNT = 0;
+  if (!gl || !buf?.flightLine) return;
+  if (!(W.flight?.length || W.interceptors?.length)) return;
+  const pack = flightArcPoints(W);
+  if (pack.segments.length) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.flightLine);
+    gl.bufferData(gl.ARRAY_BUFFER, pack.segments, gl.DYNAMIC_DRAW);
+    FLIGHT_LINE_COUNT = pack.segments.length / 3;
+  }
+  if (pack.warheads.length && buf.warheadPts) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.warheadPts);
+    gl.bufferData(gl.ARRAY_BUFFER, pack.warheads, gl.DYNAMIC_DRAW);
+    WARHEAD_PT_COUNT = pack.warheads.length / 3;
+  }
+}
+
 /** Optical-ish two-scale depth so the abyss keeps a gradient past the shelf. */
 function oceanDepth01(depth) {
   const z = Math.max(0, depth);
@@ -1376,6 +1408,15 @@ export function refreshColours(alpha = 1) {
   const tick = W._tickIndex || 0;
   const strokeFade = refreshColours._strokeAt === tick ? 1 : Math.exp(-0.14);
   refreshColours._strokeAt = tick;
+  /* Warhead tip cells — brighter than the fading tracer trail (§322). */
+  if (!_warheadCells || _warheadCells.length !== NC) _warheadCells = new Uint8Array(NC);
+  else _warheadCells.fill(0);
+  for (const f of W.flight || []) {
+    if (f.dead || !f.path?.length) continue;
+    const idx = Math.min(f.path.length - 1, Math.floor(f.at || 0));
+    const hc = f.path[idx];
+    if (hc >= 0 && hc < NC) _warheadCells[hc] = 1;
+  }
   for (let c = 0; c < NC; c++) {
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
@@ -1701,8 +1742,118 @@ export function refreshColours(alpha = 1) {
           lerp(col[2], stone[2], 0.55 + k * 0.4),
         ];
       }
+      /* Tracks. `noteWear` has been recording every step every being takes since
+         before beings moved, `wearAt` decays it, and the movement scorer reads it
+         — but only the close-up grid ever drew it, so a herd crossing a plain
+         left nothing on the globe. A trodden path is the cheapest possible
+         evidence that something was here and went somewhere. */
+      const wornL = wearAt(c);
+      if (wornL > 0.06 && ice < 0.5) {
+        const k = clamp((wornL - 0.06) / 0.7, 0, 1) * 0.3;
+        col = [lerp(col[0], 150, k), lerp(col[1], 128, k * 0.85), lerp(col[2], 96, k * 0.7)];
+      }
+      /* Ash and flame. All twelve field-texture channels are spoken for and none
+         of them carried `ash`, `fire` or `lava`, and no branch of this function
+         read the first two — so the two most dramatic events the simulation
+         produces drew nothing. Eruptions here are mostly explosive (silica above
+         0.58 makes ash, not lava), so a caldera collapse looked like clear
+         ground, and a continental wildfire looked like slightly less grass.
+         Ash first, as a settling blanket over whatever is beneath it; then flame
+         on top, because a burning forest should read as burning. */
+      const ashL = W.ash?.[c] || 0;
+      if (ashL > 0.02) {
+        const k = clamp(ashL, 0, 1);
+        col = [
+          lerp(col[0], 152, k * 0.85),
+          lerp(col[1], 144, k * 0.85),
+          lerp(col[2], 132, k * 0.85),
+        ];
+      }
+      const fireL = W.fire?.[c] || 0;
+      if (fireL > 0.02) {
+        const k = clamp(fireL, 0, 1);
+        col = [
+          lerp(col[0], 255, Math.min(1, k * 1.15)),
+          lerp(col[1], 98 + (1 - k) * 70, k),
+          lerp(col[2], 26, k * 0.85),
+        ];
+      }
+      /* Anthropogenic hazards, each with a signature you can tell apart at a
+         glance — the point of having four fields instead of one "damage" scalar.
+         Toxin is a sick yellow-green stain that does not look like much, which is
+         what makes it frightening. Fallout is a bleached dead grey-violet.
+         Plague is a dull rust over the settlement it is eating. War is char and
+         cratered ground. Painted after `build` so ruin overrides the town. */
+      const toxL = W.toxin?.[c] || 0;
+      if (toxL > 0.02) {
+        const k = clamp(toxL, 0, 1) * 0.72;
+        col = [lerp(col[0], 148, k), lerp(col[1], 152, k), lerp(col[2], 58, k)];
+      }
+      const radL = W.rad?.[c] || 0;
+      if (radL > 0.02) {
+        const k = clamp(radL, 0, 1) * 0.8;
+        col = [lerp(col[0], 172, k), lerp(col[1], 158, k), lerp(col[2], 182, k)];
+      }
+      const disL = W.disease?.[c] || 0;
+      if (disL > 0.04) {
+        const k = clamp(disL, 0, 1) * 0.5;
+        col = [lerp(col[0], 150, k), lerp(col[1], 74, k), lerp(col[2], 52, k)];
+      }
+      const warL = W.warFront?.[c] || 0;
+      if (warL > 0.03) {
+        const k = clamp(warL, 0, 1) * 0.7;
+        col = [lerp(col[0], 44, k), lerp(col[1], 36, k), lerp(col[2], 32, k)];
+      }
       if (W.state === 'snowball' && life < 0.2) col = [lerp(col[0], 230, 0.5), lerp(col[1], 235, 0.5), lerp(col[2], 245, 0.5)];
       if (W.state === 'moist-greenhouse' && life < 0.2) col = [lerp(col[0], 200, 0.3), lerp(col[1], 100, 0.3), lerp(col[2], 60, 0.3)];
+    }
+    /* Tracer: something in flight. Cold blue-white, deliberately unlike
+       lightning's warm yellow, so a missile track and a thunderstorm are never
+       confused. The tail is written by `ordnanceTick`, which fades it behind the
+       warhead — so the track shows direction, which is the one thing a defender
+       needs to know. Elevated arcs upload via `flightArcPoints` (§82, 321–322). */
+    const traceL = W.tracer?.[c] || 0;
+    if (traceL > 0.02 || _warheadCells?.[c]) {
+      const k = _warheadCells?.[c]
+        ? Math.max(0.85, clamp(traceL, 0, 1))
+        : clamp(traceL, 0, 1);
+      const bright = _warheadCells?.[c] ? 1.25 : 1.1;
+      col = [
+        lerp(col[0], 210, Math.min(1, k * bright)),
+        lerp(col[1], 240, Math.min(1, k * bright)),
+        lerp(col[2], 255, Math.min(1, k * (bright + 0.1))),
+      ];
+    }
+    /* Aurora. A flare pushes the oval down toward the equator and a planet with
+       a weak dynamo has no oval at all — it just lights up. `auroraLat` carries
+       how far down it reached, so the picture states the magnetosphere. */
+    const auroraP = W.auroraPower || 0;
+    if (auroraP > 0.02) {
+      const lat = Math.abs(DIR[c * 3 + 1]);
+      const edge = W.auroraLat ?? 0.82;
+      if (lat > edge) {
+        const band = clamp((lat - edge) / Math.max(0.08, 1 - edge), 0, 1);
+        const k = clamp(auroraP, 0, 1.4) * band * 0.55;
+        col = [lerp(col[0], 60, k * 0.5), lerp(col[1], 244, k), lerp(col[2], 150, k * 0.8)];
+      }
+    }
+    /* The flare itself: the whole disc washes out for a few ticks. */
+    const glow = W.flareGlow || 0;
+    if (glow > 0.02) {
+      const k = clamp(glow, 0, 1) * 0.5;
+      col = [lerp(col[0], 255, k), lerp(col[1], 246, k), lerp(col[2], 214, k * 0.8)];
+    }
+    /* Lightning. Outside the land branch on purpose — most of it is over water,
+       which is where the cyclones are. A bolt is brief and very bright, so it
+       reads on the day side too, but it is unmistakable on the night side. */
+    const flashL = W.flash?.[c] || 0;
+    if (flashL > 0.02) {
+      const k = clamp(flashL, 0, 1);
+      col = [
+        lerp(col[0], 255, Math.min(1, k * 1.2)),
+        lerp(col[1], 250, Math.min(1, k * 1.1)),
+        lerp(col[2], 210, k),
+      ];
     }
     if (!W.noSurface && W.dust[c] > 0.1) {
       const d = W.dust[c];
@@ -2234,6 +2385,32 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     disableAll();
   }
 
+  /* ballistic / interceptor arcs above the surface (dark-400 §321–322, 330) */
+  syncFlightArcs();
+  if (FLIGHT_LINE_COUNT > 0 || WARHEAD_PT_COUNT > 0) {
+    gl.useProgram(flatProg);
+    gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.depthMask(false);
+    l = gl.getAttribLocation(flatProg, 'aPos');
+    gl.enableVertexAttribArray(l);
+    if (FLIGHT_LINE_COUNT > 0) {
+      gl.uniform4f(flatProg.u.uCol, 0.55, 0.92, 1.0, 0.72);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.flightLine);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.lineWidth?.(1.6);
+      gl.drawArrays(gl.LINES, 0, FLIGHT_LINE_COUNT);
+    }
+    if (WARHEAD_PT_COUNT > 0) {
+      gl.uniform4f(flatProg.u.uCol, 1.0, 1.0, 1.0, 0.95);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.warheadPts);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.POINTS, 0, WARHEAD_PT_COUNT);
+    }
+    gl.depthMask(true); gl.disable(gl.BLEND);
+    disableAll();
+  }
+
   /* local patch rim on globe */
   if (_localRimOn && LOCAL_RIM_COUNT > 0) {
     gl.useProgram(flatProg);
@@ -2302,8 +2479,8 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     if (lifeN > 0 && !isPinnedEarth(W.rule)) {
       gl.useProgram(flatProg);
       gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
-      const pulse = 0.55 + Math.sin(presentTime() * 2.4) * 0.2;
-      gl.uniform4f(flatProg.u.uCol, 0.55 + pulse * 0.2, 0.95, 0.45, 0.38 + pulse * 0.22);
+      const pulse = 0.62 + Math.sin(presentTime() * 2.4) * 0.22;
+      gl.uniform4f(flatProg.u.uCol, 0.42 + pulse * 0.25, 1.0, 0.38 + pulse * 0.15, 0.55 + pulse * 0.28);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
       gl.bufferData(gl.ARRAY_BUFFER, _lifeMarkBuf.subarray(0, lifeN * 3), gl.DYNAMIC_DRAW);
       l = gl.getAttribLocation(flatProg, 'aPos');
@@ -2347,6 +2524,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform3fv(entProg.u.uCamLocal, camLocal);
     gl.uniform3fv(entProg.u.uSun, sun);
     gl.uniform1f(entProg.u.uFade, S.entFade);
+    if (entProg.u.uEntGain) gl.uniform1f(entProg.u.uEntGain, S.entGain ?? 1);
     gl.uniform1f(entProg.u.uCols, ATLAS_COLS);
     gl.uniform1f(entProg.u.uXRay, xray);
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, atlasTex);

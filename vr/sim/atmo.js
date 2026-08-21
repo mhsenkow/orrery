@@ -1,10 +1,10 @@
 /** Atmosphere: gases, greenhouse, circulation, clouds, dust, seasons. */
 
 import { clamp, lerp } from '../math.js';
-import { NC, NBR, DIR, AREA, N as SIM_N } from '../sphere.js';
+import { NC, NBR, NBR_E, NBR_N, NBR_CHORD, DIR, AREA, N as SIM_N } from '../sphere.js';
 import { greenhouseFromGases, totalPressure } from '../rulesets.js';
 import { circumbinaryBeat } from './exophysics.js';
-import { neighbourEN, neighbourMean } from './vecop.js';
+import { neighbourMean } from './vecop.js';
 import { groundAlbedo, thermalInertiaAt, livePressureBar } from './substrateField.js';
 
 /**
@@ -88,11 +88,10 @@ export function advectField(field, uArr, vArr, scratch, rate) {
     if (!(mass > 0)) continue;
     let out = 0;
     flux[0] = flux[1] = flux[2] = flux[3] = 0;
+    const b4 = c * 4;
     for (let k = 0; k < 4; k++) {
-      const en = neighbourEN(c, k);
-      const e = en.e, n = en.n;
-      const chord = Math.hypot(e, n) || 1e-6;
-      const along = (u * e + v * n) / chord;
+      const i = b4 + k;
+      const along = (u * NBR_E[i] + v * NBR_N[i]) / NBR_CHORD[i];
       if (along <= 0) continue;
       const f = Math.min(0.22, rate * along);
       flux[k] = f;
@@ -104,7 +103,7 @@ export function advectField(field, uArr, vArr, scratch, rate) {
       if (flux[k] <= 0) continue;
       const amt = mass * flux[k] * scale;
       scratch[c] -= amt;
-      scratch[NBR[c * 4 + k]] += amt;
+      scratch[NBR[b4 + k]] += amt;
     }
   }
   for (let c = 0; c < NC; c++) field[c] += scratch[c] / (AREA[c] || 1);

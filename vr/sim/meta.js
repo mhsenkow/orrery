@@ -176,15 +176,18 @@ export function multiRateMask(W) {
     W._skipPhylogenyOnce = false;
     phyEvery = 99;
   }
-  return {
-    clouds: true,
-    tectonics: tick % tecEvery === 0,
-    phylogeny: tick % phyEvery === 0,
-    carbon: dt < 1e3 || tick % 2 === 0,
-    bio: true,
-    dropped: false,
-  };
+  // Reused: this is read once a tick and discarded, so a fresh object per tick
+  // is pure garbage on the hottest path in the app.
+  _rate.tectonics = tick % tecEvery === 0;
+  _rate.phylogeny = tick % phyEvery === 0;
+  _rate.carbon = dt < 1e3 || tick % 2 === 0;
+  return _rate;
 }
+
+const _rate = {
+  clouds: true, tectonics: false, phylogeny: false, carbon: false,
+  bio: true, dropped: false,
+};
 
 /** Report when the frame budget forced a silent tick drop. Next item 46. */
 export function noteDroppedTicks(W, n = 1, reason = 'frame-budget') {

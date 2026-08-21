@@ -94,6 +94,49 @@ const PATHS = {
   resolution: 'M3 12.5h10M5 12.5V7l3-4 3 4v5.5M7 9.5h2',
 };
 
+/* Evil desk. `iconSVG` falls back to the magnifying glass for an unknown id, so
+   without these ten the whole desk renders as ten identical Inspect buttons —
+   silently, because a fallback is not an error. Same 16×16 single-path style. */
+Object.assign(PATHS, {
+  // A drop with a slash through it: chemical, and not to be touched.
+  poison: 'M8 2.5C6.2 5.4 4.8 7.1 4.8 8.8a3.2 3.2 0 0 0 6.4 0c0-1.7-1.4-3.4-3.2-6.3zM5 13.5l6-2',
+  // A drum with bands.
+  waste: 'M4.5 4.8h7v7.7h-7zM4.5 7.4h7M4.5 10h7M6.2 2.6h3.6v2.2H6.2z',
+  // Stem and cap.
+  nuke: 'M3.5 13.5h9M8 13.5V8.2M4.2 8.2h7.6C11.8 5.6 10.1 4 8 4S4.2 5.6 4.2 8.2z',
+  // A ballistic arc with a nose cone.
+  icbm: 'M2.5 13.5C6 12 9.5 8.5 12.8 2.9M12.8 2.9H9.6M12.8 2.9v3.2M4.6 11.6l1.8 1.8',
+  // The same arc, leaving the water.
+  slbm: 'M2.5 12.4c1.4-1.1 2.8-1.1 4.2 0M8.4 9.6 12.9 3M12.9 3h-2.9M12.9 3v2.9M2.5 14.2c1.4-1.1 2.8-1.1 4.2 0',
+  // One aircraft, seen from above.
+  airstrike: 'M8 2.6v10.8M2.6 7.6h10.8M5.4 12.2h5.2',
+  // Three of them.
+  swarm: 'M4.2 4.4 5.7 7H2.7zM11.8 4.4 13.3 7h-3zM8 9.2 9.5 11.8h-3zM8 4.4v1.6M4.2 8.6v1.4M11.8 8.6v1.4',
+  // A capsid with spikes.
+  pandemic: 'M8 5.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6zM8 2.4v2.2M8 11.4v2.2M2.4 8h2.2M11.4 8h2.2M4.3 4.3l1.5 1.5M10.2 10.2l1.5 1.5M4.3 11.7l1.5-1.5M10.2 5.8l1.5-1.5',
+  // Two blades crossed, hilts down.
+  war: 'M3.4 3.4 11.4 11.4M12.6 3.4 4.6 11.4M2.6 11.8l2 2M13.4 11.8l-2 2',
+  // A star throwing to one side.
+  flare: 'M5.6 8a2.4 2.4 0 1 0 4.8 0 2.4 2.4 0 0 0-4.8 0M10.6 8h3.2M10.2 5.6 12.8 3.4M10.2 10.4 12.8 12.6M5.4 8H2.6M6 6.2 4.2 4.4M6 9.8 4.2 11.6',
+  // Yield ladder / exotic payloads (dark-400 §78) — without these, Evil tools
+  // silently show as Inspect.
+  tactical: 'M8 3.2v9.6M5.2 6.4 8 3.8 10.8 6.4M4.5 12.8h7',
+  strategic: 'M8 2.4v11.2M3.6 7.2h8.8M5 4.8 8 2.8 11 4.8M5 11.2 8 13.2 11 11.2',
+  citybuster: 'M3.2 12.8h9.6L9.2 6.4 8 9.2 6.8 6.4 3.2 12.8zM8 2.4v3.2M4.8 13.6h6.4',
+  neutron: 'M8 3a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9zM8 5.2v5.6M5.2 8h5.6',
+  salted: 'M4 4.4h8v1.6H4zM5.2 6h5.6v6.4H5.2zM6.4 8h3.2M6.4 10.4h3.2',
+  bunker: 'M4 12.8V7.2L8 3.6l4 3.6v5.6H4zm2.4-2.4h3.2v2.4H6.4z',
+  emp: 'M8 2.8v2.4M8 10.8v2.4M2.8 8h2.4M10.8 8h2.4M4.4 4.4l1.6 1.6M10 10l1.6 1.6M4.4 11.6l1.6-1.6M10 6l1.6-1.6M8 5.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8z',
+  dirty: 'M4.4 3.6h7.2v2.4H4.4zM5.6 6h4.8v6.4H5.6zM7.2 8.8h1.6v2.4H7.2zM3.2 13.6l9.6-1.6',
+  thermobaric: 'M8 2.4c-2.4 2.8-3.6 4.8-3.6 6.8a3.6 3.6 0 0 0 7.2 0c0-2-1.2-4-3.6-6.8zM5.6 13.6h4.8',
+  cluster: 'M4 4.8h2.4v2.4H4zM9.6 4.8H12v2.4H9.6zM6.8 9.6h2.4v2.4H6.8zM3.2 12.8h2.4v1.6H3.2zM10.4 12.8h2.4v1.6h-2.4z',
+  chem_persist: 'M8 2.4C6 5.2 4.8 6.8 4.8 8.4a3.2 3.2 0 0 0 6.4 0c0-1.6-1.2-3.2-3.2-6zM4 13.6h8M5.6 12l4.8 1.6',
+  chem_brief: 'M8 2.4C6 5.2 4.8 6.8 4.8 8.4a3.2 3.2 0 0 0 6.4 0c0-1.6-1.2-3.2-3.2-6zM5.6 12.8h4.8',
+  bio: 'M8 4.8a3.2 3.2 0 1 0 0 6.4 3.2 3.2 0 0 0 0-6.4zM8 2.4v1.6M8 12v1.6M3.2 8H4.8M11.2 8h1.6',
+  cruise: 'M2.4 10.4c3.2-0.8 6.4-2.4 10.4-5.6M12.8 4.8H10M12.8 4.8v2.4M3.2 12h4',
+  drone: 'M8 3.2v9.6M3.2 8h9.6M5.6 11.2h4.8M6.4 4.8h3.2',
+});
+
 export function iconSVG(id, className = 'ico') {
   const d = PATHS[id] || PATHS.inspect;
   return `<svg class="${className}" width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round"><path d="${d}"/></svg>`;

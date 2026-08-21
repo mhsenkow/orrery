@@ -2,7 +2,7 @@
 
 import { clamp, vnoise } from './math.js';
 import { NC, DIR, NBR, dirToCell, cellKm } from './sphere.js';
-import { W, applyImpact, chronLog, seedLife } from './world.js';
+import { W, chronLog, seedLife } from './world.js';
 import { injectGas } from './sim/atmo.js';
 import { startTsunami } from './sim/hydro.js';
 import { coreSample, iceCore } from './sim/instruments.js';
@@ -35,6 +35,10 @@ import {
 } from './sim/god/disaster.js';
 import { seedStorm } from './sim/storms.js';
 import { igniteFire, fireDanger, flammableAt } from './sim/fire.js';
+import { pourToxin, irradiate, seedDisease, openWar, hazardAt } from './sim/anthro.js';
+import { launch, detonate, defenceAt, richestTarget, pickLaunchSite, markTrace, PROFILES } from './sim/ordnance.js';
+import { polityAt } from './sim/polity.js';
+import { strike as flashCell } from './sim/lightning.js';
 import { paintEdifice } from './sim/planetTick.js';
 import { maybeReseedJets } from './sim/jets.js';
 import { formatPlevel, seenPressureBar, deckAtPressure, tempAtPressureK } from './sim/plevel.js';
@@ -69,6 +73,24 @@ export const TOOLS = [
   { id: 'quake', name: 'Quake', key: 'g', cost: 28, group: 'dis' },
   { id: 'plague', name: 'Pathogen', key: 'p', cost: 35, group: 'dis' },
   { id: 'ignite', name: 'Ignite', key: 'j', cost: 6, group: 'dis' },
+  /* The Evil desk. Everything above in `dis` is something a planet does to
+     itself — a rock arrives, a fault slips, a plume rises. None of it has an
+     author. These have one. They are grouped apart because the question they ask
+     is a different question. */
+  { id: 'poison', name: 'Toxin spill', key: '', cost: 14, group: 'evil' },
+  { id: 'waste', name: 'Nuclear waste', key: '', cost: 22, group: 'evil' },
+  { id: 'nuke', name: 'Warhead', key: '', cost: 90, group: 'evil', irreversible: true },
+  { id: 'icbm', name: 'ICBM', key: '', cost: 110, group: 'evil', irreversible: true },
+  { id: 'slbm', name: 'SLBM (sea)', key: '', cost: 120, group: 'evil', irreversible: true },
+  { id: 'citybuster', name: 'City-buster', key: '', cost: 160, group: 'evil', irreversible: true },
+  { id: 'dirty', name: 'Dirty bomb', key: '', cost: 48, group: 'evil', irreversible: true },
+  { id: 'emp', name: 'EMP burst', key: '', cost: 85, group: 'evil', irreversible: true },
+  { id: 'bio', name: 'Bio warhead', key: '', cost: 95, group: 'evil', irreversible: true },
+  { id: 'airstrike', name: 'Drone strike', key: '', cost: 18, group: 'evil' },
+  { id: 'swarm', name: 'Drone swarm', key: '', cost: 40, group: 'evil' },
+  { id: 'pandemic', name: 'Engineered plague', key: '', cost: 70, group: 'evil', irreversible: true },
+  { id: 'war', name: 'Open a war', key: '', cost: 55, group: 'evil' },
+  { id: 'flare', name: 'Solar flare', key: '', cost: 45, group: 'evil' },
   { id: 'ice', name: 'Ice meteor', key: 'i', cost: 30, group: 'dis', drag: true },
   { id: 'tilt', name: 'Tilt axis', key: 'y', cost: 35, group: 'clim' },
   { id: 'spin', name: 'Spin±', key: 'k', cost: 30, group: 'clim' },
@@ -385,6 +407,11 @@ export function useToolAt(cell, extra = {}) {
         W.iceLand[c] = Math.min(1, W.iceLand[c] + 0.4 * f);
         W.ice[c] = Math.max(W.ice[c], W.iceLand[c]);
       });
+      /* A comet arriving, not a paint stroke. Same entry track and flash as a
+         rock impact — the difference is what it leaves, which is water. */
+      markTrace(W, cell, 1.2);
+      for (let k = 0; k < 4; k++) markTrace(W, NBR[cell * 4 + k], 0.55);
+      flashCell(W, cell, 1.1);
       W.gases.H2O = Math.min(0.2, W.gases.H2O + 0.01);
       issueReceipt({ tool: 'ice', cell, intent: 'Ice meteor', expected: 'Local freeze · H₂O up' });
       chronLog(W.year, 'tool', cell, 1, 'Ice meteor');
@@ -475,6 +502,133 @@ export function useToolAt(cell, extra = {}) {
     case 'buster':
       result = { ...result, ...theiaImpact(cell, true) };
       break;
+
+    /* ---- Evil desk ---- */
+    case 'poison': {
+      pourToxin(W, cell, extra.amount ?? 0.85, 1);
+      issueReceipt({
+        tool: 'poison', cell, intent: 'Toxin spill',
+        expected: 'Life declines for centuries · creeps downhill and downstream · soil holds it',
+      });
+      chronLog(W.year, 'war', cell, 0.5, 'Toxins released');
+      result.said = 'Poured. Nothing looks wrong yet — that is the point';
+      break;
+    }
+    case 'waste': {
+      irradiate(W, cell, extra.amount ?? 0.75, 1);
+      issueReceipt({
+        tool: 'waste', cell, intent: 'Nuclear waste',
+        expected: 'Small area, lethal now, uninhabitable for thousands of ticks',
+      });
+      chronLog(W.year, 'war', cell, 0.6, 'Waste dumped');
+      result.said = 'Buried here. It will outlast whoever buried it';
+      break;
+    }
+    case 'nuke': {
+      // A warhead placed by hand: no flight, no interception, no warning.
+      detonate(W, cell, 'nuclear', extra.yield ?? 1, chronLog);
+      issueReceipt({
+        tool: 'nuke', cell, intent: 'Warhead', irreversible: true,
+        expected: 'Flash · firestorm · crater · fallout · grid down across the hemisphere',
+      });
+      result.said = 'Detonated. The lights are going out';
+      break;
+    }
+    case 'icbm':
+    case 'slbm':
+    case 'citybuster':
+    case 'dirty':
+    case 'emp':
+    case 'bio':
+    case 'airstrike':
+    case 'swarm': {
+      /* Target is the click; silo is inside a rival polity when countries exist
+         (dark-400 §12–13), else the old far-build heuristic. */
+      const kind = tool.id === 'icbm' ? 'icbm'
+        : tool.id === 'slbm' ? 'slbm'
+          : tool.id === 'citybuster' ? 'citybuster'
+            : tool.id === 'dirty' ? 'dirty'
+              : tool.id === 'emp' ? 'emp'
+                : tool.id === 'bio' ? 'bio'
+                  : tool.id === 'swarm' ? 'drone' : 'cruise';
+      const tgtPol = polityAt(W, cell);
+      let attacker = W.playerPolity >= 0 ? W.playerPolity : -1;
+      if (attacker < 0 && (W.polities || []).length >= 2) {
+        let bestB = 0;
+        for (const p of W.polities) {
+          if (p.id === tgtPol) continue;
+          if ((p.build || 0) >= bestB) { bestB = p.build || 0; attacker = p.id; }
+        }
+      }
+      const from = extra.from ?? pickLaunchSite(W, attacker, cell, kind);
+      if (from < 0) {
+        result.said = 'Nowhere on this planet can launch that yet';
+        break;
+      }
+      const salvo = tool.id === 'swarm' ? 6 : 1;
+      const shots = [];
+      for (let i = 0; i < salvo; i++) {
+        const aim = i === 0 ? cell : NBR[cell * 4 + ((i - 1) & 3)];
+        shots.push(launch(W, from, aim, kind, {
+          mirv: tool.id === 'icbm' || tool.id === 'citybuster' ? (extra.mirv ?? 2) : 0,
+          ownerPolity: attacker,
+          targetPolity: tgtPol,
+        }));
+      }
+      const ok = shots.filter((x) => x.ok);
+      if (!ok.length) {
+        result.said = shots[0]?.note || 'No route to target';
+        break;
+      }
+      const def = defenceAt(W, cell);
+      const eta = Math.max(...ok.map((x) => x.ticks));
+      issueReceipt({
+        tool: tool.id, cell, intent: PROFILES[kind].label,
+        expected: `${ok.length} inbound · ${eta} ticks out · target defence ${(def * 100).toFixed(0)}%`,
+      });
+      chronLog(W.year, 'war', from, 0.4,
+        `${ok.length} × ${PROFILES[kind].label} launched`);
+      result.inFlight = ok.length;
+      result.etaTicks = eta;
+      result.said = `Away — ${ok.length} inbound, ${eta} ticks out.`
+        + (def > 0.05 ? ` They will try to stop it (${(def * 100).toFixed(0)}%).` : ' Nothing is defending it.');
+      break;
+    }
+    case 'pandemic': {
+      const r = seedDisease(W, cell, {
+        virulence: extra.virulence ?? 0.7,
+        transmit: extra.transmit ?? 0.75,
+        engineered: true,
+      });
+      issueReceipt({
+        tool: 'pandemic', cell, intent: 'Engineered plague', irreversible: true,
+        expected: 'Travels between settlements, not across country · burns out where it has been',
+      });
+      chronLog(W.year, 'plague', cell, r.virulence, 'Engineered plague released');
+      result.said = 'Released. It will follow the roads';
+      break;
+    }
+    case 'war': {
+      const other = extra.against ?? richestTarget(W, cell);
+      if (other < 0) {
+        result.said = 'There is nobody here to fight';
+        break;
+      }
+      const r = openWar(W, cell, other, extra.intensity ?? 0.9);
+      if (!r.ok) { result.said = r.note; break; }
+      issueReceipt({
+        tool: 'war', cell, intent: 'War',
+        expected: 'A moving front · what is built is unbuilt · fires and chemicals follow',
+      });
+      chronLog(W.year, 'war', cell, 0.8, 'War opens');
+      result.said = 'Declared. The front will move on its own now';
+      break;
+    }
+    case 'flare':
+      result = { ...result, ...stellarFlare(extra.magnitude ?? 1.6) };
+      result.orbitFlash = true;
+      result.said = 'The star flares — grid down, aurora to the tropics';
+      break;
     default:
       break;
   }
@@ -526,6 +680,8 @@ export function inspectCell(cell) {
       return f ? explainForm(f) : undefined;
     })(),
     fire: W.fire?.[cell] || 0,
+    hazard: hazardAt(W, cell),
+    airDefence: defenceAt(W, cell),
     fireDanger: fireDanger(W, cell),
     nutrientPlume: W.nutrientPlume?.[cell] || 0,
     frost: W.frost?.[cell] || 0,
@@ -565,6 +721,7 @@ export function fingerOfGod(cell, mode = 'boost') {
 
 // Re-export advanced acts for UI panels
 export { igniteFire, fireDanger };
+export { pourToxin, irradiate, seedDisease, openWar, launch, detonate, defenceAt };
 export {
   setPlatePole, placePlume, setGateway, shiftSeaLevel, stampTerrain, paintSoil,
   paintCrustType, drawRift, forceOrogeny, cullClade, forceTransition,

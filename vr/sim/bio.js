@@ -7,6 +7,7 @@ import { carryingCapacityNPP } from './ecology.js';
 import { daisyNSpeciesTick } from './alien.js';
 import { updateLifeFront, disperseLife } from './lifeFront.js';
 import { rngOf } from './rng.js';
+import { isModernEarth } from './ruleMode.js';
 
 /** Life classes in evolutionary order — display / agent ladder. */
 export const LIFE_CLASSES = [
@@ -48,9 +49,23 @@ export function bioTick(W, chronLog) {
     return;
   }
 
-  // When redox is active, it owns most of life[]; this pass applies
-  // morphology envelopes, soil, reefs, and plague on top.
-  const useRedox = !!W.guildDens && W.transitions?.abiogenesis;
+  /* Who owns `life[]`.
+   *
+   * This was `!!W.guildDens && W.transitions?.abiogenesis`, which is true on
+   * modern Earth — and `redoxTick`'s modern branch says the opposite: "bio.js +
+   * seedEarth own life[]". Both deferred to the other, so on Holocene Earth
+   * *nothing grew life*, and the cap-only branch below fell through to a 5%
+   * per-tick decay wherever the cap was under 0.05 — which is the whole deep
+   * ocean (`seaCap` is 0.05 below 0.2 depth). Measured on the pinned calibration
+   * Earth over 3 500 ticks: sea life 0.090 → 0.013, land life 0.259 → 0.051,
+   * `meanLife` 0.139 → 0.023 and still falling, with nothing to grow it back.
+   * `calibrateEarth` never saw it because it runs eight ticks and its `meanLife`
+   * band is [0.04, 0.45].
+   *
+   * Redox owns life where redox is actually simulating it — the deep-time path,
+   * from abiogenesis forward. On modern Earth the seeded biosphere is bio.js's,
+   * and this pass grows and kills it. */
+  const useRedox = !!W.guildDens && W.transitions?.abiogenesis && !isModernEarth(R);
 
   const { life, lifeClass, temp, moist, h, seaLevel, gases, _l, ash } = W;
   const O2 = gases.O2;
@@ -75,27 +90,38 @@ export function bioTick(W, chronLog) {
     if (isSea && (seaLevel - h[c]) < 0.1 && temp[c] > 0.4) fit = Math.max(fit, 0.5);
 
     const icePen = isSea ? 1 : (1 - clamp(W.ice[c] - 0.25, 0, 1) * 0.7);
-    const hab = fit * (1 - ash[c] * 0.55) * icePen;
+    /* A cell that is on fire is not growing, and fresh ash suppresses recovery.
+       Without the first clause, frontier growth here (up to 0.28 a tick) exceeded
+       fire's consumption (0.14 a tick), so a burning forest *gained* biomass
+       within the same tick and the burn never appeared in `life` — the one field
+       the globe, the local grid, the NPP overlay and every animal read. Ash
+       damping went from 0.55 to 0.8 for the same reason: post-fire recovery has a
+       lag, and without one the scar closed before it could be seen. */
+    const burning = (W.fire?.[c] || 0) > 0.02;
+    const hab = burning ? 0 : fit * (1 - ash[c] * 0.8) * icePen;
     const c4 = c * 4;
     const depth = isSea ? (seaLevel - h[c]) : 0;
     const seaCap = isSea ? (depth < 0.1 ? 0.85 : depth < 0.2 ? 0.25 : 0.05) : 1;
-    const aridGate = (!isSea && moist[c] < 0.16 && life[c] < 0.12) ? 0 : 1;
+    const nl = Math.max(life[NBR[c4]], life[NBR[c4 + 1]], life[NBR[c4 + 2]], life[NBR[c4 + 3]]);
+    /* `… && nl < 0.2` is the new clause. The gate used to read "dry and empty",
+       and dryness plus emptiness is self-sustaining: growth needs `life >= 0.12`
+       and the gate blocks growth below it, so any dry cell driven to zero was
+       dead forever. Harmless while nothing drove cells to zero; now fire does,
+       and every burn on dry ground became permanent desert. A dry cell with a
+       living neighbour can be recolonised from the edge, which is both true and
+       the more interesting thing to watch. */
+    const aridGate = (!isSea && moist[c] < 0.16 && life[c] < 0.12 && nl < 0.2) ? 0 : 1;
     const maxL = Math.min(1, (cap + 0.1) * seaCap) * (aridGate ? 1 : 0);
 
     if (useRedox) {
-      // Deep-time redox owns life[]; do not 5%-decay the deep ocean every tick.
+      // Redox owns life[] here; do not 5%-decay the deep ocean every tick.
       // Morphology envelopes still cap absurd blooms on land.
-      if (W.rule?.deepTime) {
-        _l[c] = isSea ? life[c] : clamp(life[c], 0, Math.max(maxL, life[c] * 0.98));
-      } else {
-        _l[c] = clamp(life[c], 0, maxL > 0.05 ? Math.max(maxL, life[c] * 0.9) : life[c] * 0.95);
-      }
+      _l[c] = isSea ? life[c] : clamp(life[c], 0, Math.max(maxL, life[c] * 0.98));
       const bio = _l[c] * AREA[c];
       // provenance: fitted — residual gas coupling; burial owns O₂ in carbon.js
       photosynth += bio * 0.00000002;
       respir += bio * 0.00000001;
     } else if (hab > 0.02 && temp[c] > 0.12 && maxL > 0.05 && aridGate) {
-      const nl = Math.max(life[NBR[c4]], life[NBR[c4 + 1]], life[NBR[c4 + 2]], life[NBR[c4 + 3]]);
       const frontier = nl > 0.2 && life[c] < 0.35 ? 0.28 : 0.1;
       const growth = hab * frontier + nl * hab * 0.14;
       const before = life[c];

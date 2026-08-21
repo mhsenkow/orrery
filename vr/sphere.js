@@ -218,11 +218,24 @@ export let NORTH = _basis.north;
 let _nbrEN = buildNbrEN();
 export let NBR_E = _nbrEN.e;
 export let NBR_N = _nbrEN.n;
+export let NBR_CHORD = _nbrEN.chord;
+export let LON = buildLon();
 
-/** Per-neighbour east/north chords. Rebuilt with the topology. */
+/** Per-cell longitude. Fixed geometry, so tick loops read it instead of
+ *  running an atan2 per cell every step. */
+function buildLon() {
+  const lon = new Float64Array(NC);
+  for (let c = 0; c < NC; c++) lon[c] = Math.atan2(DIR[c * 3 + 2], DIR[c * 3]);
+  return lon;
+}
+
+/** Per-neighbour east/north chords. Rebuilt with the topology.
+ *  `chord` is the tangent distance — static geometry, so advection reads it
+ *  instead of recomputing a hypot per cell per neighbour every tick. */
 function buildNbrEN() {
   const e = new Float32Array(NC * 4);
   const n = new Float32Array(NC * 4);
+  const chord = new Float64Array(NC * 4);
   for (let c = 0; c < NC; c++) {
     const ex = EAST[c * 3], ey = EAST[c * 3 + 1], ez = EAST[c * 3 + 2];
     const nx = NORTH[c * 3], ny = NORTH[c * 3 + 1], nz = NORTH[c * 3 + 2];
@@ -235,9 +248,10 @@ function buildNbrEN() {
       const i = c * 4 + k;
       e[i] = dx * ex + dy * ey + dz * ez;
       n[i] = dx * nx + dy * ny + dz * nz;
+      chord[i] = Math.hypot(e[i], n[i]) || 1e-6;
     }
   }
-  return { e, n };
+  return { e, n, chord };
 }
 
 /** Rebuild topology for a new face resolution. Call before generate/remesh. */
@@ -259,6 +273,8 @@ export function setResolution(n) {
   _nbrEN = buildNbrEN();
   NBR_E = _nbrEN.e;
   NBR_N = _nbrEN.n;
+  NBR_CHORD = _nbrEN.chord;
+  LON = buildLon();
   return { N, NC, NF, NV };
 }
 

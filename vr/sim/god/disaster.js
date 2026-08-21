@@ -2,14 +2,17 @@
  *  Backlog dis 72–85. */
 
 import { clamp } from '../../math.js';
-import { NC, DIR } from '../../sphere.js';
-import { W, chronLog, applyImpact } from '../../world.js';
+import { NC, DIR, NBR } from '../../sphere.js';
+import { W, chronLog } from '../../world.js';
 import { startTsunami } from '../hydro.js';
 import { noteImpact } from '../extinction.js';
 import { paintBrush, beginStroke } from './brush.js';
 import { issueReceipt, causalChain } from './receipt.js';
 import { rngOf } from '../rng.js';
 import { addBaseHeight } from '../layers.js';
+import { irradiate } from '../anthro.js';
+import { strike as flashAt } from '../lightning.js';
+import { markTrace } from '../ordnance.js';
 
 /** Parameterised impactor. Item 72. */
 export function strikeImpact(cell, opts = {}) {
@@ -48,6 +51,46 @@ export function strikeImpact(cell, opts = {}) {
   if (W.carbon) W.carbon.atmosphere += power * 1.5;
   startTsunami(W, cell, power);
   noteImpact(W, power);
+
+  /* The arrival, drawn.
+   *
+   * This function wrote height, temperature, life, dust and ejecta — a complete
+   * account of the aftermath and no account of the event. A rock that crosses the
+   * sky and hits the ground should look like one: an entry track along the
+   * incoming bearing, a flash at the point of contact, and a crater floor that
+   * stays molten for a while afterwards. `tracer` is the same field a missile
+   * uses, `flash` the same one lightning uses, `lava` the same one a vent uses —
+   * the impact borrows all three rather than adding a fourth.
+   */
+  const entry = [];
+  let e = cell;
+  for (let i = 0; i < Math.round(6 + power * 8); i++) {
+    // Walk backwards up the trajectory: the track ends where the rock landed.
+    let best = e, bestDot = -2;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[e * 4 + k];
+      const dot = -(DIR[n * 3] * ex + DIR[n * 3 + 1] * ey + DIR[n * 3 + 2] * ez);
+      if (dot > bestDot && !entry.includes(n)) { bestDot = dot; best = n; }
+    }
+    if (best === e) break;
+    e = best;
+    entry.push(e);
+  }
+  if (W.tracer) {
+    for (let i = 0; i < entry.length; i++) {
+      // Brightest nearest the ground — the rock is heating up as it comes in.
+      const k = 1 - i / (entry.length + 1);
+      markTrace(W, entry[i], 0.35 + k * 0.85);
+    }
+    markTrace(W, cell, 1.3);
+  }
+  flashAt(W, cell, 1.3 + Math.min(1, power) * 0.5);
+  // Impact melt: the floor glows, then cools like any other lava.
+  if (W.lava) W.lava[cell] = Math.min(1, (W.lava[cell] || 0) + Math.min(0.9, power * 0.5));
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[cell * 4 + k];
+    if (W.lava) W.lava[n] = Math.min(1, (W.lava[n] || 0) + Math.min(0.5, power * 0.22));
+  }
 
   // Consequence chain schedule. Item 73.
   W.disasterChain = W.disasterChain || [];
@@ -139,20 +182,61 @@ export function triggerGRB() {
   return { ok: true };
 }
 
-/** Stellar flare. Item 76. */
+/**
+ * Stellar flare.
+ *
+ * This used to be two lines against `W.ozone` and a receipt: the most dramatic
+ * thing a star can do to a planet, and the screen did not change. A real event
+ * of this size does four things at once, and all four are visible:
+ *
+ *   · the sunlit limb washes out for a few ticks (`W.flareGlow`)
+ *   · aurora reach far past their usual latitudes, and how far depends on the
+ *     magnetosphere — a planet with no dynamo lights up to the equator
+ *   · the grid goes down, so the night side goes dark right when it is brightest
+ *   · a radiation storm reaches the ground where the field is weakest
+ *
+ * The ozone hit stays, because that is the part with a long tail.
+ */
 export function stellarFlare(magnitude = 1) {
-  W.ozone = Math.max(0, (W.ozone || 0.5) * (1 - 0.4 * magnitude));
+  const mag = Math.max(0.1, magnitude);
+  W.ozone = Math.max(0, (W.ozone || 0.5) * (1 - 0.4 * mag));
   W.flareCount = (W.flareCount || 0) + 1;
+  W.flareGlow = Math.min(2.2, (W.flareGlow || 0) + mag * 1.1);
+  // A weak or absent magnetosphere is what lets a flare reach the ground.
+  const shield = clamp(W.rule?.magnetosphere ?? 1, 0, 1);
+  W.auroraPower = Math.min(1.6, (W.auroraPower || 0) + mag * (1.2 - shield * 0.5));
+  W.auroraLat = clamp(0.82 - mag * 0.3 - (1 - shield) * 0.35, 0.05, 0.9);
+  // Induced currents take the grid down for longer than the flare lasts.
+  W._empUntil = Math.max(W._empUntil || 0, (W._tickIndex | 0) + Math.round(30 + mag * 90));
+  /* Ground-level dose is a polar phenomenon on a weak-field planet and close to
+     nothing on a shielded one. Aurora latitude is *not* the right band for it:
+     Carrington-class aurora reached the tropics on an Earth whose surface dose
+     barely moved. Keying the dose off `auroraLat` irradiated 78% of the planet
+     through an intact magnetosphere. Squared shield term, so Earth takes none and
+     a dynamo-dead world takes it seriously. */
+  const exposure = mag * Math.pow(1 - shield, 2);
+  if (exposure > 0.3) {
+    const radLat = clamp(0.92 - exposure * 0.22, 0.5, 0.95);
+    const dose = Math.min(0.45, exposure * 0.22);
+    for (let c = 0; c < NC; c++) {
+      const lat = Math.abs(DIR[c * 3 + 1]);
+      if (lat < radLat) continue;
+      irradiate(W, c, dose * (lat - radLat) / (1 - radLat + 1e-6), 0);
+    }
+  }
   issueReceipt({
     tool: 'flare',
     cell: 0,
-    intent: 'Stellar flare',
-    expected: `Ozone hit · damage from frequency (n=${W.flareCount}), not single magnitude`,
+    intent: `Stellar flare ×${mag.toFixed(1)}`,
+    expected: `Ozone hit · grid down · aurora to lat ${W.auroraLat.toFixed(2)}`
+      + ` · damage from frequency (n=${W.flareCount}), not single magnitude`,
     delayYr: 5,
     delayLabel: 'Post-flare ozone rebuilding',
   });
-  return { ok: true };
+  chronLog(W.year, 'flare', 0, mag, `Solar flare ×${mag.toFixed(1)} · grid down`);
+  return { ok: true, magnitude: mag, auroraLat: W.auroraLat };
 }
+
 
 /** Clathrate release. Item 77. */
 export function releaseClathrate(gtC = 2000) {
@@ -267,4 +351,3 @@ export function theiaImpact(cell, commit = false) {
   return { ok: true, irreversible: true, cell: cell | 0 };
 }
 
-export { applyImpact };

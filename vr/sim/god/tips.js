@@ -156,6 +156,18 @@ export const PLAY_TIPS = {
     title: 'Brush edge',
     body: 'Soft = feathered falloff. Hard = sharper disk. Brush radius in kilometres follows how close you are to the planet.',
   },
+  viewThought: {
+    title: 'Thought',
+    body: 'Cernunnos — a floating train of thought about what you are looking at. Story-driven, remembers what came before, and warns when the living layer goes quiet or stuck.',
+  },
+  localkeybtn: {
+    title: 'Globe & map key',
+    body: 'Cover and metabolisms tint both views. Globe: green herd crosses, amber night lights, gold map rim. Map: body glyphs, hunt/flee/forage marks, birth and hunt rings.',
+  },
+  viewOpenKey: {
+    title: 'Globe & map key',
+    body: 'One legend for both views: cover colours, metabolic guilds, green herd crosses and night lights on the globe, plus map glyphs, hunt wedges, and event rings.',
+  },
   orbitguides: {
     title: 'Axis guides',
     body: 'Cyan line = spin axis (day poles). White ring = equator. Gold ring = ecliptic. The angle between cyan and gold is obliquity — what Tilt axis changes.',
@@ -495,7 +507,7 @@ export const SUITE_TIPS = {
     look: { title: 'Look', body: 'How see-through the crust is, and whether the cell grid is drawn. Shift-drag slides the globe; Home puts it back.' },
     layers: { title: 'Layers', body: 'Paint one field on the globe. Hover a button for what the colours mean.' },
     slice: { title: 'Slice', body: 'X-ray cut through the globe. Pair with Rock → Core on ice-shell worlds.' },
-    guides: { title: 'Guides', body: 'Spin axis / equator / ecliptic, plus the keyboard cheat-sheet.' },
+    guides: { title: 'Guides', body: 'Spin axis / equator / ecliptic, Cernunnos thought, and the globe & map key.' },
   },
   lab: {
     station: { title: 'Station', body: 'Inspect, core sample, ice core — actions that only return numbers. Globe HUD and the cell you clicked. Left-drag still spins.' },

@@ -19,7 +19,7 @@
 
 import { W, generate, simTick, RULESETS } from '../vr/world.js';
 import { ENT } from '../vr/agents.js';
-import { NC } from '../vr/sphere.js';
+import { NC, NBR } from '../vr/sphere.js';
 import { cityLights } from '../vr/sim/city.js';
 import { igniteFire, fireDanger } from '../vr/sim/fire.js';
 import { cloneRuleForRun } from '../vr/sim/ruleMode.js';
@@ -186,6 +186,17 @@ export function probeThrive({
       lineages: W.tree?.living?.length || 0,
       unlockedClass: W.unlockedClass,
     },
+    polity: (() => {
+      const pols = W.polities || [];
+      if (!pols.length) return null;
+      let largest = 0;
+      for (const p of pols) largest = Math.max(largest, p.cells | 0);
+      return {
+        count: pols.length,
+        largestShare: NC > 0 ? largest / NC : 0,
+        borderLen: W.borderLen | 0,
+      };
+    })(),
   };
 }
 
@@ -196,12 +207,23 @@ function mean(a) {
   return s / a.length;
 }
 
-/** Find the most flammable land cell and light it — the demo's Strike button. */
+/** Find the most flammable *neighbourhood* and light it — the demo's Strike button.
+ *
+ *  Scoring the cell alone picks isolated fuel: the single driest cell on the demo
+ *  Earth is often a shrub with wet or bare neighbours, so the fire has nowhere to
+ *  go and dies in two cells. A player aims at a forest, and so should this: the
+ *  cell's own danger plus what surrounds it. Measured over the twelve best cells
+ *  with fuel restored between strikes, reach is 2–18 cells scored alone and
+ *  9–18 scored with the neighbourhood. */
 export function lightTheDriestForest() {
-  let best = -1, bestD = 0;
+  let best = -1, bestScore = 0;
   for (let c = 0; c < NC; c++) {
     const d = fireDanger(W, c);
-    if (d > bestD) { bestD = d; best = c; }
+    if (d <= 0) continue;
+    let around = 0;
+    for (let k = 0; k < 4; k++) around += fireDanger(W, NBR[c * 4 + k]);
+    const score = d + around * 0.5;
+    if (score > bestScore) { bestScore = score; best = c; }
   }
   if (best < 0) return 0;
   return igniteFire(W, best, 1, 1);
@@ -250,6 +272,11 @@ function report(r) {
   L.push('');
   L.push(`biosphere    meanLife ${fmt(r.biosphere.meanLife)} · meanTemp ${fmt(r.biosphere.meanTemp)}`
     + ` · ${r.biosphere.lineages} lineages · class ${r.biosphere.unlockedClass}`);
+  if (r.polity) {
+    L.push('');
+    L.push(`polities     ${r.polity.count}  largest share ${fmt(r.polity.largestShare * 100, 1)}%`
+      + `  border ${r.polity.borderLen}`);
+  }
   return L.join('\n');
 }
 

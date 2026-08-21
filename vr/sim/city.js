@@ -94,6 +94,11 @@ export function settleCities(W) {
  *  watch — which is the whole point of looking at the dark side. */
 export function cityLights(W) {
   if (!W.cities?.length) return 0;
+  /* Grid down. An EMP or a severe flare takes the lights out across a
+     hemisphere, and the night side is where the player is looking — so the most
+     legible consequence of either is the one thing they were watching going
+     dark. `_empUntil` is set by `detonate` and by `stellarFlare`. */
+  if ((W._empUntil || 0) > (W._tickIndex | 0)) return 0;
   const area = W.builtFrac || 0;
   const popTerm = Math.min(0.16, Math.log10(1 + (W.civPop || 0)) / 40);
   // Coefficients set from a measured run: on the demo Earth this climbs from

@@ -3,6 +3,11 @@
 import { NC, DIR, EAST, NORTH, dirToCell } from '../sphere.js';
 import { W } from '../world.js';
 import { reducedMotion } from './present.js';
+import { rngOf } from './rng.js';
+
+/* Tracers are decoration, but `rngViz` exists for exactly this and the repo rule
+   is that nothing in `vr/` reaches for `Math.random`. Same seed, same ribbons. */
+const vrng = () => rngOf(W, 'rngViz')();
 
 const NPART = 1600;
 const pos = new Float32Array(NPART * 3);
@@ -12,7 +17,7 @@ let _seeded = false;
 let _n = 0;
 
 function spawn(i, oceanOnly) {
-  const c = (Math.random() * NC) | 0;
+  const c = (vrng() * NC) | 0;
   const sea = W.h[c] < W.seaLevel;
   if (oceanOnly && !sea) {
     for (let t = 0; t < 24; t++) {
@@ -28,7 +33,7 @@ function spawn(i, oceanOnly) {
       }
     }
   }
-  kind[i] = sea && Math.random() < 0.72 ? 0 : 1;
+  kind[i] = sea && vrng() < 0.72 ? 0 : 1;
   const j = i * 3;
   pos[j] = DIR[c * 3];
   pos[j + 1] = DIR[c * 3 + 1];
@@ -63,7 +68,7 @@ export function stepFlow(dt) {
       v = W.windV?.[c] || 0;
     }
     const spd = Math.hypot(u, v);
-    if (spd < 0.02 && Math.random() < 0.04) { spawn(i, kind[i] === 0); continue; }
+    if (spd < 0.02 && vrng() < 0.04) { spawn(i, kind[i] === 0); continue; }
     pos[j] += (EAST[c * 3] * u + NORTH[c * 3] * v) * step;
     pos[j + 1] += (EAST[c * 3 + 1] * u + NORTH[c * 3 + 1] * v) * step;
     pos[j + 2] += (EAST[c * 3 + 2] * u + NORTH[c * 3 + 2] * v) * step;
