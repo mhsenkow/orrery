@@ -11,6 +11,9 @@ export function settleCities(W) {
   const seen = new Uint8Array(NC);
   for (let c = 0; c < NC; c++) {
     if (seen[c] || (W.build[c] || 0) < 0.28) continue;
+    // Settlement AI will not colonize exclusion zones (§210).
+    if ((W.exclusion?.[c] || 0) > 0.35) continue;
+    if (((W.rad?.[c] || 0) + (W.radShort?.[c] || 0)) > 0.4) continue;
     const stack = [c];
     seen[c] = 1;
     let sum = 0, n = 0, best = c, bestB = W.build[c];
@@ -92,18 +95,26 @@ export function settleCities(W) {
  *  side to full brightness a few ticks after the first village. Area and mean
  *  build keep climbing for thousands of ticks, so the lights grow while you
  *  watch — which is the whole point of looking at the dark side. */
+/** Night lights strength from cities, scaled by the energy budget.
+ *
+ *  Driven by settled *area*, not settlement count: the count is capped at 48 by
+ *  `settleCities` and hits the cap almost immediately, which welded the night
+ *  side to full brightness a few ticks after the first village. Area and mean
+ *  build keep climbing for thousands of ticks, so the lights grow while you
+ *  watch — which is the whole point of looking at the dark side. */
 export function cityLights(W) {
   if (!W.cities?.length) return 0;
   /* Grid down. An EMP or a severe flare takes the lights out across a
      hemisphere, and the night side is where the player is looking — so the most
      legible consequence of either is the one thing they were watching going
      dark. `_empUntil` is set by `detonate` and by `stellarFlare`. */
-  if ((W._empUntil || 0) > (W._tickIndex | 0)) return 0;
+  if ((W._empUntil || 0) > (W._tickIndex | 0)) {
+    // Residual flicker — not a clean zero — so fires still have something to
+    // compete with on the dark half.
+    return 0.04;
+  }
   const area = W.builtFrac || 0;
   const popTerm = Math.min(0.16, Math.log10(1 + (W.civPop || 0)) / 40);
-  // Coefficients set from a measured run: on the demo Earth this climbs from
-  // ~0.2 at the first villages to full brightness at ~25% of land settled,
-  // which is four to five minutes of watching rather than twenty seconds.
   const fromCities = Math.min(1, area * 3.2 + (W.meanBuild || 0) * 2 + popTerm);
   return technoLights(W, fromCities);
 }

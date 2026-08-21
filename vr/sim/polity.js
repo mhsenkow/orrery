@@ -90,6 +90,7 @@ function makePolity(W, capital, opts = {}) {
     land: 0,
     arsenal: opts.arsenal | 0,
     arsenalPublic: opts.arsenalPublic ?? (opts.arsenal | 0),
+    fissile: opts.fissile ?? 0,
     doctrine: opts.doctrine || doctrineOf(id, seed),
     reputation: opts.reputation ?? 0.5,
     weariness: opts.weariness ?? 0,
@@ -123,6 +124,48 @@ export function playerPolityId(W) {
 export function setPlayerPolity(W, id) {
   W.playerPolity = id | 0;
   return W.playerPolity;
+}
+
+/**
+ * When first polities seed and the player has none, claim the largest (§14).
+ * Idempotent: leaves an existing playerPolity alone if still valid.
+ */
+export function ensurePlayerPolity(W) {
+  const pols = W.polities || [];
+  if (!pols.length) {
+    W.playerPolity = -1;
+    return -1;
+  }
+  if (W.playerPolity >= 0 && W._polityIndex?.has(W.playerPolity)) {
+    return W.playerPolity;
+  }
+  let best = pols[0], bestCells = pols[0].cells | 0;
+  for (const p of pols) {
+    const n = p.cells | 0;
+    if (n > bestCells) { best = p; bestCells = n; }
+  }
+  W.playerPolity = best.id | 0;
+  return W.playerPolity;
+}
+
+/**
+ * Pack per-cell polity colour into W.polityTint (0–1 hue-ish from RGB) (§15).
+ * Borders overlay / optional globe tint read this spare channel.
+ */
+export function writePolityTint(W) {
+  if (!W.owner || W.owner.length !== NC) return null;
+  if (!W.polityTint || W.polityTint.length !== NC) W.polityTint = new Float32Array(NC);
+  else W.polityTint.fill(0);
+  const own = W.owner;
+  const idx = W._polityIndex;
+  for (let c = 0; c < NC; c++) {
+    const id = own[c];
+    if (id < 0) continue;
+    const col = idx?.get(id)?.color || [0.55, 0.55, 0.6];
+    // Pack luminance-weighted hue proxy into one channel (spare field).
+    W.polityTint[c] = Math.min(1, col[0] * 0.45 + col[1] * 0.35 + col[2] * 0.2);
+  }
+  return W.polityTint;
 }
 
 /**
@@ -224,6 +267,8 @@ export function claimTerritory(W) {
   }
   updatePolityStats(W);
   borderCells(W);
+  writePolityTint(W);
+  ensurePlayerPolity(W);
 }
 
 /** Mark / count border cells — owner differs from any neighbour. */
@@ -292,6 +337,7 @@ export function mergePolities(W, aId, bId, log = null) {
   }
   a.arsenal = (a.arsenal | 0) + (b.arsenal | 0);
   a.arsenalPublic = (a.arsenalPublic | 0) + (b.arsenalPublic | 0);
+  a.fissile = (a.fissile || 0) + (b.fissile || 0);
   a.build += b.build;
   a.pop += b.pop;
   a.weariness = Math.max(a.weariness || 0, b.weariness || 0) * 0.5;
@@ -429,6 +475,7 @@ export function packPolities(W) {
       land: p.land,
       arsenal: p.arsenal | 0,
       arsenalPublic: p.arsenalPublic | 0,
+      fissile: p.fissile || 0,
       doctrine: p.doctrine,
       reputation: p.reputation,
       weariness: p.weariness,
@@ -457,6 +504,7 @@ export function unpackPolities(W, data) {
       founded: raw.founded,
       arsenal: raw.arsenal,
       arsenalPublic: raw.arsenalPublic,
+      fissile: raw.fissile,
       doctrine: raw.doctrine,
       reputation: raw.reputation,
       weariness: raw.weariness,

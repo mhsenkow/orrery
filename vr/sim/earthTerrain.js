@@ -63,7 +63,7 @@ export function refineEarthHypsometry(W, seed, rule) {
     }
   }
 
-  naturalizeHypsometry(W, seed, { seaLevel: W.seaLevel, coastAmp: 0.1, macroAmp: 0.08 });
+  naturalizeHypsometry(W, seed, { seaLevel: W.seaLevel, coastAmp: 0.13, macroAmp: 0.08, passes: 4, band: 0.3 });
   paintContinentalShelf(W);
 }
 

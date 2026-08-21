@@ -30,6 +30,7 @@ function ensure(W) {
       naps: [],               // { a, b, until, broken }
       warNames: new Map(),    // pairKey → count for "Second X–Y War"
       trade: new Map(),       // pairKey → strength 0..1
+      hotlines: new Set(),    // pairKey — direct lines (§52)
     };
   }
   if (!(W.diplo.relations instanceof Map)) {
@@ -41,6 +42,9 @@ function ensure(W) {
       m.set(+k, new Set(v));
     }
     W.diplo.alliances = m;
+  }
+  if (!(W.diplo.hotlines instanceof Set)) {
+    W.diplo.hotlines = new Set(W.diplo.hotlines || []);
   }
   return W.diplo;
 }
@@ -54,6 +58,7 @@ export function resetDiplomacy(W) {
     naps: [],
     warNames: new Map(),
     trade: new Map(),
+    hotlines: new Set(),
   };
 }
 
@@ -238,6 +243,20 @@ function sueForPeace(W, war, log) {
   if (pb) pb.weariness = Math.max(0, (pb.weariness || 0) * 0.4);
   if (log) log(W.year, 'war', capitalOf(W, winner), 0.5, `Peace ends ${war.name}`);
   d.wars = d.wars.filter((w) => w !== war);
+  // Who benefited (§367) — inline to avoid circular import with dark.js.
+  W.dark = W.dark || {};
+  const wName = W._polityIndex?.get(winner)?.name || `polity-${winner}`;
+  const lName = W._polityIndex?.get(loser)?.name || `polity-${loser}`;
+  W.dark.benefited = {
+    winner, winnerName: wName, loser, loserName: lName,
+    war: war.name || '', year: W.ageYr || 0,
+  };
+  if (!W.dark.polityHistories) W.dark.polityHistories = [];
+  W.dark.polityHistories.push(
+    { id: winner, name: wName, event: `prevailed in ${war.name || 'war'}`, year: W.ageYr || 0, tick: W._tickIndex | 0 },
+    { id: loser, name: lName, event: `lost ${war.name || 'war'}`, year: W.ageYr || 0, tick: W._tickIndex | 0 },
+  );
+  if (W.dark.polityHistories.length > 64) W.dark.polityHistories.splice(0, W.dark.polityHistories.length - 64);
   // Empty loser merges into winner.
   const loserP = W._polityIndex?.get(loser);
   if (loserP && (loserP.cells | 0) === 0) mergePolities(W, winner, loser, log);

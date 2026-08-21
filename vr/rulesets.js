@@ -72,13 +72,37 @@ const landTerra = (t, m, l, e, ice, extra) => {
 const TERRA = {
   id: 'terra', name: 'Earth', blurb: 'Modern Earth — calibration basis for life, time, tectonics.',
   synthetic: true, earthLike: true,
-  relief: 0.028, solar: 1.04, freeze: 0.28, aridity: 0.05,
+  /* `freeze` is the ice line on the same scale the thermometer uses: 288 K at
+     0.5, 160 K to the unit, so water's 273 K is 0.406. It was 0.28 — 243 K, or
+     −30 °C — which is why an Earth at 281 K carried no ice at all, sea or land,
+     and why the calibration harness could report a temperate planet with empty
+     poles for as long as it did. */
+  relief: 0.028, solar: 1.04, freeze: 0.406, aridity: 0.05,
   rotationPeriod: 1.0, obliquity: 23.4 * Math.PI / 180, eccentricity: 0.0167,
   gravity: 1.0, magnetosphere: 1.0,
   interior: { coreMassFrac: 0.32, coreRadiusFrac: 0.55, heatFlow: 1.0, conductivity: 1.0, lidMode: 'mobile', note: 'Fe–Ni core · active dynamo · mobile-lid plates' },
   // Volume mixing ratios; CO₂ ~420 ppm. Greenhouse bias stands in for H₂O/GHG column.
   gases: { N2: 0.7808, O2: 0.2095, CO2: 0.00042, CH4: 0.0000019, H2O: 0.01, dust: 0.0, sulphate: 0 },
-  ghBias: 0.085, minCO2: 0.00038,
+  /* Refitted. `greenhouseFromGases` now models water vapour explicitly with band
+     saturation instead of a linear term worth half a kelvin, so this constant no
+     longer stands in for the H₂O column — it stands in for everything else. The
+     number moved because three things it had been silently absorbing were fixed:
+     a cloud field that had been empty (relative humidity was defined against the
+     global vapour mass, so it sat near 0.1), a cloud greenhouse that was not
+     modelled at all, and an 85% heat leak in the ocean's surface-to-deep
+     exchange, and an 85% heat leak in the ocean's surface-to-deep exchange —
+     that last one worth some 30 K on its own, and the reason this number came
+     down rather than up. Water vapour now supplies about 0.10 of the greenhouse
+     by itself, which is roughly the 16 K it is worth on the real Earth, so what
+     is left for a constant to stand in for is very little. Equilibrium mean
+     temperature here is ~0.50 (288 K) against a `targetMeanTemp` of 0.50.
+
+     Refitted again when the water-vapour greenhouse became *local* — the polar
+     column is dry, so applying the planetary mean everywhere had been worth some
+     6 K of spurious polar warmth and was flattening the pole-to-equator gradient
+     the whole circulation runs on. That change cools the poles and barely touches
+     the tropics, so the constant came back up to hold the mean. */
+  ghBias: 0.027, minCO2: 0.00038,
   totalWater: 0.92, continentFrac: 0.38, nPlates: 12,
   targetLandFrac: 0.29, targetMeanTemp: 0.50,
   atmo: [0.28, 0.50, 0.92], atmoStrength: 0.92, sky: [0.012, 0.035, 0.08],
@@ -205,12 +229,29 @@ export const RULESETS = [
   EARTH_THRIVE,
 ];
 
+/** The water-vapour column's contribution, given a mixing ratio. */
+export function vapourGreenhouse(h2o) {
+  return 0.097 * Math.log1p(Math.max(0, h2o) * 60);
+}
+
 export function greenhouseFromGases(g, rule, liveP) {
   const co2 = Math.max(1e-6, g.CO2);
   const ch4 = Math.max(0, g.CH4);
   const h2o = Math.max(0, g.H2O);
   const dust = Math.max(0, g.dust + g.sulphate * 2);
-  let gh = 0.04 * Math.log1p(co2 * 40) + 0.08 * Math.log1p(ch4 * 80) + 0.12 * h2o - 0.18 * dust
+  /* Water vapour, with the band saturation the other gases already had.
+   *
+   * This was linear at 0.12·h2o, which for Earth's 0.03 came to 0.004 — about
+   * half a kelvin, against the sixteen or so that water vapour actually
+   * contributes. The whole column was instead standing inside `ghBias`, a
+   * constant, which meant the strongest feedback in the climate system was
+   * missing: warming could not moisten the air and moistening could not warm it
+   * back. It matters most exactly where it was most missed — a cooling planet
+   * dries out, loses its vapour greenhouse and cools further, which is the
+   * mechanism that took Earth to a 63%-frozen −28 °C once the water cycle
+   * started working and there was a real vapour field to lose. */
+  let gh = 0.04 * Math.log1p(co2 * 40) + 0.08 * Math.log1p(ch4 * 80)
+    + vapourGreenhouse(h2o) - 0.18 * dust
     + (rule?.ghBias || 0);
   const P = liveP != null && Number.isFinite(liveP) ? liveP : rule?.surfacePressureBar;
   if (P != null && Number.isFinite(P)) {

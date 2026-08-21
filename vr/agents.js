@@ -613,10 +613,17 @@ function topUpEntities(scarceOnly = false) {
     if (m && !m.dead) _occ[m.cell] = 1;
   }
   const stride = Math.max(3, (NC / (cap * 2)) | 0);
-  const ceiling = scarceOnly ? MAX_ENT - 4 : cap;
+  /* Immigration is a trickle. `scarceOnly` used to run to `MAX_ENT − 4`, which
+     is 1 396 — two and a half times the 560 this world is supposed to hold — so
+     a pass that found several scarce kinds could add a hundred individuals at
+     once and the population grew by refounding rather than by breeding. Bounded
+     by the world's own carrying capacity plus a little slack, and by how many one
+     pass may bring in, so births stay the population mechanism. */
+  const ceiling = scarceOnly ? Math.min(MAX_ENT - 4, cap + 48) : cap;
+  const perPass = scarceOnly ? 20 : ceiling;
   const floorN = cap * KIND_FLOOR;
   let added = 0;
-  for (let c = 0; c < NC && ENT.n < ceiling; c += stride) {
+  for (let c = 0; c < NC && ENT.n < ceiling && added < perPass; c += stride) {
     if (_occ[c]) continue;
     /* 0.08, not 0.12. `respawnEntities` builds its pool at `life > 0.08` and this
        refused anything under 0.12, and the demo Earth settles with mean life
@@ -914,6 +921,7 @@ function stageLabel(b) {
 }
 
 export function agentsTick(log = null) {
+  W._ent = ENT;
   const rng = rngOf(W, 'rngAgents');
   if (ENT.n === 0) {
     /* Pinned Earth may refill forever. Thrive seeds once from empty, then a
@@ -1194,7 +1202,9 @@ export function agentsTick(log = null) {
       s -= terrainCost * 0.15;
       if (m.behav === 'flee') s -= (W.ash?.[n] || 0) * 2 + (W.dust?.[n] || 0) * 1.5 + (W.stormField?.[n] || 0);
       // Harm is avoided whether or not the animal is already fleeing.
-      if (harmOn) s -= W.rad[n] * 2.5 + W.toxin[n] * 1.2 + W.warFront[n] * 1.8;
+      if (harmOn) s -= W.rad[n] * 2.5 + W.toxin[n] * 1.2 + W.warFront[n] * 1.8
+        + (W.exclusion?.[n] || 0) * 3
+        + (W.radShort?.[n] || 0) * 2;
       if (m.behav === 'flee' && !isPredator(m)) s -= fearAt(W, n) * 1.6;
       if (!isPredator(m) && carcassAt(W, n) > 0.12 && m.hunger > 0.4) s += carcassAt(W, n) * 0.5;
       /* Desire lines: herds and foragers prefer worn paths. */

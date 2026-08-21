@@ -41,6 +41,8 @@ export const OVERLAYS = [
   { id: 'fog', label: 'Fog', icon: 'weather', tip: 'Surface fog: high humidity, cool still air, usually near the coast.' },
   { id: 'ariver', label: 'Moisture river', icon: 'weather', tip: 'Poleward vapour filaments. Most of the moisture transport in a few corridors.' },
   { id: 'wind', label: 'Wind', icon: 'spin', tip: 'Surface wind speed and direction. Fast rotators show more, narrower bands.' },
+  { id: 'jet', label: 'Jet', icon: 'spin', tip: 'The flow aloft, from thermal wind. The bright ribbon is the jet stream, sitting over the strongest temperature gradient — which is why storms track along it.' },
+  { id: 'shear', label: 'Shear', icon: 'weather', tip: 'Vertical wind shear between the surface and the flow aloft. Low shear over a warm sea lets a tropical cyclone build a chimney; high shear tears one apart, and feeds midlatitude storms instead.' },
   { id: 'vort', label: 'Vorticity', icon: 'spin', tip: 'Relative vorticity of the air. Cyclones are patches; the jet is a ribbon. Sign follows the hemisphere.' },
   { id: 'front', label: 'Fronts', icon: 'weather', tip: 'Temperature gradient. Bright lines are weather-bearing fronts, not biome contours.' },
   { id: 'npp', label: 'NPP', icon: 'seedGuild', tip: 'Net primary productivity — how hard the biosphere is growing on that cell.' },
@@ -83,6 +85,8 @@ export const OVERLAYS = [
   { id: 'plague', label: 'Plague', icon: 'plague', tip: 'Epidemic intensity, and in dark green the immune. It travels between settlements, not across country, and burns out where it has been.' },
   { id: 'borders', label: 'Borders', icon: 'plate', tip: 'Polity frontiers — cells whose owner differs from a neighbour. Colour follows the polity that holds the cell.' },
   { id: 'war', label: 'War', icon: 'quake', tip: 'Contested ground and the tracks of anything in the air. Fronts move toward what is worth taking.' },
+  { id: 'casualty', label: 'Casualties', icon: 'quake', tip: 'Where people died. Deliberately ugly — grey-red blotches that never look like a map worth framing.' },
+  { id: 'warfront', label: 'Front direction', icon: 'quake', tip: 'Which way the front is pushing — warm toward the attacker, cool toward the defender.' },
   { id: 'behav', label: 'Behaviour', icon: 'seed', tip: 'What beings are doing on each cell — forage, flee, hunt, tend. The living layer as a map, not a sprite count.' },
   { id: 'trophic', label: 'Trophic', icon: 'seedGuild', tip: 'Local food pyramid. Green is producers, gold grazers, red hunters. Ice and rainforest are no longer the same number.' },
   { id: 'fear', label: 'Fear', icon: 'seed', tip: 'Landscape of fear — where hunts and near-misses leave predation pressure. Prey flee the bright cells.' },
@@ -93,10 +97,10 @@ export const OVERLAYS = [
 ];
 
 const OVERLAY_ORDER = [
-  'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
+  'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'jet', 'shear', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
   'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
   'tide', 'storm', 'weather', 'npp', 'guild', 'beings', 'sense', 'range', 'proto', 'techno', 'fire', 'plume',
-  'fallout', 'toxin', 'plague', 'borders', 'war', 'behav', 'trophic', 'fear', 'carcass', 'trail',
+  'fallout', 'toxin', 'plague', 'borders', 'war', 'casualty', 'warfront', 'behav', 'trophic', 'fear', 'carcass', 'trail',
   'lifefront', 'flux',
   'faces', 'zonal', 'ecotone',
 ];
@@ -162,10 +166,22 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       b = 140 + a * 100;
     } else if (mode === 'wind') {
       const u = W.windU?.[c] || 0, v = W.windV?.[c] || 0;
-      const spd = Math.min(1, Math.hypot(u, v));
+      const spd = Math.min(1, Math.sqrt(u * u + v * v) * 1.4);
       r = 30 + spd * 40 + Math.max(0, u) * 80;
       g = 50 + spd * 100;
       b = 80 + spd * 60 + Math.max(0, -u) * 90;
+    } else if (mode === 'jet') {
+      // Speed aloft, with the westerly ribbon picked out in warm colour.
+      const u = W.jetU?.[c] || 0, v = W.jetV?.[c] || 0;
+      const spd = Math.min(1, Math.sqrt(u * u + v * v) * 0.55);
+      r = 25 + spd * 90 + Math.max(0, u) * 90;
+      g = 35 + spd * 130;
+      b = 90 + spd * 90 + Math.max(0, -u) * 70;
+    } else if (mode === 'shear') {
+      const sh = Math.min(1, (W.shear?.[c] || 0) * 1.6);
+      r = 25 + sh * 200;
+      g = 40 + sh * 90;
+      b = 90 - sh * 40;
     } else if (mode === 'vort') {
       const z = W.vort?.[c] || 0;
       r = 40 + Math.max(0, z) * 200;
@@ -419,7 +435,8 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       g = 14 + host * 40 + im * 150;
       b = 18 + host * 44;
     } else if (mode === 'borders') {
-      /* Prefer W.border; else compute from owner neighbour differences. */
+      /* Prefer W.border; else compute from owner neighbour differences.
+         Shade by polityTint spare channel when present (§15). */
       let onBorder = W.border?.[c] > 0;
       const oid = W.owner?.[c] ?? -1;
       if (!onBorder && oid >= 0 && W.owner) {
@@ -432,10 +449,18 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       } else {
         const p = W._polityIndex?.get(oid);
         const col = p?.color || [0.55, 0.55, 0.6];
+        const tint = W.polityTint?.[c];
+        const tmax = tint != null && tint > 0 ? tint : Math.max(col[0], col[1], col[2], 0.25);
         const edge = onBorder ? 1 : 0.35;
-        r = 10 + col[0] * 240 * edge;
-        g = 10 + col[1] * 240 * edge;
-        b = 12 + col[2] * 240 * edge;
+        const val = onBorder ? 0.55 + tmax * 0.45 : 0.35 + tmax * 0.3;
+        r = 10 + col[0] * 240 * edge * val / Math.max(0.2, tmax);
+        g = 10 + col[1] * 240 * edge * val / Math.max(0.2, tmax);
+        b = 12 + col[2] * 240 * edge * val / Math.max(0.2, tmax);
+        if (onBorder) {
+          r = Math.min(255, r + 28);
+          g = Math.min(255, g + 22);
+          b = Math.min(255, b + 18);
+        }
       }
     } else if (mode === 'war') {
       const w = Math.min(1, W.warFront?.[c] || 0);
@@ -444,6 +469,25 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 14 + built * 40 + Math.pow(w, 0.5) * 210 + t * 190;
       g = 16 + built * 40 + w * 70 + t * 226;
       b = 20 + built * 46 + t * 255;
+    } else if (mode === 'casualty') {
+      // Deliberately ugly (§194) — muddy grey-red, no pretty gradients.
+      const cas = Math.min(1, W.casualty?.[c] || 0);
+      const fought = Math.min(1, (W.fought?.[c] || 0) / 40);
+      const k = Math.max(cas, fought * 0.6);
+      r = 40 + k * 140;
+      g = 28 + k * 20;
+      b = 28 + k * 18;
+    } else if (mode === 'warfront') {
+      const fd = W.frontDir?.[c] || 0;
+      const fought = Math.min(1, (W.fought?.[c] || 0) / 20);
+      if (fought < 0.05 && Math.abs(fd) < 0.01) {
+        r = r * 0.35; g = g * 0.35; b = b * 0.38;
+      } else {
+        const push = Math.max(-1, Math.min(1, fd));
+        r = 30 + fought * 80 + Math.max(0, push) * 160;
+        g = 40 + fought * 60 + (1 - Math.abs(push)) * 40;
+        b = 50 + fought * 40 + Math.max(0, -push) * 160;
+      }
     } else if (mode === 'beings') {
       /* Animal density from `W.beingDens`, which `rebuildBuckets` fills as it
          walks the population. Deliberately steep at the low end: one animal in

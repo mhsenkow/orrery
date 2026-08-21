@@ -398,11 +398,19 @@ export function solarDayHours(rotHours, Pdays) {
   return 1 / inv;
 }
 
-/** Freeze-point proxy 0–1 from teq (K) for ruleset.freeze. */
+/**
+ * Freeze-point proxy 0–1 from teq (K) for ruleset.freeze.
+ *
+ * On the temperature scale everything else in the sim uses, one unit is 160 K
+ * and a cell's absolute temperature is the world's mean plus `(s − meanS)·160`
+ * (`cellTK`). This function used to spread 400 K over that unit and anchor
+ * water's freezing point at 0.3, so a world's ice line sat some 25 K below where
+ * its own thermometer said ice should be — the two scales disagreed, and the
+ * thresholds always lost.
+ */
 export function freezeFromTeq(teqK) {
   if (!(teqK > 0)) return 0.9;
-  // 273 K → ~0.3 (Earth-like); hotter → lower freeze line
-  return clamp01(0.3 + (273 - teqK) / 400);
+  return clamp01(0.5 + (273.15 - teqK) / 160);
 }
 
 /** Zeng-like rocky mass–radius estimate (Earth units) when one side is missing. */

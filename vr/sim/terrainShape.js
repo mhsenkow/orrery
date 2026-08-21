@@ -21,9 +21,9 @@ export function naturalizeHypsometry(W, seed, opts = {}) {
     const wx = fbm(x * 1.4, y * 1.4, z * 1.4, seed ^ 0x7a7a70, 3, 2, 0.5);
     const wy = fbm(x * 1.4 + 5.2, y * 1.4 + 1.7, z * 1.4 + 2.9, seed ^ 0x7a7a71, 3, 2, 0.5);
     const wz = fbm(x * 1.4 + 1.1, y * 1.4 + 8.3, z * 1.4 + 4.4, seed ^ 0x7a7a72, 3, 2, 0.5);
-    let px = x + (wx - 0.5) * 0.32;
-    let py = y + (wy - 0.5) * 0.32;
-    let pz = z + (wz - 0.5) * 0.32;
+    let px = x + (wx - 0.5) * 0.38;
+    let py = y + (wy - 0.5) * 0.38;
+    let pz = z + (wz - 0.5) * 0.38;
     const pl = Math.hypot(px, py, pz) || 1;
     px /= pl; py /= pl; pz /= pl;
 
@@ -34,7 +34,7 @@ export function naturalizeHypsometry(W, seed, opts = {}) {
 
     let elev = h[c];
     const dist = Math.abs(elev - sl);
-    const coastW = Math.exp(-(dist * dist) / 0.007); // strong near shoreline
+    const coastW = Math.exp(-(dist * dist) / 0.007);
     const isLand = elev > sl;
 
     elev += (coast - 0.5) * coastAmp * (0.2 + coastW * 0.8);
@@ -46,16 +46,54 @@ export function naturalizeHypsometry(W, seed, opts = {}) {
     h[c] = clamp(elev, -1.2, 1.2);
   }
 
-  // Laplacian blend near coast — bays, capes, smoother shelves
-  for (let pass = 0; pass < 2; pass++) {
+  roundCoastTips(W, sl);
+  laplacianCoast(W, sl, opts.passes ?? 4, opts.band ?? 0.28);
+}
+
+/** Drop needle capes / one-cell islands that read as sharp corners. */
+export function roundCoastTips(W, seaLevel) {
+  const { h } = W;
+  const sl = seaLevel ?? W.seaLevel ?? 0;
+  const tmp = new Float32Array(NC);
+  tmp.set(h);
+  for (let c = 0; c < NC; c++) {
+    let seaN = 0, landN = 0, sum = 0;
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[c * 4 + k];
+      sum += h[n];
+      if (h[n] < sl) seaN++;
+      else landN++;
+    }
+    const elev = h[c];
+    // Land tip surrounded by sea → pull toward shoreline (kills triangular spikes).
+    if (elev >= sl && seaN >= 3) {
+      tmp[c] = elev + (sl - 0.01 - elev) * 0.72;
+    } else if (elev >= sl && seaN === 2 && elev < sl + 0.06) {
+      const avg = (elev + sum / 4) * 0.5;
+      tmp[c] = elev + (avg - elev) * 0.55;
+    }
+    // Lone sea notch into land → fill slightly (fewer right-angle inlets).
+    else if (elev < sl && landN >= 3 && elev > sl - 0.08) {
+      tmp[c] = elev + (sl + 0.008 - elev) * 0.45;
+    }
+  }
+  h.set(tmp);
+}
+
+/** Laplacian blend near coast — bays, capes, smoother shelves. */
+export function laplacianCoast(W, seaLevel, passes = 3, band = 0.25) {
+  const { h } = W;
+  const sl = seaLevel ?? W.seaLevel ?? 0;
+  const tmp = new Float32Array(NC);
+  for (let pass = 0; pass < passes; pass++) {
     for (let c = 0; c < NC; c++) {
       const dist = Math.abs(h[c] - sl);
-      if (dist > 0.2) { tmp[c] = h[c]; continue; }
+      if (dist > band) { tmp[c] = h[c]; continue; }
       let sum = h[c], n = 1;
       for (let k = 0; k < 4; k++) { sum += h[NBR[c * 4 + k]]; n++; }
       const smooth = sum / n;
-      const t = clamp(1 - dist / 0.2, 0, 1);
-      tmp[c] = h[c] * (1 - t * 0.55) + smooth * (t * 0.55);
+      const t = clamp(1 - dist / band, 0, 1);
+      tmp[c] = h[c] * (1 - t * 0.62) + smooth * (t * 0.62);
     }
     h.set(tmp);
   }
@@ -75,10 +113,21 @@ export function softenPlateCrust(W, seed, plates) {
       else if (d > second) { second = d; sId = p; }
     }
     const gap = Math.max(0.001, best - second);
-    const blend = clamp(1 - gap / 0.08, 0, 1);
+    // Wider blend band → fewer hard polygonal plate outlines in uplift.
+    const blend = clamp(1 - gap / 0.14, 0, 1);
     const thickB = plates[bId].baseThick * (0.85 + 0.3 * fbm(x * 2.1, y * 2.1, z * 2.1, seed + bId * 17, 3, 2, 0.5));
     const thickS = plates[sId].baseThick * (0.85 + 0.3 * fbm(x * 2.1, y * 2.1, z * 2.1, seed + sId * 17, 3, 2, 0.5));
-    tmp[c] = thickB * blend + thickS * (1 - blend);
+    const w = 0.35 + blend * 0.5;
+    tmp[c] = thickB * (1 - w) + thickS * w;
   }
   crust.set(tmp);
+  // One crust laplacian so isostasy doesn't inherit plate-edge cliffs.
+  for (let pass = 0; pass < 2; pass++) {
+    for (let c = 0; c < NC; c++) {
+      let sum = crust[c], n = 1;
+      for (let k = 0; k < 4; k++) { sum += crust[NBR[c * 4 + k]]; n++; }
+      tmp[c] = crust[c] * 0.55 + (sum / n) * 0.45;
+    }
+    crust.set(tmp);
+  }
 }

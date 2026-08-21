@@ -18,7 +18,16 @@ export function initGod(W) {
   if (!W.albedoPaint) W.albedoPaint = new Float32Array(W.life.length);
   if (!W.refuge) W.refuge = new Float32Array(W.life.length);
   if (!W.touchHeat) W.touchHeat = new Float32Array(W.life.length);
-  if (!W.erosionLock) W.erosionLock = new Float32Array(W.life.length);
+  /* One, not zero. `erosionLock` is a multiplier the sculpt tools write — "0
+     freeze, >1 accelerate" — so a fresh all-zeros array reads as *erosion frozen
+     on every cell of the planet*, and `initGod` runs on every world. Measured on
+     the demo Earth: all 7 088 land cells locked, no fluvial erosion, no glacial
+     carving, not one grain of sediment anywhere, mountains that never wear down.
+     The tools still write 0 to freeze a place deliberately. */
+  if (!W.erosionLock) {
+    W.erosionLock = new Float32Array(W.life.length);
+    W.erosionLock.fill(1);
+  }
   W.argueResponses = W.argueResponses || [];
 }
 

@@ -121,6 +121,12 @@ function isNbr(a, b) {
 
 export function noteGraze(W, c, amt) {
   if (W.trophOccHerb && c >= 0) W.trophOccHerb[c] = clamp((W.trophOccHerb[c] || 0) + amt * 6, 0, 1);
+  /* Herbivory as a number, not just a stain on the map. Without a total there
+     was no way to ask how much of the standing crop the herds actually eat —
+     which is the question the grazing test was reaching for when it compared
+     grazed cells against ungrazed ones and found them *richer*, because grazers
+     pick the best ground and habitat choice swamps the bite. */
+  W.grazeTotal = (W.grazeTotal || 0) + amt;
 }
 
 export function noteHunt(W, c, amt = 0.22) {

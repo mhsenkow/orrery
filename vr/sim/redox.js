@@ -191,6 +191,17 @@ function seedVentChemistry(W) {
 /** Relax toward equilibrium + vent flux + lateral diffusion — chemistry has memory. */
 export function relaxSpeciesFields(W, dt, init = false) {
   const { species, h, seaLevel, bound } = W;
+  /* The species fields are allocated once at `initRedox`, and a resolution change
+     replaces every other field on the world without touching them — so this used
+     to throw `offset is out of bounds` out of `Float32Array.set` the first time it
+     ticked afterwards. Reallocating here is one length check a tick and means the
+     chemistry survives a grid change like everything else does. */
+  if (species) {
+    for (const key of SPECIES_KEYS) {
+      const arr = species[key];
+      if (arr && arr.length !== NC) species[key] = new Float32Array(NC);
+    }
+  }
   const diffuseRate = init ? 0 : 0.04 * dt;
   let scratch = null;
   if (!init) {

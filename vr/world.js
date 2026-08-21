@@ -5,9 +5,13 @@ import { NC, AREA, DIR, NBR, setResolution, N as SIM_N } from './sphere.js';
 import { RULESETS } from './rulesets.js';
 import { createChronicle, logEvent, maybeNameEra } from './chronicle.js';
 import { generateTectonics, tectonicsTick, erosionTick } from './sim/tectonics.js';
+import { applyOriginDigestToWorld } from './sim/originSketch.js';
+import { roundCoastTips, laplacianCoast } from './sim/terrainShape.js';
 import { planetGeoTick } from './sim/planetTick.js';
 import { hydroTick, tsunamiTick, liquidWaterOk, startTsunami, primeDrainage } from './sim/hydro.js';
-import { atmoTick, atmoMetaTick } from './sim/atmo.js';
+import {
+  atmoTick, atmoMetaTick, aerosolDecayTick, applyWarShade, cloudsTick, advect, advectScalar,
+} from './sim/atmo.js';
 import { bioTick, seedLife, LIFE_CLASSES } from './sim/bio.js';
 import { gaiaTick } from './sim/gaia.js';
 import { fitSeaLevel, seedPolarIce, seedEarthBiosphere, primeEarthMoisture } from './sim/earth.js';
@@ -48,7 +52,7 @@ import { giantTick } from './sim/jets.js';
 import { skyFromStarAtmosphere } from './sim/scatter.js';
 import { applyIceShell, iceShellTick } from './sim/iceshell.js';
 import { initTides, tidesTick } from './sim/tides.js';
-import { initStorms, stormsTick } from './sim/storms.js';
+import { initStorms, resetStorms, stormsTick } from './sim/storms.js';
 import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
@@ -63,6 +67,7 @@ import { anthroTick, resetAnthro } from './sim/anthro.js';
 import { ordnanceTick, resetOrdnance } from './sim/ordnance.js';
 import {
   resetPolities, ensureOwner, seedPolitiesFromCities, claimTerritory,
+  ensurePlayerPolity,
   splitDisconnected, packPolities, unpackPolities, remapOwner,
 } from './sim/polity.js';
 import { resetDiplomacy, diplomacyTick } from './sim/diplomacy.js';
@@ -104,6 +109,26 @@ export function reallocateWorldFields(target = W) {
   target.popId = ibuf();
   target.drainTo = ibuf();
   target.drainTo2 = ibuf();
+  /* Every prognostic field above has just been replaced with zeros, so the
+     solvers that carry state across ticks have to be told they are starting
+     again. Without this, `changeResolution` — which the app does at startup,
+     going from the default grid to the one the device can afford — left the
+     shallow-water solvers with `_sweBoot` still true: no diagnostic
+     initialisation, a wind field of exactly zero, and a planet that had to
+     accelerate the whole atmosphere from rest through surface drag. Hundreds of
+     ticks of a windless world, which is what the app actually opened with.
+     `_vapourInit` and the drainage tree are in the same position. */
+  target._sweBoot = false;
+  target._osweBoot = false;
+  target._vapourInit = false;
+  target._orderReady = false;
+  target._hydroDirty = true;
+  target._drainTick = null;
+  target._freshBase = null;
+  target._contTick = null;
+  target._coastTick = null;
+  target._shoreCells = null;
+  target._waterMass0 = null;
   target.storms = [];
   target._fireCells = [];
   target._flashCells = [];
@@ -121,6 +146,24 @@ export function reallocateWorldFields(target = W) {
   target.owner.fill(-1);
   target.border = new Float32Array(NC);
   target.fought = new Float32Array(NC);
+  target.radar = new Float32Array(NC);
+  target.tracer = new Float32Array(NC);
+  target.shockwave = new Float32Array(NC);
+  target.smoke = new Float32Array(NC);
+  target.fireball = new Float32Array(NC);
+  target._shockEvents = [];
+  target._blastPunch = 0;
+  target.radShort = new Float32Array(NC);
+  target.exclusion = new Float32Array(NC);
+  target.rubble = new Float32Array(NC);
+  target.casualty = new Float32Array(NC);
+  target.fogOfWar = new Float32Array(NC);
+  target.fogReveal = new Float32Array(NC);
+  target.fort = new Float32Array(NC);
+  target.polityTint = new Float32Array(NC);
+  target.frontDir = new Float32Array(NC);
+  target.arsenalFired = Object.create(null);
+  target.defenceStats = { shots: 0, intercepts: 0, leaks: 0, salvoLog: [] };
   target.polities = [];
   target._polityIndex = null;
   target.playerPolity = -1;
@@ -135,6 +178,8 @@ export function reallocateWorldFields(target = W) {
   target.darkToll = null;
   target.warCrimes = [];
   target.dark = null;
+  target.mushrooms = [];
+  target._blastFlash = 0;
   target.bound = new Int8Array(NC);
   target._order = new Int32Array(NC);
   target.shellLid = target.shellOcean = target.shellMantle = target.shellVent = null;
@@ -248,6 +293,8 @@ function bootPhase(label, detail = '') {
   if (typeof W._bootPhase === 'function') W._bootPhase(label, detail);
 }
 
+
+
 export function generate(seed, ruleIn) {
   const rule = cloneRuleForRun(ruleIn);
   bootPhase('Forming world', rule.name || 'planet');
@@ -259,6 +306,23 @@ export function generate(seed, ruleIn) {
   attachRng(seed);
   W.chron = createChronicle();
   W._waterMass0 = null;
+  /* The substrate column stack is built by `stampStack` late in `generate`, well
+     after the climate warm-up — but `erosionTick` branches on this flag, so during
+     the warm-up it was reading whether the *previous* world had a stack. Generate
+     a moon and then a Mars and Mars eroded through the stack path; generate Mars
+     first and it did not. Same seed, same rule, two different planets, and the
+     divergence showed up as a 21 K difference across 151 cells. */
+  W._stackLive = false;
+  /* Ignition switch. `fireTick` honours this now, and the fire-danger scan lives
+     behind the same gate — so a world that inherited it from a previous run had
+     both its ignitions and its danger readout switched off, and `fireDangerMax`
+     decayed quietly to zero. */
+  W._noIgnite = false;
+  /* Height-rank ladder for the map-square rules. Sampled from this world's own
+     hypsometry, so it must not survive into the next one — Io ranked itself
+     against Mars and came out uniformly `patera`. */
+  W._hypsoQ = null;
+  W._hypsoStamp = null;
   W._oxEvent = false;
   W.unlockedClass = 0;
   W.state = 'stable';
@@ -370,6 +434,7 @@ export function generate(seed, ruleIn) {
   W.mood = null;
   W.huntKills = 0;
   W.huntMisses = 0;
+  W.grazeTotal = 0;
   W.carcasses = [];
   W.carcassCount = 0;
   W.gaiaDrive = 'regulator';
@@ -482,6 +547,7 @@ export function generate(seed, ruleIn) {
   W.hotspots = null;
   W.volcanoes = [];
   W.ash.fill(0); W.dust.fill(0); W.sediment.fill(0);
+  resetStorms(W);
   if (W.frost) W.frost.fill(0);
   if (W.lag) W.lag.fill(0);
   if (W.grain) W.grain.fill(0);
@@ -508,6 +574,7 @@ export function generate(seed, ruleIn) {
   W.carcasses = [];
   W.carcassCount = 0;
   W.huntMisses = 0;
+  W.grazeTotal = 0;
   W.swarmMarks = [];
   W.swarmCount = 0;
   W.lifeSparks = [];
@@ -569,8 +636,9 @@ export function generate(seed, ruleIn) {
   }
   W._nonHydrostatic = !!(W._worldAxes.nonHydrostatic || rule.nonHydrostatic);
 
-  if (!W.noSurface) generateTectonics(W, seed, rule);
-  else {
+  if (!W.noSurface) {
+    generateTectonics(W, seed, rule);
+  } else {
     W.plates = [];
     W.volcanoes = [];
     W.hotspots = [];
@@ -598,22 +666,34 @@ export function generate(seed, ruleIn) {
   else if (!rule.iceShell && !rule.daisyworld) refinePlanetHypsometry(W, seed, rule);
   if (ls?.relief) W._reliefScale = ls.relief;
 
+  // Soften Voronoi tips, then stamp Theia scar so smoothing doesn't erase it.
+  {
+    if (!W.noSurface) {
+      roundCoastTips(W, W.seaLevel);
+      laplacianCoast(W, W.seaLevel, 3, 0.26);
+    }
+    const dig = rule._originDigest || W._pendingOriginDigest || null;
+    if (dig && !W.noSurface) {
+      applyOriginDigestToWorld(W, dig);
+      laplacianCoast(W, W.seaLevel, 2, 0.2);
+    }
+    W._pendingOriginDigest = null;
+  }
+
   for (let c = 0; c < NC; c++) {
     const lat = Math.abs(DIR[c * 3 + 1]);
-    W.temp[c] = clamp(W.solar * (0.42 + 0.55 * (1 - lat)) + 0.08, 0.15, 1.2);
+    /* Start near a plausible profile, not far above one. This seeded the
+       equator at 1.09 — 382 K — and left the spin-up to walk it down; sea cells
+       relax at 3% a tick, so a generate handed the game a planet still tens of
+       degrees hot and visibly cooling for its first few hundred ticks, which is
+       also what the calibration harness kept measuring. 0.60 at the equator and
+       0.30 at the poles is Earth's own profile on this scale. */
+    W.temp[c] = clamp(W.solar * (0.30 + 0.30 * (1 - lat)) + 0.02, 0.12, 1.35);
     W.moist[c] = W.noSurface ? 0 : (W.h[c] < W.seaLevel ? 1 : 0.25);
     W.nutrientN[c] = 0.4; W.nutrientP[c] = 0.35;
   }
   if (rule.earthLike) seedPolarIce(W, rule);
-  else if (!W.noSurface) {
-    for (let c = 0; c < NC; c++) {
-      if (W.temp[c] < rule.freeze + 0.08) {
-        W.iceLand[c] = W.h[c] >= W.seaLevel ? 0.6 : 0;
-        W.iceSea[c] = W.h[c] < W.seaLevel ? 0.7 : 0;
-        W.ice[c] = Math.max(W.iceLand[c], W.iceSea[c]);
-      }
-    }
-  }
+  else if (!W.noSurface) seedVolatileIce(W, rule);
   geostrophicWind(W);
   giantTick(W, null);
 
@@ -837,6 +917,8 @@ export function simTick(silent = false) {
     W.year += 10;
     W.ageYr = W.year;
   }
+  // Dim the sun from war soot / L1 shade before climate integrates.
+  applyWarShade(W);
 
   applySeasonPolicy(W, rule);
 
@@ -854,7 +936,23 @@ export function simTick(silent = false) {
   giantTick(W, log);
   const gpu = gpgpuClimateTick(W);
   if (!gpu) atmoTick(W, _sunDir);
-  else atmoMetaTick(W);
+  else {
+    /* The GPU owns the thermal relaxation and nothing else.
+     *
+     * Everything else `atmoTick` would have done still has to happen, and used
+     * to be silently skipped on this path: the transport of heat and soil
+     * moisture by the wind, the smoke drifting downwind of a fire, and the cloud
+     * field itself — which `cloudsTick` builds from relative humidity against
+     * the hydrosphere's own saturation, convergence, fronts and ash, where the
+     * shader has four lines. Same fields, same order, same numbers as the CPU
+     * path; only the temperature relaxation happens on the card. */
+    advectScalar(W.temp, W.windU, W.windV, W._adv, 0.35);
+    advectScalar(W.moist, W.windU, W.windV, W._adv, 0.3);
+    advect(W.ash, W, 0.1);
+    cloudsTick(W);
+    atmoMetaTick(W);
+    aerosolDecayTick(W);
+  }
   hydroTick(W);
   tsunamiTick(W);
   if (!rule.airless && !W.noSurface) {
@@ -912,18 +1010,33 @@ export function simTick(silent = false) {
        array-length checks. */
     ordnanceTick(W, log);
     anthroTick(W, log);
-    if (!isPinnedEarth(W.rule) && (W.polities?.length || W.cities?.length)) {
+    const warLive = !!(
+      (W.flight && W.flight.some((f) => !f.dead))
+      || (W.interceptors && W.interceptors.some((ix) => !ix.dead))
+      || (W.mushrooms && W.mushrooms.length)
+      || (W.detonated | 0)
+      || (W.gases?.dust || 0) > 0.012
+      || (W.dark?.winter || 0) > 0.01
+      || (W._empUntil || 0) > (W._tickIndex | 0)
+      || (W._shockEvents && W._shockEvents.length)
+    );
+    const canPolity = !isPinnedEarth(W.rule) && (W.polities?.length || W.cities?.length);
+    if (canPolity) {
       const t = W._tickIndex | 0;
       if (t % 4 === 0) {
         seedPolitiesFromCities(W, log);
         claimTerritory(W);
         splitDisconnected(W, log);
+        ensurePlayerPolity(W);
       }
       if (W.polities?.length) {
         diplomacyTick(W, log);
         deterrenceTick(W, log);
-        darkTick(W, log);
       }
+    }
+    // War physics runs on Holocene too once something is in the air or burning.
+    if ((canPolity && W.polities?.length) || warLive) {
+      darkTick(W, log);
     }
     fireTick(W, log);
     /* Biology clock: life can sub-step inside one climate tick. Pinned terra
@@ -975,6 +1088,48 @@ export function simTick(silent = false) {
         }
       }
     }
+  }
+}
+
+/**
+ * Ice cover on a world that is not Earth.
+ *
+ * `rule.freeze` says whether ice is *stable* at a temperature; it does not say
+ * whether there is any ice to be stable. This used to lay ice on every cell below
+ * `freeze + 0.08`, which was survivable while the freeze line was mis-scaled and
+ * became absurd once it was corrected: Mars' line sits at 0.895 on the normalised
+ * scale — it really is below freezing almost everywhere — so the whole planet came
+ * out under a sheet. Every square on the Mars map read `polarIce`, which is also
+ * why the tour's Mars step could never be completed: it waits for a `rust` chip
+ * that no cell could produce.
+ *
+ * Mars is below freezing nearly everywhere *and* has bare ground, because its
+ * water is a hundredth of Earth's and what there is sits at the poles. So the
+ * phase threshold sets where ice *can* survive and the volatile inventory sets
+ * how much of that there is: the coldest fraction of the surface gets it. On a
+ * dry world that is a polar cap; on an ice-rich one like Pluto it is most of the
+ * globe; on Venus or Io the phase gate keeps it at none.
+ */
+function seedVolatileIce(W, rule) {
+  const phase = (rule.freeze ?? 0.3) + 0.08;
+  const inventory = clamp(rule.totalWater ?? 0.4, 0, 1);
+  // What share of the surface the inventory can actually cover.
+  const share = clamp(inventory * 0.62, 0.015, 0.92);
+  const temps = [];
+  for (let c = 0; c < NC; c++) {
+    if (W.temp[c] < phase) temps.push(W.temp[c]);
+  }
+  if (!temps.length) return;
+  temps.sort((a, b) => a - b);
+  const want = Math.min(temps.length, Math.max(1, Math.round(NC * share)));
+  const cut = temps[want - 1];
+  const thick = 0.35 + inventory * 0.55;
+  for (let c = 0; c < NC; c++) {
+    if (W.temp[c] >= phase || W.temp[c] > cut) continue;
+    const sea = W.h[c] < W.seaLevel;
+    W.iceLand[c] = sea ? 0 : thick;
+    W.iceSea[c] = sea ? Math.min(1, thick + 0.1) : 0;
+    W.ice[c] = Math.max(W.iceLand[c], W.iceSea[c]);
   }
 }
 
@@ -1125,6 +1280,37 @@ export function serializeRun() {
     exchangesDeclined: W.exchangesDeclined | 0,
     darkToll: W.darkToll ? { ...W.darkToll } : null,
     warCrimes: (W.warCrimes || []).slice(-48),
+    attribution: W.attribution ? { ...W.attribution } : null,
+    // Flights / hazards / arsenals round-trip (§385). Derived visual fields
+    // (smoke, shockwave amplitudes) are re-simulated; mushrooms persist.
+    flights: (W.flight || []).filter((f) => !f.dead).slice(0, 48).map((f) => ({
+      kind: f.kind, from: f.from, to: f.to, at: f.at, speed: f.speed,
+      payload: f.payload, yield: f.yield, path: f.path ? [...f.path] : [],
+      ownerPolity: f.ownerPolity, targetPolity: f.targetPolity,
+      phase: f.phase, plume: f.plume, mirv: f.mirv || 0,
+    })),
+    mushrooms: (W.mushrooms || []).slice(-24).map((m) => ({ ...m })),
+    arsenals: (W.polities || []).map((p) => ({
+      id: p.id, arsenal: p.arsenal | 0, fissile: p.fissile || 0, doctrine: p.doctrine,
+    })),
+    hazards: {
+      radPeak: W.radPeak || 0,
+      toxinCells: W.toxinCells | 0,
+      radCells: (W._radCells || []).slice(0, 64),
+    },
+    dark: W.dark ? {
+      tribunal: W.dark.tribunal,
+      counterfactual: W.dark.counterfactual,
+      benefited: W.dark.benefited,
+      legacy: W.dark.legacy,
+      archiveLoss: W.dark.archiveLoss | 0,
+      namedDeaths: W.dark.namedDeaths | 0,
+      uninhabitable: !!W.dark.uninhabitable,
+      tickBudgetMs: W.dark.tickBudgetMs || 2,
+      geomBudgetMs: W.dark.geomBudgetMs || 1.5,
+      audioBudgetMs: W.dark.audioBudgetMs || 0.5,
+      audioMuted: !!W.dark.audioMuted,
+    } : null,
   };
 }
 
@@ -1193,6 +1379,26 @@ export function loadRunMeta(json) {
   if (data.exchangesDeclined != null) W.exchangesDeclined = data.exchangesDeclined;
   if (data.darkToll) W.darkToll = { ...data.darkToll };
   if (data.warCrimes) W.warCrimes = data.warCrimes.map((x) => ({ ...x }));
+  if (data.attribution) W.attribution = { ...data.attribution };
+  if (data.flights?.length) {
+    W.flight = data.flights.map((f) => ({ ...f, dead: false, path: f.path ? [...f.path] : [] }));
+    W.inFlight = W.flight.length;
+  }
+  if (data.mushrooms) W.mushrooms = data.mushrooms.map((m) => ({ ...m }));
+  if (data.arsenals?.length && W.polities?.length) {
+    for (const a of data.arsenals) {
+      const p = W._polityIndex?.get(a.id);
+      if (p) {
+        p.arsenal = a.arsenal | 0;
+        p.fissile = a.fissile || 0;
+        if (a.doctrine) p.doctrine = a.doctrine;
+      }
+    }
+  }
+  if (data.dark) {
+    W.dark = W.dark || {};
+    Object.assign(W.dark, data.dark);
+  }
   if (data.clockFace) W.clockFace = data.clockFace;
   if (data.seasonHold != null) {
     W.seasonHold = data.seasonHold;

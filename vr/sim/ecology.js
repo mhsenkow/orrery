@@ -2,7 +2,8 @@
  *  Backlog items 59–85. */
 
 import { clamp } from '../math.js';
-import { NC, NBR, DIR, AREA } from '../sphere.js';
+import { divEN } from './swe.js';
+import { NC, DIR, AREA } from '../sphere.js';
 import { kleiberDensity, TRAITS, nodeOf, removeLiving } from './evolve.js';
 import { shannonDiversity } from './lifeGuide.js';
 import { usesWhittakerCover } from './planetKind.js';
@@ -64,14 +65,15 @@ export function computeUpwelling(W) {
     W.upwelling.set(W.upwell);
     return;
   }
+  /* Fallback path, for worlds that never ran `oceanTick`. The divergence here
+     was a plain sum of neighbour differences — `Δu + Δv` with no direction in
+     it, which is not a divergence in any frame — so it reported upwelling
+     wherever the wind field happened to be uneven. `divEN` is the real
+     operator and is already used for the ocean's own version. */
   const { windU, windV, h, seaLevel } = W;
   for (let c = 0; c < NC; c++) {
     if (h[c] >= seaLevel) { W.upwelling[c] = 0; continue; }
-    let div = 0;
-    for (let k = 0; k < 4; k++) {
-      const n = NBR[c * 4 + k];
-      div += (windU[n] - windU[c]) + (windV[n] - windV[c]);
-    }
+    const div = divEN(windU, windV, c) * 0.07;
     const lat = DIR[c * 3 + 1];
     const eq = 1 - Math.abs(lat) * 2;
     W.upwelling[c] = clamp((-div) * 2 + Math.max(0, eq) * 0.15, 0, 1);

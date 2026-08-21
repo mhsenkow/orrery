@@ -23,8 +23,14 @@ import { rngOf } from './rng.js';
 import { igniteFire } from './fire.js';
 import { irradiate, pourToxin, seedDisease } from './anthro.js';
 import { strike as flashAt } from './lightning.js';
-import { noteCasualty } from './dark.js';
+import {
+  noteCasualty, spawnMushroom, spawnShockwave, spawnBlastFlash,
+} from './dark.js';
 import { polityAt } from './polity.js';
+import {
+  spawnWeaponSignature, spawnInterceptBurst, queueDarkMoment,
+} from './darkSpectacle.js';
+import { darkAudioCue } from './darkAudio.js';
 
 const TRACER_KEEP = 0.72;
 const GONE = 0.02;
@@ -38,7 +44,15 @@ const FIZZLE_P = 0.025;
 const DUD_P = 0.015;
 /** Default interceptor magazine per battery cell. */
 const MAG_DEFAULT = 6;
+/** Point-defence magazine bonus around capitals (§106). */
+const MAG_CAPITAL = 10;
 const MAG_RELOAD = 0.04;
+/** Layered defence kill multipliers by flight phase (§105). */
+const PHASE_KILL = { boost: 0.45, midcourse: 1.0, reentry: 1.75 };
+/** Chance an intercept also knocks out the silo (§109). */
+const COUNTER_BATTERY_P = 0.22;
+/** Interceptor costs more than the missile it stops (§117). */
+const IX_COST_RATIO = 3.2;
 
 /**
  * Flight profiles. Speed is cells per tick; `stealth` cuts interception odds.
@@ -114,6 +128,14 @@ export const PROFILES = {
     speed: 1.4, stealth: 0.7, label: 'biological', payload: 'bio', yield: 0.4,
     range: 60, cep: 0.16, ballistic: false,
   },
+  hypersonic: {
+    speed: 5.5, stealth: 0.55, label: 'hypersonic glide', payload: 'nuclear', yield: 0.7,
+    range: 180, cep: 0.1, ballistic: true, hypersonic: true, rcs: 0.6,
+  },
+  'drone-ix': {
+    speed: 2.4, stealth: 0.2, label: 'drone interceptor', payload: 'conventional', yield: 0,
+    range: 40, cep: 0, ballistic: false, interceptor: true,
+  },
 };
 
 /** Path cache: `${from},${to}` → cell array. Cleared on reset. */
@@ -125,15 +147,22 @@ function ensure(W) {
     W._tracerCells = [];
   }
   if (!W._tracerCells) W._tracerCells = [];
+  if (!W.radar || W.radar.length !== NC) W.radar = new Float32Array(NC);
   if (!W.flight) W.flight = [];
   if (!W.interceptors) W.interceptors = [];
   if (!W.batteries) W.batteries = new Map();
   if (!W._battFatigue) W._battFatigue = new Map();
+  if (!W.arsenalFired) W.arsenalFired = Object.create(null);
+  if (!W.defenceStats) {
+    W.defenceStats = { shots: 0, intercepts: 0, leaks: 0, salvoLog: [] };
+  }
 }
 
 export function resetOrdnance(W) {
   if (W.tracer?.length === NC) W.tracer.fill(0);
   else W.tracer = null;
+  if (W.radar?.length === NC) W.radar.fill(0);
+  else W.radar = null;
   W._tracerCells = [];
   W.flight = [];
   W.interceptors = [];
@@ -147,6 +176,9 @@ export function resetOrdnance(W) {
   W._empUntil = 0;
   W._defFatigue = 0;
   W._dudAt = -1;
+  W.arsenalFired = Object.create(null);
+  W.defenceStats = { shots: 0, intercepts: 0, leaks: 0, salvoLog: [] };
+  if (W.dark) W.dark.defence = [];
 }
 
 /** Write the visible track. Exported because an incoming rock is also a thing in
@@ -179,17 +211,27 @@ export function flightProgress(f) {
 }
 
 /**
- * Altitude above unit sphere (§81, 93). Ballistic peaks mid-path; cruise/drone
- * hug low altitude.
+ * Altitude above unit sphere (§81, 89, 93). Ballistic peaks mid-path; cruise/drone
+ * hug terrain from `W.h`; depressed arcs stay flatter.
  */
-export function flightAltitude(f, t = flightProgress(f)) {
+export function flightAltitude(f, t = flightProgress(f), W = null) {
   const cruise = f.kind === 'cruise' || f.kind === 'drone'
     || f.payload === 'conventional' || f.payload === 'dirty'
     || f.payload === 'thermobaric' || f.payload === 'cluster'
     || f.payload === 'chem_persist' || f.payload === 'chem_brief'
     || f.payload === 'bio'
     || (PROFILES[f.kind] && PROFILES[f.kind].ballistic === false);
-  if (cruise) return 0.015 + 0.025 * Math.sin(Math.PI * t);
+  if (cruise) {
+    let base = 0.015;
+    if (W?.h && f.path?.length) {
+      const idx = Math.min(f.path.length - 1, Math.max(0, Math.floor(f.at || 0)));
+      const c = f.path[idx];
+      const sea = W.seaLevel || 0;
+      base = 0.008 + Math.max(0, ((W.h[c] || 0) - sea) * 0.025);
+    }
+    return base + 0.02 * Math.sin(Math.PI * t);
+  }
+  if (f.depressed) return 0.025 + 0.14 * Math.sin(Math.PI * t);
   return 0.04 + 0.38 * Math.sin(Math.PI * t);
 }
 
@@ -200,16 +242,51 @@ export function flightPhase(f, t = flightProgress(f)) {
   return 'reentry';
 }
 
+/** Effective stealth from profile + radar cross-section / chaff (§88). */
+export function stealthFromRcs(baseStealth, rcs, chaff = false) {
+  // High RCS → easier to track → lower stealth. Chaff briefly inflates RCS.
+  const r = Math.max(0.05, (rcs || 1) * (chaff ? 2.2 : 1));
+  return clamp((baseStealth || 0) * (1 / (0.55 + r * 0.45)), 0, 0.95);
+}
+
+/** Far cell roughly antipodal to the midpoint of from→to (FOB waypoint). */
+function farWaypoint(from, to) {
+  const mx = -(DIR[from * 3] + DIR[to * 3]);
+  const my = -(DIR[from * 3 + 1] + DIR[to * 3 + 1]);
+  const mz = -(DIR[from * 3 + 2] + DIR[to * 3 + 2]);
+  let best = from, bestDot = -2;
+  const step = Math.max(1, (NC / 400) | 0);
+  for (let c = 0; c < NC; c += step) {
+    const dot = DIR[c * 3] * mx + DIR[c * 3 + 1] * my + DIR[c * 3 + 2] * mz;
+    if (dot > bestDot) { bestDot = dot; best = c; }
+  }
+  return best;
+}
+
 /**
  * Great-circle approximation on the cube-sphere: iterative neighbour steps that
  * maximise DIR·target, never revisiting a cell (seam oscillation already
- * prevented). Cached per (from,to) (§94–95).
+ * prevented). Cached per (from,to[,L]). `longWay` walks via a far waypoint (§91).
  */
-export function greatCirclePath(from, to) {
+export function greatCirclePath(from, to, opts = {}) {
   if (from === to) return [from];
-  const key = `${from},${to}`;
+  const longWay = !!opts.longWay;
+  const key = `${from},${to},${longWay ? 'L' : 'S'}`;
   const hit = pathCache.get(key);
   if (hit) return hit;
+
+  if (longWay) {
+    const via = farWaypoint(from, to);
+    const a = greatCirclePath(from, via);
+    const b = greatCirclePath(via, to);
+    const path = a.concat(b.slice(1));
+    // Cap so saturation attacks still terminate.
+    const capped = path.length > MAX_PATH * 2
+      ? path.filter((_, i) => i % 2 === 0 || i === path.length - 1)
+      : path;
+    pathCache.set(key, capped);
+    return capped;
+  }
 
   const path = [from];
   let c = from;
@@ -237,11 +314,10 @@ export function greatCirclePath(from, to) {
  * Local air defence.
  *
  * Not a field: it is whatever is built nearby, scaled by how advanced the planet
- * is. A pre-industrial world cannot intercept anything, and empty country cannot
- * either — which is why a missile aimed at a city is the one that gets shot down
- * and a missile aimed at a wilderness always lands.
+ * is, masked by radar coverage and killed by EMP / grid blackout (§107, 116).
  */
 export function defenceAt(W, c) {
+  if (gridDown(W)) return 0;
   const tech = clamp(((W.unlockedClass || 0) - 4) / 3, 0, 1);
   if (tech <= 0) return 0;
   let b = W.build?.[c] || 0;
@@ -250,7 +326,52 @@ export function defenceAt(W, c) {
     const v = W.build?.[n] || 0;
     if (v > b) b = v;
   }
-  return clamp(b, 0, 1) * tech;
+  const rad = W.radar?.[c] ?? b;
+  const cover = Math.max(rad, b * 0.4);
+  return clamp(b, 0, 1) * tech * (0.3 + 0.7 * clamp(cover, 0, 1));
+}
+
+/** Rebuild radar coverage from build/tech with terrain horizon mask (§107). */
+export function updateRadar(W) {
+  ensure(W);
+  const tech = clamp(((W.unlockedClass || 0) - 4) / 3, 0, 1);
+  if (tech <= 0) {
+    W.radar.fill(0);
+    return;
+  }
+  const h = W.h;
+  const build = W.build;
+  for (let c = 0; c < NC; c++) {
+    let cov = (build?.[c] || 0) * tech;
+    if (cov < 0.02) { W.radar[c] = 0; continue; }
+    if (h) {
+      const hc = h[c] || 0;
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[c * 4 + k];
+        if ((h[n] || 0) > hc + 0.03) cov *= 0.72;
+      }
+    }
+    W.radar[c] = clamp(cov, 0, 1);
+  }
+}
+
+/** Player verb: boost battery magazine + local radar at a cell (§115). */
+export function defendCell(W, cell, amount = 1) {
+  ensure(W);
+  if (cell < 0 || cell >= NC) return { ok: false, note: 'No cell' };
+  const batt = batteryNear(W, cell);
+  const add = Math.max(1, Math.round(2 * amount));
+  const cur = magStock(W, batt);
+  const cap = magCeiling(W, batt);
+  W.batteries.set(batt, Math.min(cap + 4, cur + add));
+  if (W.radar) {
+    W.radar[cell] = Math.min(1, (W.radar[cell] || 0) + 0.25 * amount);
+    for (let k = 0; k < 4; k++) {
+      const n = NBR[cell * 4 + k];
+      W.radar[n] = Math.min(1, (W.radar[n] || 0) + 0.12 * amount);
+    }
+  }
+  return { ok: true, cell: batt, stock: W.batteries.get(batt) };
 }
 
 /** Battery cell: densest build near the defended ground. */
@@ -264,9 +385,23 @@ function batteryNear(W, c) {
   return best;
 }
 
+function isCapitalCell(W, cell) {
+  for (const p of W.polities || []) {
+    if ((p.capital | 0) === cell) return true;
+    for (let k = 0; k < 4; k++) {
+      if (NBR[cell * 4 + k] === (p.capital | 0)) return true;
+    }
+  }
+  return false;
+}
+
+function magCeiling(W, cell) {
+  return isCapitalCell(W, cell) ? MAG_CAPITAL : MAG_DEFAULT;
+}
+
 function magStock(W, cell) {
   ensure(W);
-  if (!W.batteries.has(cell)) W.batteries.set(cell, MAG_DEFAULT);
+  if (!W.batteries.has(cell)) W.batteries.set(cell, magCeiling(W, cell));
   return W.batteries.get(cell);
 }
 
@@ -287,19 +422,40 @@ function addBattFatigue(W, cell, amt) {
   W._battFatigue.set(cell, Math.min(1.4, battFatigue(W, cell) + amt));
 }
 
-function spawnInterceptor(W, from, to, chase) {
+function spawnInterceptor(W, from, to, chase, opts = {}) {
   ensure(W);
   let path = from === to ? [from, to] : greatCirclePath(from, to);
   if (!path || path.length < 2) path = [from, to];
+  const drone = !!opts.drone || opts.kind === 'drone-ix';
   const ix = {
     from, to, path, at: 0,
-    speed: 8.0,
+    speed: drone ? 2.8 : 8.0,
     chase,
+    kind: drone ? 'drone-ix' : 'interceptor',
     dead: false,
   };
+  // §118: cannot hit something faster than itself.
+  if (chase && (chase.speed || 0) >= ix.speed) {
+    ix._outrun = true;
+  }
   W.interceptors.push(ix);
-  mark(W, from, 0.9);
+  mark(W, from, drone ? 0.55 : 0.9);
   return ix;
+}
+
+/** Prefer a live decoy near the aimed flight for the interceptor (§87). */
+function preferDecoyChase(W, primary) {
+  if (!primary || primary.decoy) return primary;
+  const idx = Math.min(primary.path.length - 1, Math.floor(primary.at || 0));
+  const here = primary.path[idx];
+  for (const f of W.flight) {
+    if (f.dead || !f.decoy || f === primary) continue;
+    const j = Math.min(f.path.length - 1, Math.floor(f.at || 0));
+    const c = f.path[j];
+    if (c === here) return f;
+    for (let k = 0; k < 4; k++) if (NBR[here * 4 + k] === c) return f;
+  }
+  return primary;
 }
 
 /**
@@ -313,50 +469,126 @@ export function launch(W, from, to, kind = 'icbm', opts = {}) {
   ensure(W);
   if (W.flight.length >= MAX_FLIGHT) return { ok: false, note: 'Sky is full' };
   const prof = PROFILES[kind] || PROFILES.icbm;
+  const rng = rngOf(W, 'rngGod');
 
-  // CEP miss: offset aim onto a neighbour (§90).
+  // CEP miss: offset aim onto a neighbour (§90). Depressed arcs are less accurate (§89).
+  // GPS denial worsens CEP (§310 / dark-400 O§288).
   let aim = to;
-  const cep = opts.cep ?? prof.cep ?? 0;
+  let cep = opts.cep ?? prof.cep ?? 0;
+  if (opts.depressed) cep = Math.min(0.55, cep + 0.18);
+  if ((W.gpsDenied || 0) > 0) cep = Math.min(0.75, cep + W.gpsDenied * 0.35);
   if (cep > 0 && aim >= 0) {
-    const rng = rngOf(W, 'rngGod');
     if (rng() < cep) {
       aim = NBR[aim * 4 + ((rng() * 4) | 0)];
     }
   }
 
-  const path = greatCirclePath(from, aim);
+  const longWay = !!(opts.fob || opts.longWay);
+  let path = greatCirclePath(from, aim, { longWay });
   if (!path || path.length < 2) return { ok: false, note: 'No route to target' };
 
-  const range = opts.range ?? prof.range ?? MAX_PATH;
+  // Depressed: shorter chord, less warning (§89).
+  if (opts.depressed && path.length > 5) {
+    const short = [];
+    for (let i = 0; i < path.length; i += 2) short.push(path[i]);
+    if (short[short.length - 1] !== path[path.length - 1]) short.push(path[path.length - 1]);
+    path = short;
+  }
+
+  // Hypersonic glide: manoeuvre midpoints (§92).
+  const hypersonic = !!(opts.hypersonic || prof.hypersonic);
+  if (hypersonic && path.length > 6) {
+    path = path.slice();
+    for (let i = 2; i < path.length - 2; i++) {
+      if (rng() < 0.4) path[i] = NBR[path[i] * 4 + ((rng() * 4) | 0)];
+    }
+  }
+
+  const range = opts.range ?? (longWay ? MAX_PATH * 2 : (prof.range ?? MAX_PATH));
   if (path.length > range) return { ok: false, note: 'Out of range' };
 
   const ownerPolity = opts.ownerPolity ?? polityAt(W, from);
   const targetPolity = opts.targetPolity ?? polityAt(W, aim);
 
+  const rcs = opts.rcs ?? prof.rcs ?? 1;
+  const chaff = !!opts.chaff;
+  const baseStealth = opts.stealth ?? prof.stealth;
+  const stealth = stealthFromRcs(baseStealth, rcs, chaff)
+    + (hypersonic ? 0.12 : 0);
+
+  const decoy = !!opts.decoy;
   const f = {
     kind,
     from,
     to: aim,
     path,
     at: 0,
-    speed: opts.speed ?? prof.speed,
-    stealth: opts.stealth ?? prof.stealth,
-    payload: opts.payload || prof.payload,
-    yield: opts.yield ?? prof.yield,
-    mirv: opts.mirv | 0,
-    mirvSeparate: !!(opts.mirvSeparate ?? ((opts.mirv | 0) > 0)),
-    label: prof.label,
+    speed: opts.speed ?? (opts.depressed ? prof.speed * 1.15 : prof.speed),
+    stealth: clamp(stealth, 0, 0.95),
+    rcs: rcs * (chaff ? 2.2 : 1),
+    payload: decoy ? 'conventional' : (opts.payload || prof.payload),
+    yield: decoy ? 0 : (opts.yield ?? prof.yield),
+    mirv: decoy ? 0 : (opts.mirv | 0),
+    mirvSeparate: decoy ? false : !!(opts.mirvSeparate ?? ((opts.mirv | 0) > 0)),
+    label: decoy ? `${prof.label} decoy` : prof.label,
     dead: false,
     detected: false,
     ownerPolity,
     targetPolity,
     phase: 'boost',
+    plume: decoy ? 0.4 : 1.0,
     alt: 0,
+    decoy,
+    depressed: !!opts.depressed,
+    hypersonic,
+    fob: longWay,
+    chaff,
     _split: false,
   };
   W.flight.push(f);
   W.launched = (W.launched | 0) + 1;
-  mark(W, from, 1.1);
+  if (!decoy) {
+    W.arsenalFired[kind] = (W.arsenalFired[kind] || 0) + 1;
+    W.defenceStats.shots = (W.defenceStats.shots | 0) + 1;
+    // Cinematic follow + moment — the journey is the point.
+    W.dark = W.dark || {};
+    W.dark.followFlight = W.flight.length - 1;
+    W.dark.followUntil = (W._tickIndex | 0) + 80;
+    darkAudioCue('launch', {
+      cell: from,
+      peak: 0.55 + (f.yield || 0.3) * 0.35,
+      player: ownerPolity === (W.playerPolity ?? -2),
+    });
+    f._audioLaunch = true;
+    const ticks = Math.ceil((path.length - 1) / f.speed);
+    queueDarkMoment(W, f.label || 'Launch',
+      `${ticks} ticks out · watch the arc`,
+      decoy ? 'decoy' : (f.payload || kind));
+  }
+  mark(W, from, decoy ? 0.6 : 1.1);
+  // Boost plume at the silo (§83).
+  if (f.plume > 0) mark(W, from, 0.5 + f.plume * 0.5);
+
+  // Penetration aids: decoy flights that never detonate (§87).
+  const nDecoy = decoy ? 0 : (opts.decoys | 0);
+  for (let d = 0; d < nDecoy && W.flight.length < MAX_FLIGHT; d++) {
+    const dAim = NBR[aim * 4 + (d & 3)];
+    launch(W, from, dAim, kind, {
+      decoy: true,
+      decoys: 0,
+      mirv: 0,
+      ownerPolity,
+      targetPolity,
+      depressed: opts.depressed,
+      hypersonic: opts.hypersonic,
+      fob: opts.fob,
+      longWay: opts.longWay,
+      chaff: true,
+      rcs: rcs * 1.8,
+      speed: f.speed * (0.95 + rng() * 0.1),
+    });
+  }
+
   return {
     ok: true,
     flight: f,
@@ -389,6 +621,9 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
   ensure(W);
   const rng = rngOf(W, 'rngGod');
 
+  // First strike on sensors: zero radar at the aim cell (§108).
+  if (W.radar && cell >= 0 && cell < NC) W.radar[cell] = 0;
+
   // Dud: no effect, mark for recovery (§72).
   if (rng() < DUD_P && payload !== 'conventional' && payload !== 'bio'
       && payload !== 'chem_brief' && payload !== 'chem_persist') {
@@ -416,6 +651,9 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
   if (payload === 'bio') {
     seedDisease(W, cell, { virulence: 0.55 + power * 0.25, transmit: 0.65, engineered: true });
     noteCasualty(W, 'disease', Math.floor(100 + power * 400));
+    spawnWeaponSignature(W, cell, 'bio', power);
+    darkAudioCue('siren', { cell, peak: 0.4 });
+    queueDarkMoment(W, 'Biological strike', 'A bloom takes the settlements', 'engineered');
     if (log) log(W.year, 'plague', cell, power, 'Biological warhead seeds disease');
     return { ok: true };
   }
@@ -423,6 +661,9 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
   if (payload === 'chem_persist' || payload === 'chemical') {
     pourToxin(W, cell, 0.85 + power * 0.55, 2);
     noteCasualty(W, 'poison', Math.floor(150 + power * 300));
+    spawnWeaponSignature(W, cell, payload, power);
+    darkAudioCue('siren', { cell, peak: 0.35 });
+    queueDarkMoment(W, 'Chemical strike', 'A stain that will not lift', 'persistent');
     if (log) log(W.year, 'war', cell, power, 'Persistent chemical warhead');
     return { ok: true };
   }
@@ -430,6 +671,8 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
   if (payload === 'chem_brief') {
     pourToxin(W, cell, 0.45 + power * 0.25, 1);
     noteCasualty(W, 'poison', Math.floor(60 + power * 120));
+    spawnWeaponSignature(W, cell, 'chem_brief', power);
+    queueDarkMoment(W, 'Chemical strike', 'A brief cloud, then wind', 'non-persistent');
     if (log) log(W.year, 'war', cell, power, 'Brief chemical warhead');
     return { ok: true };
   }
@@ -447,6 +690,11 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
     });
     W.temp[cell] = Math.min(1.5, W.temp[cell] + power * (payload === 'thermobaric' ? 0.06 : 0.03));
     noteCasualty(W, 'blast', Math.floor(40 + power * 180));
+    spawnWeaponSignature(W, cell, payload, power);
+    darkAudioCue('detonate', { cell, peak: 0.35 + power * 0.2, delayMs: 80 });
+    W._darkAudioDetSkip = true;
+    W._darkAudioDetSeen = W.detonated | 0;
+    queueDarkMoment(W, 'Strike', payload === 'thermobaric' ? 'Air burns' : 'Impact', payload);
     if (log) log(W.year, 'war', cell, power, 'Strike lands');
     return { ok: true };
   }
@@ -457,6 +705,13 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
     irradiate(W, cell, 0.55 + power * 0.35, 1);
     noteCasualty(W, 'blast', Math.floor(30 + power * 100));
     noteCasualty(W, 'fallout', Math.floor(80 + power * 250));
+    spawnWeaponSignature(W, cell, 'dirty', power);
+    darkAudioCue('detonate', { cell, peak: 0.4, delayMs: 60 });
+    W._darkAudioDetSkip = true;
+    W._darkAudioDetSeen = W.detonated | 0;
+    // One-shot click at impact — ambient geiger takes over sparsely.
+    darkAudioCue('geiger', { cell, peak: 0.28 });
+    queueDarkMoment(W, 'Dirty bomb', 'Blast, then the click of fallout', 'radiological');
     if (log) log(W.year, 'war', cell, power, 'Dirty bomb');
     return { ok: true };
   }
@@ -465,6 +720,10 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
     // High-altitude EMP: almost no ground effect, long blackout (§65).
     W._empUntil = Math.max(W._empUntil || 0, (W._tickIndex | 0) + Math.round(80 + power * 120));
     irradiate(W, cell, 0.08 * power, 0);
+    spawnWeaponSignature(W, cell, 'emp', power);
+    spawnBlastFlash(W, power * 0.4);
+    darkAudioCue('empSilence', { cell, peak: 0.9 });
+    queueDarkMoment(W, 'EMP', 'The night side goes quiet', 'grid down');
     if (log) log(W.year, 'war', cell, power, 'EMP burst — grid dark');
     return { ok: true };
   }
@@ -479,6 +738,13 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
     });
     irradiate(W, cell, 1.2 + power * 0.7, 3);
     noteCasualty(W, 'fallout', Math.floor(400 + power * 1500));
+    spawnMushroom(W, cell, power * 0.45);
+    spawnBlastFlash(W, power * 0.5);
+    darkAudioCue('detonate', { cell, peak: 0.5, delayMs: 40 });
+    W._darkAudioDetSkip = true;
+    W._darkAudioDetSeen = W.detonated | 0;
+    darkAudioCue('geiger', { cell, peak: 0.3 });
+    queueDarkMoment(W, 'Neutron', 'Buildings stand. Nothing else does.', 'enhanced radiation');
     if (log) log(W.year, 'war', cell, power, 'Neutron warhead');
     return { ok: true };
   }
@@ -522,17 +788,79 @@ export function detonate(W, cell, payload = 'nuclear', power = 1, log = null) {
     if (W.build?.[c] > 0) W.build[c] = Math.max(0, W.build[c] - power * fall);
     W.temp[c] = Math.min(1.6, (W.temp[c] || 0.5) + power * 0.22 * fall);
     W.ash[c] = Math.min(1, (W.ash[c] || 0) + power * 0.7 * fall);
+    // Stratospheric soot on the dust field — albedo path actually reads this.
+    if (W.dust) W.dust[c] = Math.min(1, (W.dust[c] || 0) + power * 0.45 * fall);
     if (d <= 1) W.h[c] -= power * 0.012 * fall;
     if (d > 0 && d < r) igniteFire(W, c, power * fall, 0);
   });
   irradiate(W, cell, 0.9 + power * 0.5, 2);
-  W.gases.dust = Math.min(0.5, W.gases.dust + power * 0.004);
-  W.gases.sulphate = Math.min(0.3, (W.gases.sulphate || 0) + power * 0.002);
+  // Firestorm loft — stronger than the old gesture so winter can bite.
+  W.gases.dust = Math.min(0.55, (W.gases.dust || 0) + power * 0.028);
+  W.gases.sulphate = Math.min(0.35, (W.gases.sulphate || 0) + power * 0.012);
+  W.exchangesLaunched = (W.exchangesLaunched | 0) + 1;
+  W.dark = W.dark || {};
+  W.dark.winter = Math.min(1, Math.max(W.dark.winter || 0, 0.15 + power * 0.22));
   W._empUntil = Math.max(W._empUntil || 0, (W._tickIndex | 0) + Math.round(20 + power * 40));
+  // Visual signature (§323–327): white flash, expanding ring, mushroom, smoke.
+  spawnMushroom(W, cell, power);
+  spawnBlastFlash(W, power);
+  spawnShockwave(W, cell, power);
+  flashAt(W, cell, 1.6 + power * 0.5);
+  mark(W, cell, 1.45);
+  for (let k = 0; k < 4; k++) mark(W, NBR[cell * 4 + k], 0.85);
+  W._lastDetCell = cell | 0;
+  W._lastDetDist = r;
   noteCasualty(W, 'blast', Math.floor(300 + power * 2000));
   noteCasualty(W, 'fallout', Math.floor(200 + power * 1000));
+  darkAudioCue('detonate', {
+    cell,
+    peak: 0.7 + power * 0.4,
+    delayMs: 120 + Math.round(power * 80),
+  });
+  // Mark so darkAudioFromWorld doesn't double the boom.
+  W._darkAudioDetSkip = true;
+  W._darkAudioDetSeen = W.detonated | 0;
+  darkAudioCue('siren', { cell, peak: 0.45 });
+  queueDarkMoment(W, 'Detonation',
+    `${(power * 100).toFixed(0)}-scale · the light arrives first`,
+    'nuclear');
+  // Stop following once it lands.
+  if (W.dark) W.dark.followFlight = -1;
   if (log) log(W.year, 'war', cell, power, `Warhead detonates · ${(power * 100).toFixed(0)}-scale`);
   return { ok: true };
+}
+
+function killFlight(W, chase, c, log, ix) {
+  chase.dead = true;
+  W.intercepted = (W.intercepted | 0) + 1;
+  W.defenceStats.intercepts = (W.defenceStats.intercepts | 0) + 1;
+  flashAt(W, c, 1.35);
+  mark(W, c, 1.35);
+  for (let k = 0; k < 4; k++) mark(W, NBR[c * 4 + k], 0.65);
+  spawnInterceptBurst(W, c, 0.7 + (chase.yield || 0.3) * 0.4);
+  darkAudioCue('interceptSnap', { cell: c, peak: 0.7 });
+  queueDarkMoment(W, 'Intercept',
+    `${chase.label || 'missile'} dies short of target`,
+    'defence');
+  // Intercept debris still falls contaminated (§112).
+  irradiate(W, c, 0.12 + (chase.yield || 0) * 0.05, 0);
+  // Counter-battery: chance to wreck the silo (§109).
+  const rng = rngOf(W, 'rngGod');
+  if (chase.from >= 0 && rng() < COUNTER_BATTERY_P && W.build) {
+    W.build[chase.from] = Math.max(0, (W.build[chase.from] || 0) - 0.45);
+    if (W.radar) W.radar[chase.from] = 0;
+    if (log) {
+      log(W.year, 'war', chase.from, 0.4, 'Counter-battery wrecks the silo');
+    }
+  }
+  if (log) {
+    log(W.year, 'war', c, 0.3,
+      `Interceptor takes down ${chase.label || 'missile'} short of target`);
+    // Cost asymmetry: stopping costs more than launching (§117).
+    log(W.year, 'war', c, 0.15,
+      `Defence spent ~${IX_COST_RATIO.toFixed(1)}× the missile cost to stop it`);
+  }
+  void ix;
 }
 
 function advanceInterceptors(W, log) {
@@ -540,30 +868,44 @@ function advanceInterceptors(W, log) {
   if (!W.interceptors.length) return;
   const aliveIx = [];
   const deadFlights = new Set();
+  // Fratricide: two interceptors same cell same tick both die (§113).
+  const cellHits = new Map();
+  const arriving = [];
+
   for (const ix of W.interceptors) {
     if (ix.dead) continue;
     ix.at += ix.speed;
     const idx = Math.min(ix.path.length - 1, Math.floor(ix.at));
     const c = ix.path[idx];
-    mark(W, c, 0.7);
+    mark(W, c, ix.kind === 'drone-ix' ? 0.45 : 0.7);
     if (idx >= ix.path.length - 1) {
-      const chase = ix.chase;
-      if (chase && !chase.dead && W.flight.includes(chase)) {
-        chase.dead = true;
-        deadFlights.add(chase);
-        W.intercepted = (W.intercepted | 0) + 1;
-        flashAt(W, c, 1.1);
-        mark(W, c, 1.25);
-        for (let k = 0; k < 4; k++) mark(W, NBR[c * 4 + k], 0.5);
-        if (log) {
-          log(W.year, 'war', c, 0.3,
-            `Interceptor takes down ${chase.label || 'missile'} short of target`);
-        }
-      }
+      arriving.push({ ix, c });
+      const n = (cellHits.get(c) || 0) + 1;
+      cellHits.set(c, n);
       continue;
     }
     aliveIx.push(ix);
   }
+
+  for (const { ix, c } of arriving) {
+    if ((cellHits.get(c) || 0) >= 2) {
+      ix.dead = true;
+      flashAt(W, c, 0.6);
+      mark(W, c, 0.8);
+      if (log) log(W.year, 'war', c, 0.2, 'Interceptor fratricide');
+      continue;
+    }
+    const chase = ix.chase;
+    if (ix._outrun) {
+      // §118: target outran the interceptor.
+      continue;
+    }
+    if (chase && !chase.dead && W.flight.includes(chase)) {
+      killFlight(W, chase, c, log, ix);
+      deadFlights.add(chase);
+    }
+  }
+
   W.interceptors = aliveIx;
   if (deadFlights.size) {
     W.flight = W.flight.filter((f) => !deadFlights.has(f) && !f.dead);
@@ -575,7 +917,7 @@ function advanceInterceptors(W, log) {
  *
  * Interception rolls spawn interceptor objects (§101–104); they kill when they
  * reach the missile cell. Magazines are per-battery; global `_defFatigue` remains
- * as a decaying fallback for pinned / legacy paths.
+ * as a decaying fallback for pinned / legacy paths. Layered odds by phase (§105).
  */
 export function ordnanceTick(W, log = null) {
   ensure(W);
@@ -592,6 +934,9 @@ export function ordnanceTick(W, log = null) {
     W._tracerCells = next;
   }
 
+  // Radar rebuild is sparse — every 8 ticks is enough (§107).
+  if (((W._tickIndex | 0) % 8) === 0) updateRadar(W);
+
   // Interceptor stocks recover between waves; per-battery fatigue decays.
   if (W._defFatigue > 0.001) W._defFatigue *= 0.965;
   else if (W._defFatigue) W._defFatigue = 0;
@@ -601,23 +946,37 @@ export function ordnanceTick(W, log = null) {
     else W._battFatigue.set(cell, n);
   }
   for (const [cell, stock] of W.batteries) {
-    if (stock < MAG_DEFAULT) {
-      W.batteries.set(cell, Math.min(MAG_DEFAULT, stock + MAG_RELOAD));
+    const cap = magCeiling(W, cell);
+    if (stock < cap) {
+      W.batteries.set(cell, Math.min(cap, stock + MAG_RELOAD));
     }
   }
 
   advanceInterceptors(W, log);
 
   const flight = W.flight;
-  if (!flight.length && !W.interceptors.length) { W.inFlight = 0; return; }
+  if (!flight.length && !W.interceptors.length) {
+    W.inFlight = 0;
+    updateDefenceReadout(W);
+    return;
+  }
   const rng = rngOf(W, 'rngGod');
   const alive = [];
+  let leakedThisWave = 0;
   for (const f of flight) {
     if (f.dead) continue;
     f.at += f.speed;
     const t = flightProgress(f);
-    f.alt = flightAltitude(f, t);
+    f.alt = flightAltitude(f, t, W);
     f.phase = flightPhase(f, t);
+    // Boost plume fades at the silo (§83, 323); midcourse goes cold (§84).
+    // markTrace bright at silo — render also boosts cell colour for f.plume.
+    if (f.phase === 'boost' && f.plume > 0.02) {
+      markTrace(W, f.from, 0.5 + f.plume * 0.55);
+      f.plume *= 0.82;
+    } else if (f.phase !== 'boost') {
+      f.plume = 0;
+    }
 
     // MIRV separation at apex (§86).
     if (f.mirvSeparate && f.mirv > 0 && !f._split && t >= 0.48) {
@@ -635,6 +994,7 @@ export function ordnanceTick(W, log = null) {
           at: 0,
           speed: f.speed * 1.05,
           stealth: f.stealth,
+          rcs: f.rcs,
           payload: f.payload,
           yield: f.yield * 0.7,
           mirv: 0,
@@ -645,7 +1005,13 @@ export function ordnanceTick(W, log = null) {
           ownerPolity: f.ownerPolity,
           targetPolity: polityAt(W, aim),
           phase: 'midcourse',
+          plume: 0,
           alt: f.alt,
+          decoy: false,
+          depressed: f.depressed,
+          hypersonic: f.hypersonic,
+          fob: false,
+          chaff: false,
           _split: true,
         });
       }
@@ -654,25 +1020,46 @@ export function ordnanceTick(W, log = null) {
 
     const idx = Math.min(f.path.length - 1, Math.floor(f.at));
     const c = f.path[idx];
-    mark(W, c, 1.0);
+    // Reentry brightens the streak (§85); midcourse is dim.
+    const markAmt = f.phase === 'reentry' ? 1.35
+      : f.phase === 'boost' ? 1.1
+        : 0.7;
+    mark(W, c, markAmt);
     for (let b = 1; b <= 2; b++) {
       const j = idx - b;
-      if (j >= 0) mark(W, f.path[j], 0.45 / b);
+      if (j >= 0) mark(W, f.path[j], (f.phase === 'reentry' ? 0.65 : 0.4) / b);
     }
 
     const def = defenceAt(W, c);
-    if (def > 0.05) {
+    if (def > 0.05 && !f.decoy) {
       const batt = batteryNear(W, c);
       const localFat = clamp(battFatigue(W, batt), 0, 0.92);
       const globalFat = clamp(W._defFatigue || 0, 0, 0.92);
       const fatigue = Math.max(localFat, globalFat * 0.5);
       const stock = magStock(W, batt);
-      const pKill = def * 0.19 * (1 - f.stealth) * (1 - fatigue) * (stock >= 1 ? 1 : 0.15);
+      const phaseMul = PHASE_KILL[f.phase] || 1;
+      let pKill = def * 0.19 * phaseMul * (1 - f.stealth) * (1 - fatigue)
+        * (stock >= 1 ? 1 : 0.15);
+      if (f.hypersonic) pKill *= 0.45;
+      // Decoys nearby draw fire (§87).
+      const bait = preferDecoyChase(W, f);
+      if (bait !== f) pKill *= 1.25;
       if (rng() < pKill && takeMagazine(W, batt)) {
         addBattFatigue(W, batt, 0.28);
         W._defFatigue = Math.min(1.4, (W._defFatigue || 0) + 0.12);
+        const useDrone = f.phase === 'reentry' && rng() < 0.25;
+        spawnInterceptor(W, batt, c, bait, { drone: useDrone });
+        alive.push(f);
+        continue;
+      }
+    } else if (def > 0.05 && f.decoy) {
+      // Decoys are preferred targets — high intercept chance, no payload (§87).
+      const batt = batteryNear(W, c);
+      const stock = magStock(W, batt);
+      const pKill = def * 0.35 * (1 - f.stealth * 0.5) * (stock >= 1 ? 1 : 0.2);
+      if (rng() < pKill && takeMagazine(W, batt)) {
+        addBattFatigue(W, batt, 0.18);
         spawnInterceptor(W, batt, c, f);
-        // Stay in the air until the interceptor meets it — even if over the aim point.
         alive.push(f);
         continue;
       }
@@ -681,11 +1068,18 @@ export function ordnanceTick(W, log = null) {
     if (f.dead) continue;
 
     if (idx >= f.path.length - 1) {
+      if (f.decoy) {
+        // Decoys never damage anything (§87, §99).
+        continue;
+      }
       detonate(W, f.to, f.payload, f.yield, log);
+      W.defenceStats.leaks = (W.defenceStats.leaks | 0) + 1;
+      leakedThisWave++;
       /* Legacy MIRV fallback when mirvSeparate was off: land around aim point. */
       for (let m = 0; m < f.mirv; m++) {
         const n = NBR[f.to * 4 + (m & 3)];
         detonate(W, n, f.payload, f.yield * 0.7, null);
+        W.defenceStats.leaks = (W.defenceStats.leaks | 0) + 1;
       }
       continue;
     }
@@ -693,6 +1087,57 @@ export function ordnanceTick(W, log = null) {
   }
   W.flight = alive;
   W.inFlight = alive.length + W.interceptors.length;
+
+  // Leakage vs salvo size curve (§120).
+  if (leakedThisWave > 0 || ((W._tickIndex | 0) % 16) === 0) {
+    const salvo = (W.launched | 0);
+    const ixN = W.defenceStats.intercepts | 0;
+    const leakN = W.defenceStats.leaks | 0;
+    if (salvo > 0) {
+      const sLog = W.defenceStats.salvoLog;
+      sLog.push({
+        salvo, intercepts: ixN, leaks: leakN,
+        rate: leakN / Math.max(1, leakN + ixN),
+      });
+      if (sLog.length > 32) sLog.splice(0, sLog.length - 24);
+    }
+  }
+  updateDefenceReadout(W);
+}
+
+/** Per-polity defence readout for HUD / probe (§114). */
+function updateDefenceReadout(W) {
+  W.dark = W.dark || {};
+  const pols = W.polities || [];
+  if (!pols.length) { W.dark.defence = []; return; }
+  const out = [];
+  for (const p of pols) {
+    let mag = 0, cov = 0, n = 0;
+    const cap = p.capital | 0;
+    if (W.batteries) {
+      for (const [cell, stock] of W.batteries) {
+        if (W.owner && W.owner[cell] === p.id) mag += stock;
+      }
+    }
+    if (W.radar && W.owner) {
+      for (let c = 0; c < NC; c += 11) {
+        if (W.owner[c] !== p.id) continue;
+        cov += W.radar[c] || 0;
+        n++;
+      }
+    }
+    const shots = W.defenceStats?.shots || 0;
+    const leaks = W.defenceStats?.leaks || 0;
+    out.push({
+      id: p.id,
+      name: p.name,
+      magazines: +mag.toFixed(1),
+      coverage: n ? +(cov / n).toFixed(3) : 0,
+      capitalMag: cap >= 0 ? (W.batteries?.get(batteryNear(W, cap)) || 0) : 0,
+      expectedLeak: shots ? +(leaks / Math.max(1, shots)).toFixed(3) : 0,
+    });
+  }
+  W.dark.defence = out;
 }
 
 /** True while the grid is down from an EMP or a flare. */

@@ -260,4 +260,86 @@ export function playEvent(kind, strength = 0.5) {
   }
 }
 
+/** Dark-war cue bus — `darkAudioCue` looks for `window.__orreryAudio.cue`. */
+function playDarkCue(kind, cue) {
+  if (!started || !ctx || muted) return;
+  const s = Math.max(0.12, Math.min(1.4, cue?.peak || 0.5));
+  const delayMs = Math.max(0, cue?.delayMs || 0);
+  const pitch = cue?.pitch || 1;
+  const run = () => {
+    if (!started || !ctx) return;
+    const t0 = ctx.currentTime;
+    if (kind === 'launch') {
+      tone('sawtooth', 180 * pitch, 0.35, 0.09 * s, 'exp');
+      tone('sine', 90 * pitch, 0.55, 0.12 * s, 'exp');
+    } else if (kind === 'detonate') {
+      const sub = ctx.createOscillator();
+      const sg = ctx.createGain();
+      sub.type = 'sine';
+      sub.frequency.value = 36 * pitch;
+      sub.connect(sg); sg.connect(impactPanner || master);
+      sg.gain.value = 0.42 * s;
+      sg.gain.exponentialRampToValueAtTime(0.001, t0 + 2.2);
+      sub.start(t0); sub.stop(t0 + 2.3);
+      tone('sawtooth', 55 * pitch, 1.4, 0.28 * s, 'exp', impactPanner || master);
+      tone('triangle', 140 * pitch, 0.6, 0.1 * s);
+    } else if (kind === 'interceptSnap') {
+      tone('square', 880 * pitch, 0.08, 0.11 * s);
+      tone('sine', 1320 * pitch, 0.12, 0.06 * s);
+    } else if (kind === 'siren') {
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'triangle';
+      o.frequency.value = 420;
+      o.frequency.linearRampToValueAtTime(680, t0 + 0.7);
+      o.frequency.linearRampToValueAtTime(420, t0 + 1.4);
+      o.connect(g); g.connect(master);
+      g.gain.value = 0.001;
+      g.gain.linearRampToValueAtTime(0.07 * s, t0 + 0.08);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 1.6);
+      o.start(t0); o.stop(t0 + 1.65);
+    } else if (kind === 'empSilence') {
+      if (bedGain) bedGain.gain.setTargetAtTime(0.002, t0, 0.05);
+      if (humGain) humGain.gain.setTargetAtTime(0.004, t0, 0.05);
+      if (windGain) windGain.gain.setTargetAtTime(0.001, t0, 0.08);
+      tone('sine', 48, 0.9, 0.08 * s);
+    } else if (kind === 'geiger') {
+      // One soft tick — ambient loop throttles how often this fires.
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = 'square';
+      o.frequency.value = 1800;
+      o.connect(g); g.connect(master);
+      g.gain.value = 0.001;
+      g.gain.linearRampToValueAtTime(0.018 * s, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.025);
+      o.start(t0); o.stop(t0 + 0.03);
+    } else if (kind === 'droneBuzz') {
+      tone('sawtooth', 140 * pitch, 0.35, 0.03 * s);
+    } else if (kind === 'fireRoar') {
+      tone('sawtooth', 70, 0.5, 0.045 * s);
+    } else if (kind === 'sonar') {
+      tone('sine', 780, 0.12, 0.035 * s);
+    } else if (kind === 'artillery') {
+      tone('triangle', 60, 0.28, 0.05 * s);
+    } else if (kind === 'doomsdayTick') {
+      tone('sine', 880, 0.05, 0.025 * s);
+    } else if (kind === 'playerAct') {
+      tone('sine', 330, 0.2, 0.05 * s);
+    } else if (kind === 'crowd') {
+      tone('triangle', 200, 0.5, 0.04 * s);
+    }
+  };
+  if (delayMs < 20) run();
+  else setTimeout(run, delayMs);
+}
+
 export function audioLastKind() { return lastKind; }
+
+/** Install the bus darkAudio.js expects. Call after audioInit. */
+export function installDarkAudioBus() {
+  if (typeof window === 'undefined') return;
+  window.__orreryAudio = {
+    cue(kind, payload) { playDarkCue(kind, payload); },
+  };
+}

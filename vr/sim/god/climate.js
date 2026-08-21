@@ -2,6 +2,7 @@
  *  Backlog clim 30–43. */
 
 import { clamp } from '../../math.js';
+import { thermohalineLabel } from '../ocean.js';
 import { NC, DIR } from '../../sphere.js';
 import { W, chronLog } from '../../world.js';
 import { injectGas } from '../atmo.js';
@@ -157,7 +158,7 @@ export function tripOceanConveyor(fresh = true) {
     W.conveyor = Math.min(1, (W.conveyor ?? 0.4) + 0.35);
   }
   W._amoc = W.conveyor;
-  W.thermohaline = W.conveyor < 0.28 ? 'shutdown' : 'on';
+  W.thermohaline = thermohalineLabel(W.conveyor * 17);
   issueReceipt({
     tool: 'current',
     cell: 0,
@@ -296,6 +297,49 @@ export function settlingTime(tool) {
     tilt: '10⁴–10⁵ yr', shade: 'immediate · decades response',
   };
   return map[tool] || 'varies';
+}
+
+/**
+ * Brief atmosphere tint so planet-wide levers read from orbit.
+ * `warm` > 0 → orange aerosol wash; < 0 → brown haze (shade / sulphate).
+ */
+export function pulseClimLook(kind, strength = 1) {
+  const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : 0;
+  const warm = (kind === 'co2' || kind === 'solar' || kind === 'o2') ? 1
+    : (kind === 'shade' || kind === 'aerosol') ? -1 : 0;
+  W.climVisual = {
+    kind,
+    amt: clamp(0.28 + strength * 0.32, 0.2, 0.75),
+    until: now + 5500,
+    warm,
+  };
+}
+
+/** Immediate temperature step so greenhouse / solar levers aren't "receipt only". */
+export function applyTempBump(dT = 0.04) {
+  if (!dT) return;
+  for (let c = 0; c < NC; c++) {
+    W.temp[c] = clamp(W.temp[c] + dT, 0, 1.6);
+  }
+}
+
+/**
+ * Player CO₂ inject that survives the Holocene soft thermostat.
+ * Returns { ppm, dose, holdYr }.
+ */
+export function injectPlayerCO2(dose) {
+  const earthModern = !!(W.rule?.earthLike && !W.rule?.deepTime);
+  /* Modern Earth: ~+1500 ppm per click — big enough for log-greenhouse + a
+     visible warm step, small enough that three clicks aren't Venus. Deep-time /
+     exotic worlds keep the old chunky dose. */
+  const add = dose ?? (earthModern ? 0.0015 : 0.02);
+  injectGas(W, 'CO2', add);
+  // Hold off the Holocene ≤1200 ppm slam for ~50 kyr of sim age.
+  const holdYr = earthModern ? 5e4 : 2e5;
+  W._playerCO2HoldYr = Math.max(W._playerCO2HoldYr || 0, (W.ageYr || 0) + holdYr);
+  applyTempBump(earthModern ? 0.045 : 0.06);
+  pulseClimLook('co2', earthModern ? 0.9 : 1.1);
+  return { ppm: W.gases.CO2 * 1e6, dose: add, holdYr };
 }
 
 export { injectGas };

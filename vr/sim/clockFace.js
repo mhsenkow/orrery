@@ -119,11 +119,23 @@ export function applySeasonPolicy(W, rule) {
     W.season = W.seasonHold;
     return false;
   }
-  if (isPinnedEarth(rule)) {
-    W.season = (W.season || 0) + (W.dtYr || 10) * (Math.PI * 2) / 365.25;
+  /* One apparent year in ~36 ticks, for any world running a fine enough clock.
+   *
+   * Only the pinned Earth used to get this; everything else advanced the season
+   * by `0.02 · dtYr/10⁴` — 2·10⁻⁵ radians a tick at ten years a tick, which is
+   * one cycle per 314 000 ticks, or no season at all. That is the wrong default
+   * for a world whose clock *can* carry a season: a deep-time run stepped down
+   * to decades, or any world the player has put on the lived clock and then
+   * released. Worlds on the "years" face hold their season deliberately and
+   * return above — at 200 years a tick the equinox hold is the annual-mean
+   * insolation, which is the honest thing to show — so this only reaches worlds
+   * that have no hold and a tick short enough to mean something. */
+  const dt = W.dtYr || 200;
+  if (dt <= 1000) {
+    W.season = (W.season || 0) + Math.min(dt, 10) * (Math.PI * 2) / 365.25;
     return true;
   }
-  W.season = (W.season || 0) + 0.02 * Math.min(1, (W.dtYr || 200) / 1e4);
+  W.season = (W.season || 0) + 0.02 * Math.min(1, dt / 1e4);
   return true;
 }
 

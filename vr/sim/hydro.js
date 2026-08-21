@@ -1,7 +1,7 @@
 /** Hydrosphere: conserved water, sea level, rivers, lakes, ice. */
 
 import { clamp } from '../math.js';
-import { NC, NBR, NBR8, DIR, AREA, EAST, NORTH, cellSizeKm } from '../sphere.js';
+import { NC, NBR, NBR8, DIR, AREA, NBR_E, NBR_N, NBR_ICHORD, cellSizeKm } from '../sphere.js';
 import { totalPressure } from '../rulesets.js';
 import { rejectBrine, noteTropicalBasin, ensoEastness } from './ocean.js';
 import { neighbourMean } from './vecop.js';
@@ -13,6 +13,55 @@ import {
 } from './substrateField.js';
 import { coverTick, reservoirTick } from './cover.js';
 import { clathrateTick } from './columnSketch.js';
+
+/* The water cycle's rates, in one place.
+ *
+ * `SATREF` is the saturation vapour content of a cell at the reference
+ * temperature (0.5 on the model's normalised scale). Saturation used to be
+ * defined as the *current global vapour mass* times a temperature factor, which
+ * made relative humidity approximately one everywhere by construction — the one
+ * quantity that has to vary if a coast is going to be wet and an interior dry.
+ * Anchoring it to a constant is what lets RH carry information; `gases.H2O`
+ * becomes the diagnosed total, which is all the greenhouse ever wanted from it.
+ *
+ * The two evaporation rates are fractions of the humidity deficit closed per
+ * tick. They are large because a tick is ten years: the atmosphere's own
+ * turnover time is days, so on this clock the vapour field is nearly diagnostic
+ * and the interesting dynamics are in where the wind takes it before it rains.
+ * `RAIN_GAIN` converts condensed vapour into the 0–1 rain intensity the rest of
+ * the sim reads, set so that a wet tropical cell lands near 0.4 and the sums in
+ * `SOIL_PER_RAIN` / `DRY_LOSS` keep a rained-on continent wet. */
+const SATREF = 0.036;
+const EVAP_SEA = 0.62;
+const EVAP_LAND = 0.10;
+const SOIL_PER_VAPOUR = 7.5;   // soil moisture lost per unit vapour evaporated
+const LAKE_PER_VAPOUR = 2.2;   // lake level lost per unit vapour evaporated
+const SOIL_PER_RAIN = 0.075;   // soil moisture gained per unit rain intensity
+/* Drainage and sublimation from bare soil, scaled by the ruleset's `aridity`.
+   That knob used to multiply land *evaporation* — which made a world's dryness a
+   property of how readily its soil gave up water to the air rather than of how
+   fast it lost it altogether, and left Earth's land barely transpiring at
+   aridity 0.05. It reads better as the sink: 0.004 a tick on Earth, eight times
+   that on Ares, which is what the old moisture balance did in the end anyway. */
+const DRY_PER_ARIDITY = 0.08;
+const RAIN_GAIN = 120;
+/* Sea water freezes about 1.8 K below fresh — 0.011 on a scale of 160 K to the
+   unit — and `ICE_LATENT` is how much ice one unit of temperature deficit makes,
+   i.e. the latent heat of fusion in this model's units. */
+const SEA_FREEZE_DROP = 0.011;
+const ICE_LATENT = 3.2;
+
+/** Saturation vapour per cell, cached for the tick. Read by clouds and fog too. */
+export function ensureSat(W) {
+  if (!W.satV || W.satV.length !== NC) W.satV = new Float32Array(NC);
+  const sat = W.satV;
+  const temp = W.temp;
+  const scale = SATREF * clamp(W.rule?.satScale ?? 1, 0.2, 4);
+  for (let c = 0; c < NC; c++) {
+    sat[c] = scale * Math.exp((temp[c] - 0.5) * 1.8);
+  }
+  return sat;
+}
 
 /** Recompute global sea level from land ice + thermal expansion. */
 export function updateSeaLevel(W) {
@@ -70,17 +119,22 @@ export function cycleMode(W) {
   return 'none';
 }
 
+/** The neighbour the wind is blowing toward, or −1 in a calm.
+ *
+ *  `along` used to be the wind dotted with the *chord* to the neighbour, which
+ *  is a cell width long — about 0.025 at N=64 — and then compared against a
+ *  threshold of 0.02, so it took a wind of 0.8 to register a direction at all.
+ *  Real winds here run a tenth of that, so this returned −1 almost everywhere
+ *  and rain shadows never propagated past the ridge that cast them. Dividing by
+ *  the chord makes `along` the wind speed in that direction, which is what the
+ *  threshold was always meant to be comparing. */
 function downwindNeighbour(c, u, v) {
   let best = -1, bestA = 0.02;
+  const i0 = c * 4;
   for (let k = 0; k < 4; k++) {
-    const n = NBR[c * 4 + k];
-    const dx = DIR[n * 3] - DIR[c * 3];
-    const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
-    const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
-    const e = dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2];
-    const nn = dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2];
-    const along = u * e + v * nn;
-    if (along > bestA) { bestA = along; best = n; }
+    const i = i0 + k;
+    const along = (u * NBR_E[i] + v * NBR_N[i]) * NBR_ICHORD[i];
+    if (along > bestA) { bestA = along; best = NBR[i]; }
   }
   return best;
 }
@@ -242,6 +296,11 @@ export function computeRivers(W) {
   }
 
   flow.fill(0);
+  /* Where rivers meet the sea. Published because the ocean wants it — a river
+     mouth is the strongest dilution on any coastline, and the Baltic and the
+     Black Sea are shaped more by their rivers than by their rainfall. */
+  if (!W.riverMouth || W.riverMouth.length !== NC) W.riverMouth = new Float32Array(NC);
+  W.riverMouth.fill(0);
   if (!W._order || W._order.length !== NC) W._order = new Int32Array(NC);
   const order = W._order;
   if (terrainMoved || !W._orderReady) {
@@ -276,25 +335,45 @@ export function computeRivers(W) {
 
     let d1 = W.drainTo[c];
     if (d1 < 0) {
-      lake[c] = clamp((lake[c] || 0) * 0.92 + flow[c] * 0.05 + (W.precip[c] || 0) * 0.18, 0, 1);
-      if (lake[c] > 0.32) {
-        let rim = -1, rimH = 9;
-        for (let k = 0; k < 8; k++) {
-          const n = NBR8[c * 8 + k];
-          if (h[n] < rimH) { rimH = h[n]; rim = n; }
-        }
-        if (rim >= 0) {
-          W.drainTo[c] = rim;
-          d1 = rim;
-        }
-      } else continue;
-    } else {
+      /* A closed basin fills, and keeps what it holds.
+       *
+       * This used to fill to 0.32 and then write the rim into `drainTo`
+       * permanently — converting the depression into an ordinary through-flowing
+       * cell for the rest of the run, after which the lake decayed at 0.88 a
+       * tick and vanished. So no lake on any world ever got past a third full or
+       * lasted more than a few decades: no Baikal, no Great Lakes, no Caspian,
+       * and no salt pan either, because a basin that dries out is the same
+       * mechanism run the other way.
+       *
+       * A lake is a balance instead: inflow and rain in, evaporation out (which
+       * `hydroTick` now debits from the lake rather than conjuring the vapour),
+       * and once it reaches its sill it spills the excess over the rim while
+       * staying full. Wet basins hold water, arid ones evaporate down to a
+       * playa, and both are visible from orbit. */
+      const inflow = flow[c];
+      lake[c] = clamp((lake[c] || 0) + inflow * 0.06 + (W.precip[c] || 0) * 0.12, 0, 1);
+      if (lake[c] < 0.985) continue;   // still filling: nothing leaves
+      let rim = -1, rimH = 9;
+      for (let k = 0; k < 8; k++) {
+        const n = NBR8[c * 8 + k];
+        if (h[n] < rimH) { rimH = h[n]; rim = n; }
+      }
+      if (rim < 0) continue;
+      d1 = rim;                        // spills this tick; the basin stays a basin
+    } else if (lake[c] > 0) {
+      // Not a closed basin — any standing water here drains away.
       lake[c] *= 0.88;
     }
     const d2 = W.drainTo2[c];
     const share = d2 >= 0 ? 0.74 : 1;
-    if (d1 >= 0 && h[d1] >= seaLevel) flow[d1] += flow[c] * share;
-    if (d2 >= 0 && h[d2] >= seaLevel) flow[d2] += flow[c] * (1 - share);
+    if (d1 >= 0) {
+      if (h[d1] >= seaLevel) flow[d1] += flow[c] * share;
+      else W.riverMouth[d1] += flow[c] * share;
+    }
+    if (d2 >= 0) {
+      if (h[d2] >= seaLevel) flow[d2] += flow[c] * (1 - share);
+      else W.riverMouth[d2] += flow[c] * (1 - share);
+    }
   }
 }
 
@@ -329,17 +408,41 @@ export function iceTick(W) {
     const seasonalCold = Math.sin(season) * lat; // NH winter when season~3π/2
     if (isSea) {
       iceLand[c] = 0;
-      const seaFreeze = freeze - seasonalCold * 0.03 - coldness * 0.1;
-      if (temp[c] < seaFreeze && liquidWaterOk(W)) {
-        const grow = 0.06 + coldness * 0.04;
-        iceSea[c] = clamp(iceSea[c] + grow, 0, 1);
-        rejectBrine(W, c, grow);
-      } else {
-        const melt = earth && coldness > 0.4 ? 0.035 : 0.1;
-        iceSea[c] = Math.max(0, iceSea[c] - melt * (1 - coldness * 0.8));
-      }
-      if (earth && coldness > 0.78) {
-        iceSea[c] = Math.max(iceSea[c], 0.15 + coldness * 0.35);
+      /* Sea ice as latent heat, which is what sea ice is.
+       *
+       * Growth was a flat 0.06 a tick below a threshold and melt a flat 0.035
+       * above it, with nothing tying either to the heat actually moving — and,
+       * more seriously, nothing stopping the water from cooling straight past its
+       * own freezing point. The polar ocean sat at 264 K, twenty degrees below
+       * where sea water turns solid, which is both impossible and the reason the
+       * deep ocean had to be initialised colder still for the density to come out
+       * the right way round.
+       *
+       * Heat leaving water that has reached its freezing point goes into freezing
+       * it, not into a lower temperature; heat arriving at ice goes into melting
+       * it. So the deficit below the freezing point *is* the growth rate, the
+       * surplus above it *is* the melt rate, and open water holds at −1.8 °C
+       * however hard the air pulls. Thick ice insulates, so once the lid is
+       * established the skin above it is free to go as cold as the air — which is
+       * how a real ice cap gets to −40 °C sitting on water at −1.8 °C. */
+      const seaFreeze = freeze - SEA_FREEZE_DROP - seasonalCold * 0.02;
+      if (liquidWaterOk(W)) {
+        const deficit = seaFreeze - temp[c];
+        if (deficit > 0) {
+          const grow = Math.min(1 - iceSea[c], deficit * ICE_LATENT);
+          if (grow > 0) {
+            iceSea[c] = clamp(iceSea[c] + grow, 0, 1);
+            rejectBrine(W, c, grow);
+          }
+          // Open water and thin ice cannot go below freezing; a thick lid can.
+          if (iceSea[c] < 0.6) temp[c] = seaFreeze;
+        } else if (iceSea[c] > 0) {
+          iceSea[c] = Math.max(0, iceSea[c] - Math.min(iceSea[c], -deficit * ICE_LATENT));
+          // Melting holds the surface near freezing while any ice is left.
+          if (iceSea[c] > 0.05) temp[c] = seaFreeze - deficit * 0.25;
+        }
+      } else if (temp[c] < seaFreeze) {
+        iceSea[c] = clamp(iceSea[c] + 0.06, 0, 1);
       }
     } else {
       iceSea[c] = 0;
@@ -417,7 +520,9 @@ export function hydroTick(W) {
   noteCycleShift(W, mode);
   if (!W.vapour || W.vapour.length !== NC) W.vapour = new Float32Array(NC);
   if (!W._vapourInit) {
-    W.vapour.fill(gases.H2O || 0.01);
+    // Start damp rather than empty, or the first few hundred ticks are a drought.
+    ensureSat(W);
+    for (let c = 0; c < NC; c++) W.vapour[c] = W.satV[c] * (W.h[c] < W.seaLevel ? 0.9 : 0.5);
     W._vapourInit = true;
   }
   if (!W.cont || W.cont.length !== NC || W._hydroDirty || W._contTick == null) {
@@ -448,143 +553,151 @@ export function hydroTick(W) {
     return;
   }
 
-  // Evaporation from ocean / wet land into a per-cell vapour field
-  let evap = 0;
+  /* Evaporation, in vapour units, as a bulk flux toward saturation.
+   *
+   * A tick here is ten years and the atmosphere turns its water over in about
+   * nine days, so the vapour field is very nearly diagnostic: whatever the sea
+   * surface can supply, it supplies within one step. The old coefficients moved
+   * roughly 5·10⁻⁵ of vapour per tick against a saturation of 0.03 — a six
+   * hundred tick turnover, or six thousand years for one pass of the water
+   * cycle. The consequence was not subtle: the vapour field sat a factor of ten
+   * below saturation, rain never reached the 0.15 that land moisture needs to
+   * balance aridity, and every continent away from its own coastline was a
+   * desert while the ocean next door stood at saturation.
+   *
+   * Ocean and wet land now close most of the humidity deficit each tick, wind
+   * and temperature setting how much of it. Continental dryness comes from
+   * where it actually comes from — the distance vapour has to be carried inland
+   * against the rain falling out of it — and not from a coefficient. */
+  const satV = ensureSat(W);
+  let evapTotal = 0;
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
-    const wind = Math.hypot(windU?.[c] || 0, windV?.[c] || 0);
-    const sat = (gases.H2O || 0.01) * Math.exp((temp[c] - 0.5) * 1.8);
-    const deficit = Math.max(0, sat - vapourF[c]);
+    const wind = Math.sqrt((windU?.[c] || 0) ** 2 + (windV?.[c] || 0) ** 2);
+    const gust = 0.55 + 0.45 * Math.min(1, wind / 0.45);
+    const sat = satV[c];
+    const deficit = sat - vapourF[c];
     let e = 0;
-    if (isSea && canLiquid) {
-      e = Math.max(0, temp[c] - 0.2) * 0.002 * AREA[c] * (0.65 + 0.35 * wind) * (0.4 + deficit * 8);
-    } else if ((W.lake?.[c] || 0) > 0.25 && canLiquid) {
-      e = W.lake[c] * Math.max(0, temp[c] - 0.2) * 0.0022 * AREA[c]
-        * (0.65 + 0.35 * wind) * (0.4 + deficit * 8);
-    } else if (moist[c] > 0.05) {
-      e = moist[c] * Math.max(0, temp[c] - 0.25) * rule.aridity * 0.0015 * AREA[c]
-        * (0.7 + 0.3 * wind) * (0.4 + deficit * 8);
-      moist[c] = Math.max(0, moist[c] - e / (AREA[c] + 1e-6));
-    }
-    if (!isSea && (W.life[c] || 0) > 0.35) {
-      e += W.life[c] * 0.00035 * AREA[c] * moist[c];
-    }
-    vapourF[c] = Math.min(0.25, vapourF[c] + e * 0.15 / (AREA[c] + 1e-6));
-    evap += e;
-  }
-  void evap;
-  if (W._adv && windU && windV) advect(vapourF, W, 0.28);
-
-  leeF.fill(0);
-  upF.fill(0);
-  for (let c = 0; c < NC; c++) {
-    if (h[c] < seaLevel) continue;
-    const wu = W.windU?.[c] || 0;
-    const wv = W.windV?.[c] || 0;
-    let upslope = 0, lee = 0;
-    for (let k = 0; k < 4; k++) {
-      const n = NBR[c * 4 + k];
-      const dx = DIR[n * 3] - DIR[c * 3];
-      const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
-      const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
-      const e = dx * EAST[c * 3] + dy * EAST[c * 3 + 1] + dz * EAST[c * 3 + 2];
-      const nn = dx * NORTH[c * 3] + dy * NORTH[c * 3 + 1] + dz * NORTH[c * 3 + 2];
-      const along = wu * e + wv * nn;
-      const slope = h[c] - h[n];
-      if (along < 0 && slope > 0) upslope = Math.max(upslope, slope * (-along));
-      if (along < 0 && slope < 0) lee = Math.max(lee, -slope * (-along));
-    }
-    upF[c] = upslope;
-    leeF[c] = Math.max(leeF[c], lee);
-    if (lee > 0.008) {
-      let cell = c;
-      let L = lee;
-      for (let s = 0; s < 3; s++) {
-        const nb = downwindNeighbour(cell, wu, wv);
-        if (nb < 0 || h[nb] < seaLevel) break;
-        L *= 0.55;
-        leeF[nb] = Math.max(leeF[nb], L);
-        cell = nb;
+    if (deficit > 0) {
+      const warm = Math.max(0, temp[c] - 0.16);
+      if (isSea && canLiquid) {
+        e = deficit * EVAP_SEA * gust * Math.min(1, warm * 3.2) * (1 - (W.iceSea?.[c] || 0) * 0.92);
+      } else if ((W.lake?.[c] || 0) > 0.2 && canLiquid) {
+        e = deficit * EVAP_SEA * gust * Math.min(1, warm * 3.2) * W.lake[c];
+        // Debited from the lake, not conjured: an arid basin evaporates down to
+        // a playa, which is the whole difference between the Caspian and a pond.
+        W.lake[c] = Math.max(0, W.lake[c] - e * LAKE_PER_VAPOUR);
+      } else if (moist[c] > 0.03) {
+        // Soil and leaves: wet ground and standing vegetation both transpire.
+        const veg = 1 + (W.life[c] || 0) * 0.6;
+        e = deficit * EVAP_LAND * gust * Math.min(1, warm * 3.2) * moist[c] * veg;
+        moist[c] = Math.max(0, moist[c] - e * SOIL_PER_VAPOUR);
       }
     }
+    vapourF[c] = Math.min(sat * 1.35, vapourF[c] + e);
+    evapTotal += e * AREA[c];
   }
+  W.evapTotal = evapTotal;
+  if (W._adv && windU && windV) advect(vapourF, W, 0.28);
 
-  // Orographic + advected precip from the local column, not a global pool
+  /* Rain: what the column has to give up.
+   *
+   * Three ways for vapour to condense, in the order they matter. A column that
+   * has been carried somewhere colder than it was is already over saturation and
+   * dumps the excess. Air being lifted — into a convergence line, over a
+   * mountain, along a front — condenses in proportion to how wet it is and how
+   * hard it is being lifted. And a nearly saturated column drizzles on its own.
+   * `precip` is the normalised rain intensity the rest of the sim reads;
+   * `cond` is the vapour that actually left the air, so the two cannot disagree
+   * about how much water moved. */
   let precipTotal = 0;
   let vapourMass = 0;
+  let condTotal = 0;
   for (let c = 0; c < NC; c++) {
     const lat = DIR[c * 3 + 1];
     const localV = vapourF[c];
+    const sat = satV[c];
+    const rh = localV / Math.max(1e-6, sat);
     const maritime = Math.exp(-(W.cont[c] || 0) / 900);
-    let p = localV * (0.45 + 0.55 * maritime) * 0.08;
-    const wu = W.windU?.[c] || 0;
-    const wv = W.windV?.[c] || 0;
+    const conv = W.converg?.[c] || 0;
     const upslope = upF[c] || 0;
     const lee = leeF[c] || 0;
-    p += upslope * localV * 2.4;
-    p *= 1 / (1 + lee * 10);
-    const conv = W.converg?.[c] || 0;
-    p *= 1 + conv * 0.85;
-    p += (W.front?.[c] || 0) * localV * 0.32;
-    const spd = Math.hypot(wu, wv);
+    const wu = W.windU?.[c] || 0;
+    const wv = W.windV?.[c] || 0;
+    const spd = Math.sqrt(wu * wu + wv * wv);
+
+    // How hard this column is being lifted, from every source that lifts it.
+    let lift = Math.max(0, conv) * 1.7
+      + Math.min(0.55, upslope * 0.9)
+      + (W.front?.[c] || 0) * 0.18;
     const poleward = wv * lat;
-    const river = localV > 0.028 && poleward > 0.08 && spd > 0.32
-      ? clamp(localV * spd * 4.2, 0, 1) : 0;
+    const river = localV > sat * 0.7 && poleward > 0.05 && spd > 0.22
+      ? clamp((spd - 0.22) * 3.4 * rh, 0, 1) : 0;
     W.ariver[c] = river;
-    if (river > 0.12) p += localV * 0.16 * river;
+    lift += river * 0.5;
     if (W._monsoon > 0.45 && h[c] >= seaLevel && temp[c] > 0.40) {
       const summer = Math.sin(W.season || 0) * lat;
-      if (summer > 0.08) p += W._monsoon * localV * 0.22 * maritime;
+      if (summer > 0.08) lift += W._monsoon * 0.5 * maritime * summer;
     }
+    // Descending air on the dry side of a range gets nothing.
+    lift /= 1 + lee * 2.2;
+
+    let cond = 0;
+    if (localV > sat) cond += (localV - sat) * 0.55;
+    cond += localV * Math.min(0.75, lift) * Math.max(0, rh - 0.5) * 0.55;
+    cond += localV * Math.max(0, rh - 0.82) * 0.06;
     const enso = W._ensoIndex || 0;
     if (Math.abs(enso) > 0.15 && h[c] < seaLevel && temp[c] > 0.48) {
       const east = ensoEastness(W, c);
-      if (enso > 0) p *= east > 0.15 ? 1.22 : east < -0.15 ? 0.78 : 1;
-      else p *= east < -0.15 ? 1.12 : east > 0.15 ? 0.88 : 1;
+      if (enso > 0) cond *= east > 0.15 ? 1.22 : east < -0.15 ? 0.78 : 1;
+      else cond *= east < -0.15 ? 1.12 : east > 0.15 ? 0.88 : 1;
     }
     if (!canLiquid) {
       if (mode === 'frost') {
         const mat = cycleMaterial(W);
         if (mat) {
           const ph = phaseAt(mat, cellTK(W, c), surfacePbar(rule));
-          p *= ph === 'solid' || ph === 'liquid' ? 0.45 : 0.04;
-        } else p = 0;
+          cond *= ph === 'solid' || ph === 'liquid' ? 0.45 : 0.04;
+        } else cond = 0;
       } else {
-        p = 0;
+        cond = 0;
       }
     }
-    precip[c] = clamp(p, 0, 1);
+    cond = Math.min(cond, localV);
+    vapourF[c] = localV - cond;
+    precip[c] = clamp(cond * RAIN_GAIN, 0, 1);
+    condTotal += cond * AREA[c];
     precipTotal += precip[c] * AREA[c];
     vapourMass += vapourF[c] * AREA[c];
-    const sat = (gases.H2O || 0.01) * Math.exp((temp[c] - 0.5) * 1.8);
-    const rh = localV / Math.max(1e-5, sat);
-    const coast = Math.abs(W.coastDist?.[c] || 99) < 180;
-    const still = spd < 0.28;
-    W.fog[c] = (rh > 0.82 && temp[c] < 0.46 && still && (coast || h[c] >= seaLevel) && conv <= 0.05)
-      ? clamp((rh - 0.82) * 4.2 * (0.55 + (coast ? 0.45 : 0)), 0, 1) : 0;
-  }
 
-  // Rain removes local vapour (Rayleigh: windward slopes dry the parcel more)
-  for (let c = 0; c < NC; c++) {
-    vapourF[c] = Math.max(0, vapourF[c] - precip[c] * (0.08 + (upF[c] || 0) * 0.22));
+    const coast = Math.abs(W.coastDist?.[c] || 99) < 180;
+    const still = spd < 0.18;
+    W.fog[c] = (rh > 0.86 && temp[c] < 0.46 && still && (coast || h[c] >= seaLevel) && conv <= 0.05)
+      ? clamp((rh - 0.86) * 5.5 * (0.55 + (coast ? 0.45 : 0)), 0, 1) : 0;
   }
-  let vapour = vapourMass / NC;
-  const remove = Math.min(vapour, precipTotal * 0.08);
-  vapour = Math.max(0, vapour - remove);
-  if (rule.earthLike && !rule.deepTime) {
-    vapour = Math.min(0.025, vapour);
-  }
+  W.condTotal = condTotal;
+  W.precipMean = precipTotal / (4 * Math.PI);
+
+  /* `gases.H2O` is the diagnosed atmospheric total — what the greenhouse reads —
+     and no longer doubles as the saturation reference, which is why relative
+     humidity means something now. */
+  let vapour = vapourMass / (4 * Math.PI);
+  if (rule.earthLike && !rule.deepTime) vapour = Math.min(0.03, vapour);
   gases.H2O = vapour;
 
-  // Land moisture from precip; seas stay saturated
+  // Land moisture from rain; seas stay saturated.
+  const dryLoss = DRY_PER_ARIDITY * clamp(rule.aridity ?? 0.05, 0.01, 1.5);
   for (let c = 0; c < NC; c++) {
     if (h[c] < seaLevel) {
       _m[c] = canLiquid ? 1 : 0.05;
     } else {
       const dM = neighbourMean(moist, c);
-      _m[c] = clamp(moist[c] * 0.92 + precip[c] * 0.55 + (dM - moist[c]) * 0.2 - rule.aridity * 0.08, 0, 1);
+      _m[c] = clamp(
+        moist[c] * 0.975 + precip[c] * SOIL_PER_RAIN + (dM - moist[c]) * 0.2 - dryLoss,
+        0, 1
+      );
       const lee = leeF[c] || 0;
-      if (lee > 0.01) _m[c] *= 1 / (1 + lee * 6);
+      if (lee > 0.02) _m[c] *= 1 / (1 + lee * 1.5);
     }
   }
   moist.set(_m);
@@ -608,13 +721,30 @@ export function hydroTick(W) {
     }
     if (W._waterMass0 == null) W._waterMass0 = mass;
     const drift = mass - W._waterMass0;
-    if (Math.abs(drift) > 0.5) {
-      const h2oCap = (rule.earthLike && !rule.deepTime) ? 0.025 : 0.25;
-      gases.H2O = clamp(gases.H2O - drift * 0.002, 0, h2oCap);
-      mass = W._waterMass0 + drift * 0.85;
+    /* Pull the budget back through the vapour field, gently, and never through
+     * `gases.H2O`.
+     *
+     * This used to correct the inventory by subtracting `drift · 0.002` from
+     * `gases.H2O` directly. On a planet whose total water is some 7 900 units
+     * that is a correction of order one applied to a quantity of order 0.03: the
+     * moment the soil got wetter than the baseline — which is exactly what
+     * happened when the water cycle started working — the atmosphere's water
+     * vapour was zeroed outright, every eighth tick, along with the greenhouse
+     * that depends on it. The visible symptom was a planet cooling 0.2 in three
+     * hundred ticks with no ice to blame it on and no term in the budget out of
+     * place, because between hammer blows everything looked fine.
+     *
+     * `gases.H2O` is a diagnosis of the vapour field now, so writing to it could
+     * never have conserved anything anyway. Correcting the field itself does,
+     * and a bounded fraction per application cannot become a forcing. */
+    const rel = drift / (W._waterMass0 + 1e-6);
+    if (Math.abs(rel) > 0.004 && W.vapour) {
+      const k = clamp(-rel * 0.05, -0.02, 0.02);
+      const vap = W.vapour;
+      for (let c = 0; c < NC; c++) vap[c] = Math.max(0, vap[c] * (1 + k));
     }
     W.waterMass = mass;
-    W.waterDrift = Math.abs(mass - W._waterMass0) / (W._waterMass0 + 1e-6);
+    W.waterDrift = Math.abs(rel);
   }
 }
 
@@ -624,20 +754,48 @@ export function startTsunami(W, cell, power) {
   W.tsunamis.push({ origin: cell, r: 0, power, maxR: 8 + power * 12 });
 }
 
+/** Cells the sea can reach — cached, because a tsunami only ever touches these. */
+function shoreList(W) {
+  const sea = W.seaLevel;
+  if (W._shoreCells && Math.abs((W._shoreSea ?? 9) - sea) < 0.002) return W._shoreCells;
+  const list = [];
+  for (let c = 0; c < NC; c++) {
+    if (W.h[c] < sea + 0.05 && W.h[c] > sea - 0.15) list.push(c);
+  }
+  W._shoreCells = list;
+  W._shoreSea = sea;
+  return list;
+}
+
+/**
+ * Advance every wavefront.
+ *
+ * This used to sweep all 24 576 cells per wave per tick and take an `acos` of a
+ * dot product in each one, to find the handful of coastal cells the ring was
+ * crossing — some three million transcendental calls for a single tsunami's
+ * fifty-tick life. Comparing cosines instead of angles removes the `acos`
+ * entirely (cos is monotonic over [0, π], so a band in angle is a band in
+ * cosine), and only shore cells can be inundated, so only shore cells are
+ * examined. Same wave, roughly a hundredth of the work.
+ */
 export function tsunamiTick(W) {
   if (!W.tsunamis || !W.tsunamis.length) return;
   const next = [];
+  const shore = shoreList(W);
+  const sea = W.seaLevel;
   for (const t of W.tsunamis) {
     t.r += 1.2;
-    // mark coastal cells near wavefront
-    for (let c = 0; c < NC; c++) {
-      const d = Math.acos(clamp(
-        DIR[c * 3] * DIR[t.origin * 3] + DIR[c * 3 + 1] * DIR[t.origin * 3 + 1] + DIR[c * 3 + 2] * DIR[t.origin * 3 + 2],
-        -1, 1
-      ));
-      if (Math.abs(d - t.r * 0.04) < 0.03 && W.h[c] < W.seaLevel + 0.05 && W.h[c] > W.seaLevel - 0.15) {
+    const ring = t.r * 0.04;
+    if (ring < Math.PI) {
+      const cosLo = Math.cos(Math.min(Math.PI, ring + 0.03));
+      const cosHi = Math.cos(Math.max(0, ring - 0.03));
+      const ox = DIR[t.origin * 3], oy = DIR[t.origin * 3 + 1], oz = DIR[t.origin * 3 + 2];
+      for (let i = 0; i < shore.length; i++) {
+        const c = shore[i];
+        const dot = DIR[c * 3] * ox + DIR[c * 3 + 1] * oy + DIR[c * 3 + 2] * oz;
+        if (dot < cosLo || dot > cosHi) continue;
         W.moist[c] = 1;
-        if (W.h[c] >= W.seaLevel) W.h[c] = Math.max(W.seaLevel - 0.02, W.h[c] - t.power * 0.01);
+        if (W.h[c] >= sea) W.h[c] = Math.max(sea - 0.02, W.h[c] - t.power * 0.01);
       }
     }
     if (t.r < t.maxR) next.push(t);

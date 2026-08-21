@@ -1,6 +1,6 @@
 /** Shared tangent-frame operators. Currents backlog `vecop`. */
 
-import { NBR, NBR_E, NBR_N, AREA } from '../sphere.js';
+import { NBR, NBR_E, NBR_N, NBR_IWE, NBR_IWN, AREA } from '../sphere.js';
 
 /** Tangent neighbour. Reuses one slot — copy fields out, do not hold the object.
  *  Internal now: `NBR_E` / `NBR_N` / `NBR_CHORD` on `sphere.js` are precomputed,
@@ -15,19 +15,25 @@ function neighbourEN(c, k) {
   return _en;
 }
 
-/** Geographic gradient of a scalar → (east, north). Area-weighted. */
+/**
+ * Geographic gradient of a scalar → (east, north), per planet radius.
+ *
+ * Was area-weighted and divided by the summed area, which returns the gradient
+ * multiplied by the square of the cell width — a number that shrinks as 1/N² as
+ * resolution rises, and is not a gradient in any unit. Least squares through the
+ * four neighbours is the same arithmetic and is exact for a linear field; the
+ * weights are static geometry, precomputed on `sphere.js`. Same fix as the
+ * operators in `swe.js`, which is where this one's twin used to live.
+ */
 export function gradEN(field, c) {
-  let de = 0, dn = 0, w = 0;
+  let de = 0, dn = 0;
   for (let k = 0; k < 4; k++) {
     const { nb, e, n } = neighbourEN(c, k);
-    const a = AREA[nb] || 1;
     const d = field[nb] - field[c];
-    de += d * e * a;
-    dn += d * n * a;
-    w += a;
+    de += d * e;
+    dn += d * n;
   }
-  const s = w > 0 ? 1 / w : 0.25;
-  return [de * s, dn * s];
+  return [de * NBR_IWE[c], dn * NBR_IWN[c]];
 }
 
 /** Area-weighted neighbour mean — stops cube-sphere diffusion pumping toward face centres. */

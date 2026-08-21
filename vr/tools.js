@@ -28,6 +28,7 @@ import {
 import {
   setOrbit, injectAerosol, paintAlbedo, setSolarShade, seedClouds,
   tripOceanConveyor, setMagnetosphere, setMoon, setThermostat, localWeather, settlingTime,
+  pulseClimLook, applyTempBump, injectPlayerCO2,
 } from './sim/god/climate.js';
 import {
   strikeImpact, placeLIP, triggerGRB, stellarFlare, releaseClathrate,
@@ -36,8 +37,10 @@ import {
 import { seedStorm } from './sim/storms.js';
 import { igniteFire, fireDanger, flammableAt } from './sim/fire.js';
 import { pourToxin, irradiate, seedDisease, openWar, hazardAt } from './sim/anthro.js';
-import { launch, detonate, defenceAt, richestTarget, pickLaunchSite, markTrace, PROFILES } from './sim/ordnance.js';
-import { polityAt } from './sim/polity.js';
+import { launch, detonate, defenceAt, richestTarget, pickLaunchSite, markTrace, PROFILES, defendCell } from './sim/ordnance.js';
+import { polityAt, setPlayerPolity, ensurePlayerPolity } from './sim/polity.js';
+import { noteAttribution } from './sim/dark.js';
+import { applyMedicalCountermeasures, noteDualUseResearch } from './sim/darkCbr.js';
 import { strike as flashCell } from './sim/lightning.js';
 import { paintEdifice } from './sim/planetTick.js';
 import { maybeReseedJets } from './sim/jets.js';
@@ -82,14 +85,17 @@ export const TOOLS = [
   { id: 'nuke', name: 'Warhead', key: '', cost: 90, group: 'evil', irreversible: true },
   { id: 'icbm', name: 'ICBM', key: '', cost: 110, group: 'evil', irreversible: true },
   { id: 'slbm', name: 'SLBM (sea)', key: '', cost: 120, group: 'evil', irreversible: true },
-  { id: 'citybuster', name: 'City-buster', key: '', cost: 160, group: 'evil', irreversible: true },
+  { id: 'citybuster', name: 'City-buster', key: '', cost: 220, group: 'evil', irreversible: true },
   { id: 'dirty', name: 'Dirty bomb', key: '', cost: 48, group: 'evil', irreversible: true },
   { id: 'emp', name: 'EMP burst', key: '', cost: 85, group: 'evil', irreversible: true },
   { id: 'bio', name: 'Bio warhead', key: '', cost: 95, group: 'evil', irreversible: true },
+  { id: 'defend', name: 'Fortify battery', key: '', cost: 35, group: 'evil' },
   { id: 'airstrike', name: 'Drone strike', key: '', cost: 18, group: 'evil' },
   { id: 'swarm', name: 'Drone swarm', key: '', cost: 40, group: 'evil' },
   { id: 'pandemic', name: 'Engineered plague', key: '', cost: 70, group: 'evil', irreversible: true },
   { id: 'war', name: 'Open a war', key: '', cost: 55, group: 'evil' },
+  { id: 'claim', name: 'Claim polity', key: '', cost: 0, group: 'evil' },
+  { id: 'medical', name: 'Medical countermeasures', key: '', cost: 28, group: 'evil' },
   { id: 'flare', name: 'Solar flare', key: '', cost: 45, group: 'evil' },
   { id: 'ice', name: 'Ice meteor', key: 'i', cost: 30, group: 'dis', drag: true },
   { id: 'tilt', name: 'Tilt axis', key: 'y', cost: 35, group: 'clim' },
@@ -108,6 +114,19 @@ export function setTool(id) {
 
 export { BRUSH, brushKm, brushForTier, previewBrush, undoStroke, redoStroke, canUndo, canRedo, paintBrush, setPinpoint, setBrushInvert };
 export { pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild };
+
+/** Flash + gold stroke so a cell hit reads from orbit for a few frames. */
+function markCellHit(cell, power = 1) {
+  if (cell < 0) return;
+  flashCell(W, cell, power);
+  if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
+  W.strokeMark[cell] = 1;
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[cell * 4 + k];
+    if (n >= 0) W.strokeMark[n] = Math.max(W.strokeMark[n] || 0, 0.55 * power);
+  }
+  W._strokeTick = W._tickIndex || 0;
+}
 
 /** Ray–sphere hit → cell index, or -1. */
 export function pickCell(origin, direction, planetPos, planetScale, planetQ) {
@@ -288,27 +307,37 @@ export function useToolAt(cell, extra = {}) {
     case 'solar': {
       const d = extra.delta ?? 0.05;
       setOrbit({ solar: clamp((W._baseSolar || W.solar) + d, 0.3, 2.0) });
+      applyTempBump(d * 0.5);
+      pulseClimLook('solar', 0.85);
       result.settling = settlingTime('solar');
       result.orbitFlash = true;
       result.said = `Whole planet: star is now ${W.solar.toFixed(2)}×`;
       break;
     }
-    case 'co2':
-      injectGas(W, 'CO2', 0.02);
+    case 'co2': {
+      const inj = injectPlayerCO2(extra.dose);
       issueReceipt({
         tool: 'co2', cell, intent: 'CO₂ injection',
-        expected: causalChain(['CO₂ up', 'ocean acidifies', 'reef stress', 'warming']),
-        delayYr: 500, delayLabel: 'Weathering thermostat answering your CO₂',
+        expected: causalChain([
+          `+${(inj.dose * 1e6 | 0).toLocaleString()} ppm`,
+          'ocean acidifies', 'reef stress', 'warming',
+        ]),
+        delayYr: inj.holdYr, delayLabel: 'Weathering thermostat answering your CO₂',
       });
       chronLog(W.year, 'tool', cell, W.gases.CO2, 'CO₂ injection');
       result.settling = settlingTime('co2');
-      result.said = `Whole planet: CO₂ now ${(W.gases.CO2 * 1e6 | 0).toLocaleString()} ppm`;
+      result.orbitFlash = true;
+      result.said = `Whole planet: CO₂ now ${(inj.ppm | 0).toLocaleString()} ppm — air warming`;
       W.argueResponses.push({ t: W.ageYr, text: 'Silicate weathering will oppose this CO₂ — on a 10⁵ yr clock.', kind: 'argue' });
       break;
+    }
     case 'o2':
       injectGas(W, 'O2', 0.02);
+      W.ozone = Math.min(1, (W.ozone || 0.5) + 0.06);
+      pulseClimLook('o2', 0.7);
       issueReceipt({ tool: 'o2', cell, intent: 'O₂ injection', expected: `O₂ → ${(W.gases.O2 * 100).toFixed(1)}%` });
       chronLog(W.year, 'tool', cell, W.gases.O2, 'O₂ injection');
+      result.orbitFlash = true;
       result.said = `Whole planet: O₂ now ${(W.gases.O2 * 100).toFixed(1)}%`;
       break;
 
@@ -369,26 +398,35 @@ export function useToolAt(cell, extra = {}) {
       break;
     case 'albedo':
       paintAlbedo(cell, extra.albedo ?? 0.7);
+      markCellHit(cell, 0.7);
       result.said = 'Surface whitened here';
       break;
     case 'shade':
       setSolarShade(extra.fraction ?? Math.min(0.12, (W.solarShade || 0) + 0.02));
+      applyTempBump(-0.025);
+      pulseClimLook('shade', 1);
       result.orbitFlash = true;
       result.said = `Whole planet: ${((W.solarShade || 0) * 100).toFixed(0)}% of sunlight blocked`;
       break;
     case 'aerosol':
-      injectAerosol(0.04, extra.hemi ?? 0);
-      result.said = 'Whole planet: sulphate haze injected';
+      injectAerosol(0.07, extra.hemi ?? 0);
+      pulseClimLook('aerosol', 1.15);
+      applyTempBump(-0.02);
+      result.orbitFlash = true;
+      result.said = 'Whole planet: sulphate haze injected — sky yellows, cools';
       break;
     case 'weather': {
       // Prefer seeding a named storm when conditions allow; else local rain
       const seeded = seedStorm(W, cell, {});
       if (seeded?.ok) {
         result = { ...result, ...seeded, note: seeded.note };
+        result.said = seeded.note || 'Storm seeded here';
       } else {
         localWeather(cell, extra.kind || 'rain');
+        result.said = seeded?.note ? `Rain · ${seeded.note}` : 'Rain clouds stacking here';
         if (seeded?.note) result.note = `Rain · ${seeded.note}`;
       }
+      markCellHit(cell, 0.85);
       break;
     }
 
@@ -399,6 +437,7 @@ export function useToolAt(cell, extra = {}) {
         density: extra.density ?? 1,
         angle: extra.angle ?? 45,
       }), said: 'Impact crater here' };
+      markCellHit(cell, 1.25);
       break;
     case 'ice':
       beginStroke(['temp', 'ice', 'iceLand']);
@@ -411,7 +450,7 @@ export function useToolAt(cell, extra = {}) {
          rock impact — the difference is what it leaves, which is water. */
       markTrace(W, cell, 1.2);
       for (let k = 0; k < 4; k++) markTrace(W, NBR[cell * 4 + k], 0.55);
-      flashCell(W, cell, 1.1);
+      markCellHit(cell, 1.1);
       W.gases.H2O = Math.min(0.2, W.gases.H2O + 0.01);
       issueReceipt({ tool: 'ice', cell, intent: 'Ice meteor', expected: 'Local freeze · H₂O up' });
       chronLog(W.year, 'tool', cell, 1, 'Ice meteor');
@@ -423,27 +462,42 @@ export function useToolAt(cell, extra = {}) {
       if (W.lava) W.lava[cell] = Math.min(1, (W.lava[cell] || 0) + 0.85);
       paintEdifice(W, cell, 1.1, 0.45, false);
       W.gases.sulphate = Math.min(0.3, W.gases.sulphate + 0.04);
+      markCellHit(cell, 1.15);
       issueReceipt({ tool: 'volcano', cell, intent: 'Forced eruption', expected: 'Ash + sulphate aerosol' });
       chronLog(W.year, 'eruption', cell, 1.5, 'Forced eruption');
       result.said = 'Eruption — lava shield and ash here';
       break;
     case 'lip':
       placeLIP(cell, extra.durationMyr ?? 1);
+      W.ash[cell] = Math.min(1, (W.ash[cell] || 0) + 0.9);
+      if (W.lava) W.lava[cell] = Math.min(1, (W.lava[cell] || 0) + 0.7);
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[cell * 4 + k];
+        W.ash[n] = Math.min(1, (W.ash[n] || 0) + 0.45);
+      }
+      markCellHit(cell, 1.3);
+      result.said = 'LIP ignited — province will outgas for Myr';
       break;
     case 'quake':
       W.strain[cell] = 0;
       W.h[cell] -= 0.12;
       startTsunami(W, cell, 0.7);
-      if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
-      W.strokeMark[cell] = 1;
-      W._strokeTick = W._tickIndex || 0;
+      markCellHit(cell, 1);
       issueReceipt({ tool: 'quake', cell, intent: 'Quake', expected: 'Tsunami launched' });
       chronLog(W.year, 'quake', cell, 1, 'Triggered quake');
       result.said = 'Quake — coast dropped, tsunami running';
       break;
-    case 'plague':
+    case 'plague': {
       releasePathogen(extra);
+      seedDisease(W, cell, {
+        virulence: extra.virulence ?? 0.6,
+        transmit: extra.transmit ?? 0.5,
+        name: 'pathogen',
+      });
+      markCellHit(cell, 0.9);
+      result.said = 'Pathogen released — spreads along hosts';
       break;
+    }
     case 'ignite': {
       // Cheapest disaster in the table on purpose: fire is the one the player
       // should try twice — once in the wet season and once in the dry.
@@ -455,6 +509,7 @@ export function useToolAt(cell, extra = {}) {
           : (W.h[cell] < W.seaLevel ? 'Water does not burn'
             : W.life[cell] < 0.1 ? 'Nothing here to burn'
               : 'Too wet or too frozen to catch');
+        markCellHit(cell, 0.4);
       } else {
         issueReceipt({
           tool: 'ignite', cell, intent: 'Ignite',
@@ -462,6 +517,7 @@ export function useToolAt(cell, extra = {}) {
         });
         chronLog(W.year, 'fire', cell, danger, `Fire set (danger ${danger.toFixed(2)})`);
         result.said = `Alight — ${lit} cell${lit > 1 ? 's' : ''} burning, danger ${danger.toFixed(2)}`;
+        markCellHit(cell, 1.05);
       }
       result.fireLit = lit;
       result.fireDanger = danger;
@@ -470,6 +526,7 @@ export function useToolAt(cell, extra = {}) {
     case 'tilt': {
       const next = clamp(W.obliquity + (extra.delta ?? 0.1), 0, 0.8);
       setOrbit({ obliquity: next });
+      pulseClimLook('tilt', 0.5);
       result.obliquityDeg = (next * 180 / Math.PI);
       result.settling = settlingTime('tilt');
       result.orbitFlash = true;
@@ -478,6 +535,7 @@ export function useToolAt(cell, extra = {}) {
         expected: `Obliquity → ${result.obliquityDeg.toFixed(1)}° · seasons strengthen`,
       });
       chronLog(W.year, 'tool', cell, next, `Tilt → ${result.obliquityDeg.toFixed(1)}°`);
+      result.said = `Axis tilted to ${result.obliquityDeg.toFixed(1)}° — seasons shift`;
       break;
     }
     case 'spin': {
@@ -487,20 +545,26 @@ export function useToolAt(cell, extra = {}) {
       if (W.rule) W.rule.rotationPeriod = next;
       maybeReseedJets(W);
       const label = (next < 0 ? '−' : '') + `${Math.abs(next).toFixed(2)}×`;
+      pulseClimLook('spin', 0.45);
       issueReceipt({ tool: 'spin', cell, intent: 'Day length', expected: `Day → ${label}` });
       chronLog(W.year, 'tool', cell, next, `Day → ${label}`);
       result.day = next;
       result.orbitFlash = true;
+      result.said = `Day length → ${label}`;
       break;
     }
     case 'moon': {
       const has = W.moon && W.moon.mass > 0.1;
       const r = has ? setMoon(0.02, 2.2) : setMoon(1, 1);
+      pulseClimLook('moon', 0.6);
       result = { ...result, ...r, orbitFlash: true, note: has ? 'Moon stripped — obliquity will wander' : 'Moon set — axis stabilised' };
       break;
     }
     case 'buster':
       result = { ...result, ...theiaImpact(cell, true) };
+      markCellHit(cell, 1.4);
+      pulseClimLook('co2', 1.2);
+      result.said = result.said || 'Theia-class impact — magma ocean';
       break;
 
     /* ---- Evil desk ---- */
@@ -510,6 +574,7 @@ export function useToolAt(cell, extra = {}) {
         tool: 'poison', cell, intent: 'Toxin spill',
         expected: 'Life declines for centuries · creeps downhill and downstream · soil holds it',
       });
+      noteAttribution(W, 'poison', cell);
       chronLog(W.year, 'war', cell, 0.5, 'Toxins released');
       result.said = 'Poured. Nothing looks wrong yet — that is the point';
       break;
@@ -520,6 +585,7 @@ export function useToolAt(cell, extra = {}) {
         tool: 'waste', cell, intent: 'Nuclear waste',
         expected: 'Small area, lethal now, uninhabitable for thousands of ticks',
       });
+      noteAttribution(W, 'waste', cell);
       chronLog(W.year, 'war', cell, 0.6, 'Waste dumped');
       result.said = 'Buried here. It will outlast whoever buried it';
       break;
@@ -531,6 +597,7 @@ export function useToolAt(cell, extra = {}) {
         tool: 'nuke', cell, intent: 'Warhead', irreversible: true,
         expected: 'Flash · firestorm · crater · fallout · grid down across the hemisphere',
       });
+      noteAttribution(W, 'nuke', cell);
       result.said = 'Detonated. The lights are going out';
       break;
     }
@@ -571,6 +638,11 @@ export function useToolAt(cell, extra = {}) {
         const aim = i === 0 ? cell : NBR[cell * 4 + ((i - 1) & 3)];
         shots.push(launch(W, from, aim, kind, {
           mirv: tool.id === 'icbm' || tool.id === 'citybuster' ? (extra.mirv ?? 2) : 0,
+          decoys: extra.decoys | 0,
+          depressed: !!extra.depressed,
+          fob: !!extra.fob,
+          hypersonic: !!extra.hypersonic || kind === 'hypersonic',
+          chaff: !!extra.chaff,
           ownerPolity: attacker,
           targetPolity: tgtPol,
         }));
@@ -586,12 +658,25 @@ export function useToolAt(cell, extra = {}) {
         tool: tool.id, cell, intent: PROFILES[kind].label,
         expected: `${ok.length} inbound · ${eta} ticks out · target defence ${(def * 100).toFixed(0)}%`,
       });
+      noteAttribution(W, tool.id, cell);
       chronLog(W.year, 'war', from, 0.4,
         `${ok.length} × ${PROFILES[kind].label} launched`);
       result.inFlight = ok.length;
       result.etaTicks = eta;
       result.said = `Away — ${ok.length} inbound, ${eta} ticks out.`
         + (def > 0.05 ? ` They will try to stop it (${(def * 100).toFixed(0)}%).` : ' Nothing is defending it.');
+      break;
+    }
+    case 'defend': {
+      const r = defendCell(W, cell, extra.amount ?? 1);
+      if (!r.ok) { result.said = r.note || 'Cannot fortify'; break; }
+      issueReceipt({
+        tool: 'defend', cell, intent: 'Fortify battery',
+        expected: `Magazine at cell ${r.cell} → ${r.stock}`,
+      });
+      noteAttribution(W, 'defend', cell);
+      chronLog(W.year, 'war', cell, 0.2, 'Air defence battery reinforced');
+      result.said = `Battery stocked — magazine ${r.stock}`;
       break;
     }
     case 'pandemic': {
@@ -604,6 +689,7 @@ export function useToolAt(cell, extra = {}) {
         tool: 'pandemic', cell, intent: 'Engineered plague', irreversible: true,
         expected: 'Travels between settlements, not across country · burns out where it has been',
       });
+      noteAttribution(W, 'pandemic', cell);
       chronLog(W.year, 'plague', cell, r.virulence, 'Engineered plague released');
       result.said = 'Released. It will follow the roads';
       break;
@@ -620,12 +706,43 @@ export function useToolAt(cell, extra = {}) {
         tool: 'war', cell, intent: 'War',
         expected: 'A moving front · what is built is unbuilt · fires and chemicals follow',
       });
+      noteAttribution(W, 'war', cell);
       chronLog(W.year, 'war', cell, 0.8, 'War opens');
       result.said = 'Declared. The front will move on its own now';
       break;
     }
+    case 'claim': {
+      // §14 — set player polity to owner of clicked cell, or largest if empty.
+      const oid = polityAt(W, cell);
+      if (oid >= 0) {
+        setPlayerPolity(W, oid);
+        const name = W._polityIndex?.get(oid)?.name || `polity ${oid}`;
+        noteAttribution(W, 'claim', cell);
+        result.said = `You are ${name} now`;
+      } else {
+        const id = ensurePlayerPolity(W);
+        result.said = id >= 0
+          ? `Claimed largest polity (${W._polityIndex?.get(id)?.name || id})`
+          : 'No polities yet to claim';
+      }
+      break;
+    }
+    case 'medical': {
+      const effect = applyMedicalCountermeasures(W, cell, extra.amount ?? 0.3);
+      noteDualUseResearch(W, cell, 'Field hospital / countermeasures', chronLog);
+      issueReceipt({
+        tool: 'medical', cell, intent: 'Medical countermeasures',
+        expected: 'Lowers disease and resistance · costs a sliver of build',
+      });
+      noteAttribution(W, 'medical', cell);
+      result.said = effect > 0.01
+        ? 'Countermeasures deployed — resistance thins here'
+        : 'Little disease here to treat';
+      break;
+    }
     case 'flare':
       result = { ...result, ...stellarFlare(extra.magnitude ?? 1.6) };
+      noteAttribution(W, 'flare', cell);
       result.orbitFlash = true;
       result.said = 'The star flares — grid down, aurora to the tropics';
       break;
@@ -635,6 +752,7 @@ export function useToolAt(cell, extra = {}) {
 
   result.price = pricePreview(tool.id);
   result.forecast = forecastAct(tool.id, cell);
+  result.cell = cell;
   if (!result.said) {
     if (tool.group === 'clim') result.said = 'Whole planet lever applied';
     else if (result.note) result.said = result.note;
@@ -721,7 +839,7 @@ export function fingerOfGod(cell, mode = 'boost') {
 
 // Re-export advanced acts for UI panels
 export { igniteFire, fireDanger };
-export { pourToxin, irradiate, seedDisease, openWar, launch, detonate, defenceAt };
+export { pourToxin, irradiate, seedDisease, openWar, launch, detonate, defenceAt, defendCell };
 export {
   setPlatePole, placePlume, setGateway, shiftSeaLevel, stampTerrain, paintSoil,
   paintCrustType, drawRift, forceOrogeny, cullClade, forceTransition,

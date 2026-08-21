@@ -104,8 +104,18 @@ function marsWindTick(W) {
       n++;
     }
     const creep = (s / n - h[c]) * 0.012;
-    const spd = Math.hypot(windU?.[c] || 0, windV?.[c] || 0);
-    const abrade = spd > 0.35 && (W.moist[c] || 0) < 0.18 ? spd * 0.004 : 0;
+    const wu = windU?.[c] || 0, wv = windV?.[c] || 0;
+    const spd = Math.sqrt(wu * wu + wv * wv);
+    /* Saltation has a threshold — sand does not move until the wind can lift it —
+       but a hard `spd > 0.35` on a continuous field is a cliff, and a cell sitting
+       within a rounding error of it flips between eroding and not. That matters
+       more than it sounds: this writes to terrain, so the discontinuity got
+       amplified into permanent topography and the same seed stopped producing the
+       same planet. A ramp over the threshold keeps the physics — nothing moves in
+       a light breeze — without the cliff. Damp ground still pins the grains. */
+    const lift = clamp((spd - 0.3) / 0.12, 0, 1);
+    const dryness = clamp((0.2 - (W.moist[c] || 0)) / 0.08, 0, 1);
+    const abrade = lift * dryness * spd * 0.004;
     _h[c] = clamp(h[c] + creep - abrade, -1.2, 1.2);
     if (dust && abrade > 0.001) dust[c] = Math.min(1, (dust[c] || 0) + abrade * 8);
   }

@@ -71,7 +71,7 @@ function plateVelocityAt(plate, x, y, z) {
 export function generateTectonics(W, seed, rule) {
   const rng = mulberry32(seed ^ 0x7f4a7c15);
   const vigor = W.interior?.vigor ?? 1;
-  const lid = W.interior?.lidMode || 'mobile';
+  const lid = rule._originLid || W.interior?.lidMode || 'mobile';
   let nPlates = rule.nPlates | 0 || 10;
   if (lid === 'none') nPlates = Math.min(nPlates, 4);
   if (lid === 'stagnant') nPlates = Math.max(4, Math.min(nPlates, 8));

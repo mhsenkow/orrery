@@ -63,7 +63,7 @@ function upload(b, arr, usage) {
 export const GLOBE_SUBD_ALLOWED = [1, 2, 3, 4];
 /** Cap globe lattice edge. 768 → ~3.5M verts; RAM is fine, draw cost is the limit. */
 export const MAX_GN = 768;
-export let GLOBE_SUBD = 2;
+export let GLOBE_SUBD = 3;
 let GN = N * GLOBE_SUBD;
 let GNV = 6 * (GN + 1) * (GN + 1);
 let GVPF = (GN + 1) * (GN + 1);
@@ -79,10 +79,11 @@ export function effectiveGlobeSubd(n = N) {
 
 /** Clamp globe mesh when sim N × subd would exceed MAX_GN. */
 export function recommendGlobeSubd(n = N) {
-  if (n * 2 > MAX_GN) return 1;
+  if (n * 3 > MAX_GN) return n * 2 > MAX_GN ? 1 : 2;
   if (n >= 256) return 2;
-  if (n >= 96) return 2;
-  return GLOBE_SUBD;
+  if (n >= 128) return 2;
+  if (n >= 64) return 3;
+  return 3;
 }
 
 export function setGlobeSubd(subd) {
@@ -126,9 +127,18 @@ let COAST_COUNT = 0;
 let RIVER_LINE_COUNT = 0;
 let FLIGHT_LINE_COUNT = 0;
 let WARHEAD_PT_COUNT = 0;
+let IX_HEAD_COUNT = 0;
+let SPECTER_SEG_COUNT = 0;
+let SPECTER_PT_COUNT = 0;
+let ORIGIN_PT_COUNT = 0;
+let _flightTrailRGB = [0.45, 0.92, 1.0];
 let _isoBufTick = -1;
 let _riverScratch = null;
 let _warheadCells = null;
+let _plumeCells = null;
+let _reentryCells = null;
+let _mushroomAmt = null;
+let _mushroomCore = null;
 
 let weldGroups = [];
 
@@ -294,6 +304,20 @@ export function rebuildScatterLUTs(opts = {}) {
   if (scatterMsTex) updateScatterLUT(gl, scatterMsTex, ms);
   else scatterMsTex = uploadScatterLUT(gl, ms);
 }
+
+/** Decay envelope for `W.climVisual` pulses from climate levers. */
+function climVisualBoost(S) {
+  const cv = W.climVisual;
+  if (!cv || !cv.until) return { warm: 0, cool: 0 };
+  const t = S?._t || (typeof performance !== 'undefined' ? performance.now() : 0);
+  if (t >= cv.until) return { warm: 0, cool: 0 };
+  const fade = clamp((cv.until - t) / 5500, 0, 1);
+  const a = (cv.amt || 0.3) * fade;
+  if (cv.warm < 0) return { warm: 0, cool: a };
+  if (cv.warm > 0) return { warm: a, cool: 0 };
+  return { warm: a * 0.45, cool: a * 0.25 };
+}
+
 /* ---------- sprites / atlas ---------- */
 function buildAtlas() {
   return getSpriteAtlas();
@@ -824,7 +848,7 @@ float densAt(vec3 sp, float cov, float t){
   return cov * (0.45 + 0.35 * n + 0.2 * n2);
 }
 void main(){
-  if(vC<0.04) discard;
+  if(vC<0.06) discard;
   vec3 N=normalize(vN);
   vec3 V=normalize(uCam-vW);
   vec3 L=normalize(uSun);
@@ -844,7 +868,15 @@ void main(){
   }
   dens = clamp(dens * 0.22, 0.0, 1.0);
   float nl=max(dot(N,L),0.0);
-  float a=smoothstep(0.03,0.48,dens)*mix(0.38,0.95,smoothstep(0.0,2.0,vType));
+  /* Opacity from coverage, not saturation.
+     A smoothstep from 0.03 to 0.48 on the marched density reaches one at about a
+     third of a sky, so every cell above that painted a solid deck — invisible while the cloud field
+     was empty, and an opaque white shell over the whole planet once the water
+     cycle started producing Earth's ~60% cover. Beer–Lambert on the marched
+     density, scaled by how much of the patch is cloudy at all, means 40% cover
+     looks like 40% cover: broken, with the sea showing through the gaps. */
+  float cover = smoothstep(0.02, 0.92, vC);
+  float a=(1.0-exp(-2.8*dens))*cover*mix(0.45,0.95,smoothstep(0.0,2.0,vType));
   float rim=pow(1.0-max(dot(N,V),0.0), 2.6);
   vec3 cold=vec3(0.58,0.66,0.80);
   vec3 warm=vec3(0.92,0.90,0.86);
@@ -1012,6 +1044,10 @@ void main(){
     riverLine: gl.createBuffer(),
     flightLine: gl.createBuffer(),
     warheadPts: gl.createBuffer(),
+    ixHeads: gl.createBuffer(),
+    specterLine: gl.createBuffer(),
+    specterPts: gl.createBuffer(),
+    originPts: gl.createBuffer(),
     flowStreaks: gl.createBuffer(),
     cloud: gl.createBuffer(), cloudCov: gl.createBuffer(),
   };
@@ -1302,13 +1338,19 @@ function syncIsolines() {
   }
 }
 
-/** Elevated flight / interceptor arcs + warhead points (dark-400 §82, 321–322, 330). */
+/** Elevated flight / interceptor arcs + warhead points + spectacle (§82, 321–330). */
 function syncFlightArcs() {
   FLIGHT_LINE_COUNT = 0;
   WARHEAD_PT_COUNT = 0;
+  IX_HEAD_COUNT = 0;
+  SPECTER_SEG_COUNT = 0;
+  SPECTER_PT_COUNT = 0;
   if (!gl || !buf?.flightLine) return;
-  if (!(W.flight?.length || W.interceptors?.length)) return;
+  const live = (W.flight?.length || 0) + (W.interceptors?.length || 0)
+    + (W.mushrooms?.length || 0) + (W._empRings?.length || 0) + (W._ixBursts?.length || 0);
+  if (!live) return;
   const pack = flightArcPoints(W);
+  _flightTrailRGB = pack.trailRGB || _flightTrailRGB;
   if (pack.segments.length) {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.flightLine);
     gl.bufferData(gl.ARRAY_BUFFER, pack.segments, gl.DYNAMIC_DRAW);
@@ -1318,6 +1360,21 @@ function syncFlightArcs() {
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.warheadPts);
     gl.bufferData(gl.ARRAY_BUFFER, pack.warheads, gl.DYNAMIC_DRAW);
     WARHEAD_PT_COUNT = pack.warheads.length / 3;
+  }
+  if (pack.ixHeads?.length && buf.ixHeads) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.ixHeads);
+    gl.bufferData(gl.ARRAY_BUFFER, pack.ixHeads, gl.DYNAMIC_DRAW);
+    IX_HEAD_COUNT = pack.ixHeads.length / 3;
+  }
+  if (pack.specterSegs?.length && buf.specterLine) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.specterLine);
+    gl.bufferData(gl.ARRAY_BUFFER, pack.specterSegs, gl.DYNAMIC_DRAW);
+    SPECTER_SEG_COUNT = pack.specterSegs.length / 3;
+  }
+  if (pack.specterPts?.length && buf.specterPts) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.specterPts);
+    gl.bufferData(gl.ARRAY_BUFFER, pack.specterPts, gl.DYNAMIC_DRAW);
+    SPECTER_PT_COUNT = pack.specterPts.length / 3;
   }
 }
 
@@ -1408,14 +1465,56 @@ export function refreshColours(alpha = 1) {
   const tick = W._tickIndex || 0;
   const strokeFade = refreshColours._strokeAt === tick ? 1 : Math.exp(-0.14);
   refreshColours._strokeAt = tick;
-  /* Warhead tip cells — brighter than the fading tracer trail (§322). */
+  /* Warhead tip cells — brighter than the fading tracer trail (§322).
+     Also track boost-plume and reentry cells for colour boost (§323–324). */
   if (!_warheadCells || _warheadCells.length !== NC) _warheadCells = new Uint8Array(NC);
   else _warheadCells.fill(0);
+  if (!_plumeCells || _plumeCells.length !== NC) _plumeCells = new Uint8Array(NC);
+  else _plumeCells.fill(0);
+  if (!_reentryCells || _reentryCells.length !== NC) _reentryCells = new Uint8Array(NC);
+  else _reentryCells.fill(0);
   for (const f of W.flight || []) {
     if (f.dead || !f.path?.length) continue;
     const idx = Math.min(f.path.length - 1, Math.floor(f.at || 0));
     const hc = f.path[idx];
     if (hc >= 0 && hc < NC) _warheadCells[hc] = 1;
+    if (f.phase === 'boost' && f.plume > 0.05 && f.from >= 0 && f.from < NC) {
+      _plumeCells[f.from] = Math.min(255, 40 + ((f.plume * 200) | 0));
+    }
+    if (f.phase === 'reentry' && hc >= 0 && hc < NC) _reentryCells[hc] = 1;
+  }
+  /* Mushroom cloud paint cache (§325) — stem + expanding cap, not a smudge. */
+  if (!_mushroomAmt || _mushroomAmt.length !== NC) _mushroomAmt = new Float32Array(NC);
+  else _mushroomAmt.fill(0);
+  if (!_mushroomCore || _mushroomCore.length !== NC) _mushroomCore = new Uint8Array(NC);
+  else _mushroomCore.fill(0);
+  for (const m of W.mushrooms || []) {
+    const c = m.cell | 0;
+    if (c < 0 || c >= NC) continue;
+    const age = m.age || 0;
+    const pow = Math.max(0.4, m.power || 1);
+    // Cap radius grows with age; stem stays at epicentre.
+    const capR = Math.min(5, 1 + ((age / 4) | 0) + (pow > 1.2 ? 1 : 0));
+    const grow = Math.min(1, age / 5);
+    const fade = age < 28 ? 1 : Math.max(0, 1 - (age - 28) / 28);
+    const strength = grow * fade * pow;
+    _mushroomAmt[c] = Math.max(_mushroomAmt[c], strength);
+    _mushroomCore[c] = Math.max(_mushroomCore[c], Math.min(255, ((m.fireball || 0) * 200 + (age < 8 ? 180 : 40)) | 0));
+    // BFS out to capR for the orange ring.
+    const q = [[c, 0]];
+    const seen = new Set([c]);
+    while (q.length) {
+      const [x, d] = q.shift();
+      if (d > 0) {
+        const ring = d === capR ? 1.15 : (d < capR ? 0.55 : 0.25);
+        _mushroomAmt[x] = Math.max(_mushroomAmt[x], strength * ring * (d === capR ? 1 : 0.7));
+      }
+      if (d >= capR) continue;
+      for (let k = 0; k < 4; k++) {
+        const n = NBR[x * 4 + k];
+        if (!seen.has(n)) { seen.add(n); q.push([n, d + 1]); }
+      }
+    }
   }
   for (let c = 0; c < NC; c++) {
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
@@ -1791,8 +1890,9 @@ export function refreshColours(alpha = 1) {
       }
       const radL = W.rad?.[c] || 0;
       if (radL > 0.02) {
-        const k = clamp(radL, 0, 1) * 0.8;
-        col = [lerp(col[0], 172, k), lerp(col[1], 158, k), lerp(col[2], 182, k)];
+        // Stronger rad overlay for asymmetric fallout plumes (§329).
+        const k = clamp(radL, 0, 1) * 0.95;
+        col = [lerp(col[0], 168, k), lerp(col[1], 150, k), lerp(col[2], 188, k)];
       }
       const disL = W.disease?.[c] || 0;
       if (disL > 0.04) {
@@ -1811,17 +1911,131 @@ export function refreshColours(alpha = 1) {
        lightning's warm yellow, so a missile track and a thunderstorm are never
        confused. The tail is written by `ordnanceTick`, which fades it behind the
        warhead — so the track shows direction, which is the one thing a defender
-       needs to know. Elevated arcs upload via `flightArcPoints` (§82, 321–322). */
+       needs to know. Elevated arcs upload via `flightArcPoints` (§82, 321–322).
+       Geom budget: W.dark.geomBudgetMs (default 1.5 ms) for arcs + mushrooms. */
     const traceL = W.tracer?.[c] || 0;
-    if (traceL > 0.02 || _warheadCells?.[c]) {
-      const k = _warheadCells?.[c]
+    const plumeBoost = (_plumeCells?.[c] || 0) / 255;
+    const reentry = _reentryCells?.[c];
+    if (traceL > 0.02 || _warheadCells?.[c] || plumeBoost > 0.02 || reentry) {
+      const k = _warheadCells?.[c] || reentry
         ? Math.max(0.85, clamp(traceL, 0, 1))
-        : clamp(traceL, 0, 1);
-      const bright = _warheadCells?.[c] ? 1.25 : 1.1;
+        : clamp(Math.max(traceL, plumeBoost), 0, 1);
+      const bright = reentry ? 1.45 : _warheadCells?.[c] ? 1.25 : plumeBoost > 0.1 ? 1.35 : 1.1;
+      // Boost plume leans warm amber; reentry is white-hot (§323–324).
+      const tr = plumeBoost > 0.1 ? 255 : 210;
+      const tg = plumeBoost > 0.1 ? 200 : reentry ? 255 : 240;
+      const tb = plumeBoost > 0.1 ? 140 : 255;
       col = [
-        lerp(col[0], 210, Math.min(1, k * bright)),
-        lerp(col[1], 240, Math.min(1, k * bright)),
-        lerp(col[2], 255, Math.min(1, k * (bright + 0.1))),
+        lerp(col[0], tr, Math.min(1, k * bright)),
+        lerp(col[1], tg, Math.min(1, k * bright)),
+        lerp(col[2], tb, Math.min(1, k * (bright + 0.05))),
+      ];
+    }
+    /* Mushroom: white-hot core, orange expanding cap, dark stem (§325). */
+    const mush = _mushroomAmt?.[c] || 0;
+    const mushCore = (_mushroomCore?.[c] || 0) / 255;
+    const fb = W.fireball?.[c] || 0;
+    if (mush > 0.04 || mushCore > 0.05 || fb > 0.05) {
+      const hot = Math.max(mushCore, fb, mush > 0.7 ? 0.35 : 0);
+      if (hot > 0.08) {
+        // Fireball — near-white then yellow.
+        const k = Math.min(1, hot * 1.15);
+        col = [
+          lerp(col[0], 255, k),
+          lerp(col[1], 245, k * 0.95),
+          lerp(col[2], 200, k * 0.55),
+        ];
+      }
+      if (mush > 0.06) {
+        // Cap / stem — saturated orange-red that reads from orbit.
+        const k = clamp(mush, 0, 1.4) * 0.92;
+        col = [
+          lerp(col[0], 255, k),
+          lerp(col[1], 110, k * 0.85),
+          lerp(col[2], 28, k * 0.7),
+        ];
+        // Stem darkening under the cap at the epicentre.
+        if (mushCore < 0.15 && mush > 0.35) {
+          col = [col[0] * 0.72, col[1] * 0.55, col[2] * 0.45];
+        }
+      }
+    }
+    /* Shockwave ring — bright white-cyan expanding rim (§327). */
+    const shock = W.shockwave?.[c] || 0;
+    if (shock > 0.05) {
+      const k = clamp(shock, 0, 1.4) * 0.95;
+      col = [
+        lerp(col[0], 255, k),
+        lerp(col[1], 250, k),
+        lerp(col[2], 230, k * 0.9),
+      ];
+    }
+    /* Smoke columns — dense charcoal (§328). */
+    const smk = W.smoke?.[c] || 0;
+    if (smk > 0.04) {
+      const k = clamp(smk, 0, 1) * 0.62;
+      col = [lerp(col[0], 38, k), lerp(col[1], 36, k), lerp(col[2], 34, k)];
+    }
+    /* Fallout / ash scar — sick yellow-brown when rad is hot. */
+    const radL = W.rad?.[c] || 0;
+    const ashL = W.ash?.[c] || 0;
+    if (radL > 0.12 || ashL > 0.25) {
+      const k = clamp(Math.max(radL * 0.85, ashL * 0.55), 0, 1) * 0.7;
+      col = [lerp(col[0], 160, k), lerp(col[1], 140, k * 0.7), lerp(col[2], 60, k * 0.5)];
+    }
+    /* Chem / bio / EMP / intercept surface signatures. */
+    const chem = W.chemPlume?.[c] || 0;
+    if (chem > 0.04) {
+      const k = clamp(chem, 0, 1) * 0.85;
+      col = [lerp(col[0], 120, k), lerp(col[1], 210, k), lerp(col[2], 50, k)];
+    }
+    const bio = W.bioBloom?.[c] || 0;
+    if (bio > 0.04) {
+      const k = clamp(bio, 0, 1) * 0.8;
+      col = [lerp(col[0], 170, k), lerp(col[1], 70, k), lerp(col[2], 55, k)];
+    }
+    const empH = W.empHalo?.[c] || 0;
+    if (empH > 0.04 || (W._empPulse || 0) > 0.2) {
+      const k = clamp(Math.max(empH, (W._empPulse || 0) * 0.35), 0, 1) * 0.7;
+      col = [lerp(col[0], 90, k), lerp(col[1], 160, k), lerp(col[2], 255, k)];
+    }
+    const ix = W.ixFlash?.[c] || 0;
+    if (ix > 0.05) {
+      const k = clamp(ix, 0, 1.4);
+      col = [lerp(col[0], 255, k), lerp(col[1], 140, k * 0.85), lerp(col[2], 40, k * 0.6)];
+    }
+    /* Player polity — soft warm rim so "us" is legible. */
+    const pid = W.playerPolity ?? -1;
+    if (pid >= 0 && W.owner?.[c] === pid && (W.border?.[c] || 0) > 0.4) {
+      col = [
+        lerp(col[0], 255, 0.22),
+        lerp(col[1], 210, 0.18),
+        lerp(col[2], 120, 0.12),
+      ];
+    }
+    /* Night-side war: when the grid is down, firestorms own the dark half. */
+    const gridOut = (W._empUntil || 0) > (W._tickIndex | 0);
+    const fireL2 = W.fire?.[c] || 0;
+    if (gridOut && fireL2 > 0.08) {
+      const k = clamp(fireL2, 0, 1) * 0.95;
+      col = [
+        lerp(col[0], 255, k),
+        lerp(col[1], 90, k * 0.8),
+        lerp(col[2], 20, k * 0.5),
+      ];
+    }
+    /* Contested border glow — hue + value, colour-blind safe (§334, 338). */
+    if ((W.border?.[c] || 0) > 0.5) {
+      const oid = W.owner?.[c] ?? -1;
+      const p = oid >= 0 ? W._polityIndex?.get(oid) : null;
+      const pc = p?.color || [0.7, 0.7, 0.75];
+      // Value lift so hue alone is never the only cue.
+      const val = 0.35 + 0.45 * Math.max(pc[0], pc[1], pc[2]);
+      const k = 0.22 + (W.fought?.[c] || 0) * 0.02;
+      col = [
+        lerp(col[0], pc[0] * 255 * val, k),
+        lerp(col[1], pc[1] * 255 * val, k),
+        lerp(col[2], pc[2] * 255 * val, k),
       ];
     }
     /* Aurora. A flare pushes the oval down toward the equator and a planet with
@@ -1837,11 +2051,25 @@ export function refreshColours(alpha = 1) {
         col = [lerp(col[0], 60, k * 0.5), lerp(col[1], 244, k), lerp(col[2], 150, k * 0.8)];
       }
     }
-    /* The flare itself: the whole disc washes out for a few ticks. */
-    const glow = W.flareGlow || 0;
-    if (glow > 0.02) {
-      const k = clamp(glow, 0, 1) * 0.5;
-      col = [lerp(col[0], 255, k), lerp(col[1], 246, k), lerp(col[2], 214, k * 0.8)];
+    /* The flare itself: stellar events wash the disc. Nuclear flash is local —
+       keyed to the last detonation so the whole planet doesn't go white. */
+    const flare = W.flareGlow || 0;
+    if (flare > 0.02) {
+      const k = clamp(flare, 0, 1.2) * 0.35;
+      col = [lerp(col[0], 255, k), lerp(col[1], 248, k), lerp(col[2], 220, k * 0.75)];
+    }
+    const blast = W._blastFlash || 0;
+    if (blast > 0.02) {
+      const dc = W._lastDetCell | 0;
+      let fall = 0.12; // faint global rim so the flash still reads from orbit
+      if (dc >= 0 && dc < NC) {
+        const dot = DIR[c * 3] * DIR[dc * 3]
+          + DIR[c * 3 + 1] * DIR[dc * 3 + 1]
+          + DIR[c * 3 + 2] * DIR[dc * 3 + 2];
+        fall = Math.max(fall, clamp((dot - 0.72) / 0.28, 0, 1));
+      }
+      const k = clamp(blast, 0, 1.2) * fall * 0.7;
+      col = [lerp(col[0], 255, k), lerp(col[1], 230, k * 0.9), lerp(col[2], 180, k * 0.55)];
     }
     /* Lightning. Outside the land branch on purpose — most of it is over water,
        which is where the cyclones are. A bolt is brief and very bright, so it
@@ -1879,6 +2107,21 @@ export function refreshColours(alpha = 1) {
     _cellDat[o + 3] = u8round(clamp(temp, 0, 1) * 255);
   }
   if (overlayMode && overlayMode !== 'none') applyOverlay(W, _cellDat, null, NC, overlayMode);
+  // Subtle polity tint when borders overlay is on (§15) — spare polityTint channel.
+  if (overlayMode === 'borders' && W.polityTint && W.owner) {
+    for (let c = 0; c < NC; c++) {
+      const t = W.polityTint[c];
+      if (!(t > 0.02) || (W.owner[c] ?? -1) < 0) continue;
+      const p = W._polityIndex?.get(W.owner[c]);
+      const col = p?.color;
+      if (!col) continue;
+      const o = c << 2;
+      const k = 0.12 * t;
+      _cellDat[o] = u8round(_cellDat[o] * (1 - k) + col[0] * 255 * k);
+      _cellDat[o + 1] = u8round(_cellDat[o + 1] * (1 - k) + col[1] * 255 * k);
+      _cellDat[o + 2] = u8round(_cellDat[o + 2] * (1 - k) + col[2] * 255 * k);
+    }
+  }
   const teff = starTeffOf(R);
   if (!isSunTeff(teff)) {
     const ig = illuminantGain(teff);
@@ -2142,6 +2385,7 @@ function cloudShellMul(R) {
 
 export function drawScene(proj, view, camPos, inXR, S, hands) {
   const R = W.rule;
+  const originPlay = S?.originSketch && !S.originSketch.done;
   // Sun tracks seasons on the ecliptic; obliquity sets how far it climbs
   const sunY = Math.sin(W.season || 0) * Math.sin(W.obliquity || 0);
   const sun = [Math.cos(S.sunAng), sunY, Math.sin(S.sunAng)];
@@ -2177,6 +2421,31 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   gl.drawArrays(gl.POINTS, 0, NSTAR);
   disableAll();
   gl.depthMask(true); gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+
+  /* Origin formation sketch — soft cloud instead of the finished planet. */
+  if (originPlay && S.originSketch?.pos && buf.originPts) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.originPts);
+    gl.bufferData(gl.ARRAY_BUFFER, S.originSketch.pos, gl.DYNAMIC_DRAW);
+    ORIGIN_PT_COUNT = S.originSketch.n | 0;
+    gl.useProgram(flatProg);
+    gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.depthMask(false);
+    l = gl.getAttribLocation(flatProg, 'aPos');
+    gl.enableVertexAttribArray(l);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.originPts);
+    gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    const ph = S.originSketch.phase;
+    if (ph === 'theia') gl.uniform4f(flatProg.u.uCol, 1.0, 0.75, 0.45, 0.95);
+    else if (ph === 'freeze') gl.uniform4f(flatProg.u.uCol, 0.85, 0.7, 0.55, 0.9);
+    else gl.uniform4f(flatProg.u.uCol, 0.75, 0.82, 1.0, 0.85);
+    gl.drawArrays(gl.POINTS, 0, ORIGIN_PT_COUNT);
+    gl.uniform4f(flatProg.u.uCol, 1.0, 0.95, 0.85, 0.35);
+    gl.drawArrays(gl.POINTS, 0, ORIGIN_PT_COUNT);
+    gl.depthMask(true); gl.disable(gl.BLEND);
+    disableAll();
+    return; // ceremony owns the frame
+  }
 
   if (inXR) {
     gl.useProgram(flatProg);
@@ -2261,7 +2530,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   gl.uniform1f(planetProg.u.uXRay, xray);
   if (planetProg.u.uOzone) gl.uniform1f(planetProg.u.uOzone, W.ozone || 0);
   if (planetProg.u.uAerosol) {
-    gl.uniform1f(planetProg.u.uAerosol, clamp((W.gases.dust || 0) + (W.gases.sulphate || 0) * 2, 0, 1));
+    const cv = climVisualBoost(S);
+    gl.uniform1f(planetProg.u.uAerosol, clamp(
+      (W.gases.dust || 0) + (W.gases.sulphate || 0) * 2 + cv.warm, 0, 1));
   }
   if (planetProg.u.uMag) {
     const mag = (R.magnetosphere || 0) * (R.earthLike && !R.deepTime ? 0.22 : 1);
@@ -2269,8 +2540,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   }
   if (planetProg.u.uTime) gl.uniform1f(planetProg.u.uTime, (S._t || 0) * 0.001);
   if (planetProg.u.uHaze) {
-    const haze = Math.max(W.hazeAntiGreenhouse || 0, R.look?.haze || 0);
-    gl.uniform1f(planetProg.u.uHaze, haze);
+    const cv = climVisualBoost(S);
+    const haze = Math.max(W.hazeAntiGreenhouse || 0, R.look?.haze || 0) + cv.cool;
+    gl.uniform1f(planetProg.u.uHaze, clamp(haze, 0, 1));
   }
   // Photographic exposure: stop down under a bright sun, open up in the dark.
   // The 0.05 floor used to flatten Mercury and Pluto onto the same curve.
@@ -2385,9 +2657,10 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     disableAll();
   }
 
-  /* ballistic / interceptor arcs above the surface (dark-400 §321–322, 330) */
+  /* ballistic / interceptor arcs + elevated spectacle (mushroom / EMP / ix) */
   syncFlightArcs();
-  if (FLIGHT_LINE_COUNT > 0 || WARHEAD_PT_COUNT > 0) {
+  if (FLIGHT_LINE_COUNT > 0 || WARHEAD_PT_COUNT > 0 || IX_HEAD_COUNT > 0
+      || SPECTER_SEG_COUNT > 0 || SPECTER_PT_COUNT > 0) {
     gl.useProgram(flatProg);
     gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
@@ -2395,17 +2668,39 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     l = gl.getAttribLocation(flatProg, 'aPos');
     gl.enableVertexAttribArray(l);
     if (FLIGHT_LINE_COUNT > 0) {
-      gl.uniform4f(flatProg.u.uCol, 0.55, 0.92, 1.0, 0.72);
+      const [tr, tg, tb] = _flightTrailRGB;
+      gl.uniform4f(flatProg.u.uCol, tr, tg, tb, 0.9);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.flightLine);
       gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
-      gl.lineWidth?.(1.6);
+      gl.lineWidth?.(2.4);
       gl.drawArrays(gl.LINES, 0, FLIGHT_LINE_COUNT);
     }
+    if (SPECTER_SEG_COUNT > 0 && buf.specterLine) {
+      gl.uniform4f(flatProg.u.uCol, 1.0, 0.55, 0.18, 0.55);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.specterLine);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.lineWidth?.(1.8);
+      gl.drawArrays(gl.LINES, 0, SPECTER_SEG_COUNT);
+    }
     if (WARHEAD_PT_COUNT > 0) {
-      gl.uniform4f(flatProg.u.uCol, 1.0, 1.0, 1.0, 0.95);
+      gl.uniform4f(flatProg.u.uCol, 1.0, 0.95, 0.7, 1.0);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.warheadPts);
       gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
       gl.drawArrays(gl.POINTS, 0, WARHEAD_PT_COUNT);
+      gl.uniform4f(flatProg.u.uCol, 1.0, 1.0, 1.0, 0.5);
+      gl.drawArrays(gl.POINTS, 0, WARHEAD_PT_COUNT);
+    }
+    if (IX_HEAD_COUNT > 0 && buf.ixHeads) {
+      gl.uniform4f(flatProg.u.uCol, 1.0, 0.45, 0.15, 1.0);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.ixHeads);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.POINTS, 0, IX_HEAD_COUNT);
+    }
+    if (SPECTER_PT_COUNT > 0 && buf.specterPts) {
+      gl.uniform4f(flatProg.u.uCol, 1.0, 0.7, 0.25, 0.85);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.specterPts);
+      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.drawArrays(gl.POINTS, 0, SPECTER_PT_COUNT);
     }
     gl.depthMask(true); gl.disable(gl.BLEND);
     disableAll();
@@ -2567,7 +2862,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform1f(atmoProg.u.uAtmoK, R.atmoStrength * (1.05 + (W.gases.dust || 0) * 0.5));
     if (atmoProg.u.uOzone) gl.uniform1f(atmoProg.u.uOzone, W.ozone || 0);
     if (atmoProg.u.uAerosol) {
-      gl.uniform1f(atmoProg.u.uAerosol, clamp((W.gases.dust || 0) + (W.gases.sulphate || 0) * 2, 0, 1));
+      const cv = climVisualBoost(S);
+      gl.uniform1f(atmoProg.u.uAerosol, clamp(
+        (W.gases.dust || 0) + (W.gases.sulphate || 0) * 2 + cv.warm, 0, 1));
     }
     if (atmoProg.u.uMag) {
       const mag = (R.magnetosphere || 0) * (R.earthLike && !R.deepTime ? 0.22 : 1);
@@ -2613,7 +2910,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   /* orbit guides — spin axis, equator, ecliptic (tilt becomes visible) */
   {
     const climTools = S.orbitGuides || S.orbitFlash > (S._t || 0)
-      || ['tilt', 'spin', 'moon', 'solar', 'shade'].includes(S.activeTool || '');
+      || ['tilt', 'spin', 'moon', 'solar', 'shade', 'co2', 'o2', 'aerosol'].includes(S.activeTool || '');
     const flash = S.orbitFlash > (S._t || 0);
     const show = climTools || flash || S.orbitGuides;
     if (show) {

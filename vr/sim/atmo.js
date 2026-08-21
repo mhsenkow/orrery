@@ -1,8 +1,8 @@
 /** Atmosphere: gases, greenhouse, circulation, clouds, dust, seasons. */
 
 import { clamp, lerp } from '../math.js';
-import { NC, NBR, NBR_E, NBR_N, NBR_CHORD, DIR, AREA, N as SIM_N } from '../sphere.js';
-import { greenhouseFromGases, totalPressure } from '../rulesets.js';
+import { NC, NBR, NBR_E, NBR_N, NBR_ICHORD, DIR, AREA, N as SIM_N } from '../sphere.js';
+import { greenhouseFromGases, vapourGreenhouse, totalPressure } from '../rulesets.js';
 import { circumbinaryBeat } from './exophysics.js';
 import { neighbourMean } from './vecop.js';
 import { groundAlbedo, thermalInertiaAt, livePressureBar } from './substrateField.js';
@@ -91,7 +91,7 @@ export function advectField(field, uArr, vArr, scratch, rate) {
     const b4 = c * 4;
     for (let k = 0; k < 4; k++) {
       const i = b4 + k;
-      const along = (u * NBR_E[i] + v * NBR_N[i]) / NBR_CHORD[i];
+      const along = (u * NBR_E[i] + v * NBR_N[i]) * NBR_ICHORD[i];
       if (along <= 0) continue;
       const f = Math.min(0.22, rate * along);
       flux[k] = f;
@@ -109,6 +109,88 @@ export function advectField(field, uArr, vArr, scratch, rate) {
   for (let c = 0; c < NC; c++) field[c] += scratch[c] / (AREA[c] || 1);
 }
 
+/**
+ * Advect three intensive fields through one pass of the grid.
+ *
+ * The ocean carries a temperature, a salinity and a phosphate concentration on
+ * the same velocity field, and each `advectScalar` call re-walked all 24 576
+ * cells re-reading the same neighbour indices, chords and tangent components to
+ * compute the same four weights three times over. The geometry reads dominate
+ * this loop, so sharing them is most of the cost of two of the three passes.
+ * Identical arithmetic per field — each still relaxes toward its own upwind
+ * neighbours and is written from its own scratch.
+ */
+export function advectScalar3(fa, fb, fc, uArr, vArr, rate) {
+  const n = fa.length;
+  if (!_s3a || _s3a.length !== n) {
+    _s3a = new Float32Array(n);
+    _s3b = new Float32Array(n);
+    _s3c = new Float32Array(n);
+  }
+  for (let c = 0; c < n; c++) {
+    const u = uArr[c] || 0, v = vArr[c] || 0;
+    if (u * u + v * v < 1e-12) { _s3a[c] = fa[c]; _s3b[c] = fb[c]; _s3c[c] = fc[c]; continue; }
+    let aa = 0, ab = 0, ac = 0, w = 0;
+    const b4 = c * 4;
+    for (let k = 0; k < 4; k++) {
+      const i = b4 + k;
+      const along = (u * NBR_E[i] + v * NBR_N[i]) * NBR_ICHORD[i];
+      if (along >= 0) continue;
+      const f = Math.min(0.24, rate * -along);
+      const nb = NBR[i];
+      aa += f * fa[nb];
+      ab += f * fb[nb];
+      ac += f * fc[nb];
+      w += f;
+    }
+    if (w > 0) {
+      const keep = 1 - w;
+      _s3a[c] = fa[c] * keep + aa;
+      _s3b[c] = fb[c] * keep + ab;
+      _s3c[c] = fc[c] * keep + ac;
+    } else { _s3a[c] = fa[c]; _s3b[c] = fb[c]; _s3c[c] = fc[c]; }
+  }
+  fa.set(_s3a); fb.set(_s3b); fc.set(_s3c);
+}
+let _s3a = null, _s3b = null, _s3c = null;
+
+/**
+ * Advect an *intensive* field — a temperature, a concentration — upwind.
+ *
+ * `advectField` above conserves `field × AREA`. That is exactly right for an
+ * amount: ash, dust, a column of vapour. It is exactly wrong for an intensive
+ * quantity, because piling mass into a convergence zone then dividing by that
+ * cell's area *manufactures* the quantity. Temperature was being advected that
+ * way, and once the wind field was strong enough for advection to do anything at
+ * all the artefact was enormous: the ITCZ ran 20 K hot and the subtropics 10 K
+ * cold, a 30 K meridional kink that no radiation term could account for.
+ *
+ * Relaxing each cell toward whatever is blowing into it transports without
+ * inventing. The weights sum to less than one, so the result is a convex
+ * combination of values that already existed — bounded, and stable at any wind
+ * speed, which is also why the limiter can stay generous.
+ */
+export function advectScalar(field, uArr, vArr, scratch, rate) {
+  for (let c = 0; c < NC; c++) {
+    const u = uArr[c] || 0, v = vArr[c] || 0;
+    if (u * u + v * v < 1e-12) { scratch[c] = field[c]; continue; }
+    let acc = 0, w = 0;
+    const b4 = c * 4;
+    for (let k = 0; k < 4; k++) {
+      const i = b4 + k;
+      // Negative `along` means the wind at this cell points away from that
+      // neighbour — so that is the side the air is arriving from.
+      const along = (u * NBR_E[i] + v * NBR_N[i]) * NBR_ICHORD[i];
+      if (along >= 0) continue;
+      const f = Math.min(0.24, rate * -along);
+      acc += f * field[NBR[i]];
+      w += f;
+    }
+    scratch[c] = w > 0 ? field[c] * (1 - w) + acc : field[c];
+  }
+  field.set(scratch);
+}
+
 /** Advect a scalar field by wind (upwind, geographic frame). */
 export function advect(field, W, rate) {
   advectField(field, W.windU, W.windV, W._adv, rate);
@@ -122,16 +204,18 @@ export function cloudsTick(W) {
   const ashCloud = earth ? 0.08 : 0.2;
   const vap = W.vapour;
   const h2o = gases.H2O || 0.01;
+  // One definition of saturation, cached by the hydrosphere this tick.
+  const satF = W.satV?.length === NC ? W.satV : null;
   for (let c = 0; c < NC; c++) {
     const conv = W.converg?.[c] || 0;
     const localV = vap?.[c] ?? moist[c];
-    const sat = h2o * Math.exp((temp[c] - 0.5) * 1.8);
+    const sat = satF ? satF[c] : h2o * Math.exp((temp[c] - 0.5) * 1.8);
     const rh = localV / Math.max(1e-5, sat);
     let form = clamp(rh - 0.4, 0, 1) * 0.72 + precip[c] * 0.28;
     form += Math.max(0, conv) * 0.55;
     form *= 1 - clamp(-conv, 0, 1) * (earth ? 0.7 : 0.5);
-    const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
-    form += localV * wind * 0.18;
+    const wu = W.windU?.[c] || 0, wv = W.windV?.[c] || 0;
+    form += localV * Math.sqrt(wu * wu + wv * wv) * 0.18;
     form += (W.front?.[c] || 0) * 0.32;
     if (W.h[c] < W.seaLevel && temp[c] < 0.48 && conv < 0 && rh > 0.5) {
       form += 0.12;
@@ -164,6 +248,21 @@ export function cloudsTick(W) {
   gases.sulphate *= W.rule.earthLike ? 0.96 : 0.992;
 }
 
+/** Dust / sulphate decay only — run on the GPGPU climate path too so war soot clears. */
+export function aerosolDecayTick(W) {
+  const gases = W.gases;
+  if (!gases) return;
+  if (W.rule?.signature === 'dust') {
+    // Full lofting lives in cloudsTick; on GPU path just settle gently.
+    gases.dust = clamp((gases.dust || 0) * 0.997, 0, 0.5);
+    if (W.dust) for (let c = 0; c < NC; c++) W.dust[c] *= 0.992;
+  } else {
+    gases.dust = clamp((gases.dust || 0) * 0.995, 0, 0.5);
+    if (W.dust) for (let c = 0; c < NC; c++) W.dust[c] *= 0.99;
+  }
+  gases.sulphate = clamp((gases.sulphate || 0) * (W.rule?.earthLike ? 0.96 : 0.992), 0, 0.4);
+}
+
 /** Non-field atmosphere bookkeeping (ozone, escape, Milankovitch). */
 export function atmoMetaTick(W) {
   const R = W.rule;
@@ -175,6 +274,10 @@ export function atmoMetaTick(W) {
     gases.O2 = Math.max(0, gases.O2 - leak);
   }
   W.ozone = clamp(gases.O2 * 2.5, 0, 1);
+  // Nuclear / volcanic ozone hit — applied after the O2-derived baseline.
+  const ozHit = Math.min(0.45, (W.dark?.winter || 0) * 0.22 + (gases.sulphate || 0) * 0.35);
+  if (ozHit > 0.01) W.ozone = Math.max(0.02, W.ozone * (1 - ozHit));
+
   // Season is advanced in simTick (phenology); only orbital wobble here
   W.obliquity = (W._baseObliquity ?? R.obliquity) * (1 + 0.04 * Math.sin(W.year * 0.00002));
   if (W._baseSolar == null) W._baseSolar = W.solar;
@@ -186,7 +289,26 @@ export function atmoMetaTick(W) {
     const roa = (1 - e * e) / Math.max(0.02, 1 + e * Math.cos(nu));
     W._solarMod = 1 / (roa * roa);
   }
+  // War soot + L1 shade applied in simTick after advanceClock (see applyWarShade).
   W.greenhouse = greenhouseFromGases(gases, R, livePressureBar(W));
+}
+
+/** Dim insolation from war soot / L1 shade. Call after advanceClock, before climate. */
+export function applyWarShade(W) {
+  if (!W?.gases || W.pausedSolar) {
+    W._warShade = 0;
+    return 0;
+  }
+  const gases = W.gases;
+  const warShade = Math.min(0.22,
+    (W.dark?.winter || 0) * 0.16 + (gases.dust || 0) * 0.28 + (gases.sulphate || 0) * 0.2);
+  const geoShade = Math.min(0.3, W.solarShade || 0);
+  const shade = Math.max(warShade, geoShade);
+  W._warShade = warShade;
+  if (shade > 0.001) {
+    W.solar = Math.max(0.2, (W.solar || 1) * (1 - shade));
+  }
+  return shade;
 }
 
 export function atmoTick(W, sunDir) {
@@ -195,6 +317,21 @@ export function atmoTick(W, sunDir) {
   const Plive = livePressureBar(W);
   const gh = greenhouseFromGases(gases, R, Plive);
   W.greenhouse = gh;
+  /* Water vapour is a *local* greenhouse gas, and treating it as a global mean
+   * was costing the model its pole-to-equator gradient.
+   *
+   * `greenhouseFromGases` works off `gases.H2O`, the planetary mean, so every
+   * cell got the same water-vapour blanket — the same 16 K over Antarctica in
+   * midwinter as over the warm pool. The real polar greenhouse is weak precisely
+   * because cold air holds almost no water: that is a large part of why the poles
+   * are fifty kelvin colder than the tropics rather than twenty. With the
+   * hydrosphere now carrying a real vapour field, the local column is available,
+   * so use it: `ghDry` is everything except water, and each cell adds its own.
+   * The consequence is a gradient that comes from the physics instead of from a
+   * `polarCool` fudge — and a water-vapour feedback that acts where the water
+   * actually is. */
+  const ghDry = gh - vapourGreenhouse(gases.H2O || 0);
+  const vapF = W.vapour?.length === NC ? W.vapour : null;
   // Winds come from geostrophicWind / SWE (called before this tick).
 
   const lapse = 0.45 * R.gravity;
@@ -223,7 +360,20 @@ export function atmoTick(W, sunDir) {
     const polarCool = (R.earthLike && !R.deepTime)
       ? clamp(0.18 - insol, 0, 0.12) * 0.28
       : 0;
-    const eq = insol * (1 - alb) * 0.95 + gh * 1.4 - above * lapse * 0.35 + 0.12 - polarCool;
+    /* Clouds do not only reflect. They also trap outgoing infrared, and on
+       Earth the two effects very nearly cancel: about −45 W/m² of shortwave
+       against about +30 of longwave. Only the reflecting half was modelled here,
+       which was harmless while the cloud field was empty — relative humidity was
+       defined against the global vapour mass, so it sat near 0.1 and almost
+       nothing ever formed — and became a 0.13 cold bias with an ice-albedo
+       runaway behind it the moment the water cycle started working. Trapping is
+       also what makes the pattern right: clouds cool the tropics, where there is
+       sunlight to reflect, and warm the poles, where there is mostly only
+       infrared to keep. */
+    const cloudGh = R.earthLike && !R.deepTime ? 0.135 : 0.16;
+    const ghHere = vapF ? ghDry + vapourGreenhouse(vapF[c]) : gh;
+    const eq = insol * (1 - alb) * 0.95 + ghHere * 1.4 + clouds[c] * cloudGh
+      - above * lapse * 0.35 + 0.12 - polarCool;
     const c4 = c * 4;
     const dT = neighbourMean(temp, c) - temp[c];
     let maritime = isSea ? 1 : 0;
@@ -241,8 +391,9 @@ export function atmoTick(W, sunDir) {
     _t[c] = clamp(t, 0, 1.6);
   }
   temp.set(_t);
-  advect(temp, W, 0.08);
-  advect(moist, W, 0.12);
+  // Temperature and soil moisture are intensive; ash is an amount.
+  advectScalar(temp, W.windU, W.windV, W._adv, 0.35);
+  advectScalar(moist, W.windU, W.windV, W._adv, 0.3);
   advect(ash, W, 0.1);
   cloudsTick(W);
   atmoMetaTick(W);
@@ -251,5 +402,14 @@ export function atmoTick(W, sunDir) {
 /** Inject sulphate / dust / gases — shared by tools and volcanoes. */
 export function injectGas(W, key, amount) {
   if (!(key in W.gases)) return;
-  W.gases[key] = clamp(W.gases[key] + amount, 0, key === 'N2' ? 1.2 : 0.8);
+  /* CO₂ shares a hard ceiling with `syncGasesFromCarbon` (0.85). The old 0.8
+     cap was fine for toys, but player injects that crossed it looked like the
+     tool had stopped working. N₂ stays slightly over 1 so a thick air world
+     can still breathe as mostly nitrogen. */
+  const cap = key === 'N2' ? 1.2 : key === 'CO2' ? 0.85 : 0.8;
+  W.gases[key] = clamp(W.gases[key] + amount, 0, cap);
+  // Carbon reservoir owns Holocene CO₂ — keep it in step or the next tick erases the inject.
+  if (key === 'CO2' && W.carbon) {
+    W.carbon.atmosphere = Math.max(W.carbon.atmosphere || 0, W.gases.CO2 * 100);
+  }
 }

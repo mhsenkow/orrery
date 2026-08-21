@@ -293,8 +293,8 @@ export const PLAY_TIPS = {
     body: 'Name, landscape, and the four-word world id. Click to open the Worlds catalogue. Pick land, under Play, shares a starting continent layout.',
   },
   docktoggle: {
-    title: 'Dock',
-    body: 'Collapse or expand the left panel. Watch mode hides it entirely; the time ribbon stays.',
+    title: 'Menu',
+    body: 'Open or close the dock. On a phone it is a bottom sheet — pick a tool, then tap the globe; the sheet tucks away.',
   },
   vrbtn: {
     title: 'VR',

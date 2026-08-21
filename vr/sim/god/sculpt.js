@@ -240,7 +240,10 @@ export function shiftSeaLevel(delta) {
 
 /** Local erosion freeze / accelerate. Item 24. */
 export function setErosionRate(cell, rate = 0) {
-  if (!W.erosionLock) W.erosionLock = new Float32Array(NC);
+  if (!W.erosionLock) {
+    W.erosionLock = new Float32Array(NC);
+    W.erosionLock.fill(1); // 1 is "erosion as normal"; 0 is a deliberate freeze
+  }
   paintBrush(cell, (c, f) => {
     W.erosionLock[c] = rate; // 0 freeze, >1 accelerate
   });

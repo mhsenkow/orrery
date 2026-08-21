@@ -36,17 +36,28 @@ export const SCENARIOS = [
     title: 'Save a snowball',
     blurb: 'Arrive at a world locked in ice. Find the intervention that works.',
     ruleId: 'terra',
-    deepTime: true,
-    startAgeGa: 0.7,
-    setup(W) {
-      W.state = 'snowball';
-      for (let c = 0; c < W.ice.length; c++) {
-        W.ice[c] = 0.9;
-        W.temp[c] = Math.min(W.temp[c], 0.28);
-      }
-      W.meanTemp = 0.28;
-      W.gases.CO2 = 0.002;
-    },
+    /* The snowball is an authored epoch, not a hand-rolled state.
+     *
+     * This used to force `W.ice`, `W.temp` and 2 000 ppm of CO₂ onto a deep-time
+     * Earth after generate. Two things went wrong. `W.ice` is derived — `iceTick`
+     * rebuilds it from `iceLand` and `iceSea` — so the ice vanished on the first
+     * tick; and the deep-time era schedule wants roughly a tenth of an atmosphere
+     * of CO₂ at 0.7 Ga, so it overwrote the forced value within a few ticks and
+     * warmed the planet straight out of the crisis. Measured: the player did
+     * nothing and the ice was broken by tick 100, then the world cooked to 51 °C.
+     *
+     * `epochs.json` already carries a Cryogenian snowball — 720 Ma, ice to the
+     * equator, 120 ppm, O₂ at a fifth of a percent — with the note "volcanic CO₂
+     * is the way out. Push CO₂ or albedo to break the ice." That is this lesson,
+     * authored, cited and consistent with the era machinery. */
+    epochId: 'snowball',
+    /* And a tick short enough that the player is the fast mechanism. Ice shuts
+       down silicate weathering, so volcanic CO₂ accumulates and the planet
+       escapes on its own — correctly — but at millions of years a tick that took
+       seventy-five ticks, about a minute, which is a challenge you win by
+       watching. At twenty thousand years the natural escape is thousands of ticks
+       away and an injection, a shade or an albedo brush act within a few. */
+    fixedDtYr: 20000,
     objective: 'Break the snowball without sterilising the world',
     score(W) {
       return report(W, {
@@ -169,7 +180,12 @@ export const SCENARIOS = [
       W.state = 'moist-greenhouse';
       W.meanTemp = 0.95;
       W.gases.CO2 = 0.12;
+      /* `_baseSolar` as well as `solar`: `advanceClock` rewrites `W.solar` from
+         `_baseSolar × faintYoungSun` every tick, so a bare assignment here was
+         undone before the scenario's first tick finished — the brightened star
+         this scenario is *about* lasted no time at all. */
       W.solar = 1.3;
+      W._baseSolar = 1.3;
       for (let c = 0; c < W.temp.length; c++) W.temp[c] = 0.9 + rngOf(W, 'rngGod')() * 0.2;
     },
     objective: 'Bring meanTemp below 0.7 without killing all life',
@@ -229,7 +245,17 @@ export function startScenario(id) {
 export function evaluateScenario(W) {
   const s = activeScenario || SCENARIOS.find((x) => x.id === W.scenarioId);
   if (!s) return null;
-  if (s.fail?.(W)) {
+  /* A scenario cannot have failed before it has run.
+   *
+   * `setup` writes the world's opening state and the derived summaries — meanLife
+   * above all — are only recomputed on the next tick, so a predicate that reads
+   * them sees zeros. The snowball's fail test is "no life left on a frozen
+   * planet", which is exactly what a freshly set-up snowball looks like: the
+   * crisis lesson announced "the run ended" the instant the player opened it.
+   * A few ticks of grace and the predicate reads the world it was written about. */
+  const graceYr = Math.max(1, (W.dtYr || 200) * 6);
+  const ranEnough = (W.ageYr - (activeScenario?.startedAt ?? W.ageYr)) >= graceYr;
+  if (ranEnough && s.fail?.(W)) {
     W.scenarioReport = { failed: true, ...s.score(W), ending: failureEnding(W) };
     return W.scenarioReport;
   }

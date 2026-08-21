@@ -325,8 +325,10 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       ${faceBtns}
     </div>
     <p class="rib-face-hint">${lived
-      ? 'Days, seasons and the moon · the calendar holds'
-      : 'Years pass · this season stays'}</p>
+      ? (panel.calendarHeld
+        ? 'Calendar held at present · days and seasons still move'
+        : 'Days, seasons and the moon · the calendar holds')
+      : 'Years pass · this season stays'}${panel.winterHint ? ` · <span class="rib-winter">${panel.winterHint}</span>` : ''}</p>
     ${lived ? '' : `<div class="rib-hold" role="group" aria-label="Held season">${holdBtns}</div>`}
     <div class="rib-life" role="group" aria-label="Biology speed">
       <span class="rib-life-label">Life</span>${lifeBtns}
@@ -339,7 +341,7 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       <select class="rib-rate" data-rate-select aria-label="Years per tick">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
       <button type="button" class="rib-step" data-rate-step="1" title="Faster (.)" aria-label="Faster clock">+</button>
       <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>`}
-      <span class="rib-dt">${lived ? 'lived' : dt}</span>
+      <span class="rib-dt">${clock?.paused ? 'paused' : (lived ? (panel.livedLabel || 'lived') : dt)}</span>
     </div>
   </div>`;
 }

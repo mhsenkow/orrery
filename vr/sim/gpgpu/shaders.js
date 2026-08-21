@@ -19,6 +19,8 @@ uniform sampler2D uClimate; // rgba: temp, moist, ice, clouds
 uniform sampler2D uGeo;     // rgba: height, seaLevel(const via u), ash, dust
 uniform sampler2D uSun;     // r: insolation proxy per cell (pre-baked or flat)
 uniform float uGh;          // greenhouse
+uniform float uCloudGh;     // longwave trapping by cloud
+uniform float uCloudAlb;    // shortwave reflection by cloud
 uniform float uLapse;
 uniform float uSolar;
 uniform float uSea;
@@ -32,10 +34,11 @@ void main(){
   float ice = c.b;
   float clouds = c.a;
   float dust = g.a;
-  float alb = clamp(ice * 0.42 + clouds * 0.28 + dust * 0.22 + mix(0.18, 0.06, isSea), 0.0, 0.85);
+  float alb = clamp(ice * 0.42 + clouds * uCloudAlb + dust * 0.22 + mix(0.18, 0.06, isSea), 0.0, 0.85);
   float insol = texture(uSun, vUV).r * uSolar;
   float above = max(0.0, h - uSea);
-  float eq = insol * (1.0 - alb) * 0.95 + uGh * 1.4 - above * uLapse * 0.35 + 0.12;
+  // Clouds trap infrared as well as reflecting sunlight — same term as atmo.js.
+  float eq = insol * (1.0 - alb) * 0.95 + uGh * 1.4 + c0.a * uCloudGh - above * uLapse * 0.35 + 0.12;
   float mass = mix(0.14, 0.035, isSea);
   if (uAirless > 0.5) mass = 0.45;
   // 4-neighbour Laplacian via geo neighbour UVs packed in uNbr0/1 would be ideal;
@@ -229,6 +232,7 @@ uniform sampler2D uNbr0;
 uniform sampler2D uNbr1;
 uniform sampler2D uDir;
 uniform float uGh, uLapse, uSolar, uSea, uAirless, uFreeze;
+uniform float uCloudGh, uCloudAlb;
 uniform float uRateT, uRateM, uRateA, uFScale, uTidallyLocked;
 uniform vec3 uSunDir;
 layout(location=0) out vec4 oClimate;
@@ -240,10 +244,11 @@ void main(){
   vec3 dir = texture(uDir, vUV).rgb;
   float h = g.r;
   float isSea = step(h, uSea);
-  float alb = clamp(c0.b * 0.42 + c0.a * 0.28 + g.a * 0.22 + mix(0.18, 0.06, isSea), 0.0, 0.85);
+  float alb = clamp(c0.b * 0.42 + c0.a * uCloudAlb + g.a * 0.22 + mix(0.18, 0.06, isSea), 0.0, 0.85);
   float insol = texture(uSun, vUV).r * uSolar;
   float above = max(0.0, h - uSea);
-  float eq = insol * (1.0 - alb) * 0.95 + uGh * 1.4 - above * uLapse * 0.35 + 0.12;
+  // Clouds trap infrared as well as reflecting sunlight — same term as atmo.js.
+  float eq = insol * (1.0 - alb) * 0.95 + uGh * 1.4 + clouds * uCloudGh - above * uLapse * 0.35 + 0.12;
   float mass = mix(0.14, 0.035, isSea);
   if (uAirless > 0.5) mass = 0.45;
   float t = clamp(c0.r + (eq - c0.r) * mass, 0.0, 1.6);

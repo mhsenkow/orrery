@@ -72,7 +72,11 @@ import {
   scaleRung, applyScalePreset, eorefById,
 } from './sim/eoref.js';
 import { exportChronicle, currentEraName, whatHappenedHere } from './chronicle.js';
-import { audioInit, audioUpdate, playEvent, audioMute, audioMuted } from './audio.js';
+import { audioInit, audioUpdate, playEvent, audioMute, audioMuted, installDarkAudioBus } from './audio.js';
+import { drainDarkMoment } from './sim/darkSpectacle.js';
+import {
+  createOriginSketch, applyOriginDigestToRule, originDigestSummary,
+} from './sim/originSketch.js';
 import { LIFE_CLASSES } from './sim/bio.js';
 import { BIOMES } from './sim/ecology.js';
 import {
@@ -125,6 +129,8 @@ const S = {
   lookMode: 'photo',
   cloudFree: false,
   paused: false,
+  originSketch: null,
+  originPending: null,
   pitchShot: false,
   detail: 0,
   entFade: 0,
@@ -178,6 +184,7 @@ const S = {
 /** Updated when Local panel chrome is wired; called each frame. */
 let syncLocalChrome = () => {};
 let applyLocalLayout = () => {};
+let syncSeekSeg = () => {};
 
 const tmpQ = new Float32Array(4);
 const _faceDir = [0, 0, 0];
@@ -189,6 +196,25 @@ function requestFace(cell, ms = 1800) {
   if (cell == null || cell < 0) return;
   S.faceCell = cell | 0;
   S.faceUntil = (S._t || 0) + ms;
+}
+
+/** Live warhead cell while cinematic follow is armed. */
+function followFlightCell() {
+  const d = W.dark;
+  if (!d || (d.followFlight | 0) < 0) return -1;
+  if ((d.followUntil | 0) > 0 && (W._tickIndex | 0) > (d.followUntil | 0)) {
+    d.followFlight = -1;
+    return -1;
+  }
+  const flights = W.flight || [];
+  let f = flights[d.followFlight | 0];
+  if (!f || f.dead) f = flights.find((x) => !x.dead);
+  if (!f || f.dead || !f.path?.length) {
+    d.followFlight = -1;
+    return -1;
+  }
+  const at = Math.min(f.path.length - 1, Math.floor(f.at || 0));
+  return f.path[at] | 0;
 }
 
 function faceToward(cell, dt) {
@@ -336,6 +362,7 @@ function beginHoldEarthLesson() {
   _taughtAlive = true;
   S._holdStep = 0;
   S._lessonSpun = false;
+  S._holdQ0 = null;
   S._lessonCam0 = S.camDist;
   S.localPin = -1;
   S.localSeek = 'life';
@@ -345,9 +372,16 @@ function beginHoldEarthLesson() {
   setTool('inspect');
   setDockTab('tools');
   setSuiteDesk('tools', 'land');
-  document.getElementById('dock')?.classList.remove('collapsed');
-  document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'true');
-  showMoment('Hold Earth', 'Hold a planet', 'Drag to spin · scroll to come closer · click the coast for the map');
+  if (isPhone()) setPhoneDock(true);
+  else {
+    document.getElementById('dock')?.classList.remove('collapsed');
+    document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'true');
+  }
+  syncToolRail();
+  showMoment('Hold Earth', 'Hold a planet',
+    isPhone()
+      ? 'Drag to spin · pinch-zoom · tap the coast for the map'
+      : 'Drag to spin · scroll to come closer · click the coast for the map');
 }
 const CAM_FOV = 50 * Math.PI / 180;
 let xrSession = null, xrRefSpace = null, camWorld = null;
@@ -501,7 +535,7 @@ function bindLayerPanel() {
   refreshLayerPanel();
 }
 
-function runGenerate(seed, ruleIn) {
+function runGenerate(seed, ruleIn, opts = {}) {
   setBootPhase('Forming world', '');
   const session = {
     deepTime: W.rule?.deepTime,
@@ -510,6 +544,10 @@ function runGenerate(seed, ruleIn) {
     tutorial: W.rule?.tutorial,
   };
   const rule = mergeRunRule(ruleIn, session);
+  if (!opts.skipOrigin && wantsOriginCeremony(rule) && !S.originSketch) {
+    beginOriginCeremony(seed, rule, opts.afterMeta);
+    return;
+  }
   W._bootPhase = setBootPhase;
   generate(seed, rule);
   W._bootPhase = null;
@@ -531,6 +569,64 @@ function runGenerate(seed, ruleIn) {
   refreshLab();
   refreshLayerPanel();
   if (TABLE.enabled) syncTableFromShelf(TABLE, W);
+  opts.afterMeta?.(W.originDigest || null);
+}
+
+function wantsOriginCeremony(rule) {
+  try {
+    const url = new URL(location.href);
+    if (url.searchParams.get('skipOrigin') === '1') return false;
+    if (url.searchParams.get('origin') === '1') return true;
+  } catch { /* */ }
+  if (!(rule?.earthLike || rule?.thrive)) return false;
+  try {
+    if (sessionStorage.getItem('orrery-origin-skip') === '1') return false;
+  } catch { /* */ }
+  return true;
+}
+
+function beginOriginCeremony(seed, rule, afterMeta = null) {
+  S.originPending = { seed, rule, afterMeta };
+  S.originSketch = createOriginSketch(seed, { earthLike: rule?.earthLike !== false });
+  S._originWasPaused = S.paused;
+  S.paused = true;
+  S.camDist = Math.max(S.camDist || 2.4, 2.7);
+  document.getElementById('bootload')?.classList.add('hidden');
+  document.body.classList.add('origin-play');
+  const cap = S.originSketch.caption;
+  showMoment(cap.title, cap.body, 'Esc skips · formation writes the sphere');
+}
+
+function finishOriginCeremony() {
+  const sk = S.originSketch;
+  const pending = S.originPending;
+  if (!sk || !pending) {
+    S.originSketch = null;
+    S.originPending = null;
+    document.body.classList.remove('origin-play');
+    return;
+  }
+  if (!sk.done) sk.skip();
+  const dig = sk.digest || sk.pendingDigest;
+  const rule = applyOriginDigestToRule(pending.rule, dig);
+  S.originSketch = null;
+  S.originPending = null;
+  document.body.classList.remove('origin-play');
+  W._pendingOriginDigest = dig;
+  runGenerate(pending.seed, rule, { skipOrigin: true, afterMeta: pending.afterMeta });
+  S.paused = !!S._originWasPaused;
+  showMoment(
+    dig.hasMoon ? 'A world with a Moon' : 'A world alone',
+    originDigestSummary(dig),
+    'The sphere remembers the hit',
+  );
+}
+
+function skipOriginCeremony() {
+  if (!S.originSketch) return;
+  try { sessionStorage.setItem('orrery-origin-skip', '1'); } catch { /* */ }
+  S.originSketch.skip();
+  finishOriginCeremony();
 }
 
 /** Load a shelf / table slot onto the main planet. */
@@ -560,6 +656,43 @@ function loadTableSlot(slot) {
 
 const TOOL_BTN_SEL = '#toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsSample button, #toolsEvil button';
 
+function isPhone() {
+  return typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
+}
+
+/** Phone bottom-sheet dock: open/close + scrim so the globe stays tappable. */
+function setPhoneDock(open) {
+  const dock = document.getElementById('dock');
+  const btn = document.getElementById('docktoggle');
+  const scrim = document.getElementById('dockscrim');
+  const ui = document.getElementById('ui');
+  if (!dock) return;
+  dock.classList.toggle('is-open', !!open);
+  scrim?.classList.toggle('on', !!open);
+  ui?.classList.toggle('phone-dock-open', !!open);
+  btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  btn?.setAttribute('aria-pressed', open ? 'true' : 'false');
+}
+
+/** Floating chip: which verb is armed, and a one-tap return to Look. */
+function syncToolRail() {
+  const rail = document.getElementById('toolrail');
+  const arm = document.getElementById('toolrailArm');
+  const clear = document.getElementById('toolrailClear');
+  if (!rail || !arm) return;
+  const tool = TOOLS.find((t) => t.id === activeTool) || TOOLS[0];
+  const armed = tool.id !== 'inspect';
+  rail.dataset.armed = armed ? 'true' : 'false';
+  arm.dataset.armed = armed ? 'true' : 'false';
+  decorateButton(arm, tool.id, tool.name);
+  arm.title = armed ? `${tool.name} — change tool` : 'Tools — pick a verb';
+  if (clear) {
+    clear.hidden = !armed;
+    clear.innerHTML = iconSVG('inspect');
+    clear.title = 'Look / spin the globe';
+  }
+}
+
 function refreshToolGates() {
   const unlocked = toolsUnlocked(W);
   const buttons = document.querySelectorAll(TOOL_BTN_SEL);
@@ -574,6 +707,7 @@ function refreshToolGates() {
   }
   if (needInspect) setTool('inspect');
   buttons.forEach((x) => x.setAttribute('aria-pressed', x.dataset.id === activeTool ? 'true' : 'false'));
+  syncToolRail();
 }
 
 function setRuleset(i) {
@@ -1132,7 +1266,7 @@ function updateHUD() {
     const needle = Math.min(100, Math.max(0, ((4567 - (W.ics?.maBP ?? 0)) / 4567) * 100)) | 0;
     const ageLabel = formatAge(W.ageYr || W.year);
     const panel = timePanelState(W, S);
-    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}|${panel.lifeSpeed}`;
+    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}|${panel.lifeSpeed}|${panel.livedLabel}|${panel.winterHint}|${(W.dark?.winter * 100) | 0}`;
     if (ribbon.dataset.sig !== sig) {
       ribbon.dataset.sig = sig;
       ribbon.innerHTML = icsRibbonHTML(W.ics, ageLabel, W.ics?.maBP, clock, panel);
@@ -1146,12 +1280,10 @@ function updateHUD() {
   if (!updateHUD._dark || performance.now() - updateHUD._dark > 500) {
     updateHUD._dark = performance.now();
     refreshDarkHud(W);
-    const dock = document.getElementById('darkhud-dock');
-    if (dock && document.querySelector('.suite-desk[data-desk-panel="evil"].on')) {
-      const floating = document.getElementById('darkhud');
-      if (floating?.innerHTML) dock.innerHTML = floating.innerHTML;
-    }
   }
+  // Drain war moments onto the chronicle stage.
+  const mom = drainDarkMoment(W);
+  if (mom) showMoment(mom.title, mom.body, mom.sub || formatAge(W.ageYr));
 
   // Keep Sky / Rock panels live when open
   if (document.getElementById('pane-climate')?.classList.contains('on')) {
@@ -1298,7 +1430,12 @@ function updateHUD() {
       (x.wind != null
         ? `wind ${Number(x.wind).toFixed(2)}` +
           (x.windU != null ? ` (u ${Number(x.windU).toFixed(2)} v ${Number(x.windV).toFixed(2)})` : '') +
-          ` · ${windBandAt(DIR[x.cell * 3 + 1], W._itczLat || 0, W._windCells || 3)}<br>`
+          ` · ${windBandAt(DIR[x.cell * 3 + 1], W._itczLat || 0, W._windCells || 3)}` +
+          // The flow aloft, and the shear between: a storm's whole prospects.
+          (W.jetU
+            ? ` · aloft ${Math.sqrt(W.jetU[x.cell] ** 2 + W.jetV[x.cell] ** 2).toFixed(2)}`
+              + ` · shear ${(W.shear?.[x.cell] || 0).toFixed(2)}`
+            : '') + `<br>`
         : '') +
       (() => {
         const cur = currentsAtCell(W, x.cell);
@@ -1372,10 +1509,36 @@ function update(t) {
   uploadEntities();
   const hunting = S.localSeek === 'life' && S.localPin < 0 && !S.follow;
   const glance = hunting ? huntGlance() : -1;
+  const missileCell = followFlightCell();
   const face = S.follow?.cell >= 0 ? S.follow.cell
     : glance >= 0 ? glance
+    : missileCell >= 0 ? missileCell
     : ((S.faceUntil > (S._t || 0)) ? S.faceCell : -1);
   if (face >= 0) faceToward(face, dt);
+
+  // Origin ceremony — formation sketch owns the frame until the sphere is born.
+  if (S.originSketch) {
+    const prevPh = S.originSketch.phase;
+    S.originSketch.tick(dt);
+    if (S.originSketch.phase !== prevPh && S.originSketch.caption) {
+      const c = S.originSketch.caption;
+      showMoment(c.title, c.body, 'Esc skips · formation writes the sphere');
+    }
+    // Slow tumble so the cloud reads in 3D.
+    qAxis(tmpQ, 0, 1, 0, 0.22 * dt);
+    qmul(S.q, S.q, tmpQ);
+    qnorm(S.q);
+    if (S.originSketch.done) finishOriginCeremony();
+    S._fa++;
+    return;
+  }
+
+  // Cinematic follow: ease camera in toward the warhead.
+  if (missileCell >= 0) {
+    const want = clamp(Math.min(S.camDist, 2.15), 1.55, 2.4);
+    S.camDist += (want - S.camDist) * Math.min(1, dt * 1.4);
+    requestFace(missileCell, 900);
+  }
 
   // Spin inertia — planet resists. Item 11.
   if (!grabbing && !dragging && !panning && !S.toolDrag) {
@@ -1468,8 +1631,11 @@ function update(t) {
   // Eye adaptation across scale / terminator (next hdr item)
   const nightish = Math.max(0, Math.min(1, (alt < 0.2 ? 0.15 : 0) + (W.gases?.dust || 0) * 0.3));
   const baseExpo = clamp(0.85 + Math.log2(Math.max(0.05, W.solar || 1)) * 0.12, 0.55, 1.85);
-  S.exposureTarget = baseExpo * (1.15 - nightish * 0.25) * (S.ceremonyUntil > performance.now() ? 1.08 : 1);
-  S.exposure = (S.exposure ?? S.exposureTarget) + (S.exposureTarget - (S.exposure ?? S.exposureTarget)) * Math.min(1, dt * 1.8);
+  // Nuclear blast: a brief exposure kick — never bleach the whole frame.
+  const blastPunch = Math.min(0.55, (W._blastPunch || 0) + (W._blastFlash || 0) * 0.18);
+  S.exposureTarget = baseExpo * (1.15 - nightish * 0.25) * (S.ceremonyUntil > performance.now() ? 1.08 : 1)
+    * (1 + blastPunch * 0.28);
+  S.exposure = (S.exposure ?? S.exposureTarget) + (S.exposureTarget - (S.exposure ?? S.exposureTarget)) * Math.min(1, dt * (blastPunch > 0.15 ? 3.2 : 1.8));
 
   audioUpdate(S._localFocus);
 
@@ -1502,6 +1668,23 @@ function update(t) {
         }
         S.follow = live || followTarget();
         if (S.follow?.cell >= 0 && S.localPin !== S.follow.cell) S.localPin = S.follow.cell;
+      }
+      // First-person drone feed (§136): W.dark.droneFocus / _localFocusCell → pin.
+      if (W.dark?.droneFocus >= 0 || (W.dark?._localFocusCell | 0) >= 0) {
+        const dc = (W.dark._localFocusCell | 0) >= 0
+          ? (W.dark._localFocusCell | 0)
+          : (W.drones?.[W.dark.droneFocus | 0]?.cell ?? -1);
+        if (dc >= 0 && S.localPin !== dc) S.localPin = dc;
+      }
+      // Cinematic camera follow missile (§Q): W.dark.followFlight → pin to flight cell.
+      if ((W.dark?.followFlight | 0) >= 0 && W.flight?.length) {
+        const fi = W.dark.followFlight | 0;
+        const f = W.flight[fi] || W.flight.find((x) => !x.dead);
+        if (f && !f.dead) {
+          const at = Math.min((f.path?.length || 1) - 1, Math.floor(f.at || 0));
+          const fc = f.path?.[at] ?? f.to ?? f.from;
+          if (fc >= 0) S.localPin = fc | 0;
+        }
       }
       if (patch?.status) patch.status.behind = cellFacingZ(patch.focus) < 0.1;
       syncLocalChrome(patch, hoverKey);
@@ -1562,8 +1745,10 @@ function onToolResult(res) {
     startCommitHold(res.cell ?? 0);
     return;
   }
-  if (res.orbitFlash) S.orbitFlash = (S._t || performance.now()) + 4000;
-  if (res.note && res.ok) showMoment('Orbit', res.note, formatAge(W.ageYr));
+  if (res.orbitFlash) S.orbitFlash = (S._t || performance.now()) + 5500;
+  if (res.ok && (res.note || (res.orbitFlash && res.said))) {
+    showMoment(res.note ? 'Orbit' : 'Lever', res.note || res.said, formatAge(W.ageYr));
+  }
   if (res.ok) {
     playEvent(activeTool === 'meteor' ? 'impact' : (activeTool === 'seed' || activeTool === 'seedGuild') ? 'seed' : 'tool', 0.6);
     const geomTools = new Set(['raise', 'lower', 'flatten', 'smooth', 'sharpen', 'roughen', 'crust', 'meteor', 'buster', 'volcano', 'quake', 'plume', 'lip', 'river', 'ice']);
@@ -1573,17 +1758,54 @@ function onToolResult(res) {
     showReceiptToast(res);
   }
   if (res.cell != null && activeTool === 'inspect') {
-    S.inspect = res;
-    S.localPin = res.cell;
-    requestFace(res.cell);
-    setDockTab('lab');
-    setSuiteDesk('lab', 'station');
+    inspectAt(res.cell, res);
   }
   if (res.sample) {
     S.lastSample = res.sample;
     setDockTab('lab');
     setSuiteDesk('lab', 'station');
     refreshLab();
+  }
+  updateHUD();
+}
+
+/** Pin a cell, face it, and open the Lab station readout. */
+function inspectAt(cell, payload = null) {
+  if (cell == null || cell < 0) return;
+  const data = payload?.h != null ? payload : inspectCell(cell);
+  S.inspect = data?.cell != null ? data : { ...inspectCell(cell), cell };
+  lookAtCell(cell, { ms: 1800 });
+  setTool('inspect');
+  setDockTab('lab');
+  setSuiteDesk('lab', 'station');
+  if (S.localGlobe === 'wash' || S.localGlobe === 'both') refreshColours(1);
+  updateHUD();
+}
+
+/** Swing the globe so `cell` faces the camera, and pin the mini-map there. */
+function lookAtCell(cell, opts = {}) {
+  if (cell == null || cell < 0) return;
+  const c = cell | 0;
+  S.localPin = c;
+  S.localSeek = 'stay'; // hold the mini-map on this spot (don't hunt life)
+  S.follow = null;
+  if (W.dark) {
+    W.dark.followFlight = -1;
+    W.dark.droneFocus = -1;
+    W.dark._localFocusCell = -1;
+  }
+  S.inspect = { ...(inspectCell(c) || {}), cell: c };
+  S._localFocus = c;
+  resetCamPan();
+  S.angVel[0] = 0;
+  S.angVel[1] = 0;
+  requestFace(c, opts.ms ?? 2400);
+  if (opts.zoom !== false && S.camDist > 2.6) {
+    S.camDist = Math.max(2.05, S.camDist * 0.82);
+  }
+  syncSeekSeg();
+  if (S.localGlobe === 'wash' || S.localGlobe === 'both' || S.localGlobe === 'rim') {
+    refreshColours(1);
   }
   updateHUD();
 }
@@ -1672,7 +1894,7 @@ function setupTips() {
   });
   // Dock tabs — icon stacked above label (Sky metaphor for all)
   const tabTips = {
-    tools: ['Tools', 'The verbs — raise land, seed life, strike. Select one, then right-click the planet. Looking and cores live in Lab.'],
+    tools: ['Tools', 'The verbs — raise land, seed life, strike. Select one, then right-click the planet (phone: tap). Looking and cores live in Lab.'],
     god: ['Play', 'This run: undo, watch, optional goals, and a named world. Brush and seed settings live with the tools they change. Time lives on the ribbon.'],
     climate: ['Sky', 'Atmosphere desks: circulation & tides, storm track, coast flood risk, spin A/B compare.'],
     rock: ['Rock', 'Core, plates, boundaries, fire, crust age — interiors drive dynamos and lids.'],
@@ -1692,6 +1914,17 @@ function setupTips() {
       decorateButton(b, icon, tabLabels[tab] || b.textContent.trim());
     }
   });
+
+  // Topbar chrome — icons on phone (labels hide ≤640px).
+  for (const [id, icon, label] of [
+    ['tourbtn', 'chronicle', 'Tour'],
+    ['catbtn', 'planet', 'Worlds'],
+    ['newseed', 'genesisrand', 'Reseed'],
+    ['docktoggle', 'tabtools', 'Menu'],
+  ]) {
+    const el = document.getElementById(id);
+    if (el && !el.querySelector('.ico')) decorateButton(el, icon, label);
+  }
 
   // Suite desk tabs (Play / View / Lab / World / Tools)
   const suiteMeta = {
@@ -2010,6 +2243,9 @@ function beginScenario(id, opts = {}) {
       startAgeGa: s.startAgeGa,
       landscape: s.landscape,
     });
+  // A scenario that pins its own tick length needs that carried through on both
+  // paths, or the clock it was designed around is not the clock it gets.
+  if (s.fixedDtYr) rule.fixedDtYr = s.fixedDtYr;
   runGenerate(W.seed ^ 0x51, rule);
   startScenario(id);
   S._lessonStartedAt = performance.now();
@@ -2111,6 +2347,21 @@ function checkLessonProgress() {
   if (!lesson || lessonDone(id)) return;
   if (id === 'hold-earth') {
     const step = S._holdStep | 0;
+    /* Any way of turning the planet counts.
+     *
+     * `_lessonSpun` is set on pointer-up, but only for a left-drag of more than
+     * 22 px *while the inspect tool is held* — so a player who picked up a tool
+     * first, or span with a right-drag, or is on a touchpad, or nudged it with
+     * the keyboard, could turn the world all day and the first lesson would never
+     * advance. The orientation is the honest test: has this planet been rotated
+     * since the lesson opened. */
+    if (S._holdQ0 == null) S._holdQ0 = Array.from(S.q || [0, 0, 0, 1]);
+    else if (!S._lessonSpun) {
+      const a = S._holdQ0, b = S.q || a;
+      // |dot| of two unit quaternions: 1 is no rotation, cos(θ/2) otherwise.
+      const dot = Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3]);
+      if (dot < 0.985) S._lessonSpun = true;   // ~20° of turn
+    }
     if (step === 0 && S._lessonSpun) {
       S._holdStep = 1;
       showMoment('Hold Earth', 'Come closer', 'Scroll toward the globe — or press 4 for ISS height.');
@@ -2118,6 +2369,7 @@ function checkLessonProgress() {
       S._holdStep = 2;
       showMoment('Hold Earth', 'Open the map', 'With Inspect (Q), click the coast. The square is where you can stand.');
       setTool('inspect');
+      syncToolRail();
     } else if (step === 2 && S.localPin >= 0) {
       finishLesson(id);
     }
@@ -2360,16 +2612,21 @@ function setupGodPanel() {
     g.rulesetId = base.id || 'terra';
     if (!g.name) g.name = nameWorld(g.seed, g.landscape);
     const rule = rulesetFromGenesis(g);
-    runGenerate(g.seed, rule);
-    syncLandscapeUi(g.landscape);
-    applyGenesisToWorld(W, g);
-    S.genesis = g;
-    const seedEl = document.getElementById('genesisseed');
-    if (seedEl) seedEl.value = g.seedLabel || encodeWorldId(g.seed, g.landscape);
-    rememberWorldId(worldIdOf(W));
-    refreshGenesisReport(g);
-    applyOverlayChoice('plates');
-    showMoment('Genesis', g.name, genesisSummary(g, W));
+    // Genesis Create always plays formation (unless ?skipOrigin=1).
+    try { sessionStorage.removeItem('orrery-origin-skip'); } catch { /* */ }
+    runGenerate(g.seed, rule, {
+      afterMeta() {
+        syncLandscapeUi(g.landscape);
+        applyGenesisToWorld(W, g);
+        S.genesis = g;
+        const seedEl = document.getElementById('genesisseed');
+        if (seedEl) seedEl.value = g.seedLabel || encodeWorldId(g.seed, g.landscape);
+        rememberWorldId(worldIdOf(W));
+        refreshGenesisReport(g);
+        applyOverlayChoice('plates');
+        showMoment('Genesis', g.name, genesisSummary(g, W) + (W.originDigest ? ` · ${originDigestSummary(W.originDigest)}` : ''));
+      },
+    });
   });
   document.getElementById('genesisrand')?.addEventListener('click', () => {
     const g = randomizeGenesis({ habitable: true });
@@ -2399,7 +2656,7 @@ function setupGodPanel() {
   });
 }
 
-function setDockTab(tab) {
+function setDockTab(tab, opts = {}) {
   document.querySelectorAll('.dock-tabs button').forEach((b) => {
     b.setAttribute('aria-pressed', b.dataset.tab === tab ? 'true' : 'false');
   });
@@ -2408,10 +2665,8 @@ function setDockTab(tab) {
   });
   const dock = document.getElementById('dock');
   dock?.classList.toggle('lab-mode', tab === 'lab');
-  if (typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches) {
-    dock?.classList.add('is-open');
-    document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'true');
-  }
+  // Phone: open the sheet when browsing tabs; tool pick passes { open:false } so the globe stays free.
+  if (isPhone() && opts.open !== false) setPhoneDock(true);
   if (tab === 'lab') refreshLab();
   if (tab === 'climate') refreshClimatePanel({ forceChart: true });
   if (tab === 'rock') refreshPlatesPanel({ forceAll: true });
@@ -2776,16 +3031,19 @@ function applyOpening(opening, opts = {}) {
   const born = rulesetFromGenesis(g);
   const rule = opening.epoch ? ruleForEra(born, opening.epoch) : born;
   S.landscape = opening.landscape;
-  runGenerate(opening.seed, rule);
-  W.worldName = g.name;
-  applyGenesisToWorld(W, g);
-  S.genesis = g;
-  rememberWorldId(worldIdOf(W));
-  syncLandscapeUi(g.landscape);
-  const seedEl = document.getElementById('genesisseed');
-  if (seedEl) seedEl.value = encodeWorldId(opening.seed, opening.landscape, opening.epoch);
-  refreshGenesisReport(g);
-  updateHUD();
+  runGenerate(opening.seed, rule, {
+    afterMeta() {
+      W.worldName = g.name;
+      applyGenesisToWorld(W, g);
+      S.genesis = g;
+      rememberWorldId(worldIdOf(W));
+      syncLandscapeUi(g.landscape);
+      const seedEl = document.getElementById('genesisseed');
+      if (seedEl) seedEl.value = encodeWorldId(opening.seed, opening.landscape, opening.epoch);
+      refreshGenesisReport(g);
+      updateHUD();
+    },
+  });
 }
 
 function pickerCandidates(current) {
@@ -3060,21 +3318,26 @@ export function boot() {
   const syncToolPress = () => {
     document.querySelectorAll(TOOL_BTN_SEL)
       .forEach((x) => x.setAttribute('aria-pressed', x.dataset.id === activeTool ? 'true' : 'false'));
+    syncToolRail();
   };
   const adoptTool = (t) => {
     setTool(t.id);
     syncToolPress();
     refreshGuildHint();
+    const phone = isPhone();
     if (t.group === 'see') {
       // Inspect is also spin-the-globe — don't yank the dock open.
       if (t.id !== 'inspect') {
-        setDockTab('lab');
+        setDockTab('lab', { open: !phone });
         setSuiteDesk('lab', 'station');
       }
+      if (phone) setPhoneDock(false);
       return;
     }
-    setDockTab('tools');
+    // Arm the verb on its desk, then on phone tuck the sheet so the globe is free to tap.
+    setDockTab('tools', { open: !phone });
     setSuiteDesk('tools', TOOL_DESK[t.group] || 'land');
+    if (phone) setPhoneDock(false);
   };
   TOOLS.forEach((t) => {
     const b = document.createElement('button');
@@ -3098,6 +3361,13 @@ export function boot() {
       : t.group === 'see' ? deskEls.see
       : deskEls[TOOL_DESK[t.group] || 'land'];
     host?.appendChild(b);
+    // Inspect is the default look — also first on Land so it is not buried in Lab.
+    if (t.id === 'inspect' && deskEls.land && host !== deskEls.land) {
+      const landBtn = b.cloneNode(true);
+      landBtn.onclick = b.onclick;
+      if (tip) bindTip(landBtn, tip.title, tip.body, meta);
+      deskEls.land.prepend(landBtn);
+    }
   });
 
   const viewOverlays = document.getElementById('viewOverlays');
@@ -3149,12 +3419,38 @@ export function boot() {
     const dock = document.getElementById('dock');
     const btn = document.getElementById('docktoggle');
     if (!dock) return;
-    const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
-    if (phone) dock.classList.toggle('is-open');
-    else dock.classList.toggle('collapsed');
-    const open = phone ? dock.classList.contains('is-open') : !dock.classList.contains('collapsed');
+    if (isPhone()) {
+      setPhoneDock(!dock.classList.contains('is-open'));
+      return;
+    }
+    dock.classList.toggle('collapsed');
+    const open = !dock.classList.contains('collapsed');
     btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
     btn?.setAttribute('aria-pressed', open ? 'true' : 'false');
+  });
+  document.getElementById('dockscrim')?.addEventListener('click', () => {
+    if (isPhone()) setPhoneDock(false);
+  });
+  document.getElementById('toolrailArm')?.addEventListener('click', () => {
+    const tool = TOOLS.find((t) => t.id === activeTool);
+    const desk = tool?.group === 'see' ? null : (TOOL_DESK[tool?.group] || 'land');
+    if (tool?.group === 'see' && tool.id !== 'inspect') {
+      setDockTab('lab');
+      setSuiteDesk('lab', 'station');
+    } else {
+      setDockTab('tools');
+      setSuiteDesk('tools', desk || 'land');
+    }
+    if (isPhone()) setPhoneDock(true);
+  });
+  document.getElementById('toolrailClear')?.addEventListener('click', () => {
+    const inspect = TOOLS.find((t) => t.id === 'inspect');
+    if (inspect) adoptTool(inspect);
+    else {
+      setTool('inspect');
+      syncToolPress();
+      if (isPhone()) setPhoneDock(false);
+    }
   });
   if (typeof matchMedia === 'function') {
     const phoneQ = matchMedia('(max-width: 640px)');
@@ -3163,18 +3459,20 @@ export function boot() {
       const btn = document.getElementById('docktoggle');
       if (!dock) return;
       if (e.matches) {
-        dock.classList.remove('collapsed', 'is-open');
-        btn?.setAttribute('aria-expanded', 'false');
+        dock.classList.remove('collapsed');
+        setPhoneDock(false);
       } else {
+        document.getElementById('dockscrim')?.classList.remove('on');
+        document.getElementById('ui')?.classList.remove('phone-dock-open');
         dock.classList.remove('is-open');
         btn?.setAttribute('aria-expanded', dock.classList.contains('collapsed') ? 'false' : 'true');
       }
+      syncToolRail();
     };
     phoneQ.addEventListener('change', onPhone);
-    if (phoneQ.matches) {
-      document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'false');
-    }
+    if (phoneQ.matches) setPhoneDock(false);
   }
+  syncToolRail();
 
   document.getElementById('pause').onclick = togglePause;
   document.getElementById('newseed').onclick = () => {
@@ -3432,6 +3730,7 @@ export function boot() {
       document.querySelectorAll(TOOL_BTN_SEL).forEach((x) => {
         x.setAttribute('aria-pressed', x.dataset.id === 'raise' ? 'true' : 'false');
       });
+      syncToolRail();
       S.localExpanded = true;
       syncLocalLayout?.();
       showErr('Canvas: cube net on the map. Left-drag to paint. Plates frozen.');
@@ -3468,8 +3767,9 @@ export function boot() {
   document.getElementById('localkeyclose')?.addEventListener('click', () => closeLocalKey());
   syncView();
 
-  const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
-  S.localSize = phone ? LOCAL_SIZE_S : LOCAL_SIZE_M;
+  const phone = isPhone();
+  // Phone starts as the icon peek so the globe isn’t covered; + grows the map.
+  S.localSize = phone ? LOCAL_SIZES[0] : LOCAL_SIZE_M;
   if (phone) S.localSnap = 'tr';
   const localPanel = document.getElementById('localpanel');
   const localCvs = document.getElementById('localview');
@@ -3730,6 +4030,7 @@ export function boot() {
       const auto = document.querySelector('#localMove [data-auto]');
       if (auto) auto.title = v === 'life' ? 'Hunt recent life — release pin' : 'Stay — densest life';
     });
+  syncSeekSeg = () => syncSegPressed('localSeek', () => S.localSeek);
   mkSeg('localRadius', LOCAL_RADII, LOCAL_RADIUS_LABELS,
     () => S.localRadius,
     (v) => { S.localRadius = v; refreshColours(1); });
@@ -3959,6 +4260,7 @@ export function boot() {
 
   canvas.addEventListener('pointerdown', (e) => {
     audioInit();
+    installDarkAudioBus();
     if (TABLE.enabled) {
       const slot = desktopTablePick(e.clientX, e.clientY);
       if (slot) {
@@ -4038,12 +4340,17 @@ export function boot() {
         if (cell != null && cell >= 0) {
           pinLocal(cell);
           onToolResult(useToolAt(cell));
-          setDockTab('lab');
-          setSuiteDesk('lab', 'station');
         }
       }
     }
     dragging = false;
+  });
+  canvas.addEventListener('dblclick', (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const cell = desktopPick(e.clientX, e.clientY);
+    if (cell == null || cell < 0) return;
+    lookAtCell(cell);
   });
   canvas.addEventListener('pointercancel', () => {
     panning = false;
@@ -4101,7 +4408,18 @@ export function boot() {
 
   addEventListener('keydown', (e) => {
     audioInit();
+    installDarkAudioBus();
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+    if (e.key === 'Escape' && isPhone() && document.getElementById('dock')?.classList.contains('is-open')) {
+      e.preventDefault();
+      setPhoneDock(false);
+      return;
+    }
+    if (e.key === 'Escape' && S.originSketch) {
+      e.preventDefault();
+      skipOriginCeremony();
+      return;
+    }
     if (e.key === 'Escape' && doorIsOpen()) {
       startLesson('hold-earth');
       return;
@@ -4318,6 +4636,7 @@ function setupXR() {
     if (xrSession) { xrSession.end(); return; }
     try {
       audioInit();
+      installDarkAudioBus();
       const s = await navigator.xr.requestSession('immersive-vr', {
         optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
       });

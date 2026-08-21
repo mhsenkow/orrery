@@ -188,11 +188,21 @@ function buildBasis() {
   const north = new Float32Array(NC * 3);
   for (let c = 0; c < NC; c++) {
     const ux = DIR[c * 3], uy = DIR[c * 3 + 1], uz = DIR[c * 3 + 2];
-    // east = normalize(up × Ŷ); near the poles Ŷ is parallel to up so fall back to X̂
-    let ex = -uz, ey = 0, ez = ux;
+    /* east = normalize(Ŷ × up), north = up × east.
+     *
+     *  This was `up × Ŷ`, which is due *west*, and north then came out due
+     *  south — a frame rotated half a turn about the vertical. Nothing that only
+     *  ever pairs (u, v) with this basis could tell: the two flips cancel in
+     *  every dot product, and Coriolis is invariant under them. What could tell
+     *  were the places that read a component and named it: the flow-line visual
+     *  drew every wind and current backwards, `poleward = v · lat` in the
+     *  atmospheric-river test meant equatorward, and dust lofting keyed off a
+     *  "westerly" that was an easterly. Near the poles Ŷ is parallel to up, so
+     *  fall back to a meridian through X̂. */
+    let ex = uz, ey = 0, ez = -ux;
     let el = Math.hypot(ex, ey, ez);
     if (el < 1e-4) {
-      ex = 0; ey = uz; ez = -uy;
+      ex = 0; ey = -uz; ez = uy;
       el = Math.hypot(ex, ey, ez) || 1;
     }
     ex /= el; ey /= el; ez /= el;
@@ -219,13 +229,21 @@ let _nbrEN = buildNbrEN();
 export let NBR_E = _nbrEN.e;
 export let NBR_N = _nbrEN.n;
 export let NBR_CHORD = _nbrEN.chord;
+export let NBR_RA = _nbrEN.ra;
+export let NBR_RB = _nbrEN.rb;
+export let NBR_IWE = _nbrEN.iwe;
+export let NBR_IWN = _nbrEN.iwn;
+export let NBR_ICHORD = _nbrEN.ichord;
 export let LON = buildLon();
 
 /** Per-cell longitude. Fixed geometry, so tick loops read it instead of
  *  running an atan2 per cell every step. */
 function buildLon() {
   const lon = new Float64Array(NC);
-  for (let c = 0; c < NC; c++) lon[c] = Math.atan2(DIR[c * 3 + 2], DIR[c * 3]);
+  /* Measured so that longitude increases the way `EAST` points — atan2(z, x)
+     ran the other way, so a basin's "east side" and a cell's eastward wind
+     disagreed about which way east was. */
+  for (let c = 0; c < NC; c++) lon[c] = Math.atan2(-DIR[c * 3 + 2], DIR[c * 3]);
   return lon;
 }
 
@@ -236,6 +254,34 @@ function buildNbrEN() {
   const e = new Float32Array(NC * 4);
   const n = new Float32Array(NC * 4);
   const chord = new Float64Array(NC * 4);
+  /* Rotation from a neighbour's tangent frame into this cell's.
+   *
+   *  Every vector field on this grid — wind, current, stress — is stored as an
+   *  (east, north) pair in the *cell's own* frame, and those frames turn from
+   *  cell to cell: gently within a cube face, by up to a right angle across a
+   *  seam, and violently around the six corners where three faces meet. Any
+   *  operator that differences a neighbour's velocity against this cell's is
+   *  therefore comparing components measured on different axes. That was
+   *  invisible while the derivative operators multiplied everything by the
+   *  square of the grid spacing; with real derivatives it put a permanent
+   *  false shear along all twelve seams, and the vorticity that grew out of it
+   *  pinned a third of the planet at maximum wind speed.
+   *
+   *  Two numbers per neighbour fix it. `ra`/`rb` are the neighbour's east axis
+   *  written in this cell's frame, normalised, so
+   *      u' = ra·u + rb·v,   v' = −rb·u + ra·v
+   *  rotates a neighbour vector into the local frame — exact to the tilt
+   *  between the two tangent planes, which is one cell wide. */
+  const ra = new Float32Array(NC * 4);
+  const rb = new Float32Array(NC * 4);
+  /* Static stencil weights. Every derivative on this grid divides by Σe² or Σn²
+     over the four neighbours and multiplies by 1/chord somewhere — all three are
+     fixed geometry, and recomputing them per cell per substep was eight
+     multiplies and two divides of pure repetition inside the hottest loop in the
+     simulation. */
+  const iwe = new Float32Array(NC);
+  const iwn = new Float32Array(NC);
+  const ichord = new Float32Array(NC * 4);
   for (let c = 0; c < NC; c++) {
     const ex = EAST[c * 3], ey = EAST[c * 3 + 1], ez = EAST[c * 3 + 2];
     const nx = NORTH[c * 3], ny = NORTH[c * 3 + 1], nz = NORTH[c * 3 + 2];
@@ -249,9 +295,25 @@ function buildNbrEN() {
       e[i] = dx * ex + dy * ey + dz * ez;
       n[i] = dx * nx + dy * ny + dz * nz;
       chord[i] = Math.hypot(e[i], n[i]) || 1e-6;
+      const bx = EAST[nb * 3], by = EAST[nb * 3 + 1], bz = EAST[nb * 3 + 2];
+      let a = bx * ex + by * ey + bz * ez;
+      let b = bx * nx + by * ny + bz * nz;
+      const l = Math.hypot(a, b);
+      if (l > 1e-9) { a /= l; b /= l; } else { a = 1; b = 0; }
+      ra[i] = a;
+      rb[i] = b;
+      ichord[i] = 1 / chord[i];
     }
+    let we = 0, wn = 0;
+    for (let k = 0; k < 4; k++) {
+      const i = c * 4 + k;
+      we += e[i] * e[i];
+      wn += n[i] * n[i];
+    }
+    iwe[c] = we > 1e-12 ? 1 / we : 0;
+    iwn[c] = wn > 1e-12 ? 1 / wn : 0;
   }
-  return { e, n, chord };
+  return { e, n, chord, ra, rb, iwe, iwn, ichord };
 }
 
 /** Rebuild topology for a new face resolution. Call before generate/remesh. */
@@ -274,6 +336,11 @@ export function setResolution(n) {
   NBR_E = _nbrEN.e;
   NBR_N = _nbrEN.n;
   NBR_CHORD = _nbrEN.chord;
+  NBR_RA = _nbrEN.ra;
+  NBR_RB = _nbrEN.rb;
+  NBR_IWE = _nbrEN.iwe;
+  NBR_IWN = _nbrEN.iwn;
+  NBR_ICHORD = _nbrEN.ichord;
   LON = buildLon();
   return { N, NC, NF, NV };
 }

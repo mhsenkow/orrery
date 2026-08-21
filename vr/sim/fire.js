@@ -16,7 +16,7 @@
  */
 
 import { clamp } from '../math.js';
-import { NC, NBR, DIR } from '../sphere.js';
+import { NC, NBR, NBR_E, NBR_N, NBR_ICHORD } from '../sphere.js';
 import { rngOf } from './rng.js';
 import { isPinnedEarth } from './ruleMode.js';
 import { strike } from './lightning.js';
@@ -74,13 +74,45 @@ export function flammableAt(W, c) {
 }
 
 /** Dryness of the fuel: hot and rainless burns, cold and wet does not. */
+/**
+ * The lowest danger a fire can still cross, on this planet.
+ *
+ * Ignition already scores against `fireDangerMax` — the module's own note says an
+ * absolute gate "silently switched fire off" every time the climate moved — but
+ * spread kept a hard `d < 0.10`, and that is the number a working water cycle
+ * broke. With rain and soil moisture behaving, peak danger on the demo Earth is
+ * about 0.009: every neighbour failed the gate, so a fire lit in the driest
+ * forest on the planet burned its own cell and stopped. Relative to the dry tail,
+ * with a floor so a soaking world does not become flammable by comparison.
+ */
+function spreadGate(W) {
+  return Math.max(0.006, (W.fireDangerMax || 0) * 0.35);
+}
+
 export function fireDanger(W, c) {
   if (!flammableAt(W, c)) return 0;
   const dry = 1 - clamp((W.moist[c] || 0) / MAX_WET, 0, 1);
   const heat = clamp(((W.temp[c] || 0.5) - 0.42) / 0.32, 0, 1);
   const fuel = clamp(((W.life[c] || 0) - MIN_FUEL) / 0.5, 0, 1);
   const wet = clamp((W.precip?.[c] || 0) * 12, 0, 1);
-  return clamp(dry * (0.35 + heat * 0.65) * (0.3 + fuel * 0.7) * (1 - wet * 0.8), 0, 1);
+  /* Fire is a dry-season phenomenon, and this reads an annual mean.
+   *
+   * A savanna taking a metre of rain in one season burns every year; a rainforest
+   * taking two metres spread evenly does not, and the annual figures barely
+   * differ. While the model rained nowhere that distinction cost nothing — the
+   * soil was dry everywhere and `dry` did all the work. With a working water
+   * cycle, and the "years" clock holding the season at the equinox so that no
+   * region ever gets a dry month, peak danger on the demo Earth fell to 0.008 and
+   * a fire lit in the driest forest on the planet burned one cell.
+   *
+   * The seasonality has to come from where it physically comes from: monsoon
+   * climates deliver their rain in bursts, and continental interiors swing much
+   * further than maritime ones. Both are already measured. This is the fraction
+   * of the year the cell spends drier than its own mean. */
+  const burst = clamp(0.2 + (W._monsoon || 0) * 0.45
+    + Math.min(0.55, (W.cont?.[c] || 0) / 2200), 0, 1);
+  const dryPeak = clamp(dry + burst * 0.4, 0, 1);
+  return clamp(dryPeak * (0.35 + heat * 0.65) * (0.3 + fuel * 0.7) * (1 - wet * 0.8), 0, 1);
 }
 
 /** Ignitions are frequent once fire works — 318 lines in 800 ticks. The
@@ -123,6 +155,7 @@ export function fireTick(W, log = null) {
   const rng = rngOf(W, 'rngAgents');
   const fire = W.fire;
   const active = W._fireCells;
+  const gate = spreadGate(W);
 
   /* Ash weathers away. It only ever decayed for cells on the live front, and a
      cell drops off that list the moment its flame goes out — so every scar and
@@ -133,12 +166,20 @@ export function fireTick(W, log = null) {
      sweeps, and applied to the whole field so eruption ash and vent ash weather
      too. A strided pass would have been cheaper and would have put diagonal
      stripes across the planet, because cell index maps to face and row. */
-  if (((W._tickIndex | 0) & 7) === 0 && W.ash) {
+  if (((W._tickIndex | 0) & 3) === 0 && W.ash) {
+    /* Rain is what buries ash. This decayed at a flat 0.985 every eighth tick —
+       a half-life of about four hundred ticks, chosen when nothing on the planet
+       was raining, and slow enough that volcanic resupply outran it: the ash
+       blanket grew whatever the weather. Scavenging by precipitation is both the
+       real mechanism and the more interesting one, because it is what makes an
+       ashfall a passing stain on a wet coast and a century-long scar in a
+       desert. */
     const ash = W.ash;
+    const precip = W.precip;
     for (let c = 0; c < NC; c++) {
       const a = ash[c];
-      if (a > 0.002) ash[c] = a * 0.985;
-      else if (a) ash[c] = 0;
+      if (a <= 0.002) { if (a) ash[c] = 0; continue; }
+      ash[c] = a * (0.94 - Math.min(0.30, (precip?.[c] || 0) * 1.5));
     }
   }
 
@@ -146,7 +187,7 @@ export function fireTick(W, log = null) {
   // still reaches every cell within a hundred ticks; the calibration Earth is
   // exempt so the pinned Holocene snapshot cannot burn itself off target.
   if (!W.rule?.daisyworld) {
-    const mayIgnite = !isPinnedEarth(W.rule);
+    const mayIgnite = !isPinnedEarth(W.rule) && !W._noIgnite;
     const stride = 97;
     const off = (W._fireScan = ((W._fireScan | 0) + 1) % stride);
     // Lightning-scale: a strongly dry, fuelled, hot cell lights roughly once
@@ -220,7 +261,7 @@ export function fireTick(W, log = null) {
          tick, so this is the leading edge and nothing else. */
       if (W.flash[c] < 0.5) continue;
       const d = fireDanger(W, c);
-      if (d < 0.10) continue;
+      if (d < gate) continue;
       if (rng() < d * 0.8) {
         igniteFire(W, c, 0.5 + d * 0.4, 0);
         if (log && noteIgnition(W)) log(W.year, 'fire', c, d, 'Lightning strike · fire started');
@@ -266,14 +307,16 @@ export function fireTick(W, log = null) {
       if (fire[n] > OUT) continue;
       if ((W.flow?.[n] || 0) > 0.32) continue;
       const d = fireDanger(W, n);
-      if (d < 0.10) continue;
-      const dx = DIR[n * 3] - DIR[c * 3];
-      const dy = DIR[n * 3 + 1] - DIR[c * 3 + 1];
-      const dz = DIR[n * 3 + 2] - DIR[c * 3 + 2];
-      const dl = Math.hypot(dx, dy, dz) || 1;
+      if (d < gate) continue;
+      /* Which way the wind is pushing, in the frame the wind is measured in.
+         This dotted the neighbour's *world-space* offset against the (east,
+         north) wind pair — a longitude against a latitude — so a fire ran
+         downwind only by coincidence. */
       let align = 0.65;
       if (wind > 0.02) {
-        align += 0.55 * Math.max(0, (dx / dl) * (wu / wind) + (dy / dl) * (wv / wind));
+        const i = c * 4 + k;
+        const along = (wu * NBR_E[i] + wv * NBR_N[i]) * NBR_ICHORD[i];
+        align += 0.55 * Math.max(0, along / wind);
       }
       /* Tuned so a cell has roughly 1.5–3 expected offspring on the demo Earth:
          supercritical enough that a front runs, subcritical enough that it stops

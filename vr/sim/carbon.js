@@ -189,12 +189,22 @@ export function carbonTick(W, chronLog) {
   syncGasesFromCarbon(W);
   // Modern Earth: soft CO₂ thermostat toward the ruleset target so the toy
   // carbon reservoirs don't wander into multi-thousand ppm over a play session.
+  // Player CO₂ inject sets `_playerCO2HoldYr` — while that hold is live we do
+  // *not* slam back to ≤1200 ppm (that made the CO₂ tool look broken after one
+  // click). Weathering still drains via WHK above; this only skips the Holocene
+  // soft restore.
   if (W.rule.earthLike && !W.rule.deepTime) {
     const target = W.rule.gases?.CO2 ?? W.rule.minCO2 ?? 0.00042;
     const floor = W.rule.minCO2 ?? 0.00038;
-    const pull = 0.04; // ~few-dozen-tick restore
-    gases.CO2 = clamp(gases.CO2 + (target - gases.CO2) * pull, floor, 0.0012);
-    C.atmosphere = gases.CO2 * 100;
+    const hold = W._playerCO2HoldYr != null && W.ageYr < W._playerCO2HoldYr;
+    if (hold) {
+      gases.CO2 = clamp(gases.CO2, floor, 0.08);
+      C.atmosphere = gases.CO2 * 100;
+    } else {
+      const pull = 0.04; // ~few-dozen-tick restore
+      gases.CO2 = clamp(gases.CO2 + (target - gases.CO2) * pull, floor, 0.0012);
+      C.atmosphere = gases.CO2 * 100;
+    }
   }
   // Seasonal Keeling sawtooth from land NPP × NH season (fitted amplitude)
   if ((W.landLifeFrac || 0) > 0.08 && (W.meanLife || 0) > 0.05) {

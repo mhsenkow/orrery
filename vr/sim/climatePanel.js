@@ -904,6 +904,12 @@ export function climateAtCell(cell) {
     currentU: u,
     currentV: v,
     upwell: W.upwell?.[cell] || 0,
+    // The flow aloft and the shear under it — what decides whether a storm here
+    // can build a warm core or gets torn apart.
+    jetU: W.jetU?.[cell] ?? null,
+    jetV: W.jetV?.[cell] ?? null,
+    jet: W.jetU ? Math.sqrt(W.jetU[cell] ** 2 + W.jetV[cell] ** 2) : null,
+    shear: W.shear?.[cell] ?? null,
     conveyor: W.conveyor,
     mocSv: W._mocSv,
     enso: W._ensoIndex,

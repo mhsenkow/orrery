@@ -1,7 +1,7 @@
 /** Named storms as tracked objects — seed, steer, surge.
  *  Toy cyclones: midlatitude commas + tropical eyes when SST/shear allow. */
 
-import { NC, DIR, NBR } from '../sphere.js';
+import { NC, DIR, NBR, NBR_E, NBR_N, NBR_ICHORD } from '../sphere.js';
 import { clamp, lerp } from '../math.js';
 import { issueReceipt } from './god/receipt.js';
 import { rngOf } from './rng.js';
@@ -12,7 +12,21 @@ const STORM_NAMES = [
 ];
 
 /** Ensure storm list + fields. */
+/** Clear the storm state a new world must not inherit. Called from `generate`. */
+export function resetStorms(W) {
+  W.storms = [];
+  W._stormNameIx = 0;
+  W._stormMax = 0;
+  W.stormFocusId = null;
+  if (W.stormField?.length === NC) W.stormField.fill(0);
+  if (W.surgeField?.length === NC) W.surgeField.fill(0);
+  if (W.stormTrail?.length === NC) W.stormTrail.fill(0);
+}
+
 export function initStorms(W) {
+  /* `if (!W.storms)` is an ensure, not a reset — so a cyclone that was alive when
+     the player generated a new world stayed alive on it, with its track and surge
+     field intact. `generate` calls `resetStorms` above. */
   if (!W.storms) W.storms = [];
   if (!W.stormField || W.stormField.length !== NC) {
     W.stormField = new Float32Array(NC);
@@ -42,27 +56,47 @@ function nextName(W) {
   return n;
 }
 
-/** Favourable tropical conditions (toy). Coriolis dead zone, then SST. */
+/**
+ * Favourable tropical conditions: warm sea, some Coriolis, little shear.
+ *
+ * "Shear" here was the surface wind speed, which is a different quantity — and
+ * often the opposite one, since a hurricane's own inflow is a strong surface
+ * wind. What tears the chimney off a warm-core storm is *vertical* shear, which
+ * the model now carries as `W.shear` from thermal wind, and which is genuinely
+ * small in the deep tropics and large under the jet. That single substitution is
+ * why tropical cyclones now form in the trade-wind belt and die when they reach
+ * the westerlies, instead of forming wherever the sea was warmest.
+ */
 export function tropicalFavor(W, c) {
   const lat = Math.abs(DIR[c * 3 + 1]);
   if (lat < 0.08) return 0;
   if (W.h[c] >= W.seaLevel) return 0;
   const sst = W.temp[c] || 0;
   if (sst < 0.62) return 0;
-  const shear = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
+  const shear = W.shear?.[c] ?? 0;
   const moist = W.moist?.[c] || 0;
-  return clamp((sst - 0.58) * 2.2 * (1.1 - shear * 0.5) * (0.4 + moist), 0, 1);
+  return clamp((sst - 0.58) * 2.2 * Math.max(0, 1.1 - shear * 1.8) * (0.4 + moist), 0, 1);
 }
 
-/** Midlatitude baroclinic favor — Coriolis + shear, not a latitude list. */
+/**
+ * Midlatitude baroclinic favour: shear across a temperature gradient.
+ *
+ * This is the Eady picture, and it is the one ingredient the model could not
+ * express with a single layer — a midlatitude cyclone grows by tapping the
+ * available potential energy of a horizontal temperature contrast, at a rate
+ * proportional to the vertical shear across it. Convergence and moisture were
+ * standing in for that; they are consequences of a depression, not causes, which
+ * is why storm tracks did not sit where fronts were.
+ */
 export function midlatFavor(W, c) {
   const lat = Math.abs(DIR[c * 3 + 1]);
   if (lat < 0.12) return 0;
   if ((W.temp[c] || 0) > 0.62) return 0;
   const conv = Math.max(0, W.converg?.[c] || 0);
-  const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
+  const shear = W.shear?.[c] ?? 0;
+  const front = W.front?.[c] || 0;
   const moist = W.moist?.[c] || 0;
-  return clamp(conv * 0.6 + wind * 0.35 + moist * 0.25, 0, 1);
+  return clamp(shear * front * 2.4 + shear * 0.5 + conv * 0.35 + moist * 0.15, 0, 1);
 }
 
 /**
@@ -113,7 +147,7 @@ export function seedStorm(W, cell, opts = {}) {
     kind,
     cell: best,
     lat: DIR[best * 3 + 1],
-    lon: Math.atan2(DIR[best * 3 + 2], DIR[best * 3]),
+    lon: Math.atan2(-DIR[best * 3 + 2], DIR[best * 3]),
     intensity: clamp((0.35 + favor * 0.45) * vigor, 0.3, 1),
     age: 0,
     track: [best],
@@ -220,8 +254,14 @@ export function stormsTick(W, log = null) {
   for (const s of W.storms) {
     s.age++;
     const lat = DIR[s.cell * 3 + 1];
-    let u = (W.windU[s.cell] || 0) * 0.6 + (s.steerU || 0);
-    let v = (W.windV[s.cell] || 0) * 0.5 + (s.steerV || 0);
+    /* Steered by the flow at its middle levels — the jet — with a share of the
+       surface wind. A depression follows the thickness field it lives in, which
+       is why real systems run down the storm track instead of wandering with the
+       local breeze. */
+    const ju = W.jetU?.[s.cell] ?? W.windU[s.cell] ?? 0;
+    const jv = W.jetV?.[s.cell] ?? W.windV[s.cell] ?? 0;
+    let u = ju * 0.45 + (W.windU[s.cell] || 0) * 0.25 + (s.steerU || 0);
+    let v = jv * 0.4 + (W.windV[s.cell] || 0) * 0.2 + (s.steerV || 0);
     if (s.kind === 'tropical') {
       u += -0.15;
       v += -Math.sign(lat || 1) * 0.04;
@@ -232,14 +272,18 @@ export function stormsTick(W, log = null) {
     s.steerU *= 0.85;
     s.steerV *= 0.85;
 
+    /* Steer along the flow, in the flow's own frame. The score used to be
+       `dx·u + dz·u·0.3 + dy·v` over the neighbour's world-space offset: a
+       longitude times a zonal wind plus a latitude times a meridional one, with
+       the zonal component counted twice on two different axes. Storms drifted in
+       a direction that had little to do with the steering flow, which is why
+       tropical systems never tracked west and then recurved. */
     let next = s.cell, best = -1e9;
+    const i0 = s.cell * 4;
     for (let k = 0; k < 4; k++) {
-      const nb = NBR[s.cell * 4 + k];
-      const dx = DIR[nb * 3] - DIR[s.cell * 3];
-      const dz = DIR[nb * 3 + 2] - DIR[s.cell * 3 + 2];
-      const dy = DIR[nb * 3 + 1] - DIR[s.cell * 3 + 1];
-      const score = dx * u + dz * u * 0.3 + dy * v;
-      if (score > best) { best = score; next = nb; }
+      const i = i0 + k;
+      const score = (u * NBR_E[i] + v * NBR_N[i]) * NBR_ICHORD[i];
+      if (score > best) { best = score; next = NBR[i]; }
     }
     if (best > 0.01 || s.age % 2 === 0) s.cell = next;
     s.lat = DIR[s.cell * 3 + 1];

@@ -53,6 +53,14 @@ export function gpgpuClimateTick(W) {
     sea: W.seaLevel,
     airless: !!(R.airless || (W.gases && Object.values(W.gases).reduce((s, v) => s + v, 0) < 0.01)),
     freeze: R.freeze ?? 0.32,
+    /* The same two cloud coefficients `atmoTick` uses. This shader carries its
+       own copy of the temperature equation, which is a standing invitation for
+       the two to drift — and they had: the GPU path had no cloud greenhouse at
+       all and reflected harder, so the planet the browser showed was several
+       kelvin colder than the one the tests measured, on the same world. If a
+       third term is ever added to `eq`, it has to be added here too. */
+    cloudGh: (R.earthLike && !R.deepTime) ? 0.135 : 0.16,
+    cloudAlb: (R.earthLike && !R.deepTime) ? 0.2 : 0.28,
     rateT: 0.08,
     rateM: 0.12,
     rateA: 0.1,
@@ -344,6 +352,8 @@ export class GpgpuEngine {
     set('uSea', uniforms.sea ?? 0);
     set('uAirless', uniforms.airless ? 1 : 0);
     set('uFreeze', uniforms.freeze ?? 0.32);
+    set('uCloudGh', uniforms.cloudGh ?? 0.135);
+    set('uCloudAlb', uniforms.cloudAlb ?? 0.2);
     set('uRateT', uniforms.rateT ?? 0.08);
     set('uRateM', uniforms.rateM ?? 0.12);
     set('uRateA', uniforms.rateA ?? 0.1);
@@ -396,7 +406,12 @@ export class GpgpuEngine {
       W.temp[c] = readback[px];
       W.moist[c] = readback[px + 1];
       W.ice[c] = readback[px + 2];
-      W.clouds[c] = readback[px + 3];
+      /* Clouds stay CPU-owned. The shader keeps a cloud channel because its
+         albedo and greenhouse terms need one, but its formation rule is four
+         lines against `cloudsTick`'s relative humidity, convergence, fronts and
+         ash — so reading it back replaced the better field with the cruder one
+         every second tick, and only in the browser. `world.js` now runs
+         `cloudsTick` on this path; the shader gets the result at the next upload. */ 
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     this.stats.readbacks++;
@@ -427,6 +442,9 @@ export class GpgpuEngine {
     return true;
   }
 
+  /** Both channels, for a caller that wants the shader's own flow field.
+   *  Nothing in the app does — `syncTick` reads climate only, so the CPU keeps
+   *  ownership of the wind — but the pair is kept for debugging the kernels. */
   downloadWorld(id, W) {
     return this.downloadClimate(id, W) && this.downloadFlow(id, W);
   }
@@ -477,10 +495,19 @@ export class GpgpuEngine {
         this.uploadSunGeo(id, W);
       }
       this.tick(id, uniforms);
-      // Climate every 2nd tick (feeds gbuf/clouds); winds every 4th
-      if (!resident || (t % 2) === 0) this.downloadClimate(id, W);
-      if (!resident || (t % 4) === 0) {
-        this.downloadFlow(id, W);
+      /* Climate every 2nd tick. The flow channel is deliberately *not* read back.
+       *
+       * `world.js` has said for a long time that the CPU shallow-water solver
+       * owns the wind — hydro, storms, fire and every overlay read `windU/windV`
+       * — and `downloadFlow` was quietly overwriting it anyway, along with
+       * `precip` and `ash`. Measured in the browser: `windU` was zero across all
+       * 55 296 cells, so on the GPU path there was no orographic rain, no rain
+       * shadow, no atmospheric rivers, no storm steering and no dust lofting, on
+       * a planet whose CPU twin had all five. The shader still computes a flow
+       * field for its own internal advection; nothing outside reads it, and
+       * skipping the readback saves a full float RGBA `readPixels` as well. */
+      if (!resident || (t % 2) === 0) {
+        this.downloadClimate(id, W);
         const sea = W.seaLevel;
         const slot = this.slots.get(id);
         for (let c = 0; c < (slot?.NC || 0); c++) {

@@ -20,12 +20,23 @@ export function fitSeaLevel(W, targetLand = 0.29) {
 }
 
 /** Modest ice caps where it is already cold, not a snowball and not a parallel. */
+/**
+ * Lay down the caps a generated Earth starts with.
+ *
+ * The threshold used to be `freeze + 0.10` over a 0.22 ramp, so ice was seeded
+ * anywhere below `freeze + 0.067`. That was tolerable while `freeze` was 0.28 —
+ * an ice line at 243 K, which is 30 K too cold and meant this seeded almost
+ * nothing. With `freeze` corrected to water's actual freezing point the same
+ * expression seeds ice at 285 K: subtropical ocean, and glaciers on any
+ * equatorial mountain. Ice belongs below freezing, and the ramp is the ~19 K
+ * over which a cap goes from patchy to permanent.
+ */
 export function seedPolarIce(W, rule) {
   const freeze = rule.freeze ?? 0.30;
   for (let c = 0; c < NC; c++) {
     const elev = Math.max(0, W.h[c] - W.seaLevel);
     const t = (W.temp[c] || 0.5) - elev * 0.12;
-    const coldness = clamp((freeze + 0.10 - t) / 0.22, 0, 1);
+    const coldness = clamp((freeze - t) / 0.12, 0, 1);
     if (coldness < 0.15) {
       W.iceLand[c] = 0;
       W.iceSea[c] = 0;

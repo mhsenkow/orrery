@@ -184,13 +184,72 @@ function report(r) {
     + ` war=${fmt(r.darkToll.war, 0)} poison=${fmt(r.darkToll.poison, 0)}`
     + ` player=${fmt(r.darkToll.player, 0)}`);
   L.push(`war crimes  ${r.warCrimes}  fought cells ${r.foughtCells}`);
+  L.push(`visuals     mushrooms ${r.mushrooms || 0}  flights ${r.flights || 0}`
+    + `  shockwaveCells ${r.shockwaveCells || 0}  flash ${fmt(r.blastFlash || 0, 2)}`);
+  L.push(`budgets     tick ${r.budgets?.tickMs || 2}ms  geom ${r.budgets?.geomMs || 1.5}ms`
+    + `  audio ${r.budgets?.audioMs || 0.5}ms (spent ${fmt(r.budgets?.audioSpentMs || 0, 3)})`);
+  if (r.attribution) {
+    L.push(`attribution acts ${r.attribution.acts | 0}  player ${fmt(r.attribution.player || 0, 3)}`
+      + `  last ${r.attribution.lastTool || '—'}`);
+  }
   L.push(`front       ${r.dark.frontLen}  rubble ${r.dark.rubble}`
     + `  exclusion ${r.dark.exclusion}  winter ${fmt(r.dark.winter, 3)}`);
   L.push(`            supplyCut ${r.dark.supplyCut || 0}  stalls ${r.dark.supplyCutStalls || 0}`
     + `  sats ${r.dark.satellites || 0}  debris ${r.dark.debris || 0}`
     + `  kessler ${!!r.dark.kessler}  sai ${fmt(r.dark.sai || 0, 3)}`
-    + `  shock ${fmt(r.dark.terminationShock || 0, 3)}`
-    + `  droneCiv ${r.dark.droneCivCasualties || 0}`);
+    + `  shock ${fmt(r.dark.terminationShock || 0, 3)}`);
+  L.push(`drones      sorties ${r.dark.droneSorties || 0}  losses ${r.dark.droneLosses || 0}`
+    + `  civ ${r.dark.droneCivCasualties || 0}  airborne ${r.dark.drones || 0}`);
+  L.push(`naval       control ${fmt(r.dark.seaControl || 0, 1)}  sunk ${r.dark.tonnageSunk || 0}`
+    + `  lanesCut ${r.dark.lanesCut || 0}`);
+  L.push(`land        sieges ${r.dark.sieges || 0}  warEcon ${r.dark.warEconomy || 0}`
+    + `  ghosts ${r.dark.ghostTowns || 0}  refugees ${r.dark.refugees || 0}`);
+  L.push(`aftermath   peakDose ${fmt(r.dark.peakDose || 0, 3)}  contamAg ${r.dark.contamAg || 0}`
+    + `  radShort ${r.dark.radShortCells || 0}`
+    + `  capitalFell ${!!r.dark.capitalFell}`);
+  if (r.dark.cbr) {
+    L.push(`cbr         resistance ${fmt(r.dark.cbr.resistance || 0, 3)}`
+      + `  rdd ${r.dark.cbr.rdd || 0}  decon ${fmt(r.dark.cbr.decon || 0, 3)}`);
+  }
+  L.push(`industry    contam war ${r.dark.contamWar || 0}  industry ${r.dark.contamIndustry || 0}`
+    + `  reg ${fmt(r.dark.regulation || 0, 2)}`
+    + `  smog ${fmt(r.dark.smog || 0, 3)} lead ${fmt(r.dark.lead || 0, 3)}`
+    + `  pfas ${fmt(r.dark.pfas || 0, 3)} µplast ${fmt(r.dark.microplastics || 0, 3)}`);
+  L.push(`climate     refugees ${r.dark.climateRefugees || 0}`
+    + `  dams ${r.dark.damBreaks || 0}  waterWars ${r.dark.waterWars || 0}`
+    + `  freeRider ${r.dark.freeRider || 0}`
+    + `  anthro ${fmt(r.dark.forcingAnthro || 0, 3)}`
+    + `  natural ${fmt(r.dark.forcingNatural || 0, 3)}`);
+  L.push(`info        cyber ${r.dark.cyberIncidents || 0}`
+    + `  blackout ${r.dark.blackoutTicks || 0}`
+    + `  unattr ${r.dark.unattributed || 0}`
+    + `  attribAcc ${fmt(r.dark.attributionAccuracy ?? 1, 2)}`
+    + `  comms ${fmt(r.dark.comms ?? 1, 2)}`
+    + `  gpsDenied ${fmt(r.dark.gpsDenied || 0, 2)}`);
+  L.push(`orbit       sats ${r.dark.satellites || 0}  debris ${r.dark.debris || 0}`
+    + `  kessler ${!!r.dark.kessler}  closed ${!!r.dark.orbitClosed}`
+    + `  ring ${fmt(r.dark.debrisRing || 0, 2)}  launchSites ${r.dark.launchSites || 0}`);
+  L.push(`consequence archiveLoss ${r.dark.archiveLoss || 0}`
+    + `  namedDeaths ${r.dark.namedDeaths || 0}`
+    + `  testimonies ${r.dark.testimonies || 0}`
+    + `  extinctAttr ${r.dark.extinctAttributed || 0}`
+    + `  recovery ${r.dark.recoveryNotes || 0}`
+    + `  histories ${r.dark.polityHistories || 0}`);
+  if (r.dark.tribunal) {
+    L.push(`tribunal    crimes ${r.dark.tribunal.crimes}  toll ${r.dark.tribunal.toll?.total | 0}`);
+  }
+  if (r.dark.counterfactual) {
+    L.push(`counterfact ${r.dark.counterfactual}`);
+  }
+  if (r.dark.benefited) {
+    L.push(`benefited   ${r.dark.benefited.winnerName || r.dark.benefited.winner}`
+      + ` over ${r.dark.benefited.loserName || r.dark.benefited.loser}`);
+  }
+  if (r.dark.legacy) {
+    L.push(`legacy      contaminated ${r.dark.legacy.contaminated | 0}`
+      + `  mushrooms ${r.dark.legacy.mushrooms | 0}`);
+  }
+  L.push(`uninhabitable ${!!r.dark.uninhabitable}`);
   L.push(`asserts     ownerClosed=${r.asserts.ownerClosed}  noWarAmongAllies=${r.asserts.noWarAmongAllies}`);
   return L.join('\n');
 }
