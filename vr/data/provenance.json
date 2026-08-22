@@ -1,10 +1,10 @@
 {
-  "generated": "2026-08-22T03:36:14.499Z",
+  "generated": "2026-08-22T19:02:25.418Z",
   "tagged": 123,
-  "untagged": 4318,
-  "physics": 4421,
-  "denom": 4441,
-  "untaggedShare": 0.9723035352398108,
+  "untagged": 4356,
+  "physics": 4459,
+  "denom": 4479,
+  "untaggedShare": 0.9725385130609511,
   "kinds": {
     "measured": 45,
     "fitted": 50,
@@ -207,6 +207,18 @@
       "untaggedShare": 0.9723035352398108,
       "tagged": 123,
       "untagged": 4318
+    },
+    {
+      "at": "2026-08-22T19:01:59.489Z",
+      "untaggedShare": 0.9725385130609511,
+      "tagged": 123,
+      "untagged": 4356
+    },
+    {
+      "at": "2026-08-22T19:02:25.418Z",
+      "untaggedShare": 0.9725385130609511,
+      "tagged": 123,
+      "untagged": 4356
     }
   ]
 }

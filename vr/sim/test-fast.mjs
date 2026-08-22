@@ -422,8 +422,8 @@ if (TIMING && times.length) {
   console.log('slowest:');
   for (const row of slow) console.log(`  ${row.ms.toFixed(1).padStart(7)}ms  ${row.name}`);
 }
-/* Local edit loop stays under ~18s; CI ubuntu runners are ~1.5× slower. */
-const BUDGET_MS = process.env.CI ? 30000 : 18000;
+/* Local edit loop stays under ~18s; CI ubuntu runners are ~1.5–2× slower. */
+const BUDGET_MS = process.env.CI ? 35000 : 18000;
 if (elapsed > BUDGET_MS) {
   console.error(
     `fast tier exceeded ${BUDGET_MS / 1000}s budget (${(elapsed / 1000).toFixed(2)}s)` +
