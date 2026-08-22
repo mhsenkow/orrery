@@ -1,3 +1,4 @@
+import { expected } from './report.js';
 /** One-screen model limits for Lab (A88 / NEXT).
  *  Loads generated provenance + static honesty lines. */
 
@@ -9,7 +10,7 @@ export async function loadLimitsSummary() {
   try {
     const r = await fetch(new URL('../data/provenance.json', import.meta.url));
     if (r.ok) provenance = await r.json();
-  } catch { /* offline / file:// */ }
+  } catch { expected('ORR-EXPECTED-LAZY', 'provenance fetch'); }
   _cache = {
     provenance,
     generated: provenance?.generated || null,

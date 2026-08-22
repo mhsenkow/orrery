@@ -1,4 +1,5 @@
-/** First-run teaching — a door, a campaign track, and map hunts.
+
+import { expected } from './report.js';/** First-run teaching — a door, a campaign track, and map hunts.
  *  Old REVEAL steps still exist for anyone mid-card; new visits get LESSONS.
  *
  *  Acquisition is not this file: first visit uses the Vandal Strike hook
@@ -130,7 +131,7 @@ export function loadRevealProgress() {
 }
 
 export function saveRevealProgress(p) {
-  try { localStorage.setItem(REVEAL_KEY, JSON.stringify(p)); } catch { /* */ }
+  try { localStorage.setItem(REVEAL_KEY, JSON.stringify(p)); } catch { expected('ORR-EXPECTED-STORAGE', 'reveal progress'); }
 }
 
 export function currentReveal(progress = loadRevealProgress()) {
@@ -171,7 +172,7 @@ export function loadLessonProgress() {
 }
 
 export function saveLessonProgress(p) {
-  try { localStorage.setItem(LESSON_KEY, JSON.stringify(p)); } catch { /* */ }
+  try { localStorage.setItem(LESSON_KEY, JSON.stringify(p)); } catch { expected('ORR-EXPECTED-STORAGE', 'lesson progress'); }
 }
 
 export function lessonById(id) {

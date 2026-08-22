@@ -11,14 +11,24 @@
     "fields:census": "node scripts/fields-census.mjs",
     "fields:report": "node scripts/fields-report.mjs",
     "modules:map": "node scripts/module-map.mjs",
-    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run fields:report && node scripts/determinism-lint.mjs && node scripts/orphan-suites.mjs && npm run test:fast --prefix vr"
+    "build": "node scripts/build.mjs",
+    "cernunnos:fetch": "node scripts/fetch-cernunnos-model.mjs",
+    "cernunnos:runtime": "node scripts/vendor-webllm.mjs",
+    "postinstall": "node scripts/vendor-webllm.mjs",
+    "architecture:ratchet": "node scripts/architecture-ratchet.mjs",
+    "contrast:audit": "node scripts/contrast-audit.mjs",
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run fields:report && npm run architecture:ratchet && node scripts/determinism-lint.mjs && node scripts/orphan-suites.mjs && npm run test:fast --prefix vr"
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
     "@types/node": "^22.20.1",
+    "esbuild": "^0.25.0",
     "eslint": "^9.22.0",
     "globals": "^16.0.0",
     "prettier": "^3.5.3",
     "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.84"
   }
 }

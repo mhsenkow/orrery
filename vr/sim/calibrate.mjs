@@ -140,7 +140,7 @@ export function calibrateWorld(ruleId, seed = 20260808, ticks = 8, tolerances = 
     };
   }
   if (opts.n && opts.n !== NC) {
-    try { changeResolution(opts.n); } catch { /* headless may pin N */ }
+    try { changeResolution(opts.n); } catch { /* headless may pin N */ void 0; }
   }
   generate(seed, { ...rule, deepTime: !!opts.deepTime });
   for (let i = 0; i < ticks; i++) simTick(true);

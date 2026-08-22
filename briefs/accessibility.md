@@ -26,15 +26,18 @@ Companion honesty docs: [`model-limits.md`](model-limits.md), [`../PLAYTESTS.md`
 |---|---|
 | **Screen reader globe** | `role="application"` + label; climate/life summary is still thin. |
 | **Irreversible tools** | Keyboard arms them and faces the cell; click/hold still commits (safety). |
-| **Touch** | Phone dock ≥44px (M23); **pinch-out descends**, pinch-in steps back (M22). Local +/− and Enter/Esc are the button/keyboard equivalents (M24). |
+| **Touch** | Phone dock ≥44px (M23); **pinch-out descends**, pinch-in steps back (M22). Local +/− and Enter/Esc are the button/keyboard equivalents (M24). Coarse targets expanded (T21). |
 | **Dialogs** | Escape closes overlays; Tab is trapped in land picker, Worlds, shortcuts sheet, and map legend (M14). Focus restores on close. |
 | **High contrast** | Mute/faint tokens raised for AA; `prefers-contrast: more` boosts ink/lines (L32/L33). Dedicated theme toggle still open. |
+| **Contrast (T41)** | Solid token pairs audited in [`contrast-audit.md`](contrast-audit.md) / `vr/data/contrast-audit.json`. Watch translucent panel over bright globe (T42). |
+| **Touch ≥44px (T21)** | Coarse-pointer rules in `vr/styles/phone.css` cover dock, tools, localpark, local bar, FABs. |
 
 ## Not yet
 
 - Rebindable keys (M12)
 - Screen-reader pass logged in playtests (M19)
 - Full world browser UI beyond Diagnostics shelf line (I30 partial)
+- Colour-blind overlay palettes (T47)
 
 ## Non-XR descent (M20)
 

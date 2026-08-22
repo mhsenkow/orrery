@@ -1,5 +1,13 @@
 .DS_Store
 node_modules/
+dist/
 *.log
 .env
 .env.*
+
+# Optional Cernunnos local-mind weights (npm run cernunnos:fetch)
+vr/models/cernunnos/**
+!vr/models/cernunnos/README.md
+
+# Vendored WebLLM runtime (npm run cernunnos:runtime / postinstall) — ~6 MB
+vr/vendor/web-llm.js

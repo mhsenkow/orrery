@@ -2,9 +2,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ORRERY — fleet contact</title>
+<link rel="stylesheet" href="../shared/tokens.css">
 <style>
-:root{ --ground:#0c0f16; --panel:#151a24; --rule:#252d3d; --text:#dbe1ec; --dim:#98a3b7; --faint:#6c7688; --accent:#c69a4f;
-  --sans:-apple-system,BlinkMacSystemFont,"Helvetica Neue",sans-serif; --mono:ui-monospace,Menlo,monospace; }
+:root{
+  --ground: var(--orr-bg);
+  --panel: var(--orr-panel);
+  --rule: var(--orr-line);
+  --text: var(--orr-ink);
+  --dim: var(--orr-mute);
+  --faint: var(--orr-faint);
+  --accent: var(--orr-gold);
+  --sans: var(--orr-font-display);
+  --mono: var(--orr-font-mono);
+}
 body{margin:0;background:var(--ground);color:var(--text);font:400 16px/1.55 var(--sans);}
 .wrap{max-width:1200px;margin:0 auto;padding:40px 26px 90px;}
 h1{font:700 36px/1.05 var(--sans);letter-spacing:-.03em;margin:0;}

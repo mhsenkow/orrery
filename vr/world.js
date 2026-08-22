@@ -37,9 +37,15 @@ import {
 } from './sim/time.js';
 import { UNIT_MAP, unitsSchemaHash } from './sim/units.js';
 import { fieldsSchemaHash, FIELDS } from './sim/fields.js';
+import {
+  wrapWorldDebug,
+  withOwner,
+} from './sim/worldGuard.js';
+export { wrapWorldDebug, withOwner };
 import { createCarbonState, carbonTick } from './sim/carbon.js';
 import { initRedox, redoxTick, seedModernGuilds, initSpeciesFields } from './sim/redox.js';
-export { UNIT_MAP };import { initEvolution, evolveTick, forkWorldSeed, treeSummary, packTree, unpackTree, seedHoloceneTree } from './sim/evolve.js';
+export { UNIT_MAP };
+import { initEvolution, evolveTick, forkWorldSeed, treeSummary, packTree, unpackTree, seedHoloceneTree } from './sim/evolve.js';
 import { deriveLifeClass, unlockedClassFromPool } from './sim/lifeclass.js';
 import { ecologyTick } from './sim/ecology.js';
 import { extinctionTick, noteImpact } from './sim/extinction.js';
@@ -304,7 +310,14 @@ export function createWorld() {
   return W;
 }
 
-export const W = createWorld();
+export let W = createWorld();
+
+/** Opt-in P21/P41 — reassigns the live `W` export to a Proxy when wrap is true. */
+export function enableWorldAsserts(wrap = true) {
+  W.debugAssert = 'throw';
+  if (wrap) W = wrapWorldDebug(W, { seal: true, owners: true });
+  return W;
+}
 
 function chronLog(year, kind, cell, mag, label, meta) {
   logEvent(W.chron, year, kind, cell, mag, label, meta);

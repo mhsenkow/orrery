@@ -1,3 +1,4 @@
+import { expected } from './report.js';
 /** Opt-in gate for the Dark / Evil war layer.
  *  Off by default — PURPOSE: not one of the four faces.
  *  Unlock: ?dark=1  or  localStorage orrery.dark = "1"
@@ -20,7 +21,7 @@ export function darkEnabled() {
       return (_cached = globalThis.localStorage.getItem('orrery.dark') === '1');
     }
   } catch (_) {
-    /* non-browser / denied */
+    expected('ORR-EXPECTED-STORAGE', 'dark gate read');
   }
   return (_cached = false);
 }
@@ -33,7 +34,7 @@ export function setDarkEnabled(on) {
       globalThis.localStorage.setItem('orrery.dark', on ? '1' : '0');
     }
   } catch (_) {
-    /* ignore */
+    expected('ORR-EXPECTED-STORAGE', 'dark gate write');
   }
 }
 

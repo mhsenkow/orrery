@@ -4,6 +4,7 @@
 import { NC } from '../sphere.js';
 import { ENT } from '../agents.js';
 import { fireDanger, flammableAt } from './fire.js';
+import { expected } from './report.js';
 
 const VANDAL_KEY = 'orrery.vandal.v1';
 const GARDEN_KEY = 'orrery.garden.v1';
@@ -20,11 +21,11 @@ export function vandalDone() {
 }
 
 export function markVandalDone() {
-  try { localStorage.setItem(VANDAL_KEY, '1'); } catch { /* */ }
+  try { localStorage.setItem(VANDAL_KEY, '1'); } catch { expected('ORR-EXPECTED-STORAGE', 'vandal done'); }
 }
 
 export function resetVandalDone() {
-  try { localStorage.removeItem(VANDAL_KEY); } catch { /* */ }
+  try { localStorage.removeItem(VANDAL_KEY); } catch { expected('ORR-EXPECTED-STORAGE', 'vandal reset'); }
 }
 
 /** Best Strike target: driest flammable cell, else a land cell for a meteor. */
@@ -134,7 +135,7 @@ export function awayTicks(elapsedMs) {
 export function saveGardenVisit(garden) {
   try {
     localStorage.setItem(GARDEN_KEY, JSON.stringify(garden));
-  } catch { /* */ }
+  } catch { expected('ORR-EXPECTED-STORAGE', 'garden visit'); }
 }
 
 export function loadGardenVisit() {
@@ -170,8 +171,8 @@ export function writeAutosave(payload) {
             ? 'Storage full — export a save file; autosave could not write.'
             : `Autosave failed (${msg}). Export a save if you need to keep this world.`,
         );
-      }).catch(() => {});
-    } catch { /* */ }
+      }).catch(() => { void 0; });
+    } catch { expected('ORR-EXPECTED-STORAGE', 'autosave report path'); }
     return false;
   }
 }
@@ -201,5 +202,5 @@ export function clearAutosave() {
     localStorage.removeItem(AUTOSAVE_KEY);
     localStorage.removeItem(AUTOSAVE_PREV_KEY);
     localStorage.removeItem(AUTOSAVE_STAGING_KEY);
-  } catch { /* */ }
+  } catch { expected('ORR-EXPECTED-STORAGE', 'clear autosave'); }
 }

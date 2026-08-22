@@ -9,6 +9,7 @@ import { NC, DIR } from '../sphere.js';
 import { STAMP_BY_ID } from './stampTable.js';
 import { craterCounts } from './landform.js';
 import { worldAxes } from './worldAxes.js';
+import { expected } from './report.js';
 
 function randomUnit(rng) {
   const u = rng() * 2 - 1, th = rng() * Math.PI * 2, r = Math.sqrt(1 - u * u);
@@ -500,7 +501,7 @@ function finish(W, spec, seed) {
     try {
       const ax = W._worldAxes || worldAxes(W.rule);
       craters = craterCounts(W.rule, ax);
-    } catch { /* */ }
+    } catch { expected('ORR-EXPECTED-SAVE', 'airless crater counts'); }
   }
   if (craters && ((craters.nLarge | 0) > 0 || (craters.nMid | 0) > 0 || (craters.micro || 0) > 0)) {
     stampCraters(W.h, seed, craters);

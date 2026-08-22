@@ -7,6 +7,7 @@ import { noteCasualty } from './dark.js';
 import { polityAt } from './polity.js';
 import { spawnDrone } from './darkDrone.js';
 import { noteWear } from './present.js';
+import { expected } from './report.js';
 
 export function resetNaval(W) {
   W.ships = [];
@@ -340,7 +341,7 @@ function sonarScatterPods(W) {
   try {
     // Lazy — agents may not load in headless without full boot.
     ENT = globalThis.__SIMEARTH_ENT;
-  } catch { /* ignore */ }
+  } catch { expected('ORR-EXPECTED-LAZY', 'ENT global'); }
   // Import path: dynamic sync via W._entRef set by agents if present.
   const ent = W._ent || ENT;
   if (!ent?.meta || !ent.n) return;

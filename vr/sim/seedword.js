@@ -7,6 +7,7 @@
 
 import { hashTag } from './rng.js';
 import { EPOCH_BY_ID } from './epochTable.js';
+import { expected } from './report.js';
 
 const WORDS = [
   'ember', 'coral', 'dune', 'frost', 'gale', 'haven', 'iris', 'jade',
@@ -131,7 +132,7 @@ export function parseWorldInput(str) {
         epoch: era && EPOCH_BY_ID[era] ? era : null,
       };
     }
-  } catch { /* not a URL */ }
+  } catch { expected('ORR-EXPECTED-URL', 'seed parse'); }
 
   if (/^\d+$/.test(s)) return { seed: parseInt(s, 10) >>> 0, landscape: 'auto' };
   const decoded = decodeWorldId(s);

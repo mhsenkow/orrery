@@ -30,8 +30,8 @@ export function initGpgpu(gl, opts = {}) {
     try {
       import('../report.js').then(({ report }) => {
         report('degraded', 'ORR-GPGPU-001', 'GPU climate unavailable — using CPU path', { err: String(e?.message || e) });
-      }).catch(() => {});
-    } catch { /* */ }
+      }).catch(() => { /* report import itself failed */ void 0; });
+    } catch { void 0; }
     _shared = null;
   }
   return _shared;

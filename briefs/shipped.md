@@ -44,6 +44,7 @@ scripts/        data compilers + catalogue emitter (not wishlist generators)
 ```bash
 python3 -m http.server 8765
 # http://localhost:8765/vr/
+npm run build                 # optional production bundle → dist/
 npm test --prefix vr
 ```
 
@@ -217,6 +218,24 @@ Commands: `npm run provenance|calibrate:all|golden:corpus|parity|determinism|fid
 |---|---|
 | Desktop localhost | First globe paint **&lt; 4 s** (measured ~1.5–3 s) |
 | Headset / phone | Stretch **&lt; 8 s** — not yet measured on-device |
+
+### Architecture First-20 (2026-08-22)
+
+| Row | Shipped |
+|---|---|
+| Q1 / Q2 | `npm run build` (esbuild → `dist/`); unbundled source remains the dev path |
+| R1 / R2 / R10 | Inline CSS → `vr/styles/{panels,dock,overlays,tools,local,chrome,phone}.css`; critical ~211 lines stay inline; fleet on tokens |
+| R61 / R22 / R12 / P14 / S17 | `npm run architecture:ratchet` + `vr/data/architecture-baseline.json` |
+| S1 / S3–S5 / S18 / S21 | Bare-catch ledger → **0**; `expected(ORR-EXPECTED-*)`; code ∈ `ERROR_CODES` ratchet |
+| P1 / P22 | Census kinds (0 uncurated); `multi-writers.json` |
+| P21 / P41 | `worldGuard.js` — owner + typo throws under `?assert=1` / tests |
+| R41 / R42 | `vr/input.js` + `vr/sim/intents.js`; keyboard + pinch dispatch |
+| T41 / T21 | Contrast audit docs; coarse ≥44px (localpark / local bar) |
+| Q41 / Q61 | Boot-disc + early `desktopFrame`; headset measurement blocked note |
+| P61 | `viewState.js` four-bag inventory (camera/overlay already off `W`) |
+| P24 | Top-10 handoffs in `fields.js` + `vr/data/fields/handoffs.json`; guard allows handoff set |
+| R43 | Pointer / touch / XR emit `act`·`spin`·`zoom`·`pan`·`descend` via `dispatchIntent` |
+| Q11 / Q12 | `.github/workflows/pages.yml` builds `dist/` after `verify`; serves Pages from artifact |
 
 ---
 

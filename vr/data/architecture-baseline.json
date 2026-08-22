@@ -1,0 +1,13 @@
+{
+  "updated": "2026-08-22",
+  "mainJsLines": 5934,
+  "renderJsLines": 3086,
+  "indexHtmlLines": 848,
+  "indexHtmlIds": 214,
+  "inlineCssLines": 211,
+  "stylesCssFiles": 7,
+  "stylesCssBytes": 79148,
+  "censusNames": 746,
+  "bareCatches": 0,
+  "note": "architecture-400 ratchets — growth fails CI"
+}

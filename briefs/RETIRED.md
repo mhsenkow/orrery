@@ -25,6 +25,7 @@ Large generated backlogs and parallel “400 next steps” dumps were removed 20
 | [`thrive-demo.md`](thrive-demo.md) | How to show the living demo |
 | [`earth-fidelity-500.md`](earth-fidelity-500.md) | Defect register for audit themes 7–11 — not a queue; every row has a check, and it shrinks |
 | [`quality-400.md`](quality-400.md) | Defect register for audit themes 12–20 — same rules |
+| [`architecture-400.md`](architecture-400.md) | Themes 16–20 re-read after the first pass — enforcement, build, decomposition, conversion, reach |
 | [`biosphere-architecture.md`](biosphere-architecture.md) / [`biosphere-audit.md`](biosphere-audit.md) | Historical design notes — not a work queue |
 
 Git history keeps the old files if something must be recovered.

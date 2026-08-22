@@ -1,0 +1,231 @@
+/* Extracted from vr/index.html — architecture-400 R1. Do not hand-duplicate; edit here. */
+  #lifecard .lc-meta { font-size:9px; color:#b4c8a8; }
+
+  @media (prefers-reduced-motion: reduce) {
+    #localview { transition: none; }
+    #localpanel { transition: none; }
+  }
+
+  #tip {
+    position:fixed; z-index:30; max-width:min(280px, calc(100vw - 24px));
+    pointer-events:none; opacity:0; transform:translateY(4px);
+    transition: opacity .18s var(--ease), transform .18s var(--ease);
+    background:rgba(10,14,22,.94); border:1px solid rgba(110,160,255,.35);
+    border-radius:10px; padding:10px 12px; box-shadow: 0 12px 40px rgba(0,0,0,.55);
+    backdrop-filter: blur(12px);
+  }
+  #tip.show { opacity:1; transform:none; }
+  #tip .tip-title {
+    font-family: Syne, sans-serif; font-weight:700; font-size:12px;
+    letter-spacing:.04em; color:#e8eef8; margin:0 0 5px;
+  }
+  #tip .tip-body { margin:0; font-size:11px; line-height:1.45; color:#a8b8d0; }
+  #tip .tip-meta { margin:6px 0 0; font-size:10px; color:#6a7a94; }
+
+  @media (max-width:820px) {
+    #topbar { gap:6px; padding:6px 8px; }
+    #topbar .brand { letter-spacing:.18em; font-size:12px; }
+    /* Side-column dock only above phone sheet breakpoint (see phone.css ≤820px). */
+    #catpanel {
+      left: calc(var(--gutter) + var(--safe-l));
+      right: calc(var(--gutter) + var(--safe-r));
+      width:auto;
+    }
+    #timeribbon { width:min(300px, calc(100vw - 20px - var(--safe-l) - var(--safe-r))); }
+    #localpanel.snap-bl { bottom: calc(100px + var(--safe-b)); }
+    #localpanel.expanded { bottom: calc(100px + var(--safe-b)); }
+  }
+
+  /* Active tool chip — phone: pick a verb, sheet closes, tap the globe. */
+  #toolrail {
+    display: none;
+    pointer-events: auto;
+    position: absolute;
+    z-index: 5;
+    right: calc(var(--gutter) + var(--safe-r));
+    bottom: calc(var(--gutter) + var(--safe-b));
+    align-items: center;
+    gap: 6px;
+    max-width: min(220px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
+  }
+  #toolrail .toolrail-arm,
+  #toolrail .toolrail-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(8, 12, 20, .9);
+    border: 1px solid rgba(110, 160, 255, .35);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .45);
+    backdrop-filter: blur(14px) saturate(1.15);
+  }
+  #toolrail .toolrail-arm {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: flex-start;
+  }
+  #toolrail .toolrail-arm .btn-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  #toolrail .toolrail-arm .ico { width: 16px; height: 16px; flex: 0 0 auto; }
+  #toolrail .toolrail-clear { padding: 8px; flex: 0 0 auto; }
+  #toolrail .toolrail-arm[data-armed="true"] {
+    border-color: rgba(228, 184, 106, .55);
+    background: rgba(28, 22, 12, .92);
+  }
+  #toolrail .toolrail-hint {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: calc(100% + 6px);
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: rgba(6, 10, 18, .88);
+    border: 1px solid var(--line);
+    font-size: 10px;
+    color: #9fb0c8;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  #toolrail[data-armed="true"] .toolrail-hint { display: block; }
+
+  #dockscrim {
+    display: none;
+    pointer-events: auto;
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    background: rgba(2, 4, 10, .42);
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+  }
+
+  /* Floating chrome — sits next to the panel it opens (menu / map). */
+  .chrome-fab {
+    pointer-events: auto;
+    position: absolute;
+    z-index: 7;
+    width: 48px; height: 48px; min-width: 48px; min-height: 48px;
+    padding: 0; margin: 0;
+    display: none;
+    align-items: center; justify-content: center;
+    border-radius: 14px;
+    background: rgba(8, 12, 20, .92);
+    border: 1px solid rgba(110, 160, 255, .38);
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .5);
+    backdrop-filter: blur(14px) saturate(1.15);
+    color: var(--text);
+    transition: transform .2s var(--ease), opacity .2s var(--ease), bottom .22s var(--ease),
+      background .2s var(--ease), border-color .2s var(--ease);
+  }
+  .chrome-fab:hover { background: rgba(110, 160, 255, .16); border-color: rgba(110, 160, 255, .5); }
+  .chrome-fab:active { transform: scale(0.96); }
+  .chrome-fab[aria-pressed="true"],
+  .chrome-fab[aria-expanded="true"] {
+    border-color: rgba(228, 184, 106, .55);
+    background: rgba(28, 22, 12, .92);
+  }
+  .chrome-fab .ico { width: 18px; height: 18px; opacity: .95; }
+  .chrome-fab .btn-label { display: none; }
+  .chrome-fab[hidden] { display: none !important; }
+  .chrome-fab.is-on { display: inline-flex; }
+
+  #dockfab {
+    left: calc(var(--gutter) + var(--safe-l));
+    bottom: calc(var(--gutter) + var(--safe-b));
+  }
+  /* Desktop never uses the floating menu twin — topbar owns it. */
+  @media (min-width: 641px) {
+    #dockfab { display: none !important; }
+  }
+
+  #localfab {
+    top: calc(56px + var(--safe-t));
+    right: calc(var(--gutter) + var(--safe-r));
+    left: auto; bottom: auto;
+  }
+  #localfab .ico { display: none; }
+  #localfab .localfab-peek {
+    width: 28px; height: 28px; border-radius: 6px;
+    display: block;
+    border: 1px solid rgba(140, 170, 255, .25);
+    background:
+      radial-gradient(circle at 35% 40%, #6ea0ff 0 28%, transparent 30%),
+      linear-gradient(160deg, #1a2840, #0a1018);
+  }
+
+  .dock-sheet-bar {
+    display: none;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 0 4px 6px;
+    min-height: 28px;
+  }
+  .dock-sheet-bar .dock-sheet-grip {
+    width: 36px; height: 4px; border-radius: 999px;
+    background: rgba(255, 255, 255, .18);
+    flex: 0 0 auto;
+  }
+  .dock-sheet-btn {
+    width: 40px; height: 40px; min-width: 40px; min-height: 40px;
+    padding: 0; border-radius: 10px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(255, 255, 255, .05); border: 1px solid var(--line);
+  }
+  .dock-sheet-btn .ico { width: 16px; height: 16px; }
+  .dock-sheet-btn .btn-label { display: none; }
+
+  #localpanel.parked {
+    opacity: 0; pointer-events: none; visibility: hidden;
+    transform: scale(0.84);
+  }
+  #localpanel.chrome-fast,
+  #dock.chrome-fast {
+    transition-duration: .14s !important;
+  }
+  /* Tuck — faint eye, lower-left of the map; solid only on hover/focus */
+  #localpark {
+    position: absolute;
+    z-index: 3;
+    left: 0;
+    bottom: 0;
+    width: 34px; height: 34px; min-width: 34px; min-height: 34px;
+    padding: 0; margin: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 0 10px 0 10px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text);
+    box-shadow: none;
+    opacity: 0.2;
+    transition: opacity .2s var(--ease), background .2s var(--ease), border-color .2s var(--ease),
+      box-shadow .2s var(--ease);
+  }
+  #localpark .ico { width: 15px; height: 15px; opacity: 0.85; }
+  #localpark .btn-label { display: none; }
+  #localmapwrap:hover #localpark,
+  #localpark:hover,
+  #localpark:focus-visible {
+    opacity: 1;
+    background: rgba(6, 10, 18, .9);
+    border-color: rgba(140, 170, 255, .32);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, .4);
+  }
+  #localpanel[data-chrome="icon"] #localpark {
+    width: 26px; height: 26px; min-width: 26px; min-height: 26px;
+    border-radius: 0 8px 0 8px;
+  }
+  #localpanel[data-chrome="icon"] #localpark .ico { width: 12px; height: 12px; }
+  #localpanel.parked #localpark { display: none; }

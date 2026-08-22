@@ -158,7 +158,11 @@ export const PLAY_TIPS = {
   },
   viewThought: {
     title: 'Thought',
-    body: 'Cernunnos — a floating train of thought about what you are looking at. Story-driven, remembers what came before, and warns when the living layer goes quiet or stuck.',
+    body: 'Cernunnos — a floating train of thought about what you are looking at. Story-driven, remembers what came before, and warns when the living layer goes quiet or stuck. Dwell on a square long enough and it notices.',
+  },
+  viewThoughtMind: {
+    title: 'Local mind',
+    body: 'Optional on-device SmolLM2 (~220 MB, WebGPU). Prepack with npm run cernunnos:fetch, or download once into the browser cache. Rewrites soft thought lines from a situation card — templates always work without it.',
   },
   localkeybtn: {
     title: 'Globe & map key',
@@ -190,7 +194,7 @@ export const PLAY_TIPS = {
   },
   localSeek: {
     title: 'Track',
-    body: 'Life: a slow tour — the globe turns to a new kind of place (coast, reef, bloom, night), then the map fades in. Stay holds this patch. Click the map to pin; A hunts again.',
+    body: 'Life: a slow tour — every few seconds the globe turns to a new kind of place (coast, reef, bloom, night), then the map follows. Stay holds this patch. Click the map to pin; the · button (or Track → Life again) releases the pin and resumes the hunt.',
   },
   scenariosel: {
     title: 'Challenge',
@@ -294,7 +298,23 @@ export const PLAY_TIPS = {
   },
   docktoggle: {
     title: 'Menu',
-    body: 'Open or close the dock. On a phone it is a bottom sheet — pick a tool, then tap the globe; the sheet tucks away.',
+    body: 'Opens the tools dock beside this control. On a phone the same action is the floating button by the bottom sheet.',
+  },
+  dockfab: {
+    title: 'Menu',
+    body: 'Opens the tools sheet. Phone only — on a desk the menu button sits next to the brand.',
+  },
+  dockshrink: {
+    title: 'Close menu',
+    body: 'Tucks the bottom sheet immediately so the globe is free again.',
+  },
+  localfab: {
+    title: 'Local map',
+    body: 'The map is tucked. Tap to restore the last size — same corner as the mini-map.',
+  },
+  localpark: {
+    title: 'Tuck map',
+    body: 'Eye on the lower-left of the map. One tap collapses Full → icon, or parks the peek as a floating chip. Double-tap − does the same.',
   },
   vrbtn: {
     title: 'VR',
@@ -507,7 +527,7 @@ export const SUITE_TIPS = {
     look: { title: 'Look', body: 'How see-through the crust is, and whether the cell grid is drawn. Shift-drag slides the globe; Home puts it back.' },
     layers: { title: 'Layers', body: 'Paint one field on the globe. Hover a button for what the colours mean.' },
     slice: { title: 'Slice', body: 'X-ray cut through the globe. Pair with Rock → Core on ice-shell worlds.' },
-    guides: { title: 'Guides', body: 'Spin axis / equator / ecliptic, Cernunnos thought, and the globe & map key.' },
+    guides: { title: 'Guides', body: 'Spin axis / equator / ecliptic, Cernunnos thought, optional local mind, and the globe & map key.' },
   },
   lab: {
     station: { title: 'Station', body: 'Inspect, core sample, ice core — actions that only return numbers. Globe HUD and the cell you clicked. Left-drag still spins.' },

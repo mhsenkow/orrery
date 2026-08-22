@@ -1,12 +1,12 @@
 /** ORRERY main — UI, input, XR, sim loop. */
 
 import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, lookRay, showErr } from './math.js';
-import { installGlobalErrorHandlers, setErrorSink, endBootDeferral } from './sim/report.js';
+import { installGlobalErrorHandlers, setErrorSink, endBootDeferral, expected } from './sim/report.js';
 import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
 import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
 import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js';
 import { setClockFace, setSeasonHold, livedTick } from './sim/clockFace.js';
-import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed } from './world.js';
+import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed, enableWorldAsserts } from './world.js';
 import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
 import { freshSeed } from './sim/rng.js';
 import { describeGenome } from './sim/genome.js';
@@ -80,6 +80,8 @@ import {
   scaleRung, applyScalePreset, eorefById,
 } from './sim/eoref.js';
 import { matchKey, keymapHelpLines } from './sim/keymap.js';
+import { bindPlanetKeys, dispatchIntent } from './input.js';
+import { onIntent } from './sim/intents.js';
 import { dialogFocusables, trapTab } from './sim/focusTrap.js';
 
 installGlobalErrorHandlers();
@@ -159,7 +161,7 @@ async function ensureDarkUi() {
   }
   return { hud: _darkHud, spec: _darkSpec };
 }
-if (darkEnabled()) ensureDarkUi().catch(() => {});
+if (darkEnabled()) ensureDarkUi().catch(() => { expected('ORR-EXPECTED-LAZY', 'dark UI'); });
 
 const S = {
   q: new Float32Array([0, 0, 0, 1]),
@@ -206,9 +208,12 @@ const S = {
   localSeek: 'life',  // stay = hold densest; life = jump to recent growth
   dayWatch: false,
   thoughtOn: true,
+  thoughtMind: false,
   faceCell: -1,
   faceUntil: 0,
   localExpanded: false,
+  localParked: false,
+  localSizeBeforePark: null,
   localHoverKey: null,   // legend id from map or key hover
   localHoverCell: -1,
   kbCursor: -1,          // keyboard cell cursor (M5/M8)
@@ -338,6 +343,16 @@ function showThought(line) {
   el.classList.add(line.tone || 'soft');
   el.querySelector('.th-kicker').textContent = line.kicker || 'Cernunnos';
   el.querySelector('.th-text').textContent = line.text;
+  const sug = el.querySelector('.th-suggest');
+  if (sug) {
+    if (line.suggest) {
+      sug.hidden = false;
+      sug.textContent = line.suggest;
+    } else {
+      sug.hidden = true;
+      sug.textContent = '';
+    }
+  }
   const trail = el.querySelector('.th-trail');
   if (trail) {
     const prev = thoughtMemory().lines.slice(-3, -1);
@@ -347,11 +362,60 @@ function showThought(line) {
   void el.offsetWidth;
   el.classList.add('show');
   clearTimeout(_thoughtTimer);
-  const hold = line.tone === 'warn' ? 5200 : line.tone === 'wild' ? 4800 : 5600;
+  const hold = line.tone === 'warn' ? 5200 : line.tone === 'wild' ? 4800 : 6200;
   _thoughtTimer = setTimeout(() => {
     el.classList.remove('show');
     setTimeout(() => { if (!el.classList.contains('show')) el.hidden = true; }, 900);
   }, hold);
+}
+
+/** Lazy handle for optional on-device mind (thoughtMind.js). */
+let _thoughtMind = null;
+let _thoughtMindRewrite = 0;
+
+async function loadThoughtMind() {
+  if (_thoughtMind) return _thoughtMind;
+  _thoughtMind = await import('./sim/thoughtMind.js');
+  return _thoughtMind;
+}
+
+function updateThoughtMindHint(snap) {
+  const hint = document.getElementById('viewThoughtMindHint');
+  const btn = document.getElementById('viewThoughtMind');
+  if (btn) {
+    const on = snap?.status === 'ready' || snap?.status === 'loading';
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (snap?.status === 'loading') btn.textContent = 'Local mind…';
+    else btn.textContent = 'Local mind';
+  }
+  if (!hint) return;
+  hint.classList.toggle('is-error', snap?.status === 'error' || snap?.status === 'unsupported');
+  const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 820px)').matches;
+  if (!snap || snap.status === 'off') {
+    hint.textContent = phone
+      ? 'Optional on-device voice (~220 MB, WebGPU).'
+      : 'Templates always speak. Local mind adds richer lines on-device (WebGPU · ~220 MB once).';
+    return;
+  }
+  if (snap.status === 'loading') {
+    hint.textContent = snap.progress || 'Downloading / loading local mind…';
+    return;
+  }
+  if (snap.status === 'ready') {
+    const src = snap.source === 'local' ? 'prepackaged' : 'cached download';
+    hint.textContent = phone
+      ? `Mind ready (${src}).`
+      : `Local mind ready (${src} · ${snap.modelLabel}). Soft lines may be rewritten on-device.`;
+    return;
+  }
+  if (snap.status === 'unsupported') {
+    hint.textContent = snap.error || 'WebGPU unavailable — templates still speak.';
+    return;
+  }
+  if (snap.status === 'error') {
+    const err = snap.error || 'Local mind failed — templates still speak.';
+    hint.textContent = phone && err.length > 96 ? `${err.slice(0, 93)}…` : err;
+  }
 }
 
 function tickThoughtVoice(dt) {
@@ -367,7 +431,16 @@ function tickThoughtVoice(dt) {
     paused: S.paused,
   });
   const line = considerThought(view);
-  if (line) showThought(line);
+  if (!line) return;
+  showThought(line);
+
+  // Optional local rewrite — never blocks templates; warn/wild stay literal.
+  if (!S.thoughtMind || !_thoughtMind?.shouldRewrite?.(line)) return;
+  const gen = ++_thoughtMindRewrite;
+  _thoughtMind.rewriteThought(line, view).then((richer) => {
+    if (!richer || gen !== _thoughtMindRewrite || !S.thoughtOn || !S.thoughtMind) return;
+    showThought(richer);
+  }).catch(() => { expected('ORR-EXPECTED-LAZY', 'thought rewrite'); });
 }
 
 const VIEW = m4(), PROJ = m4();
@@ -442,7 +515,7 @@ function persistGardenLeave() {
       garden,
       leftAt: Date.now(),
     });
-  } catch { /* serialize can throw mid-boot */ }
+  } catch { expected('ORR-EXPECTED-SAVE', 'serialize mid-boot'); }
 }
 
 function rebuildAfterLoad() {
@@ -460,7 +533,7 @@ function rebuildAfterLoad() {
 function maybeGardenReturn() {
   if (isDemoMode() || isPlaytestMode()) return false;
   let pitch = null;
-  try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* */ }
+  try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { expected('ORR-EXPECTED-URL', 'pitch param'); }
   if (pitch) return false;
   const auto = readAutosave();
   if (!auto?.data || !auto.garden) return false;
@@ -715,7 +788,7 @@ function runGenerate(seed, ruleIn, opts = {}) {
   refreshColours(1);
   respawnEntities();
   uploadEntities();
-  try { rebuildScatterLUTs(); } catch { /* GL may not be ready */ }
+  try { rebuildScatterLUTs(); } catch { expected('ORR-EXPECTED-GL', 'scatter LUTs'); }
   resetFocusCache();
   S.follow = null;
   if (S.localSeek === 'life') S.localPin = -1;
@@ -734,11 +807,11 @@ function wantsOriginCeremony(rule) {
     const url = new URL(location.href);
     if (url.searchParams.get('skipOrigin') === '1') return false;
     if (url.searchParams.get('origin') === '1') return true;
-  } catch { /* */ }
+  } catch { expected('ORR-EXPECTED-URL', 'origin params'); }
   if (!(rule?.earthLike || rule?.thrive)) return false;
   try {
     if (sessionStorage.getItem('orrery-origin-skip') === '1') return false;
-  } catch { /* */ }
+  } catch { expected('ORR-EXPECTED-STORAGE', 'origin-skip read'); }
   return true;
 }
 
@@ -781,7 +854,7 @@ function finishOriginCeremony() {
 
 function skipOriginCeremony() {
   if (!S.originSketch) return;
-  try { sessionStorage.setItem('orrery-origin-skip', '1'); } catch { /* */ }
+  try { sessionStorage.setItem('orrery-origin-skip', '1'); } catch { expected('ORR-EXPECTED-STORAGE', 'origin-skip write'); }
   S.originSketch.skip();
   finishOriginCeremony();
 }
@@ -820,13 +893,15 @@ function loadTableSlot(slot) {
 const TOOL_BTN_SEL = '#toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsSample button, #toolsEvil button';
 
 function isPhone() {
-  return typeof matchMedia === 'function' && matchMedia('(max-width: 640px)').matches;
+  // Keep in sync with vr/styles/phone.css — bottom-sheet dock, not a side column.
+  return typeof matchMedia === 'function' && matchMedia('(max-width: 820px)').matches;
 }
 
 /** Phone bottom-sheet dock: open/close + scrim so the globe stays tappable. */
 function setPhoneDock(open) {
   const dock = document.getElementById('dock');
   const btn = document.getElementById('docktoggle');
+  const fab = document.getElementById('dockfab');
   const scrim = document.getElementById('dockscrim');
   const ui = document.getElementById('ui');
   if (!dock) return;
@@ -835,6 +910,97 @@ function setPhoneDock(open) {
   ui?.classList.toggle('phone-dock-open', !!open);
   btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
   btn?.setAttribute('aria-pressed', open ? 'true' : 'false');
+  fab?.setAttribute('aria-expanded', open ? 'true' : 'false');
+  fab?.setAttribute('aria-pressed', open ? 'true' : 'false');
+  syncChromeFabs();
+}
+
+/** Floating menu / map icons — visible only when their panel is tucked. */
+function syncChromeFabs() {
+  const dock = document.getElementById('dock');
+  const dockFab = document.getElementById('dockfab');
+  const dockToggle = document.getElementById('docktoggle');
+  const localFab = document.getElementById('localfab');
+  const localPanel = document.getElementById('localpanel');
+  const phone = isPhone();
+  if (dockToggle) {
+    const dockOpen = phone
+      ? dock?.classList.contains('is-open')
+      : !dock?.classList.contains('collapsed');
+    dockToggle.setAttribute('aria-expanded', dockOpen ? 'true' : 'false');
+    dockToggle.setAttribute('aria-pressed', dockOpen ? 'true' : 'false');
+    dockToggle.title = dockOpen ? 'Close menu' : 'Open menu';
+  }
+  if (dockFab) {
+    /* Desktop uses the topbar menu by the brand — FAB is phone-only. */
+    const dockOpen = phone && dock?.classList.contains('is-open');
+    const showDockFab = phone && !dockOpen;
+    dockFab.classList.toggle('is-on', showDockFab);
+    dockFab.hidden = !showDockFab;
+    dockFab.setAttribute('aria-expanded', dockOpen ? 'true' : 'false');
+    dockFab.title = dockOpen ? 'Close menu' : 'Open menu';
+  }
+  if (localFab && localPanel) {
+    const parked = !!S.localParked;
+    localPanel.classList.toggle('parked', parked);
+    localFab.hidden = !parked;
+    localFab.classList.toggle('is-on', parked);
+    localFab.setAttribute('aria-expanded', parked ? 'false' : 'true');
+  }
+}
+
+function flashChromeFast(el, ms = 180) {
+  if (!el) return;
+  el.classList.add('chrome-fast');
+  clearTimeout(flashChromeFast._t);
+  flashChromeFast._t = setTimeout(() => el.classList.remove('chrome-fast'), ms);
+}
+
+function parkLocalMap() {
+  if (S.localParked) return;
+  S.localSizeBeforePark = {
+    size: S.localSize,
+    expanded: !!S.localExpanded,
+  };
+  S.localParked = true;
+  S.localExpanded = false;
+  flashChromeFast(document.getElementById('localpanel'));
+  try { applyLocalLayout?.(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+  syncChromeFabs();
+}
+
+function unparkLocalMap() {
+  if (!S.localParked) return;
+  const prev = S.localSizeBeforePark;
+  S.localParked = false;
+  if (prev) {
+    S.localSize = prev.size || LOCAL_SIZES[0];
+    S.localExpanded = !!prev.expanded;
+  } else {
+    S.localSize = isPhone() ? LOCAL_SIZES[0] : LOCAL_SIZE_M;
+    S.localExpanded = false;
+  }
+  flashChromeFast(document.getElementById('localpanel'));
+  try { applyLocalLayout?.(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+  syncChromeFabs();
+}
+
+/** Collapse local map quickly: Full → icon, or icon → parked FAB. */
+function tuckLocalMap() {
+  flashChromeFast(document.getElementById('localpanel'));
+  if (S.localExpanded) {
+    S.localExpanded = false;
+    S.localSize = LOCAL_SIZES[0];
+    try { applyLocalLayout?.(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+    return;
+  }
+  const fi = localFrameIndex(S.localSize, false);
+  if (fi > 0) {
+    S.localSize = LOCAL_SIZES[0];
+    try { applyLocalLayout?.(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+    return;
+  }
+  parkLocalMap();
 }
 
 /** Floating chip: which verb is armed, and a one-tap return to Look. */
@@ -1476,7 +1642,7 @@ function updateHUD() {
     if (!updateHUD._dark || performance.now() - updateHUD._dark > HUD_CADENCE_MS.dark) {
       updateHUD._dark = performance.now();
       if (_darkHud) _darkHud.refreshDarkHud(W);
-      else ensureDarkUi().then(() => _darkHud?.refreshDarkHud(W)).catch(() => {});
+      else ensureDarkUi().then(() => _darkHud?.refreshDarkHud(W)).catch(() => { expected('ORR-EXPECTED-LAZY', 'dark HUD refresh'); });
     }
     if (_darkSpec) {
       const mom = _darkSpec.drainDarkMoment(W);
@@ -2092,7 +2258,8 @@ function descendKeyboard() {
   const cell = ensureKbCursor();
   lookAtCell(cell, { ms: 1800, descend: true, zoom: true });
   S.localExpanded = true;
-  try { applyLocalLayout(); } catch { /* */ }
+  if (S.localParked) unparkLocalMap();
+  try { applyLocalLayout(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
   const last = W.receipts?.[W.receipts.length - 1]?.tool;
   armLocalCue(cell, last);
   const t = W.meanTemp != null ? ` · meanT ${(W.meanTemp).toFixed(2)}` : '';
@@ -2117,7 +2284,7 @@ function armLocalCue(cell, prefer = null, opts = {}) {
     };
     if (opts.delayMs) setTimeout(show, opts.delayMs);
     else show();
-  }).catch(() => {});
+  }).catch(() => { expected('ORR-EXPECTED-LAZY', 'local cue'); });
 }
 
 /** M7 — apply the armed tool at the keyboard cursor. */
@@ -2156,15 +2323,28 @@ function showReceiptToast(res) {
   if (!last && !res.pay && !said) return;
   const title = said || last?.intent || last?.tool || activeTool;
   const sub = last?.expected && last.expected !== said ? last.expected : '';
-  const canUndo = !!(W._actUndo && last && ['ignite', 'meteor', 'nuke', 'raise', 'lower', 'co2', 'solar'].includes(last.tool));
+  const notable = !!(last && ['ignite', 'meteor', 'nuke', 'raise', 'lower', 'co2', 'solar', 'buster'].includes(last.tool));
+  const canUndo = !!(W._actUndo && notable);
+  /* Fork twin is art-face affordance, not a verb for every brush stroke. On
+     phone the toast already eats the lower third — offering fork on every
+     receipt made accidental twins the default. Notable acts only, and a
+     cooldown so it does not reappear every tap. */
+  const phone = isPhone();
+  const forkCooldownMs = phone ? 120000 : 45000;
+  const now = performance.now();
+  const cooled = (now - (showReceiptToast._lastForkOffer || 0)) >= forkCooldownMs;
+  const offerFork = notable && cooled;
+  if (offerFork) showReceiptToast._lastForkOffer = now;
   el.innerHTML = `<b>${title}</b>`
     + (sub ? `<br><small>${sub}</small>` : '')
     + (last?.cost ? ` · −${last.cost}` : '')
     + (res.settling ? `<br><small>settles: ${res.settling}</small>` : '')
-    + `<br><span class="receipt-acts">`
-    + (canUndo ? `<button type="button" id="receiptUndo" class="receipt-btn">What if I hadn’t</button> ` : '')
-    + `<button type="button" id="receiptFork" class="receipt-btn">Fork twin</button>`
-    + `</span>`;
+    + ((canUndo || offerFork)
+      ? `<br><span class="receipt-acts">`
+        + (canUndo ? `<button type="button" id="receiptUndo" class="receipt-btn">What if I hadn’t</button> ` : '')
+        + (offerFork ? `<button type="button" id="receiptFork" class="receipt-btn">Fork twin</button>` : '')
+        + `</span>`
+      : '');
   el.classList.add('show');
   el.querySelector('#receiptUndo')?.addEventListener('click', () => {
     try {
@@ -2198,7 +2378,8 @@ function showReceiptToast(res) {
     el.classList.remove('show');
   });
   clearTimeout(showReceiptToast._t);
-  showReceiptToast._t = setTimeout(() => el.classList.remove('show'), 9000);
+  const holdMs = phone ? (offerFork || canUndo ? 5500 : 3200) : 9000;
+  showReceiptToast._t = setTimeout(() => el.classList.remove('show'), holdMs);
 }
 
 function startCommitHold(cell) {
@@ -2241,8 +2422,8 @@ function setupTips() {
     'genesisrand', 'genesisgo', 'dailyseed', 'godshelf', 'godshare',
     'budget', 'autopilot',
     'pause', 'newseed', 'catbtn', 'catprev', 'catnext', 'worldchip',
-    'docktoggle', 'vrbtn', 'tourbtn',
-    'opacity', 'grid', 'xray', 'xrayAmt', 'viewClear', 'viewGhost', 'viewOrbitGuides', 'viewOpenKey', 'viewThought',
+    'docktoggle', 'dockfab', 'dockshrink', 'localfab', 'localpark', 'vrbtn', 'tourbtn',
+    'opacity', 'grid', 'xray', 'xrayAmt', 'viewClear', 'viewGhost', 'viewOrbitGuides', 'viewOpenKey', 'viewThought', 'viewThoughtMind',
     'lookPhoto', 'lookDiagram', 'cloudFree', 'canvasmode', 'rerolland', 'landshape', 'landpickbtn',
     'layeradd', 'layerdup', 'layerdel', 'layerup', 'layerdown', 'layerflatten',
     'layeropacity', 'layerblend', 'layerpaint', 'layerclipland', 'layerclearmask',
@@ -2289,15 +2470,24 @@ function setupTips() {
     }
   });
 
-  // Topbar chrome — icons on phone (labels hide ≤640px).
+  // Topbar chrome — icons on phone (labels hide ≤820px).
   for (const [id, icon, label] of [
     ['tourbtn', 'chronicle', 'Tour'],
     ['catbtn', 'planet', 'Worlds'],
     ['newseed', 'genesisrand', 'Reseed'],
-    ['docktoggle', 'tabtools', 'Menu'],
+    ['docktoggle', 'menu', 'Menu'],
+    ['dockfab', 'menu', 'Menu'],
+    ['dockshrink', 'chevronDown', 'Close'],
+    ['localpark', 'eye', 'Tuck'],
   ]) {
     const el = document.getElementById(id);
     if (el && !el.querySelector('.ico')) decorateButton(el, icon, label);
+  }
+  {
+    const lf = document.getElementById('localfab');
+    if (lf) {
+      lf.innerHTML = `${iconSVG('localmap')}<span class="localfab-peek" aria-hidden="true"></span><span class="btn-label">Map</span>`;
+    }
   }
 
   // Suite desk tabs (Play / View / Lab / World / Tools)
@@ -2996,7 +3186,7 @@ function setupGodPanel() {
       u.searchParams.delete('seed');
       u.searchParams.delete('land');
       text = `${id}\n${u.toString()}`;
-    } catch { /* no location */ }
+    } catch { expected('ORR-EXPECTED-URL', 'no location'); }
     navigator.clipboard?.writeText(text);
     showMoment('World id', 'Copied', id);
   });
@@ -3077,7 +3267,7 @@ function setupGodPanel() {
     if (!g.name) g.name = nameWorld(g.seed, g.landscape);
     const rule = rulesetFromGenesis(g);
     // Genesis Create always plays formation (unless ?skipOrigin=1).
-    try { sessionStorage.removeItem('orrery-origin-skip'); } catch { /* */ }
+    try { sessionStorage.removeItem('orrery-origin-skip'); } catch { expected('ORR-EXPECTED-STORAGE', 'origin-skip clear'); }
     runGenerate(g.seed, rule, {
       afterMeta() {
         syncLandscapeUi(g.landscape);
@@ -3258,7 +3448,7 @@ function refreshLab() {
     import('./sim/run.js').then(({ listRuns, applyRun }) => {
       const runs = listRuns().slice().reverse();
       if (!runs.length) {
-        runsHost.innerHTML = 'No forks yet — use <b>Fork twin</b> on a receipt.';
+        runsHost.innerHTML = 'No forks yet — <b>Fork twin</b> appears on notable receipts (Strike / climate / land), not every brush.';
         return;
       }
       runsHost.innerHTML = runs.slice(0, 8).map((r) =>
@@ -3293,7 +3483,7 @@ function refreshLab() {
       loadLimitsSummary().then((s) => {
         chip.textContent = provenanceChipText(s, W);
       }).catch(() => { chip.textContent = 'Provenance: run npm run provenance'; });
-    }).catch(() => {});
+    }).catch(() => { expected('ORR-EXPECTED-LAZY', 'limits sheet'); });
   }
   if (limBtn && limHost) {
     limBtn.addEventListener('click', () => openLimitsSheet(limHost, W));
@@ -3302,7 +3492,7 @@ function refreshLab() {
         sessionStorage.setItem('orrery.limits.seen', '1');
         openLimitsSheet(limHost, W);
       }
-    } catch { /* */ }
+    } catch { expected('ORR-EXPECTED-STORAGE', 'limits.seen'); }
   }
 }
 
@@ -3408,7 +3598,7 @@ function maybeTeachWindow(t) {
   _taughtAlive = true;
   try {
     if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  } catch { /* ignore */ }
+  } catch { expected('ORR-EXPECTED-MEDIA', 'matchMedia'); }
   let best = -1, score = -1;
   for (let c = 0; c < NC; c++) {
     if (W.h[c] < W.seaLevel || (W.ice[c] || 0) > 0.4) continue;
@@ -3476,7 +3666,7 @@ function rememberWorldId(id) {
     const prev = JSON.parse(localStorage.getItem(WORLD_HIST_KEY) || '[]');
     const next = [id, ...prev.filter((x) => x !== id)].slice(0, 12);
     localStorage.setItem(WORLD_HIST_KEY, JSON.stringify(next));
-  } catch { /* private mode */ }
+  } catch { expected('ORR-EXPECTED-STORAGE', 'private mode'); }
 }
 
 function worldHistory() {
@@ -3603,7 +3793,7 @@ function enterOverlayFocus(root, preferSel = null) {
     const prefer = preferSel ? root.querySelector(preferSel) : null;
     const list = dialogFocusables(root);
     const target = prefer || list[0];
-    try { target?.focus({ preventScroll: true }); } catch { /* */ }
+    try { target?.focus({ preventScroll: true }); } catch { expected('ORR-EXPECTED-FOCUS', 'overlay focus'); }
   });
 }
 
@@ -3616,7 +3806,7 @@ function restoreOverlayFocus() {
     } else {
       canvas?.focus({ preventScroll: true });
     }
-  } catch { /* */ }
+  } catch { expected('ORR-EXPECTED-FOCUS', 'restore overlay'); }
 }
 
 /** Topmost open dialog that should trap Tab. */
@@ -3843,6 +4033,12 @@ function openLandPicker(opts = {}) {
 /* ---------- boot UI ---------- */
 export function boot() {
   endBootDeferral();
+  // P21/P41 — opt-in asserts via ?assert=1 (wrap only when requested — Proxy costs generate)
+  try {
+    if (new URLSearchParams(location.search).get('assert') === '1') {
+      enableWorldAsserts(W, true);
+    }
+  } catch { expected('ORR-EXPECTED-URL', 'assert param'); }
   const cvs = document.getElementById('c');
   const bootN = parseInt(document.getElementById('simN')?.value || '96', 10);
   if (bootN !== N && N_ALLOWED.includes(bootN)) changeResolution(bootN);
@@ -3857,6 +4053,8 @@ export function boot() {
   }
   remeshPlanet();
   initGL(cvs);
+  // Q41 — start the frame loop before docks/generate so sky clears onto the canvas early.
+  requestAnimationFrame(desktopFrame);
 
   setupCatalogue();
   setupGodPanel();
@@ -3972,6 +4170,49 @@ export function boot() {
       }
     });
   }
+  const viewThoughtMind = document.getElementById('viewThoughtMind');
+  if (viewThoughtMind) {
+    decorateButton(viewThoughtMind, 'viewThoughtMind', 'Local mind');
+    viewThoughtMind.addEventListener('click', async () => {
+      const mind = await loadThoughtMind();
+      mind.onMindStatus(updateThoughtMindHint);
+      if (S.thoughtMind && mind.mindStatus().ready) {
+        S.thoughtMind = false;
+        await mind.unloadMind();
+        updateThoughtMindHint(mind.mindStatus());
+        return;
+      }
+      S.thoughtMind = true;
+      S.thoughtOn = true;
+      document.getElementById('viewThought')?.setAttribute('aria-pressed', 'true');
+      updateThoughtMindHint({ status: 'loading', progress: 'Starting…' });
+      const ok = await mind.ensureMind();
+      S.thoughtMind = ok;
+      updateThoughtMindHint(mind.mindStatus());
+    });
+    // Resume: auto-load only when prepackaged weights are present; CDN needs a click.
+    queueMicrotask(async () => {
+      try {
+        const mind = await loadThoughtMind();
+        mind.onMindStatus(updateThoughtMindHint);
+        if (mind.mindPrefOn() && (await mind.probeLocalModel())) {
+          updateThoughtMindHint({ status: 'loading', progress: 'Loading prepackaged mind…' });
+          const ok = await mind.ensureMind();
+          S.thoughtMind = ok;
+          updateThoughtMindHint(mind.mindStatus());
+        } else if (mind.mindPrefOn()) {
+          const hint = document.getElementById('viewThoughtMindHint');
+          if (hint) {
+            hint.textContent = 'Local mind was on — click to restore from browser cache (or prepack with npm run cernunnos:fetch).';
+          }
+        } else {
+          updateThoughtMindHint(mind.mindStatus());
+        }
+      } catch {
+        updateThoughtMindHint({ status: 'off' });
+      }
+    });
+  }
   document.getElementById('viewOpenKey')?.addEventListener('click', () => {
     if (localKeyOpen()) closeLocalKey();
     else openLocalKey();
@@ -4023,10 +4264,36 @@ export function boot() {
       setPhoneDock(!dock.classList.contains('is-open'));
       return;
     }
+    flashChromeFast(dock);
     dock.classList.toggle('collapsed');
     const open = !dock.classList.contains('collapsed');
     btn?.setAttribute('aria-expanded', open ? 'true' : 'false');
     btn?.setAttribute('aria-pressed', open ? 'true' : 'false');
+    syncChromeFabs();
+  });
+  const toggleDockFromFab = () => {
+    const dock = document.getElementById('dock');
+    if (!dock) return;
+    if (isPhone()) {
+      setPhoneDock(!dock.classList.contains('is-open'));
+      return;
+    }
+    flashChromeFast(dock);
+    dock.classList.toggle('collapsed');
+    const open = !dock.classList.contains('collapsed');
+    document.getElementById('docktoggle')?.setAttribute('aria-expanded', open ? 'true' : 'false');
+    syncChromeFabs();
+  };
+  document.getElementById('dockfab')?.addEventListener('click', toggleDockFromFab);
+  document.getElementById('dockshrink')?.addEventListener('click', () => {
+    if (isPhone()) setPhoneDock(false);
+    else {
+      const dock = document.getElementById('dock');
+      flashChromeFast(dock);
+      dock?.classList.add('collapsed');
+      document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'false');
+      syncChromeFabs();
+    }
   });
   document.getElementById('dockscrim')?.addEventListener('click', () => {
     if (isPhone()) setPhoneDock(false);
@@ -4053,7 +4320,7 @@ export function boot() {
     }
   });
   if (typeof matchMedia === 'function') {
-    const phoneQ = matchMedia('(max-width: 640px)');
+    const phoneQ = matchMedia('(max-width: 820px)');
     const onPhone = (e) => {
       const dock = document.getElementById('dock');
       const btn = document.getElementById('docktoggle');
@@ -4066,15 +4333,19 @@ export function boot() {
         document.getElementById('ui')?.classList.remove('phone-dock-open');
         dock.classList.remove('is-open');
         btn?.setAttribute('aria-expanded', dock.classList.contains('collapsed') ? 'false' : 'true');
+        syncChromeFabs();
       }
       syncToolRail();
     };
     phoneQ.addEventListener('change', onPhone);
     if (phoneQ.matches) setPhoneDock(false);
+    else syncChromeFabs();
   }
   syncToolRail();
+  syncChromeFabs();
 
-  document.getElementById('pause').onclick = togglePause;
+  const pauseBtn = document.getElementById('pause');
+  if (pauseBtn) pauseBtn.onclick = togglePause;
   document.getElementById('newseed').onclick = () => {
     if (!confirmLeaveLand()) return;
     const g = genesisFromPanel(document);
@@ -4432,22 +4703,27 @@ export function boot() {
       x.setAttribute('aria-pressed', x.dataset.v === cur ? 'true' : 'false'));
   };
   const syncLocalLayout = () => {
+    if (S.localExpanded && S.localParked) S.localParked = false;
     layoutLocalPanel(localPanel, localCvs, {
       size: S.localSize,
       snap: S.localSnap,
       expanded: S.localExpanded,
     });
+    localPanel?.classList.toggle('parked', !!S.localParked);
     const tag = document.getElementById('localframetag');
     if (tag) tag.textContent = localFrameLabel(S.localSize, S.localExpanded);
     const shrink = document.getElementById('localshrink');
     const grow = document.getElementById('localgrow');
     const fi = localFrameIndex(S.localSize, S.localExpanded);
-    if (shrink) shrink.disabled = fi <= 0;
+    if (shrink) shrink.disabled = fi <= 0 && !!S.localParked;
     if (grow) grow.disabled = fi >= LOCAL_SIZES.length;
+    const park = document.getElementById('localpark');
+    if (park) park.disabled = !!S.localParked;
     syncSegPressed('localSize', () => S.localSize);
     placeLocalBarOverflow();
     requestAnimationFrame(() => placeLocalBarOverflow());
     if (_playtest && S.localExpanded) _playtest.noteDescend();
+    syncChromeFabs();
   };
   applyLocalLayout = syncLocalLayout;
   /** Park bar controls into ⋯ when the panel is too narrow; restore when it grows. */
@@ -4508,11 +4784,27 @@ export function boot() {
     if (more && bar) more.style.top = `${Math.ceil(bar.offsetHeight * 0.5 + 6)}px`;
   };
   const stepLocalFrame = (dir) => {
+    if (S.localParked && dir > 0) {
+      unparkLocalMap();
+      return;
+    }
     const max = LOCAL_SIZES.length; // last index = full
     let i = localFrameIndex(S.localSize, S.localExpanded);
-    const next = Math.max(0, Math.min(max, i + dir));
+    /* Phone / quick tuck: from Full, one − jumps straight to the icon peek
+       instead of walking XL→L→… — the globe should come back fast. */
+    if (dir < 0 && S.localExpanded && (isPhone() || dir === -2)) {
+      tuckLocalMap();
+      return;
+    }
+    if (dir < 0 && !S.localExpanded && i <= 0) {
+      parkLocalMap();
+      return;
+    }
+    const step = dir === -2 ? -1 : dir;
+    const next = Math.max(0, Math.min(max, i + step));
     if (next === i) return;
     if (next >= LOCAL_SIZES.length) {
+      if (S.localParked) unparkLocalMap();
       S.localExpanded = true;
       const focus = S.focusCell ?? S.pinCell ?? S.kbCursor ?? S._localFocus ?? 0;
       const last = W.receipts?.[W.receipts.length - 1]?.tool;
@@ -4522,6 +4814,7 @@ export function boot() {
       S.localSize = LOCAL_SIZES[next];
     }
     syncLocalLayout();
+    syncChromeFabs();
   };
   if (localLegend) {
     let legendKind = null;
@@ -4674,15 +4967,31 @@ export function boot() {
     () => S.localSize,
     (v) => { S.localExpanded = false; S.localSize = v; syncLocalLayout(); });
   syncLocalLayout();
-  document.getElementById('localshrink')?.addEventListener('click', () => stepLocalFrame(-1));
+  {
+    let shrinkTapAt = 0;
+    document.getElementById('localshrink')?.addEventListener('click', () => {
+      const now = performance.now();
+      if (now - shrinkTapAt < 320) {
+        tuckLocalMap();
+        shrinkTapAt = 0;
+        return;
+      }
+      shrinkTapAt = now;
+      stepLocalFrame(-1);
+    });
+  }
   document.getElementById('localgrow')?.addEventListener('click', () => stepLocalFrame(1));
+  document.getElementById('localpark')?.addEventListener('click', () => tuckLocalMap());
+  document.getElementById('localfab')?.addEventListener('click', () => unparkLocalMap());
   document.getElementById('localframetag')?.addEventListener('click', () => {
-    // Snap to next rung (wraps Full → S)
+    // Snap to next rung (wraps Full → I)
+    if (S.localParked) { unparkLocalMap(); return; }
     const i = localFrameIndex(S.localSize, S.localExpanded);
     if (i >= LOCAL_SIZES.length) {
       S.localExpanded = false;
       S.localSize = LOCAL_SIZES[0];
       syncLocalLayout();
+      syncChromeFabs();
     } else {
       stepLocalFrame(1);
     }
@@ -4785,7 +5094,7 @@ export function boot() {
           return;
         }
       }
-      onToolResult(useToolAt(c, { oceanic: e.shiftKey }));
+      dispatchIntent('act', { cell: c, opts: { oceanic: e.shiftKey } }, 'pointer');
       return;
     }
     if (S.canvasMode) return;
@@ -4934,7 +5243,8 @@ export function boot() {
       if (!S.localExpanded) {
         if (cell != null && cell >= 0) lookAtCell(cell, { ms: 1400, descend: true, zoom: true });
         S.localExpanded = true;
-        try { applyLocalLayout(); } catch { /* */ }
+        try { applyLocalLayout(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+        dispatchIntent('descend', { cell, via: 'pinch' }, 'touch');
         announcePlanet('Pinch descend — local map');
         showErr('Pinched in — Esc or pinch-in to step back');
       } else {
@@ -4959,7 +5269,7 @@ export function boot() {
   canvas.addEventListener('touchcancel', endPinch, { passive: true });
 
   canvas.addEventListener('pointerdown', (e) => {
-    try { canvas.focus({ preventScroll: true }); } catch { try { canvas.focus(); } catch { /* */ } }
+    try { canvas.focus({ preventScroll: true }); } catch { try { canvas.focus(); } catch { expected('ORR-EXPECTED-FOCUS', 'canvas'); } }
     audioInit();
     installDarkAudioBus();
     if (TABLE.enabled) {
@@ -4997,11 +5307,14 @@ export function boot() {
         return;
       }
       if (activeTool === 'meteor') {
-        onToolResult(useToolAt(cell, {
-          mass: 0.8 + (W.rngGod?.() ?? 0.5) * 0.6,
-          velocity: 0.7 + (W.rngGod?.() ?? 0.5) * 0.5,
-          angle: 30 + (W.rngGod?.() ?? 0.5) * 50,
-        }));
+        dispatchIntent('act', {
+          cell,
+          opts: {
+            mass: 0.8 + (W.rngGod?.() ?? 0.5) * 0.6,
+            velocity: 0.7 + (W.rngGod?.() ?? 0.5) * 0.5,
+            angle: 30 + (W.rngGod?.() ?? 0.5) * 50,
+          },
+        }, 'pointer');
       } else if (e.altKey && (activeTool === 'inspect' || !TOOLS.find((t) => t.id === activeTool)?.drag)) {
         fingerOfGod(cell, e.shiftKey ? 'delete' : 'boost');
         playEvent('seed', 0.5);
@@ -5013,9 +5326,9 @@ export function boot() {
           setCrustOceanic(activeTool === 'crust' && e.shiftKey);
           const r = beginToolDrag(cell);
           if (r?.ok) { S.toolDrag = true; canvas.setPointerCapture(e.pointerId); }
-          else onToolResult(r || useToolAt(cell, { oceanic: e.shiftKey }));
+          else dispatchIntent('act', { cell, opts: { oceanic: e.shiftKey } }, 'pointer');
         } else {
-          onToolResult(useToolAt(cell, { oceanic: e.shiftKey }));
+          dispatchIntent('act', { cell, opts: { oceanic: e.shiftKey } }, 'pointer');
         }
       }
       return;
@@ -5040,7 +5353,7 @@ export function boot() {
         const cell = desktopPick(e.clientX, e.clientY);
         if (cell != null && cell >= 0) {
           pinLocal(cell);
-          onToolResult(useToolAt(cell));
+          dispatchIntent('act', { cell }, 'pointer');
         }
       }
     }
@@ -5065,7 +5378,10 @@ export function boot() {
       return;
     }
     if (panning) {
-      panGlobe(e.clientX - lastX, e.clientY - lastY);
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      panGlobe(dx, dy);
+      dispatchIntent('pan', { dx, dy }, 'pointer');
       lastX = e.clientX;
       lastY = e.clientY;
       return;
@@ -5092,6 +5408,7 @@ export function boot() {
     qAxis(tmpQ, 0, 1, 0, dx); qmul(S.q, tmpQ, S.q);
     qAxis(tmpQ, 1, 0, 0, dy); qmul(S.q, tmpQ, S.q);
     qnorm(S.q);
+    dispatchIntent('spin', { dx, dy }, 'pointer');
   });
   canvas.addEventListener('dblclick', (e) => {
     if (Math.abs(S.camPanX) < 1e-4 && Math.abs(S.camPanY) < 1e-4) return;
@@ -5103,41 +5420,59 @@ export function boot() {
   });
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
-    S.camDist = clamp(S.camDist * (1 + Math.sign(e.deltaY) * (S.camDist > 8 ? 0.14 : 0.09)), camDistMin(W), CAM_DIST_MAX);
+    const factor = 1 + Math.sign(e.deltaY) * (S.camDist > 8 ? 0.14 : 0.09);
+    dispatchIntent('zoom', { factor, dir: Math.sign(e.deltaY) }, 'pointer');
   }, { passive: false });
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  addEventListener('keydown', (e) => {
-    audioInit();
-    installDarkAudioBus();
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
-    // M15 — Escape closes one overlay at a time (priority order).
-    if (e.key === 'Escape') {
+  bindPlanetKeys(window, {
+    planetCanvasFocused,
+    localActive: () => !!(S.localExpanded || S.localPin >= 0),
+    spinPlanet,
+    zoomPlanet,
+    zoomByFactor: (factor) => {
+      S.camDist = clamp(S.camDist * factor, camDistMin(W), CAM_DIST_MAX);
+    },
+    panGlobe,
+    moveKbCursor,
+    descendKeyboard,
+    applyToolAtKbCursor,
+    nudgeLocal,
+    adoptTool,
+    announcePlanet,
+    toolsUnlocked,
+    W,
+    TOOLS,
+    handleEscape(e) {
+      audioInit();
+      installDarkAudioBus();
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return true;
+      if (e.key !== 'Escape') return false;
       if (isPhone() && document.getElementById('dock')?.classList.contains('is-open')) {
         e.preventDefault();
         setPhoneDock(false);
-        return;
+        return true;
       }
       if (S.originSketch) {
         e.preventDefault();
         skipOriginCeremony();
-        return;
+        return true;
       }
       if (doorIsOpen()) {
         e.preventDefault();
         void startLesson('hold-earth');
-        return;
+        return true;
       }
       if (localKeyOpen()) {
         e.preventDefault();
         closeLocalKey();
-        return;
+        return true;
       }
       const kbdSheet = document.getElementById('kbdSheet');
       if (kbdSheet && !kbdSheet.hidden) {
         e.preventDefault();
         closeKbdSheet();
-        return;
+        return true;
       }
       const cat = document.getElementById('catpanel');
       if (cat?.classList.contains('open')) {
@@ -5145,145 +5480,118 @@ export function boot() {
         cat.classList.remove('open');
         document.getElementById('catbtn')?.setAttribute('aria-pressed', 'false');
         restoreOverlayFocus();
-        return;
+        return true;
       }
       const land = document.getElementById('landpick');
       if (land?.classList.contains('open')) {
         e.preventDefault();
         closeLandPicker();
-        return;
+        return true;
       }
       const lim = document.querySelector('.limits-sheet-host');
       if (lim) {
         e.preventDefault();
         lim.remove();
-        return;
+        return true;
       }
       if (S.localExpanded) {
         e.preventDefault();
         stepLocalFrame(-1);
-        return;
+        return true;
       }
-    }
-    // Focus trap while a modal dialog is open (M14).
-    const overlay = activeOverlayRoot();
-    if (overlay && trapTab(overlay, e)) return;
-    if ((e.key === '?' && e.shiftKey) || (e.key === '/' && e.shiftKey)) {
-      e.preventDefault();
-      const sheet = document.getElementById('kbdSheet');
-      if (sheet?.hidden === false) closeKbdSheet();
-      else openKbdSheet();
-      return;
-    }
-    if (e.key === '?' && !e.shiftKey) {
-      e.preventDefault();
-      onTourButton();
-      return;
-    }
-
-    // M4–M7 — planet canvas focused.
-    const onPlanet = planetCanvasFocused();
-    if (onPlanet) {
-      if (e.key === 'Enter' && e.shiftKey) {
+      return false;
+    },
+    handleGlobal(e) {
+      audioInit();
+      installDarkAudioBus();
+      const overlay = activeOverlayRoot();
+      if (overlay && trapTab(overlay, e)) return;
+      if ((e.key === '?' && e.shiftKey) || (e.key === '/' && e.shiftKey)) {
         e.preventDefault();
-        descendKeyboard();
+        const sheet = document.getElementById('kbdSheet');
+        if (sheet?.hidden === false) closeKbdSheet();
+        else openKbdSheet();
         return;
       }
-      const planetBind = matchKey(e.key, 'planet')
-        || (e.code === 'Backslash' ? matchKey('\\', 'planet') : null);
-      if (planetBind) {
+      if (e.key === '?' && !e.shiftKey) {
         e.preventDefault();
-        const p = planetBind.payload || {};
-        if (planetBind.intent === 'spin') spinPlanet(p.yaw || 0, p.pitch || 0);
-        else if (planetBind.intent === 'zoom') zoomPlanet(p.dir || 0);
-        else if (planetBind.intent === 'cursor') moveKbCursor(p.dx || 0, p.dy || 0);
-        else if (planetBind.intent === 'descend') descendKeyboard();
-        else if (planetBind.intent === 'act') applyToolAtKbCursor();
+        onTourButton();
         return;
       }
-      // Letter keys arm tools while the globe has focus (M7).
-      const armed = TOOLS.find((x) => x.key && x.key === e.key)
-        || TOOLS.find((x) => x.key && x.key.toLowerCase() === e.key.toLowerCase());
-      if (armed && !e.metaKey && !e.ctrlKey && !e.altKey) {
-        if (toolsUnlocked(W)[armed.id] === false) return;
+      const onPlanet = planetCanvasFocused();
+      if (e.key === 'Home') {
         e.preventDefault();
-        adoptTool(armed);
-        announcePlanet(`Tool ${armed.name}`);
+        resetCamPan();
+        dispatchIntent('recenter', {}, 'keyboard');
         return;
       }
-    } else if (S.localExpanded || S.localPin >= 0) {
-      const localBind = matchKey(e.key, 'local');
-      if (localBind?.intent === 'localNudge') {
+      if (e.key === '[' || e.key === ']') {
         e.preventDefault();
-        const p = localBind.payload || {};
-        nudgeLocal(p.dx || 0, p.dy || 0);
+        stepCatalogueWorld(e.key === ']' ? 1 : -1);
         return;
       }
-    }
-
-    if (e.key === 'Home') {
-      e.preventDefault();
-      resetCamPan();
-      return;
-    }
-    if (e.key === '[' || e.key === ']') {
-      e.preventDefault();
-      stepCatalogueWorld(e.key === ']' ? 1 : -1);
-      return;
-    }
-    if (e.key >= '1' && e.key <= '5') setRuleset(+e.key - 1);
-    else if (e.key === 'r' || e.key === 'R') runGenerate(freshSeed(), W.rule);
-    else if (e.key === ' ') { e.preventDefault(); togglePause(); }
-    else if (e.key === ',' || e.key === '<') {
-      e.preventDefault();
-      applyTimeRate(-1);
-    }
-    else if (e.key === '.' || e.key === '>') {
-      e.preventDefault();
-      applyTimeRate(1);
-    }
-    else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      const r = e.shiftKey ? redoStroke() : undoStroke();
-      if (r) { showErr(r.note); refreshColours(1); needGeom(); refreshLayerPanel(); }
-    }
-    else if (e.shiftKey && (e.key === 'm' || e.key === 'M')) {
-      e.preventDefault();
-      const on = audioMute();
-      showErr(on ? 'Sound off' : 'Sound on');
-    }
-    else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
-      e.preventDefault();
-      if (S.follow) { S.follow = null; showErr('Released'); }
-      else {
-        const t = followTarget();
-        if (t) {
-          S.follow = t;
-          pinLocal(t.cell);
-          showErr(t.name ? `Following ${t.name}` : 'Following');
+      if (e.key >= '1' && e.key <= '5') setRuleset(+e.key - 1);
+      else if (e.key === 'r' || e.key === 'R') runGenerate(freshSeed(), W.rule);
+      else if (e.key === ' ') { e.preventDefault(); togglePause(); }
+      else if (e.key === ',' || e.key === '<') {
+        e.preventDefault();
+        applyTimeRate(-1);
+      }
+      else if (e.key === '.' || e.key === '>') {
+        e.preventDefault();
+        applyTimeRate(1);
+      }
+      else if ((e.key === 'z' || e.key === 'Z') && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        const r = e.shiftKey ? redoStroke() : undoStroke();
+        if (r) { showErr(r.note); refreshColours(1); needGeom(); refreshLayerPanel(); }
+      }
+      else if (e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+        e.preventDefault();
+        const on = audioMute();
+        showErr(on ? 'Sound off' : 'Sound on');
+      }
+      else if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+        e.preventDefault();
+        if (S.follow) { S.follow = null; showErr('Released'); }
+        else {
+          const t = followTarget();
+          if (t) {
+            S.follow = t;
+            pinLocal(t.cell);
+            showErr(t.name ? `Following ${t.name}` : 'Following');
+          }
         }
       }
-    }
-    else if (e.shiftKey && (e.key === 'd' || e.key === 'D')) {
-      e.preventDefault();
-      setDayWatch(!S.dayWatch);
-    }
-    else if (!onPlanet && (e.key === '+' || e.key === '=')) {
-      setTool('solar');
-      onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: 0.05 }));
-    }
-    else if (!onPlanet && (e.key === '-' || e.key === '_')) {
-      setTool('solar');
-      onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: -0.05 }));
-    }
-    else if (!onPlanet) {
-      const t = TOOLS.find((x) => x.key && x.key === e.key)
-        || TOOLS.find((x) => x.key && x.key.toLowerCase() === e.key.toLowerCase());
-      if (t) {
-        if (toolsUnlocked(W)[t.id] === false) return;
-        adoptTool(t);
+      else if (e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        e.preventDefault();
+        setDayWatch(!S.dayWatch);
       }
-    }
+      else if (!onPlanet && (e.key === '+' || e.key === '=')) {
+        setTool('solar');
+        onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: 0.05 }));
+      }
+      else if (!onPlanet && (e.key === '-' || e.key === '_')) {
+        setTool('solar');
+        onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: -0.05 }));
+      }
+      else if (!onPlanet) {
+        const t = TOOLS.find((x) => x.key && x.key === e.key)
+          || TOOLS.find((x) => x.key && x.key.toLowerCase() === e.key.toLowerCase());
+        if (t) {
+          if (toolsUnlocked(W)[t.id] === false) return;
+          adoptTool(t);
+        }
+      }
+    },
+  });
+
+  // R43 — pointer / touch / XR `act` lands here (keyboard handled in bindPlanetKeys).
+  onIntent('act', (i) => {
+    if (i.source === 'keyboard') return;
+    const cell = i.payload?.cell;
+    if (cell == null || cell < 0) return;
+    onToolResult(useToolAt(cell, i.payload.opts || {}));
   });
 
   const applyPitchShot = async (id) => {
@@ -5357,10 +5665,10 @@ export function boot() {
     if (isDemoMode()) setLifeSpeed(2);
   }
   let pitch = null;
-  try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* ignore */ }
+  try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { expected('ORR-EXPECTED-URL', 'pitch'); }
   try {
-    if (new URLSearchParams(location.search).get('profile') === '1') W._profileTicks = true;
-  } catch { /* ignore */ }
+    if (new URLSearchParams(location.search).get('profile') === '1') W._profileBag = true;
+  } catch { expected('ORR-EXPECTED-URL', 'profile'); }
   if (pitch) void applyPitchShot(pitch);
   else if (isPlaytestMode()) {
     setPaused(false);
@@ -5403,7 +5711,7 @@ export function boot() {
   addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') persistGardenLeave();
   });
-  requestAnimationFrame(desktopFrame);
+  // desktopFrame already started after initGL (Q41)
   const quads = (6 * globeN() * globeN()).toLocaleString();
   console.log(`[orrery] foundations rebuild · ${NC.toLocaleString()} cells · ${quads} globe quads (${effectiveGlobeSubd()}× mesh) · ${(vIdx.length / 3).toLocaleString()} tris`);
 }
@@ -5524,7 +5832,7 @@ function readControllers(frame) {
     if (h.grab && !wasGrab && gp?.hapticActuators?.length) {
       try {
         gp.hapticActuators[0].pulse?.(0.55, 36);
-      } catch { /* haptic optional */ }
+      } catch { expected('ORR-EXPECTED-XR', 'haptic optional'); }
     }
 
     if (trig) {
@@ -5542,7 +5850,7 @@ function readControllers(frame) {
         const speed = Math.hypot(h.vel[0], h.vel[1], h.vel[2]);
         if (speed > 0.02) {
           const cell = pickCell(h.pos, h.vel, S.posXR, S.scaleXR, S.q);
-          onToolResult(useToolAt(cell, { power: clamp(speed * 20, 0.4, 2) }));
+          dispatchIntent('act', { cell, opts: { power: clamp(speed * 20, 0.4, 2) } }, 'xr');
         }
       }
       h.prev = null;
@@ -5550,7 +5858,11 @@ function readControllers(frame) {
 
     if (gp && gp.axes.length >= 4) {
       const ay = gp.axes[3];
-      if (Math.abs(ay) > 0.18) S.scaleXR = clamp(S.scaleXR - ay * 0.006, XR_SCALE_MIN, XR_SCALE_MAX);
+      if (Math.abs(ay) > 0.18) {
+        const factor = 1 - ay * 0.006 / Math.max(0.01, S.scaleXR);
+        S.scaleXR = clamp(S.scaleXR - ay * 0.006, XR_SCALE_MIN, XR_SCALE_MAX);
+        dispatchIntent('zoom', { factor, dir: Math.sign(ay) }, 'xr');
+      }
     }
     // Squeeze grip (button 1) uses tool at aim
     if (gp && gp.buttons[1]?.pressed && !readControllers._grip) {
@@ -5562,7 +5874,7 @@ function readControllers(frame) {
         // forward is -Z of pose
         const dir = [-tm[8], -tm[9], -tm[10]];
         const cell = pickCell(origin, dir, S.posXR, S.scaleXR, S.q);
-        onToolResult(useToolAt(cell));
+        dispatchIntent('act', { cell }, 'xr');
       }
     }
     if (gp && !gp.buttons[1]?.pressed) readControllers._grip = false;

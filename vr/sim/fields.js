@@ -12,7 +12,8 @@
  * @property {FieldKind} kind
  * @property {string} type  float32[] | uint8[] | number | object | …
  * @property {string} [unit]
- * @property {string} owner  module that may write (convention; not yet enforced)
+ * @property {string} owner  module that may write — enforced when W.debugAssert === 'throw' (P21)
+ * @property {string[]} [handoff]  ordered modules allowed to mutate (P24/P26); owner is primary
  * @property {boolean} saved
  * @property {boolean} [derived]
  * @property {string} [why]
@@ -41,6 +42,7 @@ export const FIELDS = Object.freeze([
     type: 'float32[]',
     unit: 'relief',
     owner: 'tectonics',
+    handoff: ['world', 'tectonics', 'earth', 'earthTerrain', 'god/sculpt', 'hydro'],
     saved: true,
     why: 'heightfield',
   },
@@ -50,13 +52,30 @@ export const FIELDS = Object.freeze([
     type: 'float32[]',
     unit: 'mapT',
     owner: 'atmo',
+    handoff: ['atmo', 'gpgpu', 'earth', 'god/climate', 'iceshell'],
     saved: false,
     why: 'surface temperature map',
   },
-  { name: 'moist', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'hydro', saved: false },
+  {
+    name: 'moist',
+    kind: 'field',
+    type: 'float32[]',
+    unit: '0-1',
+    owner: 'hydro',
+    handoff: ['hydro', 'earth', 'gpgpu', 'god/climate', 'god/brush'],
+    saved: false,
+  },
   { name: 'precip', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'hydro', saved: false },
   { name: 'clouds', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'atmo', saved: false },
-  { name: 'ice', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'hydro', saved: false },
+  {
+    name: 'ice',
+    kind: 'field',
+    type: 'float32[]',
+    unit: '0-1',
+    owner: 'hydro',
+    handoff: ['hydro', 'earth', 'iceshell', 'gpgpu', 'god/climate', 'god/sculpt'],
+    saved: false,
+  },
   { name: 'iceLand', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'hydro', saved: false },
   { name: 'iceSea', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'hydro', saved: false },
   {
@@ -65,15 +84,32 @@ export const FIELDS = Object.freeze([
     type: 'float32[]',
     unit: '0-1',
     owner: 'bio',
+    handoff: ['bio', 'redox', 'fire', 'evolve', 'extinction', 'god/life', 'earth'],
     saved: false,
     why: 'biomass density; bio owns modern Earth',
   },
   { name: 'fire', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'fire', saved: false },
-  { name: 'build', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'city', saved: true },
+  {
+    name: 'build',
+    kind: 'field',
+    type: 'float32[]',
+    unit: '0-1',
+    owner: 'city',
+    handoff: ['city', 'anthro', 'dark'],
+    saved: true,
+  },
   { name: 'windU', kind: 'field', type: 'float32[]', unit: 'map', owner: 'wind', saved: false },
   { name: 'windV', kind: 'field', type: 'float32[]', unit: 'map', owner: 'wind', saved: false },
   { name: 'frost', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'cover', saved: false },
-  { name: 'ash', kind: 'field', type: 'float32[]', unit: '0-1', owner: 'atmo', saved: false },
+  {
+    name: 'ash',
+    kind: 'field',
+    type: 'float32[]',
+    unit: '0-1',
+    owner: 'atmo',
+    handoff: ['atmo', 'tectonics', 'fire', 'god/disaster', 'ordnance'],
+    saved: false,
+  },
   {
     name: 'crust',
     kind: 'field',
@@ -88,7 +124,15 @@ export const FIELDS = Object.freeze([
   { name: 'meanLife', kind: 'scalar', type: 'number', unit: '0-1', owner: 'bio', saved: false },
   { name: 'iceFrac', kind: 'scalar', type: 'number', unit: '0-1', owner: 'hydro', saved: false },
   { name: 'landFrac', kind: 'scalar', type: 'number', unit: '0-1', owner: 'hydro', saved: false },
-  { name: 'seaLevel', kind: 'scalar', type: 'number', unit: 'relief', owner: 'hydro', saved: true },
+  {
+    name: 'seaLevel',
+    kind: 'scalar',
+    type: 'number',
+    unit: 'relief',
+    owner: 'hydro',
+    handoff: ['hydro', 'earth', 'epoch', 'iceshell', 'god/sculpt'],
+    saved: true,
+  },
   { name: 'solar', kind: 'scalar', type: 'number', unit: 'S⊕', owner: 'atmo', saved: false },
   { name: 'year', kind: 'scalar', type: 'number', unit: 'a', owner: 'world', saved: true },
   { name: 'ageYr', kind: 'scalar', type: 'number', unit: 'a', owner: 'world', saved: true },
@@ -99,7 +143,14 @@ export const FIELDS = Object.freeze([
   { name: 'energy', kind: 'scalar', type: 'number', owner: 'economy', saved: false },
   { name: 'waterDrift', kind: 'scalar', type: 'number', owner: 'assert', saved: false },
 
-  { name: 'gases', kind: 'record', type: 'object', owner: 'atmo', saved: true },
+  {
+    name: 'gases',
+    kind: 'record',
+    type: 'object',
+    owner: 'atmo',
+    handoff: ['atmo', 'carbon', 'epoch', 'god/climate'],
+    saved: true,
+  },
   { name: 'rule', kind: 'meta', type: 'object', owner: 'world', saved: true },
   { name: 'chron', kind: 'record', type: 'object', owner: 'chronicle', saved: true },
   { name: 'tree', kind: 'record', type: 'object', owner: 'evolve', saved: true },
@@ -110,6 +161,7 @@ export const FIELDS = Object.freeze([
     kind: 'record',
     type: 'object',
     owner: 'dark',
+    handoff: ['dark', 'world'],
     saved: true,
     why: 'optional ?dark=1 layer',
   },

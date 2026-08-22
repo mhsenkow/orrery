@@ -119,6 +119,58 @@ await section('keymap (M10)', async () => {
   );
 });
 
+await section('intents + worldGuard (R42/P21/P41)', async () => {
+  const { dispatchIntent, onIntent, resetIntents, recentIntents } = await import('./intents.js');
+  resetIntents();
+  let saw = null;
+  const off = onIntent('spin', (i) => {
+    saw = i;
+  });
+  dispatchIntent('spin', { yaw: 1 }, 'keyboard');
+  ok('F-intent-dispatch', saw?.payload?.yaw === 1 && saw?.source === 'keyboard');
+  ok(
+    'F-intent-log',
+    recentIntents().some((i) => i.type === 'spin'),
+  );
+  dispatchIntent('act', { cell: 3 }, 'pointer');
+  dispatchIntent('act', { cell: 4 }, 'xr');
+  ok(
+    'F-intent-r43',
+    recentIntents().some((i) => i.source === 'pointer') &&
+      recentIntents().some((i) => i.source === 'xr'),
+  );
+  off();
+  resetIntents();
+
+  const { wrapWorldDebug } = await import('./worldGuard.js');
+  const raw = { life: 0, year: 0, debugAssert: 'throw', _writeOwner: 'audio' };
+  const g = wrapWorldDebug(raw, { seal: true, owners: true });
+  let threwOwner = false;
+  try {
+    const { FIELD_BY_NAME } = await import('./fields.js');
+    ok('F-guard-life-owner', FIELD_BY_NAME.life?.owner === 'bio');
+    ok(
+      'F-handoff-life',
+      Array.isArray(FIELD_BY_NAME.life?.handoff) && FIELD_BY_NAME.life.handoff.includes('bio'),
+    );
+    g.life = 1;
+  } catch (e) {
+    threwOwner = /P21/.test(String(e.message || e));
+  }
+  ok('F-guard-owner', threwOwner);
+
+  let threwTypo = false;
+  try {
+    g.tempreature = 5;
+  } catch (e) {
+    threwTypo = /P41/.test(String(e.message || e));
+  }
+  ok('F-guard-typo', threwTypo);
+
+  const { describeStateBags } = await import('./viewState.js');
+  ok('F-view-bags', !!describeStateBags().world && describeStateBags().leftoverOnW.length >= 1);
+});
+
 await section('dark gate (F38)', () => {
   const prev = globalThis.location;
   try {
@@ -156,7 +208,12 @@ await section('url flags present (F37)', () => {
       /id="landpick"[^>]*aria-modal="true"/.test(html),
   );
   ok('F-apply-tool-fn', main.includes('applyToolAtKbCursor') && main.includes('activeOverlayRoot'));
-  ok('F-touch-44', /min-height:\s*44px/.test(html) && html.includes('@media (pointer: coarse)'));
+  const phoneCss = readFileSync(join(__dir, '../styles/phone.css'), 'utf8');
+  ok(
+    'F-touch-44',
+    /min-height:\s*44px/.test(phoneCss) && phoneCss.includes('@media (pointer: coarse)'),
+  );
+  ok('F-phone-sheet', /max-width:\s*820px/.test(phoneCss) && main.includes('max-width: 820px'));
   ok('F-lab-diag', html.includes('id="labDiag"') && main.includes('droppedTicks'));
   const render = readFileSync(join(__dir, '../render.js'), 'utf8');
   ok('F-cloud-vnoise', /densAt[\s\S]*?vnoise\(sp \* 3\.2/.test(render));
@@ -237,6 +294,59 @@ await section('diagnostics (J5/J6)', async () => {
     'F-diag-ring',
     recentErrors().some((e) => e.code === 'ORR-TEST-DIAG'),
   );
+});
+
+await section('cernunnos thought (dwell/card)', async () => {
+  const { resetThought, thoughtView, considerThought, situationCard, DWELL_MS } =
+    await import('./thought.js');
+  withWorld({ seed: 42, ruleId: 'terra' }, () => {
+    resetThought();
+    const t0 = 1_000;
+    const v0 = thoughtView({ cell: 12, now: t0, paused: false });
+    ok('F-thought-card', !!situationCard(v0)?.systems);
+    ok('F-thought-dwell0', (v0.dwellMs || 0) < 100);
+
+    const vHold = thoughtView({ cell: 12, now: t0 + DWELL_MS + 500, paused: false });
+    ok('F-thought-dwell', vHold.dwellMs >= DWELL_MS, String(vHold.dwellMs));
+
+    // Force soft cooldown elapsed + place line path via synthetic view.
+    const synthetic = {
+      ...vHold,
+      thrive: true,
+      beings: 4,
+      life: 0.4,
+      place: 'a green shelf',
+      systems: { ...(vHold.systems || {}), paintedQuiet: false },
+      recent: [],
+      sparkHunt: false,
+      sparkBirth: false,
+      hunts: 0,
+      flees: 0,
+      fire: 0,
+      swarm: 0,
+      front: 0,
+    };
+    const line = considerThought(synthetic, t0 + DWELL_MS + 600);
+    ok(
+      'F-thought-dwell-line',
+      !!line && /linger|Holding|Still|square/i.test(line.text),
+      line?.text,
+    );
+    ok(
+      'F-thought-suggest-opt',
+      line == null || line.suggest == null || typeof line.suggest === 'string',
+    );
+  });
+
+  const mindPath = join(__dir, 'thoughtMind.js');
+  ok('F-thought-mind-mod', existsSync(mindPath));
+  const mindSrc = readFileSync(mindPath, 'utf8');
+  ok('F-thought-mind-cdn', mindSrc.includes('vendor/web-llm.js'));
+  ok(
+    'F-thought-mind-local',
+    mindSrc.includes('models/cernunnos') && mindSrc.includes('resolve/main'),
+  );
+  ok('F-thought-mind-vendor', existsSync(join(__dir, '../vendor/web-llm.js')));
 });
 
 await section('catalogue lazy-load (K17)', async () => {

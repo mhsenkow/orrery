@@ -2,7 +2,7 @@
  *  Data table so shortcuts can be shown and later rebound.
  *  Planet actions apply when `#c` (the globe canvas) is focused. */
 
-/** @typedef {'spin'|'zoom'|'cursor'|'act'|'descend'|'recenter'|'localNudge'|'meta'} KeyIntent */
+/** @typedef {'spin'|'zoom'|'cursor'|'act'|'descend'|'recenter'|'localNudge'|'arm'|'pan'|'close'|'meta'} KeyIntent */
 
 /**
  * @typedef {object} KeyBinding

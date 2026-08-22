@@ -1,0 +1,137 @@
+{
+  "updated": "2026-08-22",
+  "note": "T41 — solid pairs only. Translucent --orr-panel (0.78) over bright globe/ocean can drop effective contrast; prefer prefers-contrast denser panel or higher --orr-faint on those surfaces (T42).",
+  "failures": 0,
+  "rows": [
+    {
+      "fg": "--orr-ink",
+      "bg": "--orr-bg",
+      "role": "AA body",
+      "ratio": 17.43,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-mute",
+      "bg": "--orr-bg",
+      "role": "AA secondary",
+      "ratio": 9.93,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-faint",
+      "bg": "--orr-bg",
+      "role": "AA tertiary",
+      "ratio": 6.82,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-ink",
+      "bg": "--orr-panel (opaque approx #080c14)",
+      "role": "AA on panel",
+      "ratio": 16.73,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-mute",
+      "bg": "--orr-panel (opaque approx #080c14)",
+      "role": "AA dim on panel",
+      "ratio": 9.53,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-faint",
+      "bg": "--orr-panel (opaque approx #080c14)",
+      "role": "AA faint on panel",
+      "ratio": 6.55,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-accent",
+      "bg": "--orr-bg",
+      "role": "non-text 3:1",
+      "ratio": 7.9,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-ok",
+      "bg": "--orr-bg",
+      "role": "non-text 3:1",
+      "ratio": 11.49,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-amber",
+      "bg": "--orr-bg",
+      "role": "non-text 3:1",
+      "ratio": 11.03,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-gold",
+      "bg": "--orr-bg",
+      "role": "focus ring",
+      "ratio": 8.48,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-ink (prefers-contrast)",
+      "bg": "--orr-bg",
+      "role": "hi-contrast ink",
+      "ratio": 18.99,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-mute (prefers-contrast)",
+      "bg": "--orr-bg",
+      "role": "hi-contrast mute",
+      "ratio": 13.08,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    },
+    {
+      "fg": "--orr-faint (prefers-contrast)",
+      "bg": "--orr-bg",
+      "role": "hi-contrast faint",
+      "ratio": 10.18,
+      "aa": true,
+      "aaLarge": true,
+      "nonText": true,
+      "pass": true
+    }
+  ]
+}

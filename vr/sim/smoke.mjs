@@ -123,7 +123,7 @@ console.log('Solar System Type fidelity (B47/B49/B53)');
   const { N } = await import('../sphere.js');
   const { reservoirActive, reservoirTick } = await import('./cover.js');
   const { cycleMaterial, liquidWindow, livePressureBar } = await import('./substrateField.js');
-  try { if (N !== 32) changeResolution(32); } catch { /* */ }
+  try { if (N !== 32) changeResolution(32); } catch { void 0; }
 
   const ares = RULESETS.find((r) => r.id === 'ares');
   generate(20260808, ares);

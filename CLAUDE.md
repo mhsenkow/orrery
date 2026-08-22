@@ -10,10 +10,11 @@ WebGL2 + JS planet god-game under `vr/`. Flat desktop/mobile is the product surf
 
 ```bash
 python3 -m http.server 8765   # http://localhost:8765/vr/
+npm run build                 # esbuild → dist/ (Q1); source tree stays the Q2 dev path
 npm run test:fast --prefix vr # <18s edit loop
 npm run smoke --prefix vr
 npm run fidelity --prefix vr  # provenance + calibrate + golden + parity + alloc-lint
-npm run verify                # lint + format:check + typecheck + test:fast (repo root)
+npm run verify                # lint + format + typecheck + fields + architecture ratchet + test:fast
 ```
 
 ## Layout

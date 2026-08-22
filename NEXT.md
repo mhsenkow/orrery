@@ -19,11 +19,13 @@ One backlog. Capacity is the first ninety seconds, not the dock.
 | 7 | **Ares summer column recovery** | Winter freezes ~28%; summer scale stays low. | Equinox / summer pressure rises toward mean. |
 | 8 | **Cryosphere Earth tighten** | IceFrac band OK; growth still sketchy inland. | Ice growth/melt closes remaining gap vs reference. |
 | 9 | **Commit / ship a build** | Quality + fidelity gates green; playtests pending. | Tag or release note after n≥6 rows. |
-| 10 | **Extract dock CSS (L8)** | Inline CSS still ~1.7k lines in `index.html`. | Shell/dock/panels split into stylesheets under 300 lines each. |
+| 10 | **Architecture next (P37 / R54)** | P24/R43/Q11 landed. | Request/apply for shared fields; shrink `main.js` toward wiring-only. |
 
 ---
 
 ## Shipped this wave (do not re-queue)
+
+**Architecture First-20 + P24/R43/Q11** — handoffs for top 10 fields; pointer/XR → intents; Pages deploys `dist/` (verify-gated).
 
 **Quality Sixth-20** — catalogue + dark lazy-load, pinch descend, mid-run save, quota report, shelf in diagnostics, error-codes, HUD cadence, schema alloc, orphan-suites check.
 
@@ -38,6 +40,8 @@ See [`briefs/shipped.md`](briefs/shipped.md).
 Themes 7–11 → [`briefs/earth-fidelity-500.md`](briefs/earth-fidelity-500.md). Promote 1–3 rows; run `npm run fidelity --prefix vr`.
 
 Themes 12–20 → [`briefs/quality-400.md`](briefs/quality-400.md). **First–Sixth gates landed**; keep shrinking by promotion.
+
+Themes 16–20 re-read → [`briefs/architecture-400.md`](briefs/architecture-400.md). **First-20 complete**; P24 handoffs, R43 four-source intents, Q11 Pages→`dist/` landed.
 
 ---
 

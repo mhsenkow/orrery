@@ -1,6 +1,7 @@
 /** Cernunnos voice — floating train-of-thought about the view.
  *  Story first (dense, animal, seasonal). Diagnosis when the living layer
- *  goes quiet or stuck. Not a UI toast catalogue — a thread you overhear. */
+ *  goes quiet or stuck. Optional local mind (thoughtMind.js) may rewrite
+ *  soft lines from a situation card — templates always work without it. */
 
 import { W } from '../world.js';
 import { ENT } from '../agents.js';
@@ -13,7 +14,12 @@ const COOLDOWN_MS = {
   wild: 14000,
   quiet: 22000,
   soft: 28000,
+  dwell: 40000,
+  suggest: 48000,
 };
+
+/** How long the same focus cell must hold before a dwell line. */
+export const DWELL_MS = 28000;
 
 /** @type {{
  *  lines: string[],
@@ -23,6 +29,9 @@ const COOLDOWN_MS = {
  *  thread: { kind: string, at: number, text: string }[],
  *  silence: number,
  *  lastFocus: number,
+ *  dwellCell: number,
+ *  dwellSince: number,
+ *  jumps: number,
  * }} */
 const mem = {
   lines: [],
@@ -32,6 +41,9 @@ const mem = {
   thread: [],
   silence: 0,
   lastFocus: -1,
+  dwellCell: -1,
+  dwellSince: 0,
+  jumps: 0,
 };
 
 export function resetThought() {
@@ -42,11 +54,15 @@ export function resetThought() {
   mem.thread.length = 0;
   mem.silence = 0;
   mem.lastFocus = -1;
+  mem.dwellCell = -1;
+  mem.dwellSince = 0;
+  mem.jumps = 0;
 }
 
 /** Snapshot of what the player is looking at. */
 export function thoughtView(opts = {}) {
   const cell = opts.cell ?? -1;
+  const now = opts.now ?? (typeof performance !== 'undefined' ? performance.now() : 0);
   const place = cell >= 0 ? (placeSentence(cell) || '') : '';
   let beings = 0, hunts = 0, flees = 0, settlers = 0;
   for (let i = 0; i < ENT.n; i++) {
@@ -60,6 +76,20 @@ export function thoughtView(opts = {}) {
   const sparks = W.lifeSparks || [];
   const sparkHunt = sparks.some((s) => s.kind === 'hunt');
   const sparkBirth = sparks.some((s) => s.kind === 'birth');
+
+  if (cell !== mem.dwellCell) {
+    if (mem.dwellCell >= 0 && cell >= 0) mem.jumps++;
+    mem.dwellCell = cell;
+    mem.dwellSince = now;
+  }
+  const dwellMs = cell >= 0 ? Math.max(0, now - mem.dwellSince) : 0;
+
+  const o2 = W.gases?.O2 ?? 0;
+  const co2 = W.gases?.CO2 ?? 0;
+  const meanTemp = W.meanTemp ?? 0;
+  const meanLife = W.meanLife ?? 0;
+  const iceFrac = W.iceFrac ?? 0;
+
   return {
     cell,
     place,
@@ -83,6 +113,47 @@ export function thoughtView(opts = {}) {
     thrive: !!(W.rule && !isPinnedEarth(W.rule)),
     moments: W.moments || {},
     recent: recentChronicle(6),
+    dwellMs,
+    jumps: mem.jumps,
+    o2,
+    co2,
+    meanTemp,
+    meanLife,
+    iceFrac,
+    systems: {
+      paintedQuiet: meanLife > 0.04 && beings === 0,
+      hot: meanTemp > 0.88,
+      cold: meanTemp < 0.18 && iceFrac > 0.25,
+      thinAir: o2 < 0.02 && !!(W.moments?.firstOxygen),
+      burning: cell >= 0 && (W.fire?.[cell] || 0) > 0.35,
+      settling: settlers > 0 && (cell < 0 || (W.build?.[cell] || 0) > 0.2),
+    },
+  };
+}
+
+/** Compact card for a local mind rewrite — facts only, no prose. */
+export function situationCard(view) {
+  if (!view) return null;
+  return {
+    place: view.place || null,
+    dwellSec: view.dwellMs != null ? Math.round(view.dwellMs / 1000) : 0,
+    jumps: view.jumps | 0,
+    lifeHere: +(view.life || 0).toFixed(2),
+    fire: +(view.fire || 0).toFixed(2),
+    beings: view.beings | 0,
+    hunts: view.hunts | 0,
+    flees: view.flees | 0,
+    herd: view.herdName || null,
+    swarm: view.swarm | 0,
+    sun: +(view.sun || 0).toFixed(2),
+    year: view.year | 0,
+    o2: +(view.o2 || 0).toFixed(3),
+    meanTemp: +(view.meanTemp || 0).toFixed(2),
+    meanLife: +(view.meanLife || 0).toFixed(2),
+    ice: +(view.iceFrac || 0).toFixed(2),
+    systems: view.systems || {},
+    chronicle: (view.recent || []).slice(-3).map((e) => e.label || e.kind).filter(Boolean),
+    thread: mem.thread.slice(-3).map((t) => t.text),
   };
 }
 
@@ -95,6 +166,7 @@ function recentChronicle(n) {
 }
 
 function cooled(tone, now) {
+  if (!mem.lastAt) return true;
   const need = COOLDOWN_MS[tone] || COOLDOWN_MS.soft;
   return now - mem.lastAt >= need;
 }
@@ -125,6 +197,14 @@ function once(key) {
   return true;
 }
 
+function withSuggest(line, view) {
+  if (!line) return null;
+  const hint = suggestFor(line, view);
+  if (hint) line.suggest = hint;
+  line.card = situationCard(view);
+  return line;
+}
+
 /** Pick the next line, or null. */
 export function considerThought(view, now = performance.now()) {
   if (!view) return null;
@@ -134,21 +214,30 @@ export function considerThought(view, now = performance.now()) {
   if (view.thrive && livingSignal === 0) mem.silence++;
   else mem.silence = Math.max(0, mem.silence - 2);
 
-  // --- Diagnosis first ---
   const warn = diagnose(view);
   if (warn && cooled('warn', now) && once(warn.key)) {
     remember('warn', warn.text, 'warn');
-    return { kicker: 'Cernunnos', text: warn.text, tone: 'warn', key: warn.key };
+    return withSuggest({ kicker: 'Cernunnos', text: warn.text, tone: 'warn', key: warn.key }, view);
   }
 
-  // --- Hard living beats in / near the view ---
   const wild = wildBeat(view);
   if (wild && cooled('wild', now) && once(wild.key)) {
     remember(wild.kind, wild.text, 'wild');
-    return { kicker: 'Cernunnos', text: wild.text, tone: 'wild', key: wild.key };
+    return withSuggest({ kicker: 'Cernunnos', text: wild.text, tone: 'wild', key: wild.key }, view);
   }
 
-  // --- Soft place / season / thread continuity ---
+  const dwell = dwellBeat(view, now);
+  if (dwell && cooled('dwell', now) && once(dwell.key)) {
+    remember(dwell.kind, dwell.text, 'dwell');
+    return withSuggest({
+      kicker: 'Cernunnos',
+      text: dwell.text,
+      tone: 'quiet',
+      key: dwell.key,
+      kind: dwell.kind,
+    }, view);
+  }
+
   if (!cooled('soft', now) && !cooled('quiet', now)) return null;
 
   const soft = softBeat(view);
@@ -156,9 +245,71 @@ export function considerThought(view, now = performance.now()) {
     const tone = soft.tone || 'soft';
     if (!cooled(tone, now)) return null;
     remember(soft.kind, soft.text, tone);
-    return { kicker: 'Cernunnos', text: soft.text, tone, key: soft.key };
+    return withSuggest({ kicker: 'Cernunnos', text: soft.text, tone, key: soft.key }, view);
   }
   return null;
+}
+
+function suggestFor(line, view) {
+  if (!view) return null;
+  const sys = view.systems || {};
+  if (line.tone === 'warn') {
+    if (/nothing walks|painted/i.test(line.text)) return 'Descend and wait — or seed a herd on green cover.';
+    if (/no cross|swarm/i.test(line.text)) return 'Check Living marks on the globe, or rename a herd.';
+    if (/running|fire/i.test(line.text)) return 'Watch the square, or cool the brush.';
+    if (/too warm|canopy/i.test(line.text)) return 'Shade, rain, or tilt — Climate tools.';
+    if (/oxygen|air forgot/i.test(line.text)) return 'Grow canopy again before bodies return.';
+    return 'Read the Lab strip — something is off-balance.';
+  }
+  if (sys.burning) return 'Follow ash downwind, or put the fire out.';
+  if (sys.settling) return 'Stay for a day-watch, or open Sample on the roofs.';
+  if (view.dwellMs > DWELL_MS && view.life > 0.15) return 'Pin the map, or set Track → Life and clear the pin (·).';
+  if (view.jumps > 4 && line.kind === 'dwell') return 'Slow the tour — one square still has more to say.';
+  if (view.hunts > 0 || view.sparkHunt) return 'Stay with the hunt, or lift to see the herd cross.';
+  if (sys.cold) return 'Wait for melt, or nudge insolation.';
+  return null;
+}
+
+function dwellBeat(view, now) {
+  if (view.cell < 0 || (view.dwellMs || 0) < DWELL_MS) return null;
+  if (!cooled('dwell', now)) return null;
+
+  const place = view.place ? decap(view.place) : 'this square';
+  const sys = view.systems || {};
+
+  if (sys.paintedQuiet) {
+    return {
+      kind: 'dwell',
+      key: `dwell:quiet:${view.cell}:${(view.year / 40) | 0}`,
+      text: `Still on ${place}. Cover is thick; feet have not arrived.`,
+    };
+  }
+  if (view.beings > 3 && view.life > 0.2) {
+    return {
+      kind: 'dwell',
+      key: `dwell:life:${view.cell}:${(view.year / 40) | 0}`,
+      text: `You linger on ${place}. Bodies keep rewriting the same patch.`,
+    };
+  }
+  if (view.fire > 0.2) {
+    return {
+      kind: 'dwell',
+      key: `dwell:fire:${view.cell}:${(view.year / 30) | 0}`,
+      text: `Still watching flame on ${place}. Ash is the longer sentence.`,
+    };
+  }
+  if (view.jumps >= 5) {
+    return {
+      kind: 'dwell',
+      key: `dwell:tour:${(view.year / 50) | 0}`,
+      text: `The map has jumped often. ${place[0].toUpperCase()}${place.slice(1)} is where you finally stopped.`,
+    };
+  }
+  return {
+    kind: 'dwell',
+    key: `dwell:hold:${view.cell}:${(view.year / 45) | 0}`,
+    text: `Holding ${place}. The square has not finished speaking.`,
+  };
 }
 
 function diagnose(view) {
@@ -254,7 +405,6 @@ function wildBeat(view) {
       text: 'Orange dashes — the thicket breaks and runs.',
     };
   }
-  // Chronicle echo into the view
   for (const e of view.recent) {
     if (!e.label) continue;
     if (/herd|hunt|birth|bloom|fire|erupt|extinct/i.test(`${e.kind} ${e.label}`)) {
@@ -369,5 +519,9 @@ export function thoughtMemory() {
     lines: mem.lines.slice(),
     thread: mem.thread.map((t) => ({ ...t })),
     silence: mem.silence,
+    dwellMs: mem.dwellCell >= 0
+      ? Math.max(0, performance.now() - mem.dwellSince)
+      : 0,
+    jumps: mem.jumps,
   };
 }

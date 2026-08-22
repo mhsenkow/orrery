@@ -1,0 +1,66 @@
+{
+  "updated": "2026-08-22",
+  "note": "architecture-400 P24 — top curated multi-writers resolved as owner + explicit handoff. Census write counts include reads (W.x[i]); handoff lists the modules allowed to *mutate*.",
+  "resolved": [
+    {
+      "name": "h",
+      "owner": "tectonics",
+      "handoff": ["world", "tectonics", "earth", "earthTerrain", "god/sculpt", "hydro"],
+      "why": "Heightfield: generate/earth stamp, then tectonics tick; sculpt + coastal hydro may adjust."
+    },
+    {
+      "name": "life",
+      "owner": "bio",
+      "handoff": ["bio", "redox", "fire", "evolve", "extinction", "god/life", "earth"],
+      "why": "Bio owns the density field; redox/fire/evolve/extinction and god life tools hand off in that order per tick/tool."
+    },
+    {
+      "name": "seaLevel",
+      "owner": "hydro",
+      "handoff": ["hydro", "earth", "epoch", "iceshell", "god/sculpt"],
+      "why": "Derived from ice/ocean mass via hydro; earth/epoch/iceshell init; sculpt may nudge."
+    },
+    {
+      "name": "gases",
+      "owner": "atmo",
+      "handoff": ["atmo", "carbon", "epoch", "god/climate"],
+      "why": "Atmosphere reservoir; carbon and climate tools request through atmo/god climate."
+    },
+    {
+      "name": "build",
+      "owner": "city",
+      "handoff": ["city", "anthro", "dark"],
+      "why": "City fabric; anthro growth and optional Dark layers may write."
+    },
+    {
+      "name": "temp",
+      "owner": "atmo",
+      "handoff": ["atmo", "gpgpu", "earth", "god/climate", "iceshell"],
+      "why": "Climate field; GPU path mirrors atmo; god climate and cryosphere adjust."
+    },
+    {
+      "name": "ice",
+      "owner": "hydro",
+      "handoff": ["hydro", "earth", "iceshell", "gpgpu", "god/climate", "god/sculpt"],
+      "why": "Cryosphere owned by hydro; init and GPU/god paths hand off."
+    },
+    {
+      "name": "moist",
+      "owner": "hydro",
+      "handoff": ["hydro", "earth", "gpgpu", "god/climate", "god/brush"],
+      "why": "Moisture field; climate GPU and brushes may write."
+    },
+    {
+      "name": "dark",
+      "owner": "dark",
+      "handoff": ["dark", "world"],
+      "why": "Optional ?dark=1 namespace; only dark/* modules and save/load."
+    },
+    {
+      "name": "ash",
+      "owner": "atmo",
+      "handoff": ["atmo", "tectonics", "fire", "god/disaster", "ordnance"],
+      "why": "Aerosol/ash; volcanoes and disasters inject, atmo decays."
+    }
+  ]
+}

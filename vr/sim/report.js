@@ -68,6 +68,7 @@ export function report(level, code, detail, extra = {}) {
       _showErr(row.detail, code);
     } catch {
       /* sink must not throw */
+      void 0;
     }
   }
   return row;
@@ -87,6 +88,15 @@ export const ERROR_CODES = Object.freeze({
   'ORR-SAVE-002': 'Autosave failed (private mode / other)',
   'ORR-TEST-001': 'Harness self-test',
   'ORR-TEST-DIAG': 'Diagnostics probe',
+  'ORR-EXPECTED-STORAGE': 'storage blocked / private mode',
+  'ORR-EXPECTED-URL': 'location / search params unavailable',
+  'ORR-EXPECTED-FOCUS': 'element focus failed',
+  'ORR-EXPECTED-LAYOUT': 'local layout not ready',
+  'ORR-EXPECTED-GL': 'GL not ready',
+  'ORR-EXPECTED-LAZY': 'optional chunk failed',
+  'ORR-EXPECTED-SAVE': 'serialize during boot',
+  'ORR-EXPECTED-MEDIA': 'matchMedia unavailable',
+  'ORR-EXPECTED-XR': 'XR haptic optional',
 });
 
 /** Install window handlers once (J1). */

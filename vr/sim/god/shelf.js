@@ -1,3 +1,4 @@
+import { expected } from '../report.js';
 /** Shelf of worlds — persist several runs.
  *  Backlog many 166–177. */
 
@@ -16,7 +17,7 @@ export function loadShelf() {
 export function saveShelf(shelf) {
   try {
     localStorage.setItem(KEY, JSON.stringify(shelf.slice(0, 24)));
-  } catch { /* quota */ }
+  } catch { expected('ORR-EXPECTED-STORAGE', 'shelf quota'); }
 }
 
 export function shelfEntryFromWorld(W, serializeRun) {
@@ -36,7 +37,7 @@ export function shelfEntryFromWorld(W, serializeRun) {
       ageYr: W.ageYr || 0,
       at: Date.now(),
     };
-  } catch { /* */ }
+  } catch { expected('ORR-EXPECTED-SAVE', 'shelf garden fields'); }
   return {
     id: `${W.seed}-${Date.now()}`,
     name: W.worldName || W.rule?.name || 'World',

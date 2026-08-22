@@ -1,3 +1,4 @@
+import { expected } from './report.js';
 /** Flat-screen playtest harness — NEXT #4 / #5 / #8.
  *  Open vr/?playtest=1 — times the 90s loop, asks comfort + legibility, copies a PLAYTESTS row.
  *  Chrome is a top-right chip so it does not sit on the tools dock. */
@@ -26,7 +27,7 @@ export function savePlaytestRow(row) {
   try {
     localStorage.setItem(KEY, JSON.stringify(rows.slice(-40)));
   } catch {
-    /* */
+    expected('ORR-EXPECTED-STORAGE', 'playtest rows');
   }
   return rows;
 }
@@ -242,7 +243,7 @@ export function mountPlaytestUI(opts = {}) {
     try {
       navigator.clipboard?.writeText(md);
     } catch {
-      /* */
+      expected('ORR-EXPECTED-STORAGE', 'clipboard');
     }
     phaseEl.textContent = 'Row copied — paste into PLAYTESTS.md';
     opts.onDone?.(row, md);

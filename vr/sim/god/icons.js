@@ -92,6 +92,13 @@ const PATHS = {
   table: 'M3 4h10v2H3zM3 6h10v6H3zM8 6v6M3 9h10',
   chronicle: 'M4 2.5h6.5l1.5 1.5V13.5H4zM6 6h4M6 8.5h4M6 11h2.5',
   resolution: 'M3 12.5h10M5 12.5V7l3-4 3 4v5.5M7 9.5h2',
+  eye: 'M8 3.5C4.5 3.5 2 8 2 8s2.5 4.5 6 4.5S14 8 14 8s-2.5-4.5-6-4.5zm0 2a2.5 2.5 0 1 1 0 5 2.5 2.5 0 0 1 0-5z',
+  eyeOff: 'M2.5 3.5l11 11M5.2 5.6C4 6.5 2.8 7.6 2 8c1.2 1.6 3.4 4.5 6 4.5 1 0 1.9-.3 2.7-.8M7.1 5.2A2.5 2.5 0 0 1 10.8 8.9M11.5 10.2c1-.7 1.9-1.6 2.5-2.2-1.2-1.6-3.4-4.5-6-4.5-.5 0-1 .1-1.4.2',
+  /** Floating chrome — hamburger + map peek. */
+  menu: 'M3 5h10M3 8h10M3 11h10',
+  localmap: 'M3 4.5h10v7H3zM5.5 9.5l1.6-2 1.4 1.4 1.4-2.2 1.6 2.8H5.5zM8 3v1.2',
+  chevronDown: 'M4 6.5l4 4 4-4',
+  chevronUp: 'M4 9.5l4-4 4 4',
 };
 
 /* Evil desk. `iconSVG` falls back to the magnifying glass for an unknown id, so

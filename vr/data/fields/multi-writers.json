@@ -1,0 +1,4665 @@
+{
+  "generated": "2026-08-22T17:28:42.042Z",
+  "rows": [
+    {
+      "name": "h",
+      "writers": [
+        "agents.js",
+        "audio.js",
+        "localview.js",
+        "main.js",
+        "render.js",
+        "sim/alien.js",
+        "sim/anthro.js",
+        "sim/atmo.js",
+        "sim/bio.js",
+        "sim/calibrate.mjs",
+        "sim/cellSurface.js",
+        "sim/city.js",
+        "sim/coast.js",
+        "sim/colstack.js",
+        "sim/cover.js",
+        "sim/dark-scenario.mjs",
+        "sim/dark-test.mjs",
+        "sim/darkNaval.js",
+        "sim/darkOrbit.js",
+        "sim/earth.js",
+        "sim/earthTerrain.js",
+        "sim/ecology.js",
+        "sim/epoch.js",
+        "sim/evolve.js",
+        "sim/fire.js",
+        "sim/flowviz.js",
+        "sim/god/brush.js",
+        "sim/god/climate.js",
+        "sim/god/disaster.js",
+        "sim/god/life.js",
+        "sim/god/sculpt.js",
+        "sim/gpgpu/index.js",
+        "sim/hooks.js",
+        "sim/hydro.js",
+        "sim/iceshell.js",
+        "sim/instruments.js",
+        "sim/isoline.js",
+        "sim/landform.js",
+        "sim/landscapes.js",
+        "sim/layers.js",
+        "sim/lifeColour.js",
+        "sim/lifeFront.js",
+        "sim/lifeclass.js",
+        "sim/mantle.js",
+        "sim/meta.js",
+        "sim/ocean.js",
+        "sim/ordnance.js",
+        "sim/origin-sketch-test.mjs",
+        "sim/origin.js",
+        "sim/originSketch.js",
+        "sim/overlay.js",
+        "sim/pictureDisc.js",
+        "sim/planetTick.js",
+        "sim/polity.js",
+        "sim/present.js",
+        "sim/redox.js",
+        "sim/sensory.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js",
+        "sim/stampApply.js",
+        "sim/storms.js",
+        "sim/substrateField.js",
+        "sim/surfaceStats.js",
+        "sim/swe.js",
+        "sim/tectonics.js",
+        "sim/test.mjs",
+        "sim/tides.js",
+        "sim/trophicField.js",
+        "sim/wind.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 71,
+      "refs": 443,
+      "owner": "tectonics",
+      "saved": true
+    },
+    {
+      "name": "life",
+      "writers": [
+        "agents.js",
+        "localview.js",
+        "main.js",
+        "render.js",
+        "sim/alien.js",
+        "sim/anthro.js",
+        "sim/bio.js",
+        "sim/calibrate.mjs",
+        "sim/city.js",
+        "sim/dark-test.mjs",
+        "sim/darkCbr.js",
+        "sim/darkClimate.js",
+        "sim/darkIndustry.js",
+        "sim/earth.js",
+        "sim/ecology.js",
+        "sim/evolve.js",
+        "sim/extinction.js",
+        "sim/fire.js",
+        "sim/god/disaster.js",
+        "sim/god/economy.js",
+        "sim/god/index.js",
+        "sim/god/life.js",
+        "sim/hydro.js",
+        "sim/iceshell.js",
+        "sim/instruments.js",
+        "sim/lifeColour.js",
+        "sim/lifeclass.js",
+        "sim/meta.js",
+        "sim/ordnance.js",
+        "sim/origin.js",
+        "sim/present.js",
+        "sim/redox.js",
+        "sim/scale.mjs",
+        "sim/test.mjs",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 36,
+      "refs": 260,
+      "owner": "bio",
+      "saved": false
+    },
+    {
+      "name": "temp",
+      "writers": [
+        "agents.js",
+        "render.js",
+        "sim/alien.js",
+        "sim/bio.js",
+        "sim/cover.js",
+        "sim/dark.js",
+        "sim/earth.js",
+        "sim/ecology.js",
+        "sim/epoch.js",
+        "sim/evolve.js",
+        "sim/fire.js",
+        "sim/god/climate.js",
+        "sim/god/disaster.js",
+        "sim/god/life.js",
+        "sim/god/scenario.js",
+        "sim/god/sculpt.js",
+        "sim/gpgpu/index.js",
+        "sim/iceshell.js",
+        "sim/instruments.js",
+        "sim/meta.js",
+        "sim/ocean.js",
+        "sim/ordnance.js",
+        "sim/origin.js",
+        "sim/overlay.js",
+        "sim/planetTick.js",
+        "sim/present.js",
+        "sim/redox.js",
+        "sim/storms.js",
+        "sim/techno.js",
+        "sim/time.js",
+        "sim/viz.js",
+        "sim/wind.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 34,
+      "refs": 115,
+      "owner": "atmo",
+      "saved": false
+    },
+    {
+      "name": "ice",
+      "writers": [
+        "agents.js",
+        "localview.js",
+        "main.js",
+        "render.js",
+        "sim/alien.js",
+        "sim/bio.js",
+        "sim/cover.js",
+        "sim/earth.js",
+        "sim/ecology.js",
+        "sim/epoch.js",
+        "sim/gaia.js",
+        "sim/god/brush.js",
+        "sim/god/climate.js",
+        "sim/god/sculpt.js",
+        "sim/gpgpu/index.js",
+        "sim/hydro.js",
+        "sim/iceshell.js",
+        "sim/instruments.js",
+        "sim/lifeColour.js",
+        "sim/meta.js",
+        "sim/origin.js",
+        "sim/present.js",
+        "sim/stampApply.js",
+        "sim/test.mjs",
+        "sim/wind.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 27,
+      "refs": 105,
+      "owner": "hydro",
+      "saved": false
+    },
+    {
+      "name": "moist",
+      "writers": [
+        "agents.js",
+        "main.js",
+        "render.js",
+        "sim/bio.js",
+        "sim/dark-test.mjs",
+        "sim/darkClimate.js",
+        "sim/earth.js",
+        "sim/ecology.js",
+        "sim/epoch.js",
+        "sim/evolve.js",
+        "sim/fire.js",
+        "sim/god/brush.js",
+        "sim/god/climate.js",
+        "sim/god/life.js",
+        "sim/gpgpu/index.js",
+        "sim/hydro.js",
+        "sim/iceshell.js",
+        "sim/instruments.js",
+        "sim/planetTick.js",
+        "sim/present.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js",
+        "sim/storms.js",
+        "sim/test.mjs",
+        "sim/tides.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 27,
+      "refs": 105,
+      "owner": "hydro",
+      "saved": false
+    },
+    {
+      "name": "build",
+      "writers": [
+        "agents.js",
+        "localview.js",
+        "main.js",
+        "render.js",
+        "sim/anthro.js",
+        "sim/city.js",
+        "sim/dark-scenario.mjs",
+        "sim/dark-test.mjs",
+        "sim/dark.js",
+        "sim/darkCbr.js",
+        "sim/darkCity.js",
+        "sim/darkClimate.js",
+        "sim/darkDrone.js",
+        "sim/darkIndustry.js",
+        "sim/darkLand.js",
+        "sim/darkNaval.js",
+        "sim/darkOrbit.js",
+        "sim/diplomacy.js",
+        "sim/god/notice.js",
+        "sim/ordnance.js",
+        "sim/present.js",
+        "sim/storms.js",
+        "sim/test.mjs",
+        "tools.js"
+      ],
+      "writeCount": 24,
+      "refs": 242,
+      "owner": "city",
+      "saved": true
+    },
+    {
+      "name": "dark",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/dark.js",
+        "sim/darkAudio.js",
+        "sim/darkCbr.js",
+        "sim/darkCity.js",
+        "sim/darkClimate.js",
+        "sim/darkDrone.js",
+        "sim/darkIndustry.js",
+        "sim/darkInfo.js",
+        "sim/darkLand.js",
+        "sim/darkNaval.js",
+        "sim/darkOrbit.js",
+        "sim/diplomacy.js",
+        "sim/ordnance.js",
+        "world.js"
+      ],
+      "writeCount": 15,
+      "refs": 621,
+      "owner": "dark",
+      "saved": true
+    },
+    {
+      "name": "owner",
+      "writers": [
+        "render.js",
+        "sim/dark-scenario.mjs",
+        "sim/dark-test.mjs",
+        "sim/darkCity.js",
+        "sim/darkClimate.js",
+        "sim/darkInfo.js",
+        "sim/darkLand.js",
+        "sim/darkNaval.js",
+        "sim/deterrence.js",
+        "sim/diplomacy.js",
+        "sim/ordnance.js",
+        "sim/overlay.js",
+        "sim/polity.js",
+        "world.js"
+      ],
+      "writeCount": 14,
+      "refs": 127,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "state",
+      "writers": [
+        "audio.js",
+        "render.js",
+        "sim/epoch.js",
+        "sim/extinction.js",
+        "sim/finale.js",
+        "sim/gaia.js",
+        "sim/glossary.js",
+        "sim/god/disaster.js",
+        "sim/god/gaiaDrive.js",
+        "sim/god/scenario.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 12,
+      "refs": 43,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "bound",
+      "writers": [
+        "sim/alien.js",
+        "sim/bio.js",
+        "sim/carbon.js",
+        "sim/ecology.js",
+        "sim/evolve.js",
+        "sim/god/sculpt.js",
+        "sim/mantle.js",
+        "sim/origin.js",
+        "sim/redox.js",
+        "sim/tectonics.js",
+        "tools.js"
+      ],
+      "writeCount": 11,
+      "refs": 35,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "ash",
+      "writers": [
+        "sim/alien.js",
+        "sim/fire.js",
+        "sim/god/disaster.js",
+        "sim/gpgpu/index.js",
+        "sim/iceshell.js",
+        "sim/ordnance.js",
+        "sim/planetTick.js",
+        "sim/tectonics.js",
+        "sim/test.mjs",
+        "tools.js"
+      ],
+      "writeCount": 10,
+      "refs": 69,
+      "owner": "atmo",
+      "saved": false
+    },
+    {
+      "name": "iceLand",
+      "writers": [
+        "sim/bio.js",
+        "sim/earth.js",
+        "sim/epoch.js",
+        "sim/god/climate.js",
+        "sim/god/sculpt.js",
+        "sim/gpgpu/index.js",
+        "sim/iceshell.js",
+        "sim/stampApply.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 10,
+      "refs": 40,
+      "owner": "hydro",
+      "saved": false
+    },
+    {
+      "name": "nutrientP",
+      "writers": [
+        "agents.js",
+        "sim/anthro.js",
+        "sim/bio.js",
+        "sim/ecology.js",
+        "sim/fire.js",
+        "sim/iceshell.js",
+        "sim/ocean.js",
+        "sim/planetTick.js",
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 10,
+      "refs": 38,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "nutrientN",
+      "writers": [
+        "agents.js",
+        "sim/anthro.js",
+        "sim/bio.js",
+        "sim/darkCbr.js",
+        "sim/ecology.js",
+        "sim/iceshell.js",
+        "sim/planetTick.js",
+        "sim/redox.js",
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 10,
+      "refs": 30,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "windU",
+      "writers": [
+        "sim/atmo.js",
+        "sim/dark.js",
+        "sim/darkCbr.js",
+        "sim/darkIndustry.js",
+        "sim/gpgpu/index.js",
+        "sim/jets.js",
+        "sim/storms.js",
+        "sim/test.mjs",
+        "sim/wind.js"
+      ],
+      "writeCount": 9,
+      "refs": 60,
+      "owner": "wind",
+      "saved": false
+    },
+    {
+      "name": "age",
+      "writers": [
+        "sim/god/notice.js",
+        "sim/god/sculpt.js",
+        "sim/planetTick.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js",
+        "sim/stampApply.js",
+        "sim/tectonics.js",
+        "sim/test.mjs",
+        "tools.js"
+      ],
+      "writeCount": 9,
+      "refs": 38,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "biome",
+      "writers": [
+        "audio.js",
+        "localview.js",
+        "main.js",
+        "render.js",
+        "sim/ecology.js",
+        "sim/god/brush.js",
+        "sim/instruments.js",
+        "sim/lifeColour.js",
+        "sim/present.js"
+      ],
+      "writeCount": 9,
+      "refs": 37,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "lifeClass",
+      "writers": [
+        "agents.js",
+        "sim/bio.js",
+        "sim/deeptime.mjs",
+        "sim/gaia.js",
+        "sim/lifeColour.js",
+        "sim/lifeclass.js",
+        "sim/test.mjs",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 9,
+      "refs": 22,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "seaLevel",
+      "writers": [
+        "sim/earth.js",
+        "sim/epoch.js",
+        "sim/god/sculpt.js",
+        "sim/hydro.js",
+        "sim/iceshell.js",
+        "sim/stampApply.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 8,
+      "refs": 278,
+      "owner": "hydro",
+      "saved": true
+    },
+    {
+      "name": "crust",
+      "writers": [
+        "main.js",
+        "sim/god/sculpt.js",
+        "sim/landscapes.js",
+        "sim/origin-sketch-test.mjs",
+        "sim/originSketch.js",
+        "sim/planetTick.js",
+        "sim/tectonics.js",
+        "tools.js"
+      ],
+      "writeCount": 8,
+      "refs": 63,
+      "owner": "tectonics",
+      "saved": false
+    },
+    {
+      "name": "toxin",
+      "writers": [
+        "agents.js",
+        "sim/anthro.js",
+        "sim/dark-test.mjs",
+        "sim/darkCbr.js",
+        "sim/darkClimate.js",
+        "sim/darkIndustry.js",
+        "sim/darkOrbit.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 8,
+      "refs": 56,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rock",
+      "writers": [
+        "sim/extinction.js",
+        "sim/god/sculpt.js",
+        "sim/originSketch.js",
+        "sim/planetTick.js",
+        "sim/redox.js",
+        "sim/tectonics.js",
+        "sim/test.mjs",
+        "tools.js"
+      ],
+      "writeCount": 8,
+      "refs": 35,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "reef",
+      "writers": [
+        "agents.js",
+        "render.js",
+        "sim/bio.js",
+        "sim/earth.js",
+        "sim/ecology.js",
+        "sim/evolve.js",
+        "sim/lifeColour.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 8,
+      "refs": 23,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "ore",
+      "writers": [
+        "sim/bio.js",
+        "sim/dark-test.mjs",
+        "sim/darkIndustry.js",
+        "sim/deterrence.js",
+        "sim/god/notice.js",
+        "sim/techno.js",
+        "sim/tectonics.js",
+        "tools.js"
+      ],
+      "writeCount": 8,
+      "refs": 22,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "meanTemp",
+      "writers": [
+        "sim/bio.js",
+        "sim/dark-test.mjs",
+        "sim/darkClimate.js",
+        "sim/epoch.js",
+        "sim/gaia.js",
+        "sim/god/scenario.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 7,
+      "refs": 95,
+      "owner": "atmo",
+      "saved": false
+    },
+    {
+      "name": "guildDens",
+      "writers": [
+        "localview.js",
+        "main.js",
+        "render.js",
+        "sim/god/life.js",
+        "sim/lifeColour.js",
+        "sim/present.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 7,
+      "refs": 67,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "solar",
+      "writers": [
+        "sim/atmo.js",
+        "sim/bio.js",
+        "sim/god/climate.js",
+        "sim/god/scenario.js",
+        "sim/test.mjs",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 7,
+      "refs": 52,
+      "owner": "atmo",
+      "saved": false
+    },
+    {
+      "name": "flow",
+      "writers": [
+        "render.js",
+        "sim/dark-test.mjs",
+        "sim/darkClimate.js",
+        "sim/darkIndustry.js",
+        "sim/god/sculpt.js",
+        "sim/surfaceStats.js",
+        "tools.js"
+      ],
+      "writeCount": 7,
+      "refs": 41,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "precip",
+      "writers": [
+        "render.js",
+        "sim/atmo.js",
+        "sim/darkClimate.js",
+        "sim/ecology.js",
+        "sim/gpgpu/index.js",
+        "sim/hydro.js",
+        "sim/storms.js"
+      ],
+      "writeCount": 7,
+      "refs": 40,
+      "owner": "hydro",
+      "saved": false
+    },
+    {
+      "name": "soil",
+      "writers": [
+        "sim/bio.js",
+        "sim/ecology.js",
+        "sim/fire.js",
+        "sim/god/sculpt.js",
+        "sim/redox.js",
+        "sim/trophicField.js",
+        "tools.js"
+      ],
+      "writeCount": 7,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_baseSolar",
+      "writers": [
+        "sim/atmo.js",
+        "sim/bio.js",
+        "sim/god/climate.js",
+        "sim/god/scenario.js",
+        "sim/test.mjs",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 7,
+      "refs": 17,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "meanLife",
+      "writers": [
+        "sim/alien.js",
+        "sim/bio.js",
+        "sim/gaia.js",
+        "sim/god/economy.js",
+        "sim/iceshell.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 6,
+      "refs": 82,
+      "owner": "bio",
+      "saved": false
+    },
+    {
+      "name": "lava",
+      "writers": [
+        "sim/colstack.js",
+        "sim/god/disaster.js",
+        "sim/planetTick.js",
+        "sim/stampApply.js",
+        "sim/tectonics.js",
+        "tools.js"
+      ],
+      "writeCount": 6,
+      "refs": 48,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rotationPeriod",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/god/climate.js",
+        "sim/test.mjs",
+        "sim/time.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 6,
+      "refs": 38,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "iceSea",
+      "writers": [
+        "sim/earth.js",
+        "sim/epoch.js",
+        "sim/gpgpu/index.js",
+        "sim/iceshell.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 6,
+      "refs": 22,
+      "owner": "hydro",
+      "saved": false
+    },
+    {
+      "name": "magnetosphere",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/core.js",
+        "sim/god/climate.js",
+        "sim/god/genesis.js",
+        "sim/platesPanel.js",
+        "sim/smoke.mjs"
+      ],
+      "writeCount": 6,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "albedoPaint",
+      "writers": [
+        "render.js",
+        "sim/god/climate.js",
+        "sim/god/index.js",
+        "sim/substrateField.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 6,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gases",
+      "writers": [
+        "sim/atmo.js",
+        "sim/epoch.js",
+        "sim/god/climate.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 191,
+      "owner": "atmo",
+      "saved": true
+    },
+    {
+      "name": "transitions",
+      "writers": [
+        "sim/epoch.js",
+        "sim/god/life.js",
+        "sim/redox.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 64,
+      "owner": "redox",
+      "saved": true
+    },
+    {
+      "name": "windV",
+      "writers": [
+        "sim/dark.js",
+        "sim/gpgpu/index.js",
+        "sim/jets.js",
+        "sim/storms.js",
+        "sim/wind.js"
+      ],
+      "writeCount": 5,
+      "refs": 45,
+      "owner": "wind",
+      "saved": false
+    },
+    {
+      "name": "moon",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/god/disaster.js",
+        "sim/god/genesis.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 44,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "unlockedClass",
+      "writers": [
+        "sim/dark-scenario.mjs",
+        "sim/dark-test.mjs",
+        "sim/earth.js",
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 44,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "season",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/clockFace.js",
+        "sim/smoke.mjs",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 43,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rad",
+      "writers": [
+        "agents.js",
+        "sim/anthro.js",
+        "sim/dark.js",
+        "sim/darkCbr.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 5,
+      "refs": 42,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "popId",
+      "writers": [
+        "sim/evolve.js",
+        "sim/god/life.js",
+        "sim/meta.js",
+        "sim/scale.mjs",
+        "sim/test.mjs"
+      ],
+      "writeCount": 5,
+      "refs": 41,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "cities",
+      "writers": [
+        "sim/city.js",
+        "sim/dark-test.mjs",
+        "sim/god/notice.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 34,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "clouds",
+      "writers": [
+        "render.js",
+        "sim/god/climate.js",
+        "sim/gpgpu/index.js",
+        "sim/storms.js",
+        "tools.js"
+      ],
+      "writeCount": 5,
+      "refs": 24,
+      "owner": "atmo",
+      "saved": false
+    },
+    {
+      "name": "_seaBase",
+      "writers": [
+        "sim/earth.js",
+        "sim/epoch.js",
+        "sim/stampApply.js",
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "hotspots",
+      "writers": [
+        "sim/god/sculpt.js",
+        "sim/stampApply.js",
+        "sim/stampFixtures.js",
+        "sim/tectonics.js",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "blackDaisy",
+      "writers": [
+        "agents.js",
+        "main.js",
+        "render.js",
+        "sim/bio.js",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "whiteDaisy",
+      "writers": [
+        "agents.js",
+        "main.js",
+        "render.js",
+        "sim/bio.js",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "ageYr",
+      "writers": [
+        "sim/test-fast.mjs",
+        "sim/test.mjs",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 197,
+      "owner": "world",
+      "saved": true
+    },
+    {
+      "name": "attribution",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/dark.js",
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 48,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "substrate",
+      "writers": [
+        "sim/colstack.js",
+        "sim/cover.js",
+        "sim/substrateField.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 4,
+      "refs": 40,
+      "owner": "substrateField",
+      "saved": true
+    },
+    {
+      "name": "fire",
+      "writers": [
+        "agents.js",
+        "sim/fire.js",
+        "sim/test-fast.mjs",
+        "sim/test.mjs"
+      ],
+      "writeCount": 4,
+      "refs": 39,
+      "owner": "fire",
+      "saved": false
+    },
+    {
+      "name": "exclusion",
+      "writers": [
+        "sim/anthro.js",
+        "sim/dark-test.mjs",
+        "sim/dark.js",
+        "sim/darkCbr.js"
+      ],
+      "writeCount": 4,
+      "refs": 36,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "dust",
+      "writers": [
+        "render.js",
+        "sim/atmo.js",
+        "sim/god/disaster.js",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 4,
+      "refs": 35,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "plates",
+      "writers": [
+        "sim/god/sculpt.js",
+        "sim/stampApply.js",
+        "sim/tectonics.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 33,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "shellOcean",
+      "writers": [
+        "sim/columnSketch.js",
+        "sim/iceshell.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js"
+      ],
+      "writeCount": 4,
+      "refs": 32,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "obliquity",
+      "writers": [
+        "sim/atmo.js",
+        "sim/god/climate.js",
+        "sim/god/index.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 23,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_empUntil",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/darkInfo.js",
+        "sim/god/disaster.js",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 4,
+      "refs": 21,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "strokeMark",
+      "writers": [
+        "main.js",
+        "render.js",
+        "sim/god/brush.js",
+        "tools.js"
+      ],
+      "writeCount": 4,
+      "refs": 21,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "energy",
+      "writers": [
+        "sim/gaia.js",
+        "sim/god/economy.js",
+        "sim/god/sculpt.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 20,
+      "owner": "economy",
+      "saved": false
+    },
+    {
+      "name": "volcanoes",
+      "writers": [
+        "sim/stampApply.js",
+        "sim/stampFixtures.js",
+        "sim/tectonics.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 20,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_clathrate",
+      "writers": [
+        "sim/columnSketch.js",
+        "sim/god/disaster.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "flareGlow",
+      "writers": [
+        "sim/dark.js",
+        "sim/god/disaster.js",
+        "sim/lightning.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "originCell",
+      "writers": [
+        "main.js",
+        "sim/origin.js",
+        "sim/overlay.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 17,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "detritus",
+      "writers": [
+        "agents.js",
+        "sim/ecology.js",
+        "sim/redox.js",
+        "sim/trophicField.js"
+      ],
+      "writeCount": 4,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "worldName",
+      "writers": [
+        "main.js",
+        "sim/god/genesis.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "ejecta",
+      "writers": [
+        "render.js",
+        "sim/extinction.js",
+        "sim/god/disaster.js",
+        "sim/instruments.js"
+      ],
+      "writeCount": 4,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "argueResponses",
+      "writers": [
+        "main.js",
+        "sim/god/index.js",
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "dominantPigment",
+      "writers": [
+        "localview.js",
+        "sim/alien.js",
+        "sim/lifeColour.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 4,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "fossils",
+      "writers": [
+        "sim/evolve.js",
+        "sim/instruments.js",
+        "sim/meta.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaDrive",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/god/observe.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 13,
+      "owner": "gaiaDrive",
+      "saved": false
+    },
+    {
+      "name": "plateId",
+      "writers": [
+        "sim/god/sculpt.js",
+        "sim/mantle.js",
+        "sim/tectonics.js",
+        "tools.js"
+      ],
+      "writeCount": 4,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "habitability",
+      "writers": [
+        "sim/ecology.js",
+        "sim/gaia.js",
+        "sim/iceshell.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "stromatolite",
+      "writers": [
+        "localview.js",
+        "render.js",
+        "sim/instruments.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 4,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_solarMod",
+      "writers": [
+        "main.js",
+        "sim/atmo.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "originDifficulty",
+      "writers": [
+        "main.js",
+        "sim/god/genesis.js",
+        "sim/origin.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "tree",
+      "writers": [
+        "sim/evolve.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 140,
+      "owner": "evolve",
+      "saved": true
+    },
+    {
+      "name": "polities",
+      "writers": [
+        "sim/dark-scenario.mjs",
+        "sim/polity.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 92,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_tickIndex",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/meta.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 90,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "shellVent",
+      "writers": [
+        "sim/iceshell.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js"
+      ],
+      "writeCount": 3,
+      "refs": 59,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "diplo",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/deterrence.js",
+        "sim/diplomacy.js"
+      ],
+      "writeCount": 3,
+      "refs": 54,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "noSurface",
+      "writers": [
+        "sim/stampApply.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 51,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "playerPolity",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/polity.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 40,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "shellLid",
+      "writers": [
+        "sim/iceshell.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js"
+      ],
+      "writeCount": 3,
+      "refs": 40,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "flight",
+      "writers": [
+        "main.js",
+        "sim/ordnance.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 39,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "dtYr",
+      "writers": [
+        "sim/god/observe.js",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 35,
+      "owner": "world",
+      "saved": false
+    },
+    {
+      "name": "darkToll",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/dark.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 34,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "shellMantle",
+      "writers": [
+        "sim/iceshell.js",
+        "sim/shellApply.js",
+        "sim/shellFixtures.js"
+      ],
+      "writeCount": 3,
+      "refs": 31,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "frost",
+      "writers": [
+        "sim/columnField.js",
+        "sim/cover.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 3,
+      "refs": 28,
+      "owner": "cover",
+      "saved": false
+    },
+    {
+      "name": "shockwave",
+      "writers": [
+        "sim/dark-scenario.mjs",
+        "sim/dark-test.mjs",
+        "sim/dark.js"
+      ],
+      "writeCount": 3,
+      "refs": 28,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "planetBiochem",
+      "writers": [
+        "sim/god/genesis.js",
+        "sim/origin.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 27,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "mushrooms",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/dark.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 24,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "npp",
+      "writers": [
+        "main.js",
+        "sim/ecology.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 24,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_planetKind",
+      "writers": [
+        "sim/iceshell.js",
+        "sim/planetKind.js",
+        "sim/planetTerrain.js"
+      ],
+      "writeCount": 3,
+      "refs": 22,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "disease",
+      "writers": [
+        "sim/anthro.js",
+        "sim/dark-test.mjs",
+        "sim/darkCbr.js"
+      ],
+      "writeCount": 3,
+      "refs": 20,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "ozone",
+      "writers": [
+        "sim/atmo.js",
+        "sim/god/disaster.js",
+        "tools.js"
+      ],
+      "writeCount": 3,
+      "refs": 20,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "exchangesLaunched",
+      "writers": [
+        "sim/deterrence.js",
+        "sim/ordnance.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 19,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "vents",
+      "writers": [
+        "sim/origin.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 19,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "border",
+      "writers": [
+        "sim/darkLand.js",
+        "sim/diplomacy.js",
+        "sim/polity.js"
+      ],
+      "writeCount": 3,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "moments",
+      "writers": [
+        "sim/test.mjs",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "epidemic",
+      "writers": [
+        "sim/anthro.js",
+        "sim/dark-test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 17,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "mood",
+      "writers": [
+        "sim/gaia.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_landscape",
+      "writers": [
+        "sim/landscapes.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "carcassCount",
+      "writers": [
+        "agents.js",
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "lifeSparks",
+      "writers": [
+        "agents.js",
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "seasonHold",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/clockFace.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "tidePhase",
+      "writers": [
+        "sim/coast.js",
+        "sim/storms.js",
+        "sim/tides.js"
+      ],
+      "writeCount": 3,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "polityTint",
+      "writers": [
+        "render.js",
+        "sim/dark-test.mjs",
+        "sim/polity.js"
+      ],
+      "writeCount": 3,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_ensoPhase",
+      "writers": [
+        "sim/glossary.js",
+        "sim/ocean.js",
+        "sim/present.js"
+      ],
+      "writeCount": 3,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_hydroDirty",
+      "writers": [
+        "sim/god/brush.js",
+        "sim/hydro.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "carcasses",
+      "writers": [
+        "agents.js",
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "moonAngle",
+      "writers": [
+        "sim/clockFace.js",
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "touchHeat",
+      "writers": [
+        "sim/god/index.js",
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "civPop",
+      "writers": [
+        "sim/city.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "jetU",
+      "writers": [
+        "main.js",
+        "sim/climatePanel.js",
+        "sim/wind.js"
+      ],
+      "writeCount": 3,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "prevLife",
+      "writers": [
+        "localview.js",
+        "render.js",
+        "sim/present.js"
+      ],
+      "writeCount": 3,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_windRegime",
+      "writers": [
+        "sim/test.mjs",
+        "sim/wind.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "auroraPower",
+      "writers": [
+        "sim/god/disaster.js",
+        "sim/lightning.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "refuge",
+      "writers": [
+        "sim/god/index.js",
+        "sim/god/life.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "scarcityMode",
+      "writers": [
+        "main.js",
+        "sim/god/economy.js",
+        "sim/god/sculpt.js"
+      ],
+      "writeCount": 3,
+      "refs": 10,
+      "owner": "economy",
+      "saved": false
+    },
+    {
+      "name": "trail",
+      "writers": [
+        "sim/present.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "bifRock",
+      "writers": [
+        "render.js",
+        "sim/instruments.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 3,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "erosionLock",
+      "writers": [
+        "sim/god/index.js",
+        "sim/god/sculpt.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "fe2Ocean",
+      "writers": [
+        "sim/carbon.js",
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaLog",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/god/observe.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rngGod",
+      "writers": [
+        "sim/dark-scenario.mjs",
+        "sim/dark-test.mjs",
+        "sim/rng.js"
+      ],
+      "writeCount": 3,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaLastAct",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/god/observe.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "sediment",
+      "writers": [
+        "agents.js",
+        "sim/bio.js",
+        "sim/meta.js"
+      ],
+      "writeCount": 3,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_cityLights",
+      "writers": [
+        "agents.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_planetKindWhy",
+      "writers": [
+        "sim/iceshell.js",
+        "sim/planetKind.js",
+        "sim/planetTerrain.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "bodyScale",
+      "writers": [
+        "sim/bio.js",
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaFailed",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaObjective",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/god/observe.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "inhabitance",
+      "writers": [
+        "sim/ecology.js",
+        "sim/gaia.js",
+        "sim/iceshell.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "jetV",
+      "writers": [
+        "main.js",
+        "sim/climatePanel.js",
+        "sim/wind.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "sterileWhy",
+      "writers": [
+        "sim/alien.js",
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_gpgpuDirty",
+      "writers": [
+        "main.js",
+        "sim/climatePanel.js",
+        "sim/gpgpu/index.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_gpgpuOff",
+      "writers": [
+        "sim/headless.mjs",
+        "sim/testHelpers.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_oxEvent",
+      "writers": [
+        "sim/bio.js",
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "debugAssert",
+      "writers": [
+        "sim/assert.js",
+        "sim/fields.js",
+        "sim/worldGuard.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "originBudget",
+      "writers": [
+        "sim/origin.js",
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "sulfurPaint",
+      "writers": [
+        "render.js",
+        "sim/alien.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "swarmCount",
+      "writers": [
+        "agents.js",
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "swarmMarks",
+      "writers": [
+        "agents.js",
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_amoc",
+      "writers": [
+        "sim/gaia.js",
+        "sim/god/climate.js",
+        "sim/ocean.js"
+      ],
+      "writeCount": 3,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_epochArrived",
+      "writers": [
+        "sim/epoch.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "lucaId",
+      "writers": [
+        "sim/evolve.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_moonImpact",
+      "writers": [
+        "sim/originSketch.js",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "extinctionDebt",
+      "writers": [
+        "sim/god/life.js",
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaTipProx",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/god/observe.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_strokeTick",
+      "writers": [
+        "main.js",
+        "sim/god/brush.js",
+        "tools.js"
+      ],
+      "writeCount": 3,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rule",
+      "writers": [
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 338,
+      "owner": "world",
+      "saved": true
+    },
+    {
+      "name": "year",
+      "writers": [
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 250,
+      "owner": "world",
+      "saved": true
+    },
+    {
+      "name": "carbon",
+      "writers": [
+        "sim/epoch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 66,
+      "owner": "carbon",
+      "saved": false
+    },
+    {
+      "name": "_polityIndex",
+      "writers": [
+        "sim/dark-scenario.mjs",
+        "sim/polity.js"
+      ],
+      "writeCount": 2,
+      "refs": 63,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "seed",
+      "writers": [
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 48,
+      "owner": "world",
+      "saved": true
+    },
+    {
+      "name": "stackN",
+      "writers": [
+        "sim/colstack.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 42,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "stackMat",
+      "writers": [
+        "sim/colstack.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 30,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "chron",
+      "writers": [
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 29,
+      "owner": "chronicle",
+      "saved": true
+    },
+    {
+      "name": "_atmScale",
+      "writers": [
+        "sim/cover.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 25,
+      "owner": "cover",
+      "saved": false
+    },
+    {
+      "name": "toxinIndustry",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/darkIndustry.js"
+      ],
+      "writeCount": 2,
+      "refs": 25,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "exchangesDeclined",
+      "writers": [
+        "sim/deterrence.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 24,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "radShort",
+      "writers": [
+        "sim/anthro.js",
+        "sim/darkCbr.js"
+      ],
+      "writeCount": 2,
+      "refs": 24,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "conveyor",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/ocean.js"
+      ],
+      "writeCount": 2,
+      "refs": 23,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "stormField",
+      "writers": [
+        "main.js",
+        "sim/storms.js"
+      ],
+      "writeCount": 2,
+      "refs": 23,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "intertidal",
+      "writers": [
+        "sim/storms.js",
+        "sim/tides.js"
+      ],
+      "writeCount": 2,
+      "refs": 22,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "oceanSalt",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/ocean.js"
+      ],
+      "writeCount": 2,
+      "refs": 22,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "tracer",
+      "writers": [
+        "sim/ordnance.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 22,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "civ",
+      "writers": [
+        "sim/god/notice.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 21,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "fogOfWar",
+      "writers": [
+        "sim/darkDrone.js",
+        "sim/darkInfo.js"
+      ],
+      "writeCount": 2,
+      "refs": 21,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "techno",
+      "writers": [
+        "sim/techno.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 21,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "flash",
+      "writers": [
+        "sim/fire.js",
+        "sim/lightning.js"
+      ],
+      "writeCount": 2,
+      "refs": 20,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "grain",
+      "writers": [
+        "main.js",
+        "sim/cover.js"
+      ],
+      "writeCount": 2,
+      "refs": 20,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "fought",
+      "writers": [
+        "sim/dark.js",
+        "sim/darkCity.js"
+      ],
+      "writeCount": 2,
+      "refs": 19,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "popBook",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 19,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gpsDenied",
+      "writers": [
+        "sim/darkInfo.js",
+        "sim/darkOrbit.js"
+      ],
+      "writeCount": 2,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "surgeField",
+      "writers": [
+        "main.js",
+        "sim/storms.js"
+      ],
+      "writeCount": 2,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "trophic",
+      "writers": [
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 18,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "autopilot",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 17,
+      "owner": "gaiaDrive",
+      "saved": false
+    },
+    {
+      "name": "groundW",
+      "writers": [
+        "sim/darkIndustry.js",
+        "sim/hydro.js"
+      ],
+      "writeCount": 2,
+      "refs": 17,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "huntKills",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 17,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rng",
+      "writers": [
+        "sim/rng.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 17,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "escalationRung",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/deterrence.js"
+      ],
+      "writeCount": 2,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "interceptors",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 2,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "receipts",
+      "writers": [
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "solarShade",
+      "writers": [
+        "sim/darkClimate.js",
+        "sim/god/climate.js"
+      ],
+      "writeCount": 2,
+      "refs": 16,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_jetCount",
+      "writers": [
+        "sim/jets.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_sunDir",
+      "writers": [
+        "sim/wind.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "doomsday",
+      "writers": [
+        "sim/deterrence.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "pSeen",
+      "writers": [
+        "sim/overlay.js",
+        "sim/plevel.js"
+      ],
+      "writeCount": 2,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "storms",
+      "writers": [
+        "sim/storms.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_epoch",
+      "writers": [
+        "sim/epoch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "beingDens",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "crustType",
+      "writers": [
+        "sim/god/sculpt.js",
+        "tools.js"
+      ],
+      "writeCount": 2,
+      "refs": 14,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_ixBursts",
+      "writers": [
+        "sim/darkHud.js",
+        "sim/darkSpectacle.js"
+      ],
+      "writeCount": 2,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "lag",
+      "writers": [
+        "sim/cover.js",
+        "sim/present.js"
+      ],
+      "writeCount": 2,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "warCrimes",
+      "writers": [
+        "sim/dark.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "warFront",
+      "writers": [
+        "agents.js",
+        "sim/anthro.js"
+      ],
+      "writeCount": 2,
+      "refs": 13,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_fireCells",
+      "writers": [
+        "sim/fire.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_spinup",
+      "writers": [
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "coastDist",
+      "writers": [
+        "agents.js",
+        "sim/hydro.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "cont",
+      "writers": [
+        "sim/earth.js",
+        "sim/hydro.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "hydrotherm",
+      "writers": [
+        "sim/origin.js",
+        "sim/planetTick.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "interventionLog",
+      "writers": [
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "moonIllum",
+      "writers": [
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "press",
+      "writers": [
+        "sim/viz.js",
+        "sim/wind.js"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "wars",
+      "writers": [
+        "sim/anthro.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 12,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_extinctionPulse",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_namedExt",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "builtFrac",
+      "writers": [
+        "sim/city.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "clockFace",
+      "writers": [
+        "sim/clockFace.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "exchangesRetaliated",
+      "writers": [
+        "sim/deterrence.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "immune",
+      "writers": [
+        "sim/anthro.js",
+        "sim/darkCbr.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "lifeGrown",
+      "writers": [
+        "sim/bio.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 11,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_carbonMass0",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_monsoon",
+      "writers": [
+        "sim/gaia.js",
+        "sim/wind.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_oceanKm",
+      "writers": [
+        "sim/columnSketch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "energyDebt",
+      "writers": [
+        "sim/god/economy.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "huntMisses",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "landSeed",
+      "writers": [
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "meanBuild",
+      "writers": [
+        "sim/city.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "photonUsable",
+      "writers": [
+        "sim/alien.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "regulation",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/darkIndustry.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rnaKb",
+      "writers": [
+        "sim/origin.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "tideHeight",
+      "writers": [
+        "sim/test.mjs",
+        "sim/tides.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_hpIceFloor",
+      "writers": [
+        "sim/columnSketch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_recoveryBoost",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "exchangesConsidered",
+      "writers": [
+        "sim/deterrence.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "fastForward",
+      "writers": [
+        "main.js",
+        "sim/god/observe.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "fixedDtYr",
+      "writers": [
+        "sim/god/observe.js",
+        "sim/time.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "inFlight",
+      "writers": [
+        "sim/ordnance.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_agentTick",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_waterMass0",
+      "writers": [
+        "sim/hydro.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": "assert",
+      "saved": false
+    },
+    {
+      "name": "bookmarks",
+      "writers": [
+        "sim/god/observe.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "chemoPower",
+      "writers": [
+        "sim/alien.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "coastLine",
+      "writers": [
+        "sim/isoline.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "groupSplits",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "keelingHistory",
+      "writers": [
+        "sim/carbon.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "landFrac",
+      "writers": [
+        "sim/gaia.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 8,
+      "owner": "hydro",
+      "saved": false
+    },
+    {
+      "name": "_darkAudioDetSeen",
+      "writers": [
+        "sim/darkAudio.js",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_itczLat",
+      "writers": [
+        "sim/wind.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_moonDir",
+      "writers": [
+        "sim/clockFace.js",
+        "sim/tides.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_morphEnvCache",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_postbio",
+      "writers": [
+        "sim/techno.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_stormNameIx",
+      "writers": [
+        "sim/storms.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "auroraLat",
+      "writers": [
+        "sim/god/disaster.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "biome2",
+      "writers": [
+        "render.js",
+        "sim/ecology.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "cooldowns",
+      "writers": [
+        "sim/god/economy.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "delayedHooks",
+      "writers": [
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "disasterChain",
+      "writers": [
+        "sim/god/disaster.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "obliquityWander",
+      "writers": [
+        "sim/god/climate.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "plague",
+      "writers": [
+        "sim/god/disaster.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "tips",
+      "writers": [
+        "sim/gaia.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "transitionAge",
+      "writers": [
+        "sim/god/life.js",
+        "sim/redox.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "trophHerb",
+      "writers": [
+        "sim/test.mjs",
+        "sim/trophicField.js"
+      ],
+      "writeCount": 2,
+      "refs": 7,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_darkAudioDetSkip",
+      "writers": [
+        "sim/darkAudio.js",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_landPalette",
+      "writers": [
+        "sim/landform.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_livedT",
+      "writers": [
+        "sim/clockFace.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_waterProxy0",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "bankedEnergy",
+      "writers": [
+        "sim/god/economy.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "grazeTotal",
+      "writers": [
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "hazeAntiGreenhouse",
+      "writers": [
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "lifeDied",
+      "writers": [
+        "sim/bio.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "moonPhase",
+      "writers": [
+        "sim/clockFace.js",
+        "sim/tides.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "morphFirsts",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rateStress",
+      "writers": [
+        "sim/gaia.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "solvent",
+      "writers": [
+        "sim/alien.js",
+        "sim/origin.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "terminatorHab",
+      "writers": [
+        "sim/alien.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "thermohaline",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/ocean.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "topSense",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 6,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_actUndo",
+      "writers": [
+        "main.js",
+        "tools.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_angMom0",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_atmFrozenNote",
+      "writers": [
+        "sim/cover.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_baseObliquity",
+      "writers": [
+        "sim/god/climate.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_contamAg",
+      "writers": [
+        "sim/anthro.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_darkLogTick",
+      "writers": [
+        "sim/dark.js",
+        "sim/darkLand.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_fluidMask",
+      "writers": [
+        "sim/ocean.js",
+        "sim/swe.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_gaiaLifePrev",
+      "writers": [
+        "sim/god/gaiaDrive.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_hypsoQ",
+      "writers": [
+        "sim/planetLook.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_inMassExt",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_ioBurial",
+      "writers": [
+        "sim/planetTick.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_lidHeat",
+      "writers": [
+        "sim/planetTick.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_springEvent",
+      "writers": [
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_stormMax",
+      "writers": [
+        "sim/storms.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_substrateBedrock",
+      "writers": [
+        "sim/substrateField.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_supplyStall",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/darkLand.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "gaiaMode",
+      "writers": [
+        "sim/bio.js",
+        "sim/gaia.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "groupCount",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "groupMerges",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "magTilt",
+      "writers": [
+        "sim/core.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "morphospaceOccupied",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "overshootWarn",
+      "writers": [
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "resilience",
+      "writers": [
+        "sim/gaia.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": "gaia",
+      "saved": false
+    },
+    {
+      "name": "stormFocusId",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/storms.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "toolUses",
+      "writers": [
+        "sim/god/economy.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "traces",
+      "writers": [
+        "sim/meta.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 5,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_angMom",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_bootPhase",
+      "writers": [
+        "main.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_buildsDirty",
+      "writers": [
+        "agents.js",
+        "main.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_columnRecipe",
+      "writers": [
+        "sim/columnField.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_deathLogged",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_ensoEvent",
+      "writers": [
+        "sim/ocean.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_ensoSeen",
+      "writers": [
+        "sim/ocean.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_epochStarted",
+      "writers": [
+        "sim/epoch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_landProcesses",
+      "writers": [
+        "sim/landform.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_lastDetCell",
+      "writers": [
+        "sim/dark.js",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_lastEulogy",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_livedSeason0",
+      "writers": [
+        "sim/clockFace.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_plateNames",
+      "writers": [
+        "sim/tectonics.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_regBuildPenalty",
+      "writers": [
+        "sim/dark-test.mjs",
+        "sim/darkIndustry.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_sculpted",
+      "writers": [
+        "sim/god/brush.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_stackLive",
+      "writers": [
+        "sim/colstack.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "buildersActive",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "coastCount",
+      "writers": [
+        "sim/isoline.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "ecotoneFrac",
+      "writers": [
+        "sim/ecology.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "endemicCount",
+      "writers": [
+        "sim/meta.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "energyIncome",
+      "writers": [
+        "sim/gaia.js",
+        "sim/god/economy.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "frontCells",
+      "writers": [
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "oxyInvent",
+      "writers": [
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "oxyThresh",
+      "writers": [
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "pendingForecast",
+      "writers": [
+        "sim/god/receipt.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "scenarioId",
+      "writers": [
+        "main.js",
+        "sim/god/scenario.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "shadowBiosphere",
+      "writers": [
+        "sim/origin.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 4,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_anyHarm",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_buildLogged",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_chicxulub",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_clathrateNote",
+      "writers": [
+        "sim/columnSketch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_ensoQ",
+      "writers": [
+        "sim/ocean.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_eraSnap",
+      "writers": [
+        "chronicle.js",
+        "sim/time.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_fluidMaskSea",
+      "writers": [
+        "sim/ocean.js",
+        "sim/swe.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_hypsoStamp",
+      "writers": [
+        "sim/planetLook.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_isoTick",
+      "writers": [
+        "sim/isoline.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_lastDetDist",
+      "writers": [
+        "sim/dark.js",
+        "sim/ordnance.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_lastSpringLog",
+      "writers": [
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_lomagundi",
+      "writers": [
+        "sim/carbon.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_noIgnite",
+      "writers": [
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_pendingOriginDigest",
+      "writers": [
+        "main.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_prevLiving",
+      "writers": [
+        "sim/extinction.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_relaxScratch",
+      "writers": [
+        "sim/redox.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_venusOverturns",
+      "writers": [
+        "sim/planetTick.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_zirconWater",
+      "writers": [
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "biomeCounts",
+      "writers": [
+        "sim/ecology.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "bioRate",
+      "writers": [
+        "sim/alien.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "bioticTerm",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "disperseSeeds",
+      "writers": [
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "frontMean",
+      "writers": [
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "herdMax",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "latDiversity",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "marineOnly",
+      "writers": [
+        "sim/alien.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "originReport",
+      "writers": [
+        "sim/origin.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rngState",
+      "writers": [
+        "sim/rng.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "stopOnAnomaly",
+      "writers": [
+        "main.js",
+        "sim/god/observe.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "strain",
+      "writers": [
+        "sim/tectonics.js",
+        "tools.js"
+      ],
+      "writeCount": 2,
+      "refs": 3,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_isoSea",
+      "writers": [
+        "sim/isoline.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "_stormCount",
+      "writers": [
+        "sim/storms.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "biosphereWatts",
+      "writers": [
+        "sim/ecology.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "builtCells",
+      "writers": [
+        "sim/city.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "carbonDrift",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "carnivore",
+      "writers": [
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "frontMax",
+      "writers": [
+        "sim/lifeFront.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "herbivore",
+      "writers": [
+        "sim/trophicField.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "morphChanged",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "redQueen",
+      "writers": [
+        "sim/ecology.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "rngBio",
+      "writers": [
+        "sim/rng.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "senseBands",
+      "writers": [
+        "sim/evolve.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "surfaceFeeders",
+      "writers": [
+        "agents.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "waterProxy",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "waterProxyDrift",
+      "writers": [
+        "sim/assert.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 2,
+      "owner": null,
+      "saved": null
+    }
+  ]
+}
