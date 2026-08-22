@@ -1,4 +1,6 @@
-/** Atmosphere: gases, greenhouse, circulation, clouds, dust, seasons. */
+/** Atmosphere: gases, greenhouse, circulation, clouds, dust, seasons.
+ *  @provenance tagged-module
+ */
 
 import { clamp, lerp } from '../math.js';
 import { NC, NBR, NBR_E, NBR_N, NBR_ICHORD, DIR, AREA, N as SIM_N } from '../sphere.js';
@@ -6,6 +8,25 @@ import { greenhouseFromGases, vapourGreenhouse, totalPressure } from '../ruleset
 import { circumbinaryBeat } from './exophysics.js';
 import { neighbourMean } from './vecop.js';
 import { groundAlbedo, thermalInertiaAt, livePressureBar } from './substrateField.js';
+
+/* fitted: 0.45 — dry adiabatic lapse dial × gravity */
+const LAPSE_PER_G = 0.45;
+/* fitted: 0.20 — Earth modern cloud albedo contribution */
+const CLOUD_ALB_EARTH = 0.20;
+/* fitted: 0.28 — non-Earth / deep-time cloud albedo */
+const CLOUD_ALB_OTHER = 0.28;
+/* fitted: 0.135 — Earth cloud longwave trap (balances SW reflect) */
+const CLOUD_GH_EARTH = 0.135;
+/* fitted: 0.16 — non-Earth cloud greenhouse */
+const CLOUD_GH_OTHER = 0.16;
+/* fitted: 0.08 + 1.48/π — daily-mean equator match to old 0.55 */
+const INSOL_SEASON_BIAS = 0.08;
+/* fitted: 1.48 — dailyMeanMu scale so equator ≈ 0.55 */
+const INSOL_SEASON_GAIN = 1.48;
+/* numeric: 0.95 — absorbed shortwave factor after albedo */
+const SW_ABSORB = 0.95;
+/* numeric: 1.4 — greenhouse → eq-temp gain */
+const GH_EQ_GAIN = 1.4;
 
 /**
  * Daily-mean TOA cosine factor. `sLat` and `sDec` are sin(φ) and sin(δ).
@@ -42,8 +63,8 @@ export function geometricInsolation(W, c, sunDir) {
     return lerp(sub, 0.5, redist);
   }
   const dec = Math.sin(obl) * Math.sin(season);
-  // fitted: dailyMeanMu(0,0)=1/π → 0.08 + 1.48/π ≈ 0.55, matching the old equator.
-  const seasonal = 0.08 + dailyMeanMu(y, dec) * 1.48;
+  // fitted: dailyMeanMu(0,0)=1/π → INSOL_SEASON_BIAS + INSOL_SEASON_GAIN/π ≈ 0.55
+  const seasonal = INSOL_SEASON_BIAS + dailyMeanMu(y, dec) * INSOL_SEASON_GAIN;
   let diurnal = lerp(0.5 + 0.5 * day, day, 1 - atm * 0.85);
   if (W.rule && !W.rule.earthLike) {
     const I = thermalInertiaAt(W, c);
@@ -334,12 +355,12 @@ export function atmoTick(W, sunDir) {
   const vapF = W.vapour?.length === NC ? W.vapour : null;
   // Winds come from geostrophicWind / SWE (called before this tick).
 
-  const lapse = 0.45 * R.gravity;
+  const lapse = LAPSE_PER_G * R.gravity;
   const Ptot = totalPressure(gases, R);
 
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
-    const cloudAlb = R.earthLike && !R.deepTime ? 0.2 : 0.28;
+    const cloudAlb = R.earthLike && !R.deepTime ? CLOUD_ALB_EARTH : CLOUD_ALB_OTHER;
     const iceAlb = W._spinup ? 0 : ice[c];
     const ground = groundAlbedo(W, c, isSea);
     const alb = R.earthLike
@@ -370,9 +391,9 @@ export function atmoTick(W, sunDir) {
        also what makes the pattern right: clouds cool the tropics, where there is
        sunlight to reflect, and warm the poles, where there is mostly only
        infrared to keep. */
-    const cloudGh = R.earthLike && !R.deepTime ? 0.135 : 0.16;
+    const cloudGh = R.earthLike && !R.deepTime ? CLOUD_GH_EARTH : CLOUD_GH_OTHER;
     const ghHere = vapF ? ghDry + vapourGreenhouse(vapF[c]) : gh;
-    const eq = insol * (1 - alb) * 0.95 + ghHere * 1.4 + clouds[c] * cloudGh
+    const eq = insol * (1 - alb) * SW_ABSORB + ghHere * GH_EQ_GAIN + clouds[c] * cloudGh
       - above * lapse * 0.35 + 0.12 - polarCool;
     const c4 = c * 4;
     const dT = neighbourMean(temp, c) - temp[c];
@@ -381,13 +402,17 @@ export function atmoTick(W, sunDir) {
       for (let k = 0; k < 4; k++) if (h[NBR[c4 + k]] < seaLevel) maritime += 0.2;
     }
     const inland = isSea ? 0 : clamp((W.cont?.[c] || 0) / 1400, 0, 1);
+    const thickAir = Plive != null && Plive > 10; // Venus-class column (B49)
     const thermalMass = (isSea ? 0.032 : lerp(0.16, 0.09, clamp(maritime, 0, 1)) * (1 + inland * 0.35))
       * (Plive != null ? clamp(0.4 + Math.log10((Plive || 1) + 0.01) * 0.35, 0.08, 2.5) : 1)
-      * (R.earthLike ? 1 : clamp(1200 / Math.max(50, thermalInertiaAt(W, c)), 0.22, 2.4));
-    const mix0 = (R.earthLike && !R.deepTime) ? 0.11 : 0.18;
+      * (R.earthLike ? 1 : clamp(1200 / Math.max(50, thermalInertiaAt(W, c)), 0.22, 2.4))
+      * (thickAir ? 0.35 : 1); // thick air: slower cell memory, faster homogenisation
+    let mix0 = (R.earthLike && !R.deepTime) ? 0.11 : 0.18;
+    if (thickAir) mix0 = 0.72; // near-isothermal surface under a deep column
     const mix = mix0 * Math.min(2.5, Math.max(1, SIM_N / 64));
     let t = temp[c] + (eq - temp[c]) * thermalMass + dT * mix;
     if (R.airless || Ptot < 0.01) t = lerp(temp[c], eq, 0.45);
+    if (thickAir) t = lerp(t, W.meanTemp || t, 0.12); // damp equator–pole contrast
     _t[c] = clamp(t, 0, 1.6);
   }
   temp.set(_t);

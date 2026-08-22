@@ -649,6 +649,9 @@ void main(){
   float rough = mix(0.85, 0.08, waterMask * (1.0 - iceF));
   rough = mix(rough, 0.55, landMask * lifeGreen); // canopy softer
   rough = mix(rough, 0.95, iceF * 0.7); // snow diffuse
+  // Day-side snow line: ice edge brightens so cryosphere reads from orbit without Lab.
+  float snowLine = iceF * landMask * smoothstep(0.08, 0.45, iceF) * (0.35 + 0.65 * nl);
+  base = mix(base, vec3(0.92, 0.95, 0.99), snowLine * 0.55);
   float waterish = waterMask * (1.0 - iceF * 0.9) * (1.0 - lifeGreen * 0.5);
   float gloss = mix(8.0, 96.0, 1.0 - rough) * mix(1.0, 0.35, clamp(windF * 1.4, 0.0, 1.0));
   gloss = max(6.0, gloss);
@@ -732,8 +735,8 @@ void main(){
   float termBand = exp(-pow(nl - 0.05, 2.0) * 40.0);
   // Lightning gated by local storm (cloud × precip) — flashes where storms are
   float stormLocal = cloudF * max(precipF, 0.12) * max(uStorm, 0.15);
-  float stormFlash = step(0.988, fract(sin(dot(vObj.xy * 40.0 + cloudF * 9.0, vec2(12.9898,78.233)) + uTime*41.0)*43758.5453));
-  col += vec3(0.8, 0.88, 1.0) * stormFlash * stormLocal * (night + termBand*0.55) * 2.0;
+  float stormFlash = smoothstep(0.978, 0.996, fract(sin(dot(vObj.xy * 40.0 + cloudF * 9.0, vec2(12.9898,78.233)) + uTime*41.0)*43758.5453));
+  col += vec3(0.8, 0.88, 1.0) * stormFlash * stormLocal * (night + termBand*0.55) * 1.6;
   float rim=pow(1.0-max(dot(N,V),0.0), 4.2);
   float rim2=pow(1.0-max(dot(N,V),0.0), 7.0);
   // Bruneton-ish transmittance + multiple scatter
@@ -839,13 +842,22 @@ void main(){
 in float vC; in float vType; in vec3 vN; in vec3 vW;
 uniform vec3 uSun, uCam; uniform float uTime;
 out vec4 o;
-float hash(vec3 p){
-  return fract(sin(dot(p, vec3(12.9898,78.233,37.719)))*43758.5453);
+/* Soft value noise — raw hash made cloud decks look like salt pixels. */
+float h31(vec3 p){ return fract(sin(dot(p, vec3(127.1,311.7,74.7)))*43758.5453123); }
+float vnoise(vec3 p){
+  vec3 i=floor(p), f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  float n00=mix(h31(i+vec3(0,0,0)),h31(i+vec3(1,0,0)),f.x);
+  float n10=mix(h31(i+vec3(0,1,0)),h31(i+vec3(1,1,0)),f.x);
+  float n01=mix(h31(i+vec3(0,0,1)),h31(i+vec3(1,0,1)),f.x);
+  float n11=mix(h31(i+vec3(0,1,1)),h31(i+vec3(1,1,1)),f.x);
+  return mix(mix(n00,n10,f.y), mix(n01,n11,f.y), f.z);
 }
 float densAt(vec3 sp, float cov, float t){
-  float n = hash(sp * 6.0 + t * 0.08);
-  float n2 = hash(sp * 14.0 - t * 0.05);
-  return cov * (0.45 + 0.35 * n + 0.2 * n2);
+  float n = vnoise(sp * 3.2 + t * 0.06);
+  float n2 = vnoise(sp * 7.5 - t * 0.04 + vec3(3.1, 1.7, 9.2));
+  float clump = smoothstep(0.28, 0.72, n * 0.65 + n2 * 0.35);
+  return cov * (0.32 + 0.55 * clump + 0.13 * n2);
 }
 void main(){
   if(vC<0.06) discard;
@@ -2512,11 +2524,13 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   gl.uniform3fv(planetProg.u.uAtmo, R.atmo);
   gl.uniform1f(planetProg.u.uAtmoK, R.atmoStrength * (1 + (W.gases.dust || 0)));
   gl.uniform1f(planetProg.u.uDetail, S.detail);
-  // Night lights from settlements
+  // Night lights: settlements + living biosphere readable from orbit (NEXT picture-over-dock).
+  // Thresholds kept low so thrive/demo Earth shows green-night and city glints without Lab.
   gl.uniform1f(planetProg.u.uNight, Math.max(
-    W.meanLife > 0.12 ? W.meanLife * 1.15 : 0,
-    (W.build && W.meanLife > 0.05) ? 0.15 : 0,
-    (W._cityLights || 0) * 1.2
+    W.meanLife > 0.06 ? Math.min(1.35, W.meanLife * 1.55) : 0,
+    (W.build && W.meanLife > 0.04) ? 0.22 : 0,
+    (W._cityLights || 0) * 1.35,
+    (W.iceFrac > 0.03 && W.meanLife > 0.05) ? 0.08 : 0, // snow-line presence cue
   ));
   if (planetProg.u.uMoon) {
     const moon = (W.moon && W.moon.mass > 0.05) ? clamp(W.moonIllum ?? 0.5, 0, 1) : 0;

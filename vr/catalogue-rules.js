@@ -23,7 +23,9 @@ import { applyWorldLook } from './sim/definition.js';
 export const CATALOGUE_WORLDS = CATALOGUE.filter((x) => x.k === 'BODY');
 
 /** Five invented rulesets — synthetic, not forced into the real-data schema. */
-export const SYNTHETIC_RULESET_IDS = new Set(['terra', 'vermis', 'selene', 'ares', 'daisy']);
+export const SYNTHETIC_RULESET_IDS = new Set([
+  'terra', 'vermis', 'selene', 'ares', 'venus', 'titan', 'europa', 'daisy',
+]);
 
 function cloneRule(base) {
   return { ...base, gases: { ...base.gases }, atmo: base.atmo?.slice?.() || [...base.atmo], sky: base.sky?.slice?.() || [...base.sky] };
@@ -111,13 +113,17 @@ function templateFor(item) {
   const name = (item.b || item.t || '').toLowerCase();
   if (item.b === 'Earth' || /^earth\b/i.test(item.t || '')) return byId('terra');
   if (item.c === 'sol') {
-    if (name.includes('venus')) return byId('ares');
+    if (name.includes('venus')) return byId('venus') || byId('ares');
     if (name.includes('mars')) return byId('ares');
     if (name.includes('mercury') || name === 'the moon' || name.includes('moon,')) return byId('selene');
     if (/jupiter|saturn|uranus|neptune/.test(name)) return byId('vermis');
     return byId('terra');
   }
-  if (item.c === 'moons') return byId('selene');
+  if (item.c === 'moons') {
+    if (name.includes('titan')) return byId('titan') || byId('selene');
+    if (name.includes('europa')) return byId('europa') || byId('selene');
+    return byId('selene');
+  }
   if (item.c === 'furnace') return byId('ares');
   if (item.c === 'giant') return byId('vermis');
   if (item.c === 'dark') {

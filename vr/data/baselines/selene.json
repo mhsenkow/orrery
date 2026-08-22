@@ -1,0 +1,16 @@
+{
+  "world": "Selene",
+  "ruleId": "selene",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 24 },
+  "n": 32,
+  "source": "Airless baseline smoke (B60 class)",
+  "early": {
+    "meanLife": { "lo": 0, "hi": 0.01, "tag": "fitted", "why": "airless — bioTick zeros life" },
+    "meanTemp": { "lo": 0.2, "hi": 0.55, "tag": "fitted", "why": "thermal shock world; ~0.38 @ seed" },
+    "O2": { "lo": 0, "hi": 0.001, "tag": "measured", "why": "no atmosphere" }
+  },
+  "late": {
+    "meanLife": { "lo": 0, "hi": 0.01, "tag": "fitted", "why": "stays sterile" }
+  }
+}

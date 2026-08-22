@@ -1,5 +1,8 @@
 /** Planetary interior — core fraction, heat, dynamo → magnetosphere & tectonics.
- *  Catalogue / ruleset bodies get matched profiles; magnets are no longer a free scalar. */
+ *  Catalogue / ruleset bodies get matched profiles; magnets are no longer a free scalar.
+ *  Profile table below is look-up data (measured fractions cited in notes).
+ *  @provenance look
+ */
 
 import { clamp } from '../math.js';
 

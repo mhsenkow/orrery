@@ -1,0 +1,10 @@
+{
+  "id": "earth-modern",
+  "cite": "IAU / NOAA / IPCC textbook anchors — toy-fidelity bands around measured modern Earth",
+  "landFrac": { "value": 0.292, "source": "NASA Earth Fact Sheet · land fraction ~29.2%" },
+  "meanSurfaceK": { "value": 288, "source": "NOAA global mean surface temperature ~15 °C" },
+  "O2": { "value": 0.2095, "source": "dry air volume mixing ratio" },
+  "CO2ppm": { "value": 420, "source": "approximate early-2020s global mean" },
+  "iceFrac": { "value": 0.12, "source": "order-of-magnitude cryosphere cover (toy)" },
+  "meanLife": { "value": 0.18, "source": "sim carrying-capacity mid — invented denominator" }
+}

@@ -35,14 +35,19 @@ import {
 import {
   initDeepTime, advanceClock, hadeanTick, formatAge, maybeCaptureMoment,
 } from './sim/time.js';
-import { createCarbonState, carbonTick, UNIT_MAP } from './sim/carbon.js';
+import { UNIT_MAP, unitsSchemaHash } from './sim/units.js';
+import { fieldsSchemaHash, FIELDS } from './sim/fields.js';
+import { createCarbonState, carbonTick } from './sim/carbon.js';
 import { initRedox, redoxTick, seedModernGuilds, initSpeciesFields } from './sim/redox.js';
-import { initEvolution, evolveTick, forkWorldSeed, treeSummary, packTree, unpackTree, seedHoloceneTree } from './sim/evolve.js';
+export { UNIT_MAP };import { initEvolution, evolveTick, forkWorldSeed, treeSummary, packTree, unpackTree, seedHoloceneTree } from './sim/evolve.js';
 import { deriveLifeClass, unlockedClassFromPool } from './sim/lifeclass.js';
 import { ecologyTick } from './sim/ecology.js';
 import { extinctionTick, noteImpact } from './sim/extinction.js';
 import { alienTick } from './sim/alien.js';
 import { multiRateMask } from './sim/meta.js';
+import {
+  profileEnabled, beginTickProfile, publishMs, addTickAcc, recordMs, shouldRun,
+} from './sim/scheduler.js';
 import { initGod, godTick } from './sim/god/index.js';
 import { attachWorldRng } from './sim/rng.js';
 import { assertBudgets } from './sim/assert.js';
@@ -73,14 +78,27 @@ import {
 import { resetDiplomacy, diplomacyTick } from './sim/diplomacy.js';
 import { resetDeterrence, deterrenceTick } from './sim/deterrence.js';
 import { resetDark, darkTick } from './sim/dark.js';
+import { darkEnabled } from './sim/darkGate.js';
 import { resetWear } from './sim/present.js';
 
 function buf() { return new Float32Array(NC); }
 function ibuf() { return new Int32Array(NC); }
 function u8() { return new Uint8Array(NC); }
 
-/** Reallocate all NC-sized fields after setResolution. */
+/** Reallocate all NC-sized fields after setResolution.
+ *  H9 — curated FIELDS float32/uint8 rows allocate from the schema first. */
 export function reallocateWorldFields(target = W) {
+  const fromSchema = new Set();
+  for (const row of FIELDS) {
+    if (row.kind !== 'field') continue;
+    if (row.type === 'float32[]') {
+      target[row.name] = buf();
+      fromSchema.add(row.name);
+    } else if (row.type === 'uint8[]') {
+      target[row.name] = u8();
+      fromSchema.add(row.name);
+    }
+  }
   const keys = [
     'h', 'crust', 'age', 'strain', 'ore', 'sediment', 'ash', 'dust',
     'frost', 'lag', 'grain',
@@ -97,10 +115,17 @@ export function reallocateWorldFields(target = W) {
     'trophProd', 'trophHerb', 'trophCarn', 'trophDecomp', 'trophOccHerb', 'trophOccCarn',
     'preyFear', 'carcassField',
     'lifeFront', 'lifeFlux', 'lifePrevTick',
-  ];
+  ].filter((k) => !fromSchema.has(k));
   for (const k of keys) target[k] = buf();
+  // Anthro harm fields — allocated here so generate after N-change does not
+  // leave them null while a later tick creates them (reset digest contract).
+  target.toxin = buf();
+  target.rad = buf();
+  target.disease = buf();
+  target.warFront = buf();
+  target.immune = buf();
   target.rock = u8();
-  target.substrate = u8();
+  if (!fromSchema.has('substrate')) target.substrate = u8();
   target.landform = u8();
   target.lifeClass = u8();
   target.biome = u8();
@@ -396,6 +421,9 @@ export function generate(seed, ruleIn) {
   W._waterProxy0 = null;   // assert.js latches the first reading it sees
   W.waterProxy = 0;
   W.waterProxyDrift = 0;
+  W._contamAg = 0;
+  W._anyHarm = false;
+  W.beingDens = null;
   W._relaxScratch = null;  // redox.js relaxation scratch buffers
   W.coastLine = null;
   W.coastCount = 0;
@@ -793,8 +821,9 @@ export function generate(seed, ruleIn) {
     seedHoloceneTree(W);
     W.unlockedClass = unlockedClassFromPool(W);
     deriveLifeClass(W);
-  } else if (!rule.airless && !W.noSurface) {
-    // Sparse nuclei — or wait for abiogenesis in deep time
+  } else if (!rule.airless && !rule.sterile && !W.noSurface) {
+    // Sparse nuclei — or wait for abiogenesis in deep time.
+    // `sterile` worlds (Ares / B48) stay empty until a deliberate Life seed.
     if (!deepOpen) {
       const rng = W.rng;
       for (let c = 0; c < NC; c++) {
@@ -844,10 +873,8 @@ export function generate(seed, ruleIn) {
   // `originTick` reseeds through `initOrigin` against the world that actually exists.
   W.vents = null;
   /* Hydro's conservation reference, re-latched against the finished world —
-     after `fitSeaLevel` and the drainage prime, not against the provisional
-     terrain the spin-up saw. `W.waterMass` here is hydro's own inventory; the
-     read-only proxy in `assert.js` keeps its own reference and does not touch
-     these two. */
+     after `fitSeaLevel` and the drainage prime. assert.js uses the same
+     `waterInventory` formula on a separate `_waterProxy0` latch (C81). */
   W._waterMass0 = W.waterMass;
 
   W._landscape = W.noSurface ? 'envelope' : (ls?.id || rule.landscape || 'auto');
@@ -907,7 +934,20 @@ export function simTick(silent = false) {
 
   const log = silent ? null : chronLog;
   const rule = W.rule;
-  const rate = multiRateMask(W);
+  const profiling = profileEnabled(W);
+  // Always schedule rate + degradation accounting so E24 can name reduced work.
+  const rate = beginTickProfile(W);
+  const section = (name, fn) => {
+    if (!shouldRun(W, name)) return undefined;
+    if (!profiling) return fn();
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    try { return fn(); }
+    finally {
+      const ms = (typeof performance !== 'undefined' ? performance.now() : 0) - t0;
+      recordMs(name, ms);
+      addTickAcc(W, ms);
+    }
+  };
 
   if (!rule.daisyworld) {
     if (!shouldHoldCalendar(W, rule)) advanceClock(W, rule);
@@ -934,34 +974,25 @@ export function simTick(silent = false) {
   // GPGPU only replaces the thermal relaxation loop.
   geostrophicWind(W);
   giantTick(W, log);
-  const gpu = gpgpuClimateTick(W);
-  if (!gpu) atmoTick(W, _sunDir);
+  const gpu = section('atmo', () => gpgpuClimateTick(W));
+  if (!gpu) section('atmo', () => atmoTick(W, _sunDir));
   else {
-    /* The GPU owns the thermal relaxation and nothing else.
-     *
-     * Everything else `atmoTick` would have done still has to happen, and used
-     * to be silently skipped on this path: the transport of heat and soil
-     * moisture by the wind, the smoke drifting downwind of a fire, and the cloud
-     * field itself — which `cloudsTick` builds from relative humidity against
-     * the hydrosphere's own saturation, convergence, fronts and ash, where the
-     * shader has four lines. Same fields, same order, same numbers as the CPU
-     * path; only the temperature relaxation happens on the card. */
-    advectScalar(W.temp, W.windU, W.windV, W._adv, 0.35);
-    advectScalar(W.moist, W.windU, W.windV, W._adv, 0.3);
-    advect(W.ash, W, 0.1);
-    cloudsTick(W);
-    atmoMetaTick(W);
-    aerosolDecayTick(W);
+    section('atmo', () => {
+      advectScalar(W.temp, W.windU, W.windV, W._adv, 0.35);
+      advectScalar(W.moist, W.windU, W.windV, W._adv, 0.3);
+      advect(W.ash, W, 0.1);
+      cloudsTick(W);
+      atmoMetaTick(W);
+      aerosolDecayTick(W);
+    });
   }
-  hydroTick(W);
+  section('hydro', () => hydroTick(W));
   tsunamiTick(W);
   if (!rule.airless && !W.noSurface) {
     oceanTick(W);
-    tidesTick(W);
-    stormsTick(W, log);
-    // After storms, so this tick's cyclones can throw bolts, and before fire,
-    // which uses a strike as its ignition source.
-    lightningTick(W);
+    section('tides', () => tidesTick(W));
+    section('storms', () => stormsTick(W, log));
+    section('lightning', () => lightningTick(W));
   }
   if (W._iceShell) iceShellTick(W);
 
@@ -981,21 +1012,23 @@ export function simTick(silent = false) {
   }
 
   if (!W._pauseBio && !W.noSurface) {
-    alienTick(W, log);
+    section('alien', () => alienTick(W, log));
     if (rate.bio) {
-      ecologyTick(W, log);
-      redoxTick(W, log);
-      bioTick(W, log);
+      section('ecology', () => ecologyTick(W, log));
+      section('redox', () => redoxTick(W, log));
+      section('bio', () => bioTick(W, log));
     }
-    if (rate.carbon) carbonTick(W, log);
+    if (rate.carbon) section('carbon', () => carbonTick(W, log));
     if (rate.phylogeny) {
-      evolveTick(W, log);
-      extinctionTick(W, log);
+      section('phylogeny', () => {
+        evolveTick(W, log);
+        extinctionTick(W, log);
+      });
     }
   }
-  technoTick(W, log);
-  gaiaTick(W, log);
-  godTick(W, log);
+  section('techno', () => technoTick(W, log));
+  section('gaia', () => gaiaTick(W, log));
+  section('god', () => godTick(W, log));
   /* Beings are part of the world, not part of the view. `agentsTick` used to be
      called from the render loop in `main.js`, which put every individual, every
      settlement and every behaviour outside `runHeadless`, outside the save and
@@ -1010,33 +1043,35 @@ export function simTick(silent = false) {
        array-length checks. */
     ordnanceTick(W, log);
     anthroTick(W, log);
-    const warLive = !!(
-      (W.flight && W.flight.some((f) => !f.dead))
-      || (W.interceptors && W.interceptors.some((ix) => !ix.dead))
-      || (W.mushrooms && W.mushrooms.length)
-      || (W.detonated | 0)
-      || (W.gases?.dust || 0) > 0.012
-      || (W.dark?.winter || 0) > 0.01
-      || (W._empUntil || 0) > (W._tickIndex | 0)
-      || (W._shockEvents && W._shockEvents.length)
-    );
-    const canPolity = !isPinnedEarth(W.rule) && (W.polities?.length || W.cities?.length);
-    if (canPolity) {
-      const t = W._tickIndex | 0;
-      if (t % 4 === 0) {
-        seedPolitiesFromCities(W, log);
-        claimTerritory(W);
-        splitDisconnected(W, log);
-        ensurePlayerPolity(W);
+    /* Dark / polity / deterrence — optional second product (PURPOSE). */
+    if (darkEnabled()) {
+      const warLive = !!(
+        (W.flight && W.flight.some((f) => !f.dead))
+        || (W.interceptors && W.interceptors.some((ix) => !ix.dead))
+        || (W.mushrooms && W.mushrooms.length)
+        || (W.detonated | 0)
+        || (W.gases?.dust || 0) > 0.012
+        || (W.dark?.winter || 0) > 0.01
+        || (W._empUntil || 0) > (W._tickIndex | 0)
+        || (W._shockEvents && W._shockEvents.length)
+      );
+      const canPolity = !isPinnedEarth(W.rule) && (W.polities?.length || W.cities?.length);
+      if (canPolity) {
+        const t = W._tickIndex | 0;
+        if (t % 4 === 0) {
+          seedPolitiesFromCities(W, log);
+          claimTerritory(W);
+          splitDisconnected(W, log);
+          ensurePlayerPolity(W);
+        }
+        if (W.polities?.length) {
+          diplomacyTick(W, log);
+          deterrenceTick(W, log);
+        }
       }
-      if (W.polities?.length) {
-        diplomacyTick(W, log);
-        deterrenceTick(W, log);
+      if ((canPolity && W.polities?.length) || warLive) {
+        darkTick(W, log);
       }
-    }
-    // War physics runs on Holocene too once something is in the air or burning.
-    if ((canPolity && W.polities?.length) || warLive) {
-      darkTick(W, log);
     }
     fireTick(W, log);
     /* Biology clock: life can sub-step inside one climate tick. Pinned terra
@@ -1056,7 +1091,9 @@ export function simTick(silent = false) {
      never depending on the world. On pinned Earth it was every tick: three full
      NC sweeps plus a NaN scan, for a debug assertion. `_tickIndex` is the
      counter `multiRateMask` already maintains. */
-  if ((W._tickIndex | 0) % 32 === 0) assertBudgets(W);
+  if ((W._tickIndex | 0) % 32 === 0) section('assert', () => assertBudgets(W));
+
+  if (profiling) publishMs(W);
 
   if (!silent) {
     maybeNameEra(W.chron, W);
@@ -1180,10 +1217,17 @@ export function rerollTerrain(Wref = W) {
 }
 
 
-/** Rewind-the-tape fork. Item 12. */
+/** Rewind-the-tape fork. Item 12 / D46. */
 export function forkRun(label = 'fork') {
   const newSeed = forkWorldSeed(W.seed, label + W.ageYr);
-  return { seed: newSeed, ageYr: W.ageYr, ruleId: W.rule.id };
+  return {
+    seed: newSeed,
+    ageYr: W.ageYr,
+    ruleId: W.rule.id,
+    tick: W._tickIndex | 0,
+    label,
+    // Full Run object available via vr/sim/run.js captureRun / forkRunObject
+  };
 }
 
 function packHeights(h) {
@@ -1230,17 +1274,20 @@ function unpackFloatField(b64, into) {
   into.set(buf.subarray(0, n));
 }
 
-/** Event-log save. Version 8 adds build, settlements and the living population. */
+/** Event-log save. Version 8 adds build, settlements and the living population.
+ *  Version 9 adds unitsHash / provenanceHash for schema drift detection. */
 export function serializeRun() {
   const land = W._landscape || W.rule?.landscape || 'auto';
   const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 8,
+    version: 9,
     seed: W.seed,
     landSeed,
     landscape: land,
     worldId: encodeWorldId(landSeed, land),
     n: SIM_N,
+    unitsHash: unitsSchemaHash(),
+    fieldsHash: fieldsSchemaHash(),
     seaLevel: W.seaLevel,
     hB64: packHeights(W.h),
     subB64: packSubstrate(W.substrate),
@@ -1325,7 +1372,37 @@ export function downloadSave() {
 
 /** Replay from seed + rule (+ optional deepTime). Heightfield restored when present. */
 export function loadRunMeta(json) {
-  const data = typeof json === 'string' ? JSON.parse(json) : json;
+  let data;
+  try {
+    data = typeof json === 'string' ? JSON.parse(json) : json;
+  } catch (e) {
+    // I22 — corrupt / truncated payload must not touch world state.
+    throw new Error(`Corrupt save — could not parse JSON (${e?.message || e}). World untouched.`);
+  }
+  if (!data || typeof data !== 'object') {
+    throw new Error('Corrupt save — expected a JSON object. World untouched.');
+  }
+  const ver = data.version ?? 0;
+  // D21/D22 — read version; never half-load unknown futures.
+  if (ver > 9) {
+    throw new Error(`Save version ${ver} is newer than this build (supports ≤9). Update ORRERY or export a fresh save.`);
+  }
+  if (ver > 0 && ver < 7) {
+    throw new Error(`Save version ${ver} is too old to migrate automatically. Re-generate from seed ${data.seed}.`);
+  }
+  if (data.n != null && data.n !== SIM_N) {
+    // I8 / D25 — never half-load at the wrong resolution.
+    throw new Error(
+      `Save N=${data.n} does not match live N=${SIM_N}. ` +
+        `Change resolution to ${data.n} first — will not load a mismatched grid.`,
+    );
+  }
+  if (data.unitsHash && data.unitsHash !== unitsSchemaHash()) {
+    console.warn(`[orrery] units schema mismatch: save ${data.unitsHash} vs live ${unitsSchemaHash()}`);
+  }
+  if (data.fieldsHash && data.fieldsHash !== fieldsSchemaHash()) {
+    console.warn(`[orrery] fields schema mismatch: save ${data.fieldsHash} vs live ${fieldsSchemaHash()}`);
+  }
   const base = RULESETS.find((r) => r.id === data.ruleId) || RULESETS[0];
   const landscape = data.landscape || 'auto';
   const rule = { ...base, deepTime: !!data.deepTime, landscape };
@@ -1407,4 +1484,4 @@ export function loadRunMeta(json) {
   return data;
 }
 
-export { RULESETS, LIFE_CLASSES, seedLife, chronLog, formatAge, treeSummary, UNIT_MAP };
+export { RULESETS, LIFE_CLASSES, seedLife, chronLog, formatAge, treeSummary };

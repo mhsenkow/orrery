@@ -117,5 +117,42 @@ console.log('rulesets carry interiors');
   ok('some rulesets have interior', withInt >= 3, `${withInt}/${RULESETS.length}`);
 }
 
+console.log('Solar System Type fidelity (B47/B49/B53)');
+{
+  const { changeResolution, simTick } = await import('../world.js');
+  const { N } = await import('../sphere.js');
+  const { reservoirActive, reservoirTick } = await import('./cover.js');
+  const { cycleMaterial, liquidWindow, livePressureBar } = await import('./substrateField.js');
+  try { if (N !== 32) changeResolution(32); } catch { /* */ }
+
+  const ares = RULESETS.find((r) => r.id === 'ares');
+  generate(20260808, ares);
+  ok('Ares reservoir active', reservoirActive(W));
+  const p0 = livePressureBar(W);
+  W.season = 3 * Math.PI / 2;
+  for (let i = 0; i < 48; i++) reservoirTick(W);
+  const frozen = 1 - (W._atmScale ?? 1);
+  const pW = livePressureBar(W);
+  ok('Ares winter freezes ~¼ column (B47)', frozen > 0.08 && frozen <= 0.30, frozen);
+  ok('Ares winter pressure drops', pW < p0 * 0.95, `${pW} vs ${p0}`);
+
+  const venus = RULESETS.find((r) => r.id === 'venus');
+  generate(20260808, venus);
+  for (let i = 0; i < 24; i++) simTick(true);
+  ok('Venus near-isothermal (B49)', Math.abs(W._tropPole || 0) < 0.08, W._tropPole);
+
+  const titan = RULESETS.find((r) => r.id === 'titan');
+  generate(20260808, titan);
+  const mat = cycleMaterial(W);
+  ok('Titan cycle is methane ice (B53)', mat?.id === 'ch4Ice', mat?.id);
+  const win = liquidWindow(mat, livePressureBar(W));
+  ok('Titan has a liquid CH₄ window', !!win && win.tMin < 100, win);
+  const marsWin = liquidWindow(
+    (await import('./substrates.js')).SUB_BY_ID.co2Ice,
+    0.006,
+  );
+  ok('Mars CO₂ has no liquid at 6 mbar (B54)', marsWin == null, marsWin);
+}
+
 console.log(`\nsmoke: ${passed} passed, ${failed} failed`);
 process.exitCode = failed ? 1 : 0;

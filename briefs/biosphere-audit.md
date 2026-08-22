@@ -1,6 +1,7 @@
 # ORRERY — biosphere audit
 
-**Hand-written. Not generated.** Evidence base for `biosphere-architecture.md` and `biosphere-plan.md`.
+**Hand-written. Not generated.** Evidence base for `biosphere-architecture.md`.
+Historical — not a work queue. Priorities: [`../NEXT.md`](../NEXT.md).
 Every claim below was measured against the tree at commit `d9e6d47`, not read off the source.
 
 ---

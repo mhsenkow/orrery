@@ -1,5 +1,6 @@
 /** Redox-tower biosphere — metabolic guilds before morphology.
- *  Backlog items 13–28. */
+ *  Guild rows carry `tag` (A12). Relaxation dials are fitted in RELAX / MAINT_SCALE.
+ */
 
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
@@ -12,27 +13,27 @@ import {
 
 /**
  * Guilds ordered by approximate reduction potential / energy yield.
- * Viable when donor + acceptor present and ΔG clears maintenance.
+ * Each entry carries provenance `tag` (A12).
  */
 export const GUILDS = [
-  { id: 'fermenter', donor: 'orgC', acceptor: 'none', yield: 0.05, pigment: null, color: [80, 70, 50] },
-  { id: 'methanogen', donor: 'H2', acceptor: 'CO2', yield: 0.08, pigment: null, color: [60, 50, 40], makes: 'CH4' },
-  { id: 'sulfateReducer', donor: 'orgC', acceptor: 'SO4', yield: 0.12, pigment: null, color: [70, 60, 45] },
-  { id: 'ironReducer', donor: 'orgC', acceptor: 'Fe3', yield: 0.15, pigment: null, color: [90, 55, 40] },
-  { id: 'anammox', donor: 'NH4', acceptor: 'NO2', yield: 0.18, pigment: null, color: [55, 65, 70] },
-  { id: 'denitrifier', donor: 'orgC', acceptor: 'NO3', yield: 0.25, pigment: null, color: [50, 70, 60] },
-  { id: 'methanotroph', donor: 'CH4', acceptor: 'O2', yield: 0.3, pigment: null, color: [65, 75, 55] },
-  { id: 'ironOxidizer', donor: 'Fe2', acceptor: 'O2', yield: 0.2, pigment: null, color: [140, 80, 40] },
-  { id: 'photoferrotroph', donor: 'Fe2', acceptor: 'light', yield: 0.22, pigment: 'bchl', color: [100, 60, 90] },
-  { id: 'purpleSulfur', donor: 'H2S', acceptor: 'light', yield: 0.28, pigment: 'bchl', color: [120, 40, 90] },
-  { id: 'greenSulfur', donor: 'H2S', acceptor: 'light', yield: 0.26, pigment: 'bchl', color: [40, 90, 50] },
-  { id: 'cyanobacteria', donor: 'H2O', acceptor: 'light', yield: 0.55, pigment: 'chla', color: [30, 120, 70], oxygenic: true },
-  { id: 'aerobe', donor: 'orgC', acceptor: 'O2', yield: 1.0, pigment: null, color: [50, 100, 60] },
-  // 16 ATP/N2 and O2-poisoned — yield is the leftover after that bill. provenance: measured-shape
-  { id: 'nFixer', donor: 'N2', acceptor: 'ATP', yield: 0.04, pigment: null, color: [45, 85, 55], nFix: true },
-  { id: 'nitrifier', donor: 'NH4', acceptor: 'O2', yield: 0.15, pigment: null, color: [70, 90, 50] },
-  { id: 'decomposer', donor: 'lignin', acceptor: 'O2', yield: 0.2, pigment: null, color: [90, 70, 40] },
-  { id: 'chemolithotroph', donor: 'H2', acceptor: 'CO2', yield: 0.1, pigment: null, color: [55, 55, 50], vent: true },
+  { id: 'fermenter', donor: 'orgC', acceptor: 'none', yield: 0.05, pigment: null, color: [80, 70, 50], tag: 'invented' },
+  { id: 'methanogen', donor: 'H2', acceptor: 'CO2', yield: 0.08, pigment: null, color: [60, 50, 40], makes: 'CH4', tag: 'measured' },
+  { id: 'sulfateReducer', donor: 'orgC', acceptor: 'SO4', yield: 0.12, pigment: null, color: [70, 60, 45], tag: 'measured' },
+  { id: 'ironReducer', donor: 'orgC', acceptor: 'Fe3', yield: 0.15, pigment: null, color: [90, 55, 40], tag: 'measured' },
+  { id: 'anammox', donor: 'NH4', acceptor: 'NO2', yield: 0.18, pigment: null, color: [55, 65, 70], tag: 'measured' },
+  { id: 'denitrifier', donor: 'orgC', acceptor: 'NO3', yield: 0.25, pigment: null, color: [50, 70, 60], tag: 'measured' },
+  { id: 'methanotroph', donor: 'CH4', acceptor: 'O2', yield: 0.3, pigment: null, color: [65, 75, 55], tag: 'measured' },
+  { id: 'ironOxidizer', donor: 'Fe2', acceptor: 'O2', yield: 0.2, pigment: null, color: [140, 80, 40], tag: 'measured' },
+  { id: 'photoferrotroph', donor: 'Fe2', acceptor: 'light', yield: 0.22, pigment: 'bchl', color: [100, 60, 90], tag: 'fitted' },
+  { id: 'purpleSulfur', donor: 'H2S', acceptor: 'light', yield: 0.28, pigment: 'bchl', color: [120, 40, 90], tag: 'measured' },
+  { id: 'greenSulfur', donor: 'H2S', acceptor: 'light', yield: 0.26, pigment: 'bchl', color: [40, 90, 50], tag: 'measured' },
+  { id: 'cyanobacteria', donor: 'H2O', acceptor: 'light', yield: 0.55, pigment: 'chla', color: [30, 120, 70], oxygenic: true, tag: 'measured' },
+  { id: 'aerobe', donor: 'orgC', acceptor: 'O2', yield: 1.0, pigment: null, color: [50, 100, 60], tag: 'fitted' },
+  // 16 ATP/N2 and O2-poisoned — yield is the leftover after that bill.
+  { id: 'nFixer', donor: 'N2', acceptor: 'ATP', yield: 0.04, pigment: null, color: [45, 85, 55], nFix: true, tag: 'measured' },
+  { id: 'nitrifier', donor: 'NH4', acceptor: 'O2', yield: 0.15, pigment: null, color: [70, 90, 50], tag: 'measured' },
+  { id: 'decomposer', donor: 'lignin', acceptor: 'O2', yield: 0.2, pigment: null, color: [90, 70, 40], tag: 'invented' },
+  { id: 'chemolithotroph', donor: 'H2', acceptor: 'CO2', yield: 0.1, pigment: null, color: [55, 55, 50], vent: true, tag: 'fitted' },
 ];
 
 const DONORS = ['H2', 'H2S', 'Fe2', 'CH4', 'NH4', 'orgC', 'N2', 'H2O', 'lignin'];
@@ -212,24 +213,26 @@ export function relaxSpeciesFields(W, dt, init = false) {
     }
   }
   // Field, rate and neighbour policy are per species, not per cell: resolve them
-  // once instead of 24k × 18 string lookups.
-  const plan = [];
+  // once instead of 24k × 18 string lookups. Reuse plan buffer (E46).
+  let plan = W._relaxPlan;
+  if (!plan) plan = W._relaxPlan = [];
+  let np = 0;
   for (let k = 0; k < SPECIES_KEYS.length; k++) {
     const key = SPECIES_KEYS[k];
     const arr = species[key];
     if (!arr) continue;
     const r = RELAX[key] ?? 0.1;
-    plan.push({
-      arr,
-      out: init ? arr : scratch[k],
-      idx: k,
-      rate: r * dt,
-      dfac: (!init && diffuseRate > 0 && key !== 'orgC' && key !== 'lignin')
-        ? diffuseRate * (r > 0.5 ? 0.8 : 0.15) : 0,
-      vent: key === 'H2' ? 0.08 * dt : key === 'H2S' ? 0.05 * dt : key === 'Fe2' ? 0.04 * dt : 0,
-    });
+    const row = plan[np] || (plan[np] = {});
+    row.arr = arr;
+    row.out = init ? arr : scratch[k];
+    row.idx = k;
+    row.rate = r * dt;
+    row.dfac = (!init && diffuseRate > 0 && key !== 'orgC' && key !== 'lignin')
+      ? diffuseRate * (r > 0.5 ? 0.8 : 0.15) : 0;
+    row.vent = key === 'H2' ? 0.08 * dt : key === 'H2S' ? 0.05 * dt : key === 'Fe2' ? 0.04 * dt : 0;
+    np++;
   }
-  const np = plan.length;
+  plan.length = np;
   for (let c = 0; c < NC; c++) {
     const eq = speciesEquilibrium(W, c);
     const venting = bound[c] === 0 && h[c] < seaLevel;

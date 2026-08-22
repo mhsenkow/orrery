@@ -1,0 +1,18 @@
+{
+  "world": "Titan",
+  "ruleId": "titan",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 24 },
+  "n": 32,
+  "source": "First-cut Solar System baseline (B52) — methaneSolvent + iceShell",
+  "early": {
+    "meanTemp": { "lo": 0, "hi": 0.25, "tag": "fitted", "why": "cold N₂/CH₄ world; ~94 K teq mapped low" },
+    "meanLife": { "lo": 0, "hi": 0.05, "tag": "fitted", "why": "sterile surface; vent sketch only" },
+    "O2": { "lo": 0, "hi": 0.01, "tag": "measured", "why": "no free O₂" },
+    "iceFrac": { "lo": 0.4, "hi": 1.0, "tag": "fitted", "why": "ice shell / cold surface" }
+  },
+  "late": {
+    "meanLife": { "lo": 0, "hi": 0.05, "tag": "fitted", "why": "stays sparse" },
+    "meanTemp": { "lo": 0, "hi": 0.3, "tag": "fitted", "why": "stays cold" }
+  }
+}

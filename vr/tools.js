@@ -2,7 +2,7 @@
 
 import { clamp, vnoise } from './math.js';
 import { NC, DIR, NBR, dirToCell, cellKm } from './sphere.js';
-import { W, chronLog, seedLife } from './world.js';
+import { W, chronLog, seedLife, serializeRun } from './world.js';
 import { injectGas } from './sim/atmo.js';
 import { startTsunami } from './sim/hydro.js';
 import { coreSample, iceCore } from './sim/instruments.js';
@@ -15,7 +15,7 @@ import {
 } from './sim/god/brush.js';
 import { addHeight, setHeight, addMask } from './sim/layers.js';
 import { issueReceipt, forecastAct, causalChain } from './sim/god/receipt.js';
-import { tryPay, pricePreview, setScarcityMode, SCARCITY } from './sim/god/economy.js';
+import { tryPay, pricePreview, setScarcityMode, SCARCITY, scarcityMeta } from './sim/god/economy.js';
 import {
   seedGuildAt, seedClassAt, selectedGuild, setSelectedGuild,
   declareRefuge, cullClade, forceTransition, diagnoseBiome, seedRefusal,
@@ -40,6 +40,7 @@ import { pourToxin, irradiate, seedDisease, openWar, hazardAt } from './sim/anth
 import { launch, detonate, defenceAt, richestTarget, pickLaunchSite, markTrace, PROFILES, defendCell } from './sim/ordnance.js';
 import { polityAt, setPlayerPolity, ensurePlayerPolity } from './sim/polity.js';
 import { noteAttribution } from './sim/dark.js';
+import { darkEnabled } from './sim/darkGate.js';
 import { applyMedicalCountermeasures, noteDualUseResearch } from './sim/darkCbr.js';
 import { strike as flashCell } from './sim/lightning.js';
 import { paintEdifice } from './sim/planetTick.js';
@@ -113,7 +114,7 @@ export function setTool(id) {
 }
 
 export { BRUSH, brushKm, brushForTier, previewBrush, undoStroke, redoStroke, canUndo, canRedo, paintBrush, setPinpoint, setBrushInvert };
-export { pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild };
+export { pricePreview, setScarcityMode, SCARCITY, scarcityMeta, setSelectedGuild, selectedGuild };
 
 /** Flash + gold stroke so a cell hit reads from orbit for a few frames. */
 function markCellHit(cell, power = 1) {
@@ -266,6 +267,9 @@ function dragFields(id) {
 export function useToolAt(cell, extra = {}) {
   if (cell < 0) return null;
   const tool = TOOLS.find((t) => t.id === activeTool) || TOOLS[0];
+  if (tool.group === 'evil' && !darkEnabled()) {
+    return { ok: false, error: 'Dark layer locked — open with ?dark=1' };
+  }
 
   // Irreversible commit gate. Item 6 / 80.
   if (tool.irreversible && !extra.confirm && !extra.commit) {
@@ -281,6 +285,11 @@ export function useToolAt(cell, extra = {}) {
     || (tool.id === 'co2' && W.meanTemp < 0.35);
   const gate = payOrFail(tool.id, extra.magnitude ?? 1, { withGrain, againstGrain: extra.againstGrain });
   if (gate.error) return { error: gate.error, pay: gate.pay };
+
+  // Snapshot for receipt “What if I hadn’t” (D59) — Strike / climate / land only.
+  if (['ignite', 'meteor', 'nuke', 'raise', 'lower', 'co2', 'solar', 'ice', 'volcano'].includes(tool.id)) {
+    try { W._actUndo = serializeRun(); } catch { W._actUndo = null; }
+  }
 
   let result = { ok: true, tool: tool.id, pay: gate.pay };
 

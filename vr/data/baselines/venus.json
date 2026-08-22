@@ -1,0 +1,19 @@
+{
+  "world": "Venus",
+  "ruleId": "venus",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 24 },
+  "n": 32,
+  "source": "First-cut Solar System baseline (B49) — synthetic Type ruleset",
+  "early": {
+    "meanTemp": { "lo": 1.0, "hi": 1.6, "tag": "fitted", "why": "runaway greenhouse; map units hot (first-cut)" },
+    "meanLife": { "lo": 0, "hi": 0.02, "tag": "fitted", "why": "sterile — no spontaneous biosphere" },
+    "O2": { "lo": 0, "hi": 0.01, "tag": "measured", "why": "no free O₂" },
+    "iceFrac": { "lo": 0, "hi": 0.05, "tag": "fitted", "why": "no surface ice" },
+    "tropPole": { "lo": 0, "hi": 0.08, "tag": "fitted", "why": "B49 near-isothermal under thick air (mix + mean damp)" }
+  },
+  "late": {
+    "meanLife": { "lo": 0, "hi": 0.02, "tag": "fitted", "why": "stays sterile" },
+    "meanTemp": { "lo": 1.0, "hi": 1.6, "tag": "fitted", "why": "stays hot" }
+  }
+}

@@ -1,5 +1,9 @@
 /** First-run teaching — a door, a campaign track, and map hunts.
- *  Old REVEAL steps still exist for anyone mid-card; new visits get LESSONS. */
+ *  Old REVEAL steps still exist for anyone mid-card; new visits get LESSONS.
+ *
+ *  Acquisition is not this file: first visit uses the Vandal Strike hook
+ *  (`sim/hooks.js`) — Ignite / Meteor — not a lesson card. Evil / Dark is never
+ *  part of the Tour or demo path (NEXT #7). */
 
 export const REVEAL = [
   {
@@ -238,6 +242,13 @@ export function shouldOfferDoor(progress = loadLessonProgress()) {
 /** Re-open the front door without wiping lesson progress. */
 export function offerTourAgain(progress = loadLessonProgress()) {
   return { ...progress, seenDoor: false };
+}
+
+/** Wipe tour progress so the next open starts from Hold Earth. */
+export function resetLessonProgress() {
+  const next = emptyLessonProgress();
+  saveLessonProgress(next);
+  return next;
 }
 
 export function nextIncompleteLesson(progress = loadLessonProgress()) {

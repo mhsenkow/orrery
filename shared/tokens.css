@@ -1,0 +1,91 @@
+/* Shared design tokens — quality-400 M1.
+ * Consumed by vr/ and site/. Brand surfaces may override locally;
+ * keep names stable so high-contrast / themes can remount later. */
+
+:root {
+  /* Ink */
+  --orr-ink: #e6eef8;
+  --orr-mute: #a8b6cc;
+  --orr-faint: #8a96aa;
+
+  /* Surfaces */
+  --orr-bg: #03050a;
+  --orr-panel: rgba(8, 12, 20, 0.78);
+  --orr-line: rgba(120, 160, 220, 0.14);
+
+  /* Accents */
+  --orr-accent: #6ea0ff;
+  --orr-accent-deep: #2a55c8;
+  --orr-ok: #6fd6a4;
+  --orr-amber: #e4b86a;
+  --orr-copper: #c4784a;
+  --orr-gold: #c4a35a;
+
+  /* Motion */
+  --orr-ease: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Type stacks (faces loaded by vr/fonts or system on site) */
+  --orr-font-display: "Syne", "Avenir Next", ui-sans-serif, system-ui, sans-serif;
+  --orr-font-mono: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+  --orr-font-serif: "Literata", "Iowan Old Style", Palatino, Georgia, serif;
+
+  /* Layout */
+  --orr-gutter: 12px;
+  --orr-safe-t: env(safe-area-inset-top, 0px);
+  --orr-safe-r: env(safe-area-inset-right, 0px);
+  --orr-safe-b: env(safe-area-inset-bottom, 0px);
+  --orr-safe-l: env(safe-area-inset-left, 0px);
+
+  /* Space + motion (L5/L6 seed) */
+  --orr-space-1: 4px;
+  --orr-space-2: 8px;
+  --orr-space-3: 12px;
+  --orr-space-4: 16px;
+  --orr-dur-fast: 120ms;
+  --orr-dur: 220ms;
+  --orr-dur-slow: 400ms;
+}
+
+/* Back-compat aliases used by existing vr/index.html :root */
+:root {
+  --bg: var(--orr-bg);
+  --panel: var(--orr-panel);
+  --line: var(--orr-line);
+  --text: var(--orr-ink);
+  --dim: var(--orr-mute);
+  --faint: var(--orr-faint);
+  --accent: var(--orr-accent);
+  --accent2: var(--orr-accent-deep);
+  --ok: var(--orr-ok);
+  --amber: var(--orr-amber);
+  --copper: var(--orr-copper);
+  --ease: var(--orr-ease);
+  --gutter: var(--orr-gutter);
+  --safe-t: var(--orr-safe-t);
+  --safe-r: var(--orr-safe-r);
+  --safe-b: var(--orr-safe-b);
+  --safe-l: var(--orr-safe-l);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* L32 — high contrast when the OS asks for it */
+@media (prefers-contrast: more) {
+  :root {
+    --orr-ink: #f4f7fc;
+    --orr-mute: #c5d0e0;
+    --orr-faint: #aeb8c8;
+    --orr-panel: rgba(4, 8, 16, 0.92);
+    --orr-line: rgba(180, 210, 255, 0.35);
+    --orr-accent: #9ec0ff;
+  }
+}

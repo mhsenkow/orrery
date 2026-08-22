@@ -27,6 +27,11 @@ export function initGpgpu(gl, opts = {}) {
     if (!_shared.ok) _shared = null;
   } catch (e) {
     console.warn('[gpgpu] init failed', e);
+    try {
+      import('../report.js').then(({ report }) => {
+        report('degraded', 'ORR-GPGPU-001', 'GPU climate unavailable — using CPU path', { err: String(e?.message || e) });
+      }).catch(() => {});
+    } catch { /* */ }
     _shared = null;
   }
   return _shared;

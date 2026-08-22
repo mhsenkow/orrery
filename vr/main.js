@@ -1,6 +1,7 @@
 /** ORRERY main — UI, input, XR, sim loop. */
 
 import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, lookRay, showErr } from './math.js';
+import { installGlobalErrorHandlers, setErrorSink, endBootDeferral } from './sim/report.js';
 import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
 import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
 import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js';
@@ -24,25 +25,32 @@ import { formatTechno, formatMega } from './sim/techno.js';
 import { landformAt, explainForm, formatPalette } from './sim/landform.js';
 import { noteDroppedTicks } from './sim/meta.js';
 import { detectEnding, finaleArtefact, formatFinaleMarkdown } from './sim/finale.js';
-import { refreshDarkHud } from './sim/darkHud.js';
+import { darkEnabled } from './sim/darkGate.js';
+import {
+  vandalDone, markVandalDone, pickVandalTarget, captureGarden, gardenDelta,
+  awayTicks, writeAutosave, readAutosave, clearAutosave, saveGardenVisit,
+} from './sim/hooks.js';
+import { isPlaytestMode, mountPlaytestUI } from './sim/playtest.js';
 import {
   skipReveal, campaignBlurb,
-  LESSONS, DOOR_IDS, loadLessonProgress, lessonById, setCurrentLesson,
+  LESSONS, loadLessonProgress, lessonById, setCurrentLesson,
   completeLesson, lessonDone, shouldOfferDoor, nextIncompleteLesson,
-  lessonChipLabel, huntMatches, offerTourAgain, markDoorSeen, saveLessonProgress,
+  lessonChipLabel, huntMatches, markDoorSeen,
+  resetLessonProgress,
 } from './sim/teach.js';
 import { ENT, respawnEntities, followTarget, presentAgents } from './agents.js';
 import { initGL, gl, canvas, rebuildGeometry, refreshColours, uploadEntities, drawScene, vIdx, updateLocalHighlight, setGuildHighlight, setLocalHover, setOverlayMode, remeshPlanet, rebuildScatterLUTs, setGlobeSubd, GLOBE_SUBD, GLOBE_SUBD_ALLOWED, globeN, globeVertexCount, recommendGlobeSubd, effectiveGlobeSubd } from './render.js';
 import {
   climatePanelChrome, refreshClimatePanel, bindClimatePanel,
 } from './sim/climatePanel.js';
+import { openLimitsSheet } from './sim/limitsSheet.js';
 import {
   platesPanelChrome, refreshPlatesPanel, bindPlatesPanel, tectonicsAtCell, plateName,
 } from './sim/platesPanel.js';
 import { TOOLS, setTool, activeTool, useToolAt, inspectCell, pickCell, fingerOfGod,
   beginToolDrag, moveToolDrag, endToolDrag, undoStroke, redoStroke, canUndo,
   setCrustOceanic, setPinpoint, setBrushInvert,
-  pricePreview, setScarcityMode, SCARCITY, setSelectedGuild, selectedGuild,
+  pricePreview, setScarcityMode, SCARCITY, scarcityMeta, setSelectedGuild, selectedGuild,
   BRUSH, brushKm, brushForTier, previewBrush,
   cullClade,
 } from './tools.js';
@@ -62,7 +70,7 @@ import {
 } from './sim/god/genesis.js';
 import {
   setTimeRate, TIME_RATES, addBookmark, setLetItRun, shouldHaltFF,
-  cycleTimeRate, timeClockInfo, cycleGaiaButton, gaiaDriveOf,
+  cycleTimeRate, timeClockInfo, cycleGaiaButton, gaiaDriveOf, gaiaModeMeta,
 } from './sim/god/observe.js';
 import { addToShelf, loadShelf, rankByBiosignature } from './sim/god/shelf.js';
 import { tipForTool, tipForId, SUITE_TIPS, RIBBON_TIPS } from './sim/god/tips.js';
@@ -71,9 +79,13 @@ import {
   CAM_DIST_MAX, XR_SCALE_MIN, XR_SCALE_MAX,
   scaleRung, applyScalePreset, eorefById,
 } from './sim/eoref.js';
+import { matchKey, keymapHelpLines } from './sim/keymap.js';
+import { dialogFocusables, trapTab } from './sim/focusTrap.js';
+
+installGlobalErrorHandlers();
+setErrorSink((detail) => showErr(detail));
 import { exportChronicle, currentEraName, whatHappenedHere } from './chronicle.js';
 import { audioInit, audioUpdate, playEvent, audioMute, audioMuted, installDarkAudioBus } from './audio.js';
-import { drainDarkMoment } from './sim/darkSpectacle.js';
 import {
   createOriginSketch, applyOriginDigestToRule, originDigestSummary,
 } from './sim/originSketch.js';
@@ -99,8 +111,8 @@ import { presentAdvance, placeSentence, cellSun } from './sim/present.js';
 import { considerThought, thoughtView, resetThought, thoughtMemory } from './sim/thought.js';
 import { currentsAtCell } from './sim/ocean.js';
 import { stepFlow, resetFlow } from './sim/flowviz.js';
-import { CATALOGUE, CATALOGUE_CATS, CATALOGUE_KIND } from './catalogue.js';
-import { rulesetFromCatalogue, adjacentCatalogueWorld, CATALOGUE_WORLDS, validateCatalogueWorlds, recordForCatalogueItem } from './catalogue-rules.js';
+import { ensureCatalogue, catalogueReady } from './sim/catalogueLoad.js';
+import { HUD_CADENCE_MS } from './sim/hudCadence.js';
 import { parseWorldCsv } from './sim/exophysics.js';
 import { makeWorldRecord, applyRecordToRule } from './sim/worldRecord.js';
 import { explainDrama, defineTerm, READING_LIST, toolsUnlocked } from './sim/glossary.js';
@@ -114,6 +126,40 @@ import { readHandSkeleton, gestureFromSkeleton, applyHandGesture } from './sim/h
 import { getGpgpu } from './sim/gpgpu/index.js';
 
 const TABLE = createTableState();
+
+/** Filled by ensureCatalogue() — null until Worlds opens (K17). */
+let Cat = null;
+let _catValidated = false;
+
+async function fillCat() {
+  if (!Cat) Cat = await ensureCatalogue();
+  return Cat;
+}
+
+function logCatalogueValidation() {
+  if (_catValidated || !Cat) return;
+  _catValidated = true;
+  const bad = Cat.validateCatalogueWorlds();
+  if (bad.length) console.warn('[orrery] catalogue worlds failed sanitize:', bad);
+  else console.log(`[orrery] catalogue · ${Cat.CATALOGUE_WORLDS.length} worlds ready`);
+}
+
+/** Dark UI modules — quality-400 K16; only pulled when `?dark=1`. */
+let _darkHud = null;
+let _darkSpec = null;
+async function ensureDarkUi() {
+  if (!darkEnabled()) return null;
+  if (!_darkHud) {
+    const [hud, spec] = await Promise.all([
+      import('./sim/darkHud.js'),
+      import('./sim/darkSpectacle.js'),
+    ]);
+    _darkHud = hud;
+    _darkSpec = spec;
+  }
+  return { hud: _darkHud, spec: _darkSpec };
+}
+if (darkEnabled()) ensureDarkUi().catch(() => {});
 
 const S = {
   q: new Float32Array([0, 0, 0, 1]),
@@ -165,6 +211,8 @@ const S = {
   localExpanded: false,
   localHoverKey: null,   // legend id from map or key hover
   localHoverCell: -1,
+  kbCursor: -1,          // keyboard cell cursor (M5/M8)
+  planetLive: '',        // last aria-live planet blurb
   localLegendLock: null, // key locked by hovering the legend
   highlightGuild: null,
   angVel: [0, 0],     // spin inertia
@@ -329,6 +377,115 @@ let _landPickDone = null;
 
 function isDemoMode() {
   try { return new URLSearchParams(location.search).get('demo') === '1'; } catch { return false; }
+}
+
+/** Active Vandal first-act coach (NEXT #1). Cleared after one Strike lands. */
+let _vandalHook = null;
+/** Playtest overlay API when ?playtest=1. */
+let _playtest = null;
+
+function startVandalHook(opts = {}) {
+  const target = pickVandalTarget(W);
+  _vandalHook = { ...target, t0: performance.now() };
+  setTool(target.tool);
+  setDockTab('tools', { open: !isPhone() });
+  setSuiteDesk('tools', 'strike');
+  lookAtCell(target.cell, { ms: 2200 });
+  // Gold stroke so the patch reads from orbit.
+  if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
+  W.strokeMark[target.cell] = 1;
+  for (let k = 0; k < 4; k++) {
+    const n = NBR[target.cell * 4 + k];
+    if (n >= 0) W.strokeMark[n] = Math.max(W.strokeMark[n] || 0, 0.55);
+  }
+  W._strokeTick = W._tickIndex || 0;
+  setPaused(false);
+  const sub = opts.demo
+    ? `${target.hint} Demo uses Strike only — not Evil.`
+    : target.hint;
+  showMoment('Try this', target.label, sub);
+}
+
+function finishVandalHook(res) {
+  if (!_vandalHook) return;
+  const tool = res?.tool || activeTool;
+  if (tool !== 'ignite' && tool !== 'meteor') return;
+  if (!res?.ok) return;
+  if (tool === 'ignite' && !(res.fireLit > 0)) return;
+  const cell = (res.cell >= 0 ? res.cell : _vandalHook.cell) | 0;
+  markVandalDone();
+  _vandalHook = null;
+  markDoorSeen();
+  skipReveal();
+  lookAtCell(cell, { ms: 2600, descend: true });
+  S.localExpanded = true;
+  applyLocalLayout();
+  _playtest?.noteDescend();
+  const line = tool === 'ignite'
+    ? 'Fire on the square — ash ahead, animals fleeing.'
+    : 'A crater in the crust — dust lifting into the air.';
+  showMoment('Receipt', line, 'Descend into the map, read the place, then return.');
+  armLocalCue(cell, tool, {
+    delayMs: 1200,
+    title: 'On the map',
+    sub: 'Orbit already promised this motion.',
+    skipPlace: true,
+  });
+}
+
+function persistGardenLeave() {
+  try {
+    const garden = captureGarden(W);
+    saveGardenVisit(garden);
+    writeAutosave({
+      data: serializeRun(),
+      garden,
+      leftAt: Date.now(),
+    });
+  } catch { /* serialize can throw mid-boot */ }
+}
+
+function rebuildAfterLoad() {
+  W._gpgpuDirty = true;
+  rebuildGeometry();
+  respawnEntities();
+  uploadEntities();
+  rebuildScatterLUTs();
+  updateHUD();
+  refreshLab();
+  refreshLayerPanel();
+}
+
+/** Restore autosave and show a one-line place delta (NEXT #2). */
+function maybeGardenReturn() {
+  if (isDemoMode() || isPlaytestMode()) return false;
+  let pitch = null;
+  try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* */ }
+  if (pitch) return false;
+  const auto = readAutosave();
+  if (!auto?.data || !auto.garden) return false;
+  const leftAt = auto.leftAt || auto.garden.at || 0;
+  const elapsed = Date.now() - leftAt;
+  if (elapsed < 60_000) return false;
+  try {
+    loadRunMeta(auto.data);
+    rebuildAfterLoad();
+    const before = auto.garden;
+    const n = awayTicks(elapsed);
+    for (let i = 0; i < n; i++) simTick();
+    const after = captureGarden(W);
+    const line = gardenDelta(before, after) || 'Your world kept its place while you were away.';
+    clearAutosave();
+    saveGardenVisit(after);
+    writeAutosave({ data: serializeRun(), garden: after, leftAt: Date.now() });
+    setTimeout(() => {
+      showMoment('While you were away', line, formatAge(W.ageYr));
+    }, 900);
+    return true;
+  } catch (e) {
+    console.warn('[orrery] garden return failed', e);
+    return false;
+  }
 }
 
 function setBootPhase(label, detail = '') {
@@ -634,19 +791,25 @@ function loadTableSlot(slot) {
   const meta = slotToLoadMeta(slot);
   if (!meta) return false;
   try {
+    const before = slot.garden || meta.garden || null;
     loadRunMeta(meta);
     W.worldName = meta.worldName || slot.name || W.worldName;
-    W._gpgpuDirty = true;
-    rebuildGeometry();
-    respawnEntities();
-    uploadEntities();
-    rebuildScatterLUTs();
+    rebuildAfterLoad();
     TABLE.activeId = slot.id;
     if (TABLE.enabled) syncTableFromShelf(TABLE, W);
-    showMoment('Orrery', slot.name || 'World', `seed ${meta.seed}`);
-    updateHUD();
-    refreshLab();
-    refreshLayerPanel();
+    if (before) {
+      const n = awayTicks(Math.max(0, Date.now() - (before.at || 0)));
+      for (let i = 0; i < n; i++) simTick();
+      const after = captureGarden(W);
+      const line = gardenDelta(before, after);
+      showMoment(
+        'While you were away',
+        line || (slot.name || 'World'),
+        line ? formatAge(W.ageYr) : `seed ${meta.seed}`,
+      );
+    } else {
+      showMoment('Orrery', slot.name || 'World', `seed ${meta.seed}`);
+    }
     return true;
   } catch (e) {
     showErr(String(e.message || e));
@@ -731,9 +894,10 @@ function clearCatalogueSelection() {
   [...list.querySelectorAll('.cat-item')].forEach((b) => b.setAttribute('aria-pressed', 'false'));
 }
 
-function loadCatalogueItem(item) {
+async function loadCatalogueItem(item) {
   if (!item || item.k !== 'BODY') return;
-  const r = rulesetFromCatalogue(item);
+  await fillCat();
+  const r = Cat.rulesetFromCatalogue(item);
   if (!r) return;
   S.catalogueId = item.id;
   const list = document.getElementById('catlist');
@@ -769,12 +933,13 @@ function loadCatalogueItem(item) {
   }));
 }
 
-function stepCatalogueWorld(dir) {
-  const next = adjacentCatalogueWorld(S.catalogueId ?? CATALOGUE_WORLDS[0]?.id, dir);
-  if (next) loadCatalogueItem(next);
+async function stepCatalogueWorld(dir) {
+  await fillCat();
+  const next = Cat.adjacentCatalogueWorld(S.catalogueId ?? Cat.CATALOGUE_WORLDS[0]?.id, dir);
+  if (next) await loadCatalogueItem(next);
 }
 
-function renderCatalogue() {
+async function renderCatalogue() {
   const list = document.getElementById('catlist');
   const meta = document.getElementById('catmeta');
   if (!list) return;
@@ -804,7 +969,8 @@ function renderCatalogue() {
   }
 
   if (kind === 'BODY') {
-    const items = CATALOGUE.filter((x) => {
+    if (!Cat) await fillCat();
+    const items = Cat.CATALOGUE.filter((x) => {
       if (x.k !== 'BODY') return false;
       if (cat !== 'all' && x.c !== cat) return false;
       if (!q) return true;
@@ -814,8 +980,8 @@ function renderCatalogue() {
     const sort = S.catSort || 'id';
     if (sort !== 'id') {
       items.sort((a, b) => {
-        const ra = a.k === 'BODY' ? recordForCatalogueItem(a) : null;
-        const rb = b.k === 'BODY' ? recordForCatalogueItem(b) : null;
+        const ra = a.k === 'BODY' ? Cat.recordForCatalogueItem(a) : null;
+        const rb = b.k === 'BODY' ? Cat.recordForCatalogueItem(b) : null;
         if (sort === 'dist') return (ra?.distPc?.v ?? 9e9) - (rb?.distPc?.v ?? 9e9);
         if (sort === 'obs') return (rb?.observability?.v ?? 0) - (ra?.observability?.v ?? 0);
         if (sort === 'known') {
@@ -836,15 +1002,15 @@ function renderCatalogue() {
       b.innerHTML =
         `<span class="cid">${x.id}</span>` +
         `<span class="ct">${label}</span>` +
-        `<span class="cm">${CATALOGUE_KIND[x.k]} · ${x.e} · i${x.i}` +
+        `<span class="cm">${Cat.CATALOGUE_KIND[x.k]} · ${x.e} · i${x.i}` +
         (x.k === 'BODY' ? ' · play' : '') + `</span>`;
       b.title = x.d;
-      b.onclick = () => loadCatalogueItem(x);
+      b.onclick = () => { void loadCatalogueItem(x); };
       list.appendChild(b);
     }
     if (meta) {
       const worlds = items.length;
-      meta.textContent = `${list.children.length} shown · ${worlds} on this shelf · ${CATALOGUE_WORLDS.length} bodies`;
+      meta.textContent = `${list.children.length} shown · ${worlds} on this shelf · ${Cat.CATALOGUE_WORLDS.length} bodies`;
     }
     return;
   }
@@ -866,36 +1032,11 @@ function setupCatalogue() {
     if (tools) tools.hidden = !on;
   };
 
-  const toggle = (open) => {
-    const on = open ?? !panel.classList.contains('open');
-    panel.classList.toggle('open', on);
-    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  let shelvesBuilt = false;
+  const BODY_CAT_LABEL = {
+    sol: 'Solar Sys', moons: 'Moons', temperate: 'Temperate', furnace: 'Furnace',
+    giant: 'Giants', arch: 'Systems', dark: 'Dark',
   };
-  btn.onclick = () => toggle();
-  document.getElementById('worldchip')?.addEventListener('click', () => toggle(true));
-  if (close) close.onclick = () => toggle(false);
-  document.getElementById('catprev')?.addEventListener('click', () => stepCatalogueWorld(-1));
-  document.getElementById('catnext')?.addEventListener('click', () => stepCatalogueWorld(1));
-
-  if (kinds) {
-    kinds.innerHTML = '';
-    for (const [id, label] of [['TYPE', 'Types'], ['BODY', 'Bodies']]) {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.dataset.id = id;
-      b.setAttribute('aria-pressed', S.catKind === id ? 'true' : 'false');
-      b.onclick = () => {
-        S.catKind = id;
-        [...kinds.children].forEach((x) =>
-          x.setAttribute('aria-pressed', x.dataset.id === id ? 'true' : 'false'));
-        showBodyFilters(id === 'BODY');
-        renderCatalogue();
-      };
-      kinds.appendChild(b);
-    }
-  }
-  showBodyFilters(S.catKind === 'BODY');
 
   const addCat = (id, label) => {
     const b = document.createElement('button');
@@ -907,26 +1048,75 @@ function setupCatalogue() {
       S.catFilter = id;
       [...cats.children].forEach((x) =>
         x.setAttribute('aria-pressed', x.dataset.id === id ? 'true' : 'false'));
-      renderCatalogue();
+      void renderCatalogue();
     };
     cats.appendChild(b);
   };
-  addCat('all', 'All shelves');
-  const BODY_CAT_LABEL = {
-    sol: 'Solar Sys', moons: 'Moons', temperate: 'Temperate', furnace: 'Furnace',
-    giant: 'Giants', arch: 'Systems', dark: 'Dark',
+
+  const buildShelves = () => {
+    if (shelvesBuilt || !Cat) return;
+    shelvesBuilt = true;
+    for (const c of Cat.CATALOGUE_CATS) {
+      if (!Cat.CATALOGUE.some((x) => x.c === c.id && x.k === 'BODY')) continue;
+      addCat(c.id, BODY_CAT_LABEL[c.id] || c.id);
+    }
   };
-  for (const c of CATALOGUE_CATS) {
-    if (!CATALOGUE.some((x) => x.c === c.id && x.k === 'BODY')) continue;
-    addCat(c.id, BODY_CAT_LABEL[c.id] || c.id);
+
+  const openWithCatalogue = async () => {
+    await fillCat();
+    buildShelves();
+    logCatalogueValidation();
+    await renderCatalogue();
+  };
+
+  const toggle = async (open) => {
+    const on = open ?? !panel.classList.contains('open');
+    if (on === panel.classList.contains('open')) return;
+    if (on) await openWithCatalogue();
+    panel.classList.toggle('open', on);
+    btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    if (on) enterOverlayFocus(panel, '#catclose');
+    else restoreOverlayFocus();
+  };
+  btn.onclick = () => { void toggle(); };
+  document.getElementById('worldchip')?.addEventListener('click', () => { void toggle(true); });
+  if (close) close.onclick = () => { void toggle(false); };
+  document.getElementById('catprev')?.addEventListener('click', () => { void stepCatalogueWorld(-1); });
+  document.getElementById('catnext')?.addEventListener('click', () => { void stepCatalogueWorld(1); });
+
+  if (kinds) {
+    kinds.innerHTML = '';
+    for (const [id, label] of [['TYPE', 'Types'], ['BODY', 'Bodies']]) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      b.dataset.id = id;
+      b.setAttribute('aria-pressed', S.catKind === id ? 'true' : 'false');
+      b.onclick = async () => {
+        S.catKind = id;
+        [...kinds.children].forEach((x) =>
+          x.setAttribute('aria-pressed', x.dataset.id === id ? 'true' : 'false'));
+        showBodyFilters(id === 'BODY');
+        if (id === 'BODY') {
+          await fillCat();
+          buildShelves();
+          logCatalogueValidation();
+        }
+        await renderCatalogue();
+      };
+      kinds.appendChild(b);
+    }
   }
+  showBodyFilters(S.catKind === 'BODY');
+
+  addCat('all', 'All shelves');
   q?.addEventListener('input', () => {
     S.catQuery = q.value;
-    renderCatalogue();
+    void renderCatalogue();
   });
   document.getElementById('catsort')?.addEventListener('change', (e) => {
     S.catSort = e.target.value;
-    renderCatalogue();
+    void renderCatalogue();
   });
   document.getElementById('catcsv')?.addEventListener('change', async (e) => {
     const file = e.target.files?.[0];
@@ -943,7 +1133,8 @@ function setupCatalogue() {
     rule.blurb = `Player table · ${rows.length} row(s)`;
     runGenerate(W.seed, rule);
   });
-  renderCatalogue();
+  // TYPE shelf only — BODY shelves wait for first open / kind switch (K17).
+  void renderCatalogue();
 }
 
 function togglePause() {
@@ -1210,6 +1401,10 @@ function updateHUD() {
       ? `<span style="color:#e08060">dropped ticks <b>${W._droppedTicks}</b>` +
         (W._dropReason ? ` (${W._dropReason})` : '') + `</span><br>`
       : '') +
+    (W._degraded?.length
+      ? `<span style="color:#c8b56f">sim reduced: <b>${W._degraded.slice(0, 6).join(', ')}</b>` +
+        (W._degraded.length > 6 ? '…' : '') + `</span><br>`
+      : '') +
     (W._gpgpu
       ? `<span style="color:#6fd6a4">GPGPU climate <b>${(W._gpgpuMs || 0).toFixed(2)} ms</b></span><br>`
       : `<span style="color:#889">climate CPU</span><br>`) +
@@ -1277,30 +1472,34 @@ function updateHUD() {
   announceNewMoments();
   refreshToolGates();
 
-  if (!updateHUD._dark || performance.now() - updateHUD._dark > 500) {
-    updateHUD._dark = performance.now();
-    refreshDarkHud(W);
+  if (darkEnabled()) {
+    if (!updateHUD._dark || performance.now() - updateHUD._dark > HUD_CADENCE_MS.dark) {
+      updateHUD._dark = performance.now();
+      if (_darkHud) _darkHud.refreshDarkHud(W);
+      else ensureDarkUi().then(() => _darkHud?.refreshDarkHud(W)).catch(() => {});
+    }
+    if (_darkSpec) {
+      const mom = _darkSpec.drainDarkMoment(W);
+      if (mom) showMoment(mom.title, mom.body, mom.sub || formatAge(W.ageYr));
+    }
   }
-  // Drain war moments onto the chronicle stage.
-  const mom = drainDarkMoment(W);
-  if (mom) showMoment(mom.title, mom.body, mom.sub || formatAge(W.ageYr));
 
   // Keep Sky / Rock panels live when open
   if (document.getElementById('pane-climate')?.classList.contains('on')) {
-    if (!updateHUD._clim || performance.now() - updateHUD._clim > 400) {
+    if (!updateHUD._clim || performance.now() - updateHUD._clim > HUD_CADENCE_MS.climate) {
       updateHUD._clim = performance.now();
       refreshClimatePanel({ skipChart: (updateHUD._climN = (updateHUD._climN || 0) + 1) % 5 !== 0 });
     }
   }
   if (document.getElementById('pane-rock')?.classList.contains('on')) {
-    if (!updateHUD._rock || performance.now() - updateHUD._rock > 600) {
+    if (!updateHUD._rock || performance.now() - updateHUD._rock > HUD_CADENCE_MS.rock) {
       updateHUD._rock = performance.now();
       refreshPlatesPanel();
     }
   }
   if (document.getElementById('pane-sandbox')?.classList.contains('on')) {
     const modesOn = document.querySelector('.suite-desk[data-suite-panel="sandbox"][data-desk-panel="modes"].on');
-    if (modesOn && (!updateHUD._modes || performance.now() - updateHUD._modes > 800)) {
+    if (modesOn && (!updateHUD._modes || performance.now() - updateHUD._modes > HUD_CADENCE_MS.modes)) {
       updateHUD._modes = performance.now();
       refreshWorldModeStrip();
     }
@@ -1656,6 +1855,7 @@ function update(t) {
         simAlpha: S.simAlpha,
         followId: S.follow?.id,
         net: S.canvasMode,
+        cueKind: (S.localCueUntil && performance.now() < S.localCueUntil) ? S.localCueKind : null,
       }) : null;
       const prevFocus = S._localFocus;
       updateLocalHighlight(patch, S.localGlobe);
@@ -1701,7 +1901,7 @@ function update(t) {
   if (!S.pitchShot && !doorIsOpen()) maybeTeachWindow(t);
 
   S._fa++;
-  if (t - S._ft > 500) {
+  if (t - S._ft > HUD_CADENCE_MS.hud) {
     S.fps = Math.round((S._fa * 1000) / (t - S._ft));
     S._fa = 0; S._ft = t;
     updateHUD();
@@ -1756,6 +1956,10 @@ function onToolResult(res) {
     if (res.cell != null && res.cell >= 0) markTouch(W, res.cell);
     refreshColours(1);
     showReceiptToast(res);
+    finishVandalHook(res);
+    if (_playtest && (res.tool === 'ignite' || res.tool === 'meteor' || activeTool === 'ignite' || activeTool === 'meteor')) {
+      _playtest.noteAct(res.tool || activeTool);
+    }
   }
   if (res.cell != null && activeTool === 'inspect') {
     inspectAt(res.cell, res);
@@ -1796,6 +2000,8 @@ function lookAtCell(cell, opts = {}) {
   }
   S.inspect = { ...(inspectCell(c) || {}), cell: c };
   S._localFocus = c;
+  S.kbCursor = c;
+  setLocalHover(c);
   resetCamPan();
   S.angVel[0] = 0;
   S.angVel[1] = 0;
@@ -1807,7 +2013,139 @@ function lookAtCell(cell, opts = {}) {
   if (S.localGlobe === 'wash' || S.localGlobe === 'both' || S.localGlobe === 'rim') {
     refreshColours(1);
   }
+  if (_playtest && (S.localExpanded || opts.descend)) _playtest.noteDescend();
   updateHUD();
+}
+
+function planetCanvasFocused() {
+  return typeof document !== 'undefined' && document.activeElement === canvas;
+}
+
+function announcePlanet(msg, opts = {}) {
+  const text = String(msg || '');
+  if (!text) return;
+  // M18 — do not spam the live region on every WASD step.
+  if (opts.throttleMs) {
+    const now = performance.now();
+    if (now - (S._planetLiveAt || 0) < opts.throttleMs && text === S.planetLive) return;
+    if (now - (S._planetLiveAt || 0) < opts.throttleMs * 0.5 && opts.soft) return;
+    S._planetLiveAt = now;
+  }
+  S.planetLive = text;
+  const el = document.getElementById('planetLive');
+  if (el) el.textContent = text;
+}
+
+function ensureKbCursor() {
+  if (S.kbCursor >= 0) return S.kbCursor;
+  const seed = S._localFocus >= 0 ? S._localFocus
+    : (S.localPin >= 0 ? S.localPin : (S.localHoverCell >= 0 ? S.localHoverCell : 0));
+  S.kbCursor = seed | 0;
+  return S.kbCursor;
+}
+
+function setKbCursor(cell, opts = {}) {
+  if (cell == null || cell < 0) return;
+  S.kbCursor = cell | 0;
+  S.localHoverCell = S.kbCursor;
+  setLocalHover(S.kbCursor);
+  S._localFocus = S.kbCursor;
+  if (opts.announce) {
+    const sea = (W.h?.[S.kbCursor] ?? 0) < (W.seaLevel ?? 0);
+    announcePlanet(`Cursor ${sea ? 'ocean' : 'land'} cell ${S.kbCursor}`, { throttleMs: 900, soft: true });
+  }
+}
+
+function moveKbCursor(dx, dy) {
+  const base = ensureKbCursor();
+  const next = stepFocus(base, dx, dy);
+  setKbCursor(next, { announce: true });
+  requestFace(next, 700);
+  updateHUD();
+}
+
+function spinPlanet(yaw, pitch) {
+  const step = 0.09;
+  if (yaw) {
+    qAxis(tmpQ, 0, 1, 0, yaw * step);
+    qmul(S.q, tmpQ, S.q);
+    qnorm(S.q);
+  }
+  if (pitch) {
+    qAxis(tmpQ, 1, 0, 0, pitch * step);
+    qmul(S.q, tmpQ, S.q);
+    qnorm(S.q);
+  }
+  S.angVel[0] = 0;
+  S.angVel[1] = 0;
+  S.faceUntil = 0;
+}
+
+function zoomPlanet(dir) {
+  const factor = 1 + Math.sign(dir) * (S.camDist > 8 ? 0.14 : 0.09);
+  S.camDist = clamp(S.camDist * factor, camDistMin(W), CAM_DIST_MAX);
+  const rung = document.getElementById('scalerung');
+  if (rung) rung.textContent = scaleRung(S.camDist, W.noSurface);
+}
+
+function descendKeyboard() {
+  const cell = ensureKbCursor();
+  lookAtCell(cell, { ms: 1800, descend: true, zoom: true });
+  S.localExpanded = true;
+  try { applyLocalLayout(); } catch { /* */ }
+  const last = W.receipts?.[W.receipts.length - 1]?.tool;
+  armLocalCue(cell, last);
+  const t = W.meanTemp != null ? ` · meanT ${(W.meanTemp).toFixed(2)}` : '';
+  const life = W.meanLife != null ? ` · life ${(W.meanLife * 100).toFixed(0)}%` : '';
+  announcePlanet(`Descended to cell ${cell}${t}${life}`);
+  showErr('Local map — Esc steps back');
+}
+
+/** Fire local-map cue pulse + sprite motion for a few seconds. */
+function armLocalCue(cell, prefer = null, opts = {}) {
+  import('./sim/localCue.js').then(({ localMotionCue }) => {
+    const cue = localMotionCue(W, cell, 3, prefer);
+    if (!cue) return;
+    S.localCueKind = cue.kind;
+    S.localCueUntil = performance.now() + 4500;
+    if (opts.silent || !cue.line) return;
+    const title = opts.title || 'Local';
+    const sub = opts.sub || 'Motion on the map.';
+    const show = () => {
+      if (cue.kind === 'place' && opts.skipPlace) return;
+      showMoment(title, cue.line, sub);
+    };
+    if (opts.delayMs) setTimeout(show, opts.delayMs);
+    else show();
+  }).catch(() => {});
+}
+
+/** M7 — apply the armed tool at the keyboard cursor. */
+function applyToolAtKbCursor(opts = {}) {
+  const cell = ensureKbCursor();
+  const tool = TOOLS.find((t) => t.id === activeTool) || TOOLS[0];
+  if (!tool) return;
+  if (toolsUnlocked(W)[tool.id] === false) {
+    showErr('Tool locked');
+    announcePlanet(`${tool.name} locked`);
+    return;
+  }
+  // Inspect / see → descend (Observe → Read). Shift forces descend for any tool.
+  if (opts.forceDescend || tool.id === 'inspect' || tool.group === 'see') {
+    descendKeyboard();
+    return;
+  }
+  const extra = { ...(opts.extra || {}) };
+  if (tool.id === 'solar' && extra.delta == null) extra.delta = 0.05;
+  if (tool.id === 'buster' || tool.irreversible) {
+    // Irreversible tools still need the hold/confirm path — arm a toast instead.
+    showErr(`${tool.name}: click the globe to commit (hold where required)`);
+    lookAtCell(cell, { ms: 900, zoom: false });
+    announcePlanet(`${tool.name} armed at ${cell} — click to commit`);
+    return;
+  }
+  onToolResult(useToolAt(cell, extra));
+  announcePlanet(`${tool.name} at cell ${cell}`);
 }
 
 function showReceiptToast(res) {
@@ -1818,13 +2156,49 @@ function showReceiptToast(res) {
   if (!last && !res.pay && !said) return;
   const title = said || last?.intent || last?.tool || activeTool;
   const sub = last?.expected && last.expected !== said ? last.expected : '';
+  const canUndo = !!(W._actUndo && last && ['ignite', 'meteor', 'nuke', 'raise', 'lower', 'co2', 'solar'].includes(last.tool));
   el.innerHTML = `<b>${title}</b>`
     + (sub ? `<br><small>${sub}</small>` : '')
     + (last?.cost ? ` · −${last.cost}` : '')
-    + (res.settling ? `<br><small>settles: ${res.settling}</small>` : '');
+    + (res.settling ? `<br><small>settles: ${res.settling}</small>` : '')
+    + `<br><span class="receipt-acts">`
+    + (canUndo ? `<button type="button" id="receiptUndo" class="receipt-btn">What if I hadn’t</button> ` : '')
+    + `<button type="button" id="receiptFork" class="receipt-btn">Fork twin</button>`
+    + `</span>`;
   el.classList.add('show');
+  el.querySelector('#receiptUndo')?.addEventListener('click', () => {
+    try {
+      const snap = W._actUndo;
+      if (!snap) return;
+      loadRunMeta(snap);
+      W._actUndo = null;
+      showMoment('Counterfactual', 'Before that act', 'The tape rewound one intervention.');
+      needGeom();
+      refreshColours(1);
+      updateHUD();
+    } catch (e) {
+      showMoment('Couldn’t rewind', String(e.message || e), '');
+    }
+    el.classList.remove('show');
+  });
+  el.querySelector('#receiptFork')?.addEventListener('click', async () => {
+    try {
+      const { captureRun, forkRunObject, applyRun } = await import('./sim/run.js');
+      const parent = captureRun(last?.tool || 'act');
+      const child = forkRunObject(`what-if-${last?.tool || 'x'}`, parent);
+      applyRun(child);
+      needGeom();
+      refreshColours(1);
+      updateHUD();
+      refreshLab();
+      showMoment('Twin forked', child.label, `Seed ${child.seed} — same land, forked RNG from here.`);
+    } catch (e) {
+      showMoment('Fork failed', String(e.message || e), '');
+    }
+    el.classList.remove('show');
+  });
   clearTimeout(showReceiptToast._t);
-  showReceiptToast._t = setTimeout(() => el.classList.remove('show'), 3800);
+  showReceiptToast._t = setTimeout(() => el.classList.remove('show'), 9000);
 }
 
 function startCommitHold(cell) {
@@ -1874,7 +2248,7 @@ function setupTips() {
     'layeropacity', 'layerblend', 'layerpaint', 'layerclipland', 'layerclearmask',
     'genesisplates', 'genesiswater', 'genesislandfrac', 'genesissolvent', 'genesischirality', 'genesisorigindiff', 'origindiff',
     'simN', 'globeSubd', 'orreryTable', 'export',
-    'labRefresh', 'labPaper', 'labSave', 'labFinale', 'labPng', 'labDual',
+    'labRefresh', 'labPaper', 'labSave', 'labFinale', 'labPng', 'labDual', 'labDiag',
     'catsort', 'catcsv',
     'climDay', 'climTilt', 'climSeason', 'climMoonOn', 'climMoonMass', 'climMoonDist',
     'stormGenesis', 'stormStrict', 'stormSize', 'stormVigor',
@@ -1961,12 +2335,21 @@ function setupTips() {
   document.querySelectorAll('.suite-desk-tab').forEach((b) => {
     const suite = b.dataset.suite;
     const desk = b.dataset.desk;
+    if (desk === 'evil' && !darkEnabled()) {
+      b.hidden = true;
+      b.setAttribute('aria-hidden', 'true');
+      return;
+    }
     const meta = suiteMeta[suite]?.[desk];
     if (meta) decorateButton(b, meta[0], meta[1]);
     const tip = SUITE_TIPS[suite]?.[desk];
     if (tip) bindTip(b, tip.title, tip.body);
     b.addEventListener('click', () => setSuiteDesk(suite, desk));
   });
+  if (!darkEnabled()) {
+    const evilPanel = document.querySelector('.suite-desk[data-desk-panel="evil"]');
+    if (evilPanel) evilPanel.hidden = true;
+  }
 
   // Section headings with icons
   document.querySelectorAll('[data-sec-icon]').forEach((el) => {
@@ -1994,6 +2377,7 @@ function setupTips() {
     ['labFinale', 'finale', 'Finale'],
     ['labPng', 'png', 'PNG'],
     ['labDual', 'dual', 'Dual'],
+    ['labDiag', 'keys', 'Diagnostics'],
     ['orreryTable', 'table', 'Table'],
     ['export', 'chronicle', 'Chronicle'],
   ];
@@ -2005,7 +2389,7 @@ function setupTips() {
 
   document.querySelectorAll('#catkinds button').forEach((b) => {
     if (b.dataset.id === 'TYPE') {
-      bindTip(b, 'Types', 'The five invented rulesets — Earth, Vermis, Selene, Ares, Daisy. Calibration worlds, not archive rows.');
+      bindTip(b, 'Types', 'Synthetic Type worlds — Earth, Vermis, Selene, Ares, Venus, Titan, Europa, Daisy. Calibration worlds, not archive rows.');
     } else if (b.dataset.id === 'BODY') {
       bindTip(b, 'Bodies', 'Real planets and moons from the catalogue. Physics they still need is listed on the detail card.');
     }
@@ -2081,17 +2465,31 @@ function refreshWorldModeStrip() {
   const strip = document.getElementById('worldModeStrip');
   if (!strip) return;
   const I = W.interior;
-  const scarcity = W.scarcityMode || (W.budgetMode ? 'budgeted' : 'free');
+  const mode = W.scarcityMode || (W.budgetMode ? SCARCITY.budgeted : SCARCITY.free);
+  const eMeta = scarcityMeta(mode);
+  const gMeta = gaiaModeMeta(W);
   strip.innerHTML = `
-    <div class="clim-chip" title="Energy: Free / Observe / Budget"><span>Energy</span><b>${scarcity}</b></div>
-    <div class="clim-chip" title="Gaia button — cycles Regulator / Gardener / Experimenter autopilot. Off = you drive."><span>Gaia</span><b>${
-      W.autopilot ? (gaiaDriveOf(W).label) : 'off'
-    }</b></div>
+    <div class="clim-chip" title="${eMeta.blurb}"><span>Energy</span><b>${eMeta.label}</b></div>
+    <div class="clim-chip" title="${gMeta.blurb}"><span>Gaia</span><b>${gMeta.label}</b></div>
     <div class="clim-chip" title="Simulation grid size — climate and life run here"><span>Sim N</span><b>${N}</b></div>
     <div class="clim-chip" title="Tectonic lid: mobile plates vs stagnant"><span>Lid</span><b>${I?.lidMode || '—'}</b></div>
     <div class="clim-chip" title="Magnetosphere strength — aurora and atmosphere loss"><span>Field</span><b>${(W.magnetosphere ?? 0).toFixed(2)}</b></div>
     <div class="clim-chip" title="Mantle heat flow — volcanoes and plate vigor"><span>Heat</span><b>${I ? I.heatFlow.toFixed(2) : '—'}</b></div>
   `;
+  const energyBlurb = document.getElementById('energyBlurb');
+  const gaiaBlurb = document.getElementById('gaiaBlurb');
+  if (energyBlurb) energyBlurb.textContent = eMeta.blurb;
+  if (gaiaBlurb) gaiaBlurb.textContent = gMeta.blurb;
+  const budgetBtn = document.getElementById('budget');
+  if (budgetBtn) {
+    budgetBtn.setAttribute('aria-pressed', mode !== SCARCITY.free ? 'true' : 'false');
+    decorateButton(budgetBtn, 'budget', eMeta.label);
+  }
+  const gaiaBtn = document.getElementById('autopilot');
+  if (gaiaBtn) {
+    gaiaBtn.setAttribute('aria-pressed', W.autopilot ? 'true' : 'false');
+    decorateButton(gaiaBtn, 'autopilot', gMeta.label);
+  }
 }
 
 let _tipTimer = 0;
@@ -2152,8 +2550,9 @@ function closeDoor() {
   document.getElementById('door')?.classList.remove('open');
 }
 
-function catalogueBodyNamed(name) {
-  return CATALOGUE_WORLDS.find((x) => x.b === name) || null;
+async function catalogueBodyNamed(name) {
+  await fillCat();
+  return Cat.CATALOGUE_WORLDS.find((x) => x.b === name) || null;
 }
 
 function paintLessonChip() {
@@ -2171,16 +2570,53 @@ function paintLessonChip() {
 }
 
 function onTourButton() {
-  const p = loadLessonProgress();
-  const next = lessonById(p.current) || nextIncompleteLesson(p);
-  if (next && !lessonDone(next.id, p) && lessonWorldReady(next)) {
-    onLessonChip();
-    return;
-  }
-  saveLessonProgress(offerTourAgain(p));
+  // Always open the door — never trap on "re-show current lesson" while the
+  // matching world is loaded (that made Tour feel dead mid-crisis).
   setPaused(true);
   document.getElementById('dock')?.classList.add('collapsed');
   openDoor();
+}
+
+function continueTour() {
+  const p = loadLessonProgress();
+  const next = lessonById(p.current) || nextIncompleteLesson(p);
+  if (next) {
+    void startLesson(next.id);
+    return;
+  }
+  closeDoor();
+  setDockTab('god');
+  setSuiteDesk('god', 'challenge');
+  showMoment('Tour', 'The Solar System is the tutorial', 'Challenges live in Play.');
+}
+
+function skipLessonAhead() {
+  const p = loadLessonProgress();
+  const cur = lessonById(p.current) || nextIncompleteLesson(p);
+  if (!cur || lessonDone(cur.id, p)) {
+    continueTour();
+    return;
+  }
+  const nextP = completeLesson(cur.id, p);
+  S.lessonId = nextP.current;
+  paintLessonChip();
+  paintCampaignTrack();
+  const nxt = lessonById(nextP.current) || nextIncompleteLesson(nextP);
+  if (nxt) void startLesson(nxt.id);
+  else {
+    closeDoor();
+    showMoment('Tour', 'Tour complete', 'Challenges live in Play → Challenge.');
+  }
+}
+
+function resetTour() {
+  resetLessonProgress();
+  S.lessonId = null;
+  S._lessonFailNoted = false;
+  paintLessonChip();
+  paintCampaignTrack();
+  openDoor();
+  showMoment('Tour', 'Start over', 'Pick a way in — Continue begins at Hold Earth.');
 }
 
 function paintCampaignTrack() {
@@ -2203,7 +2639,7 @@ function paintCampaignTrack() {
       lesson.kicker,
       p.current === lesson.id,
       !!p.done[lesson.id],
-      () => startLesson(lesson.id),
+      () => { void startLesson(lesson.id); },
     );
   }
   for (const id of CAMPAIGN) {
@@ -2212,6 +2648,13 @@ function paintCampaignTrack() {
     if (!s) continue;
     addRow(id, s.title, 'Challenge', false, false, () => beginScenario(id, { moment: true }));
   }
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'camp-row camp-reset';
+  reset.innerHTML = '<span class="ck">↺</span><span class="ct">Reset tour</span><span class="cm">Start over</span>';
+  reset.title = 'Clear lesson progress and reopen the front door';
+  reset.addEventListener('click', resetTour);
+  track.appendChild(reset);
 }
 
 function finishLesson(id, foundKey = null) {
@@ -2254,7 +2697,7 @@ function beginScenario(id, opts = {}) {
   return s;
 }
 
-function startLesson(id) {
+async function startLesson(id) {
   const lesson = lessonById(id);
   if (!lesson) return;
   closeDoor();
@@ -2266,8 +2709,8 @@ function startLesson(id) {
   S._lessonStartedAt = performance.now();
   S._lessonFailNoted = false;
   if (lesson.catalogue) {
-    const item = catalogueBodyNamed(lesson.catalogue);
-    if (item) loadCatalogueItem(item);
+    const item = await catalogueBodyNamed(lesson.catalogue);
+    if (item) await loadCatalogueItem(item);
     applyScalePreset(S, 'hold');
     S.localExpanded = true;
     applyLocalLayout();
@@ -2297,26 +2740,44 @@ function openDoor() {
   closeLandPicker();
   closeLocalKey();
   markDoorSeen();
+  const p = loadLessonProgress();
+  const next = lessonById(p.current) || nextIncompleteLesson(p);
+  const sub = panel.querySelector('.lp-sub');
+  if (sub) {
+    sub.textContent = next
+      ? `${lessonChipLabel(p)}. Pick a beat, continue, skip ahead, or reset.`
+      : 'Tour complete — pick any beat again, or reset to start over.';
+  }
   grid.innerHTML = '';
-  for (const id of DOOR_IDS) {
-    const lesson = lessonById(id);
-    if (!lesson) continue;
+  for (const lesson of LESSONS) {
+    const done = !!p.done[lesson.id];
+    const on = p.current === lesson.id || (!p.current && next?.id === lesson.id);
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'door-card';
-    b.innerHTML = `<div class="dk">${lesson.kicker}</div><div class="dt">${lesson.title}</div><div class="db">${lesson.body}</div>`;
-    b.addEventListener('click', () => startLesson(id));
+    b.className = 'door-card' + (done ? ' done' : '') + (on ? ' on' : '');
+    const mark = done ? '✓ ' : (on ? '→ ' : '');
+    b.innerHTML = `<div class="dk">${lesson.kicker}</div><div class="dt">${mark}${lesson.title}</div><div class="db">${lesson.body}</div>`;
+    b.addEventListener('click', () => { void startLesson(lesson.id); });
     grid.appendChild(b);
   }
+  const cont = document.getElementById('doorcontinue');
+  if (cont) {
+    cont.hidden = !next;
+    cont.textContent = next ? `Continue · ${next.title}` : 'Continue';
+  }
+  const skipBtn = document.getElementById('doorskipahead');
+  if (skipBtn) skipBtn.hidden = !next;
   skipReveal();
   document.getElementById('reveal')?.setAttribute('hidden', '');
   panel.classList.add('open');
+  paintLessonChip();
 }
 
 function lessonWorldReady(lesson) {
   if (!lesson) return false;
   if (lesson.catalogue) {
-    const item = catalogueBodyNamed(lesson.catalogue);
+    if (!catalogueReady() || !Cat) return false;
+    const item = Cat.CATALOGUE_WORLDS.find((x) => x.b === lesson.catalogue) || null;
     return !!(item && S.catalogueId === item.id);
   }
   if (lesson.scenario) return W.scenarioId === lesson.scenario;
@@ -2337,7 +2798,7 @@ function onLessonChip() {
     showMoment(next.kicker || 'Lesson', next.title, next.body);
     return;
   }
-  startLesson(next.id);
+  void startLesson(next.id);
 }
 
 function checkLessonProgress() {
@@ -2408,7 +2869,10 @@ function setupReveal() {
   skipReveal();
   document.getElementById('reveal')?.setAttribute('hidden', '');
   S.lessonId = loadLessonProgress().current;
-  document.getElementById('doorskip')?.addEventListener('click', () => startLesson('hold-earth'));
+  document.getElementById('doorskip')?.addEventListener('click', () => { void startLesson('hold-earth'); });
+  document.getElementById('doorcontinue')?.addEventListener('click', continueTour);
+  document.getElementById('doorskipahead')?.addEventListener('click', skipLessonAhead);
+  document.getElementById('doorreset')?.addEventListener('click', resetTour);
   document.getElementById('lessonchip')?.addEventListener('click', onLessonChip);
   paintCampaignTrack();
   paintLessonChip();
@@ -2768,12 +3232,17 @@ function refreshLab() {
           (ice ? `<br>ice-shell vents <b>${W._shellVentCount || 0}</b> · ${ice.note}` : '') +
           (W.civPop ? `<br>civ pop ~<b>${W.civPop | 0}</b>` : '');
       })()}</div>`) +
+    card('notes', 'fork', 'Forked runs',
+      `<div class="lab-meta" id="labRunsHost">Loading runs…</div>`) +
     card('notes', 'notes', 'Model limits',
-      `<div class="lab-meta">Cube-sphere N=<b>${N}</b> (~${cellKm(N)} km/cell). Climate may run on GPGPU.
+      `<div class="lab-meta" id="labProvChip">Provenance…</div>
+      <div class="lab-meta">Cube-sphere N=<b>${N}</b> (~${cellKm(N)} km/cell). Climate may run on GPGPU.
       O₂ from burial, not raw photosynthesis. Traits ≈11 floats, not genomes.
-      <a href="../briefs/model-limits.md" target="_blank" rel="noopener">full limits</a>
+      <button type="button" id="labLimitsOpen" class="lab-linkbtn">limits summary</button>
+      · <a href="../briefs/model-limits.md" target="_blank" rel="noopener">full limits</a>
       · water drift <b>${((W.waterDrift || 0) * 100).toFixed(1)}%</b>
-      · save v<b>2</b> · seed <b>${W.seed}</b></div>`) +
+      · save v<b>9</b> · seed <b>${W.seed}</b></div>
+      <div id="labLimitsHost"></div>`) +
     card('notes', 'inspect', 'Glossary',
       `<div class="lab-meta">${['GOE', 'redox', 'NPP', 'euxinia', 'LUCA'].map((t) => {
         const d = defineTerm(t);
@@ -2784,6 +3253,57 @@ function refreshLab() {
 
   applyLabFilter();
   wireGuildHover(el);
+  const runsHost = el.querySelector('#labRunsHost');
+  if (runsHost) {
+    import('./sim/run.js').then(({ listRuns, applyRun }) => {
+      const runs = listRuns().slice().reverse();
+      if (!runs.length) {
+        runsHost.innerHTML = 'No forks yet — use <b>Fork twin</b> on a receipt.';
+        return;
+      }
+      runsHost.innerHTML = runs.slice(0, 8).map((r) =>
+        `<div class="lab-runrow">`
+        + `<button type="button" class="lab-linkbtn" data-run="${r.id}">${r.label || r.id}</button>`
+        + ` <span style="color:var(--dim)">seed ${r.seed}`
+        + (r.parentId ? ' · twin' : '')
+        + `</span></div>`).join('');
+      runsHost.querySelectorAll('[data-run]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const run = runs.find((x) => x.id === btn.getAttribute('data-run'));
+          if (!run) return;
+          try {
+            applyRun(run);
+            needGeom();
+            refreshColours(1);
+            updateHUD();
+            showMoment('Loaded twin', run.label, `Seed ${run.seed}`);
+            refreshLab();
+          } catch (e) {
+            showMoment('Load failed', String(e.message || e), '');
+          }
+        });
+      });
+    }).catch(() => { runsHost.textContent = 'Run shelf unavailable.'; });
+  }
+  const limBtn = el.querySelector('#labLimitsOpen');
+  const limHost = el.querySelector('#labLimitsHost');
+  const chip = el.querySelector('#labProvChip');
+  if (chip) {
+    import('./sim/limitsSheet.js').then(({ loadLimitsSummary, provenanceChipText }) => {
+      loadLimitsSummary().then((s) => {
+        chip.textContent = provenanceChipText(s, W);
+      }).catch(() => { chip.textContent = 'Provenance: run npm run provenance'; });
+    }).catch(() => {});
+  }
+  if (limBtn && limHost) {
+    limBtn.addEventListener('click', () => openLimitsSheet(limHost, W));
+    try {
+      if (!sessionStorage.getItem('orrery.limits.seen')) {
+        sessionStorage.setItem('orrery.limits.seen', '1');
+        openLimitsSheet(limHost, W);
+      }
+    } catch { /* */ }
+  }
 }
 
 function wireGuildHover(el) {
@@ -3067,8 +3587,49 @@ function pickerCandidates(current) {
 }
 
 function closeLandPicker() {
-  document.getElementById('landpick')?.classList.remove('open');
+  const panel = document.getElementById('landpick');
+  panel?.classList.remove('open');
   resetLandPickerUi();
+  restoreOverlayFocus();
+}
+
+/** Where Tab returns after closing a modal dialog (M14). */
+let _overlayFocusRestore = null;
+
+function enterOverlayFocus(root, preferSel = null) {
+  if (!root) return;
+  _overlayFocusRestore = document.activeElement;
+  requestAnimationFrame(() => {
+    const prefer = preferSel ? root.querySelector(preferSel) : null;
+    const list = dialogFocusables(root);
+    const target = prefer || list[0];
+    try { target?.focus({ preventScroll: true }); } catch { /* */ }
+  });
+}
+
+function restoreOverlayFocus() {
+  const el = _overlayFocusRestore;
+  _overlayFocusRestore = null;
+  try {
+    if (el && typeof el.focus === 'function' && document.contains(el)) {
+      el.focus({ preventScroll: true });
+    } else {
+      canvas?.focus({ preventScroll: true });
+    }
+  } catch { /* */ }
+}
+
+/** Topmost open dialog that should trap Tab. */
+function activeOverlayRoot() {
+  const kbd = document.getElementById('kbdSheet');
+  if (kbd && !kbd.hidden) return kbd;
+  const land = document.getElementById('landpick');
+  if (land?.classList.contains('open')) return land;
+  const cat = document.getElementById('catpanel');
+  if (cat?.classList.contains('open')) return cat;
+  const legend = document.getElementById('localkey');
+  if (legend?.classList.contains('open')) return legend;
+  return null;
 }
 
 function resetLandPickerUi() {
@@ -3097,6 +3658,7 @@ function closeLocalKey() {
   panel.classList.remove('open');
   document.getElementById('localkeybtn')?.setAttribute('aria-pressed', 'false');
   S.localLegendLock = null;
+  restoreOverlayFocus();
 }
 
 function openLocalKey(focusId = null) {
@@ -3207,6 +3769,7 @@ function openLocalKey(focusId = null) {
   } else {
     list.scrollTop = 0;
   }
+  enterOverlayFocus(panel, '#localkeyclose');
 }
 
 function openLandPicker(opts = {}) {
@@ -3274,10 +3837,12 @@ function openLandPicker(opts = {}) {
   panel.classList.add('open');
   if (opts.pause) setPaused(true);
   document.getElementById('dock')?.classList.add('collapsed');
+  enterOverlayFocus(panel, '#landpickclose');
 }
 
 /* ---------- boot UI ---------- */
 export function boot() {
+  endBootDeferral();
   const cvs = document.getElementById('c');
   const bootN = parseInt(document.getElementById('simN')?.value || '96', 10);
   if (bootN !== N && N_ALLOWED.includes(bootN)) changeResolution(bootN);
@@ -3340,6 +3905,7 @@ export function boot() {
     if (phone) setPhoneDock(false);
   };
   TOOLS.forEach((t) => {
+    if (t.group === 'evil' && !darkEnabled()) return;
     const b = document.createElement('button');
     decorateButton(b, t.id, t.name);
     b.dataset.id = t.id;
@@ -3410,6 +3976,40 @@ export function boot() {
     if (localKeyOpen()) closeLocalKey();
     else openLocalKey();
   });
+  {
+    const kbdHint = document.getElementById('viewKeysKbd');
+    if (kbdHint) {
+      kbdHint.innerHTML = keymapHelpLines()
+        .map((line) => line.replace(/</g, '&lt;'))
+        .join('<br>');
+    }
+    document.getElementById('kbdSheetClose')?.addEventListener('click', () => {
+      closeKbdSheet();
+    });
+    document.getElementById('kbdSheet')?.addEventListener('click', (ev) => {
+      if (ev.target?.id === 'kbdSheet') closeKbdSheet();
+    });
+  }
+
+  function closeKbdSheet() {
+    const sheet = document.getElementById('kbdSheet');
+    if (!sheet || sheet.hidden) return;
+    sheet.hidden = true;
+    restoreOverlayFocus();
+  }
+
+  function openKbdSheet() {
+    const sheet = document.getElementById('kbdSheet');
+    if (!sheet) return;
+    sheet.hidden = false;
+    const body = sheet.querySelector('.kbd-body');
+    if (body) {
+      body.innerHTML = keymapHelpLines()
+        .map((l) => `<p>${l.replace(/</g, '&lt;')}</p>`)
+        .join('');
+    }
+    enterOverlayFocus(sheet, '#kbdSheetClose');
+  }
 
   // Dock tabs
   document.querySelectorAll('.dock-tabs button').forEach((b) => {
@@ -3494,22 +4094,19 @@ export function boot() {
     const cur = W.scarcityMode || (W.budgetMode ? SCARCITY.budgeted : SCARCITY.free);
     const next = modes[(modes.indexOf(cur) + 1) % modes.length];
     setScarcityMode(next);
-    const b = document.getElementById('budget');
-    b.setAttribute('aria-pressed', next !== SCARCITY.free ? 'true' : 'false');
-    decorateButton(b, 'budget', next === SCARCITY.free ? 'Free' : next === SCARCITY.observe ? 'Observe' : 'Budget');
+    const meta = scarcityMeta(next);
     refreshWorldModeStrip();
     updateHUD();
+    showMoment('Your power', meta.label, meta.blurb);
   };
   document.getElementById('autopilot').onclick = () => {
-    const { autopilot, drive } = cycleGaiaButton(W);
-    const btn = document.getElementById('autopilot');
-    btn.setAttribute('aria-pressed', autopilot ? 'true' : 'false');
-    const label = autopilot ? gaiaDriveOf(W).label : 'Gaia';
-    decorateButton(btn, 'autopilot', label);
+    cycleGaiaButton(W);
+    const meta = gaiaModeMeta(W);
     chronLog(W.year, 'gaia', 0, 1,
-      autopilot ? `Gaia ${gaiaDriveOf(W).label} ON — ${gaiaDriveOf(W).aim}` : 'Gaia autopilot OFF');
+      W.autopilot ? `Gaia ${meta.label} ON — ${gaiaDriveOf(W).aim}` : 'Gaia autopilot OFF');
     refreshWorldModeStrip();
     updateHUD();
+    showMoment('Planet autopilot', meta.label, meta.blurb);
   };
   document.getElementById('simN')?.addEventListener('change', (e) => {
     const n = parseInt(e.target.value, 10);
@@ -3628,6 +4225,40 @@ export function boot() {
       if (status) status.textContent = 'Dual-run worker starting…';
     } catch (e) {
       showErr('Worker unavailable: ' + (e.message || e));
+    }
+  });
+  document.getElementById('labDiag')?.addEventListener('click', async () => {
+    const { diagnosticsText, SESSION_ID } = await import('./sim/report.js');
+    const { loadShelf } = await import('./sim/god/shelf.js');
+    const shelf = loadShelf();
+    const shelfLine = shelf.length
+      ? shelf.slice(0, 8).map((e) => `${e.label || e.ruleId || '?'}@${e.seed ?? ''}`).join('; ')
+      : '(empty)';
+    const text = diagnosticsText({
+      session: SESSION_ID,
+      seed: W.seed,
+      rule: W.rule?.id,
+      n: W._simN || '—',
+      worldId: W.worldId || '—',
+      climate: W._gpgpu && !W._gpgpuOff ? 'gpgpu' : 'cpu',
+      gpgpuMs: W._gpgpuMs ?? '—',
+      ageYr: W.ageYr,
+      tick: W._tickIndex | 0,
+      droppedTicks: W._droppedTicks || 0,
+      dropReason: W._dropReason || '—',
+      dark: darkEnabled() ? 'on' : 'off',
+      shelf: `${shelf.length} · ${shelfLine}`,
+    });
+    try {
+      await navigator.clipboard?.writeText(text);
+      showErr(
+        (W._droppedTicks
+          ? `Diagnostics copied · ${W._droppedTicks} dropped ticks`
+          : 'Diagnostics copied'),
+      );
+    } catch {
+      showErr('Diagnostics ready — clipboard blocked');
+      console.info(text);
     }
   });
   const opacityEl = document.getElementById('opacity');
@@ -3816,6 +4447,7 @@ export function boot() {
     syncSegPressed('localSize', () => S.localSize);
     placeLocalBarOverflow();
     requestAnimationFrame(() => placeLocalBarOverflow());
+    if (_playtest && S.localExpanded) _playtest.noteDescend();
   };
   applyLocalLayout = syncLocalLayout;
   /** Park bar controls into ⋯ when the panel is too narrow; restore when it grows. */
@@ -3882,6 +4514,9 @@ export function boot() {
     if (next === i) return;
     if (next >= LOCAL_SIZES.length) {
       S.localExpanded = true;
+      const focus = S.focusCell ?? S.pinCell ?? S.kbCursor ?? S._localFocus ?? 0;
+      const last = W.receipts?.[W.receipts.length - 1]?.tool;
+      armLocalCue(focus, last);
     } else {
       S.localExpanded = false;
       S.localSize = LOCAL_SIZES[next];
@@ -4258,7 +4893,73 @@ export function boot() {
     stepLocalZoom(e.deltaY > 0 ? 1 : -1);
   }, { passive: false });
 
+  /* M22 — pinch-and-step on touch: pinch-out descends / grows local, pinch-in steps back.
+   * Button equivalents: local +/− and keyboard Enter / Esc (M24). */
+  const _pinchPts = new Map();
+  let _pinchD0 = null;
+  let _pinchArmed = false;
+  const pinchDist = () => {
+    if (_pinchPts.size < 2) return null;
+    const [a, b] = [..._pinchPts.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  const pinchMid = () => {
+    const pts = [..._pinchPts.values()];
+    if (pts.length < 2) return { x: 0, y: 0 };
+    return { x: (pts[0].x + pts[1].x) * 0.5, y: (pts[0].y + pts[1].y) * 0.5 };
+  };
+  canvas.addEventListener('touchstart', (e) => {
+    for (const t of e.changedTouches) _pinchPts.set(t.identifier, { x: t.clientX, y: t.clientY });
+    if (_pinchPts.size >= 2) {
+      _pinchD0 = pinchDist();
+      _pinchArmed = true;
+      dragging = false;
+      panning = false;
+    }
+  }, { passive: true });
+  canvas.addEventListener('touchmove', (e) => {
+    for (const t of e.changedTouches) {
+      if (_pinchPts.has(t.identifier)) _pinchPts.set(t.identifier, { x: t.clientX, y: t.clientY });
+    }
+    if (!_pinchArmed || _pinchPts.size < 2 || !_pinchD0) return;
+    const d = pinchDist();
+    if (d == null) return;
+    const ratio = d / _pinchD0;
+    if (ratio > 1.22) {
+      e.preventDefault();
+      _pinchD0 = d;
+      _pinchArmed = false;
+      const mid = pinchMid();
+      const cell = S.focusCell ?? S.pinCell ?? S.kbCursor ?? desktopPick(mid.x, mid.y);
+      if (!S.localExpanded) {
+        if (cell != null && cell >= 0) lookAtCell(cell, { ms: 1400, descend: true, zoom: true });
+        S.localExpanded = true;
+        try { applyLocalLayout(); } catch { /* */ }
+        announcePlanet('Pinch descend — local map');
+        showErr('Pinched in — Esc or pinch-in to step back');
+      } else {
+        stepLocalFrame(1);
+      }
+    } else if (ratio < 0.82) {
+      e.preventDefault();
+      _pinchD0 = d;
+      _pinchArmed = false;
+      if (S.localExpanded) stepLocalFrame(-1);
+      else stepLocalZoom(1);
+    }
+  }, { passive: false });
+  const endPinch = (e) => {
+    for (const t of e.changedTouches) _pinchPts.delete(t.identifier);
+    if (_pinchPts.size < 2) {
+      _pinchD0 = null;
+      _pinchArmed = false;
+    }
+  };
+  canvas.addEventListener('touchend', endPinch, { passive: true });
+  canvas.addEventListener('touchcancel', endPinch, { passive: true });
+
   canvas.addEventListener('pointerdown', (e) => {
+    try { canvas.focus({ preventScroll: true }); } catch { try { canvas.focus(); } catch { /* */ } }
     audioInit();
     installDarkAudioBus();
     if (TABLE.enabled) {
@@ -4410,18 +5111,68 @@ export function boot() {
     audioInit();
     installDarkAudioBus();
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
-    if (e.key === 'Escape' && isPhone() && document.getElementById('dock')?.classList.contains('is-open')) {
-      e.preventDefault();
-      setPhoneDock(false);
-      return;
+    // M15 — Escape closes one overlay at a time (priority order).
+    if (e.key === 'Escape') {
+      if (isPhone() && document.getElementById('dock')?.classList.contains('is-open')) {
+        e.preventDefault();
+        setPhoneDock(false);
+        return;
+      }
+      if (S.originSketch) {
+        e.preventDefault();
+        skipOriginCeremony();
+        return;
+      }
+      if (doorIsOpen()) {
+        e.preventDefault();
+        void startLesson('hold-earth');
+        return;
+      }
+      if (localKeyOpen()) {
+        e.preventDefault();
+        closeLocalKey();
+        return;
+      }
+      const kbdSheet = document.getElementById('kbdSheet');
+      if (kbdSheet && !kbdSheet.hidden) {
+        e.preventDefault();
+        closeKbdSheet();
+        return;
+      }
+      const cat = document.getElementById('catpanel');
+      if (cat?.classList.contains('open')) {
+        e.preventDefault();
+        cat.classList.remove('open');
+        document.getElementById('catbtn')?.setAttribute('aria-pressed', 'false');
+        restoreOverlayFocus();
+        return;
+      }
+      const land = document.getElementById('landpick');
+      if (land?.classList.contains('open')) {
+        e.preventDefault();
+        closeLandPicker();
+        return;
+      }
+      const lim = document.querySelector('.limits-sheet-host');
+      if (lim) {
+        e.preventDefault();
+        lim.remove();
+        return;
+      }
+      if (S.localExpanded) {
+        e.preventDefault();
+        stepLocalFrame(-1);
+        return;
+      }
     }
-    if (e.key === 'Escape' && S.originSketch) {
+    // Focus trap while a modal dialog is open (M14).
+    const overlay = activeOverlayRoot();
+    if (overlay && trapTab(overlay, e)) return;
+    if ((e.key === '?' && e.shiftKey) || (e.key === '/' && e.shiftKey)) {
       e.preventDefault();
-      skipOriginCeremony();
-      return;
-    }
-    if (e.key === 'Escape' && doorIsOpen()) {
-      startLesson('hold-earth');
+      const sheet = document.getElementById('kbdSheet');
+      if (sheet?.hidden === false) closeKbdSheet();
+      else openKbdSheet();
       return;
     }
     if (e.key === '?' && !e.shiftKey) {
@@ -4429,23 +5180,50 @@ export function boot() {
       onTourButton();
       return;
     }
-    if (e.key === 'Escape' && localKeyOpen()) {
-      closeLocalKey();
-      return;
+
+    // M4–M7 — planet canvas focused.
+    const onPlanet = planetCanvasFocused();
+    if (onPlanet) {
+      if (e.key === 'Enter' && e.shiftKey) {
+        e.preventDefault();
+        descendKeyboard();
+        return;
+      }
+      const planetBind = matchKey(e.key, 'planet')
+        || (e.code === 'Backslash' ? matchKey('\\', 'planet') : null);
+      if (planetBind) {
+        e.preventDefault();
+        const p = planetBind.payload || {};
+        if (planetBind.intent === 'spin') spinPlanet(p.yaw || 0, p.pitch || 0);
+        else if (planetBind.intent === 'zoom') zoomPlanet(p.dir || 0);
+        else if (planetBind.intent === 'cursor') moveKbCursor(p.dx || 0, p.dy || 0);
+        else if (planetBind.intent === 'descend') descendKeyboard();
+        else if (planetBind.intent === 'act') applyToolAtKbCursor();
+        return;
+      }
+      // Letter keys arm tools while the globe has focus (M7).
+      const armed = TOOLS.find((x) => x.key && x.key === e.key)
+        || TOOLS.find((x) => x.key && x.key.toLowerCase() === e.key.toLowerCase());
+      if (armed && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        if (toolsUnlocked(W)[armed.id] === false) return;
+        e.preventDefault();
+        adoptTool(armed);
+        announcePlanet(`Tool ${armed.name}`);
+        return;
+      }
+    } else if (S.localExpanded || S.localPin >= 0) {
+      const localBind = matchKey(e.key, 'local');
+      if (localBind?.intent === 'localNudge') {
+        e.preventDefault();
+        const p = localBind.payload || {};
+        nudgeLocal(p.dx || 0, p.dy || 0);
+        return;
+      }
     }
-    if (e.key === 'Escape' && S.localExpanded) {
-      stepLocalFrame(-1);
-      return;
-    }
+
     if (e.key === 'Home') {
       e.preventDefault();
       resetCamPan();
-      return;
-    }
-    const arrow = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
-    if (arrow) {
-      e.preventDefault();
-      nudgeLocal(arrow[0], arrow[1]);
       return;
     }
     if (e.key === '[' || e.key === ']') {
@@ -4490,15 +5268,15 @@ export function boot() {
       e.preventDefault();
       setDayWatch(!S.dayWatch);
     }
-    else if (e.key === '+' || e.key === '=') {
+    else if (!onPlanet && (e.key === '+' || e.key === '=')) {
       setTool('solar');
       onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: 0.05 }));
     }
-    else if (e.key === '-' || e.key === '_') {
+    else if (!onPlanet && (e.key === '-' || e.key === '_')) {
       setTool('solar');
       onToolResult(useToolAt(S._localFocus >= 0 ? S._localFocus : 0, { delta: -0.05 }));
     }
-    else {
+    else if (!onPlanet) {
       const t = TOOLS.find((x) => x.key && x.key === e.key)
         || TOOLS.find((x) => x.key && x.key.toLowerCase() === e.key.toLowerCase());
       if (t) {
@@ -4508,7 +5286,7 @@ export function boot() {
     }
   });
 
-  const applyPitchShot = (id) => {
+  const applyPitchShot = async (id) => {
     S.pitchShot = true;
     _pitchHoldMoment = true;
     setPaused(true);
@@ -4548,9 +5326,12 @@ export function boot() {
       setDockTab('tools');
       setSuiteDesk('tools', 'land');
       applyOverlayChoice('none');
+      await fillCat();
+      logCatalogueValidation();
       document.getElementById('catpanel')?.classList.add('open');
       document.getElementById('catbtn')?.setAttribute('aria-pressed', 'true');
-      renderCatalogue();
+      await renderCatalogue();
+      enterOverlayFocus(document.getElementById('catpanel'), '#catclose');
     }
     updateHUD();
     refreshColours(1);
@@ -4560,21 +5341,50 @@ export function boot() {
   };
 
   setupXR();
-  const bad = validateCatalogueWorlds();
-  if (bad.length) console.warn('[orrery] catalogue worlds failed sanitize:', bad);
-  else console.log(`[orrery] catalogue · ${CATALOGUE_WORLDS.length} worlds ready`);
-  const opening = isDemoMode()
-    ? { seed: 20260808, landscape: 'auto', pinned: false }
-    : pickOpening();
-  const bootRule = isDemoMode()
-    ? (RULESETS.find((r) => r.id === 'thrive') || RULESETS[0])
-    : RULESETS[0];
-  applyOpening(opening, { rule: bootRule });
-  if (isDemoMode()) setLifeSpeed(2);
+  // Catalogue validate deferred until first Worlds open / pitch worlds (K17).
+
+  const gardened = maybeGardenReturn();
+  let openingPinned = false;
+  if (!gardened) {
+    const opening = isDemoMode()
+      ? { seed: 20260808, landscape: 'auto', pinned: false }
+      : pickOpening();
+    openingPinned = !!opening.pinned;
+    const bootRule = isDemoMode()
+      ? (RULESETS.find((r) => r.id === 'thrive') || RULESETS[0])
+      : RULESETS[0];
+    applyOpening(opening, { rule: bootRule });
+    if (isDemoMode()) setLifeSpeed(2);
+  }
   let pitch = null;
   try { pitch = new URLSearchParams(location.search).get('pitch'); } catch { /* ignore */ }
-  if (pitch) applyPitchShot(pitch);
-  else if (!opening.pinned && shouldOfferDoor()) {
+  try {
+    if (new URLSearchParams(location.search).get('profile') === '1') W._profileTicks = true;
+  } catch { /* ignore */ }
+  if (pitch) void applyPitchShot(pitch);
+  else if (isPlaytestMode()) {
+    setPaused(false);
+    skipReveal();
+    markDoorSeen();
+    document.getElementById('reveal')?.setAttribute('hidden', '');
+    _playtest = mountPlaytestUI({ build: 'local' });
+    if (!vandalDone()) startVandalHook({ demo: true });
+    else showMoment('Playtest', 'One Strike act', 'Ignite or Meteor, then descend into the map.');
+  } else if (isDemoMode()) {
+    setPaused(false);
+    paintLessonChip();
+    if (!vandalDone()) startVandalHook({ demo: true });
+    else {
+      showMoment('Demo', 'Strike first', 'Ignite or Meteor — then open the local map. Tour is optional.');
+    }
+  } else if (!gardened && !vandalDone()) {
+    setPaused(false);
+    skipReveal();
+    markDoorSeen();
+    document.getElementById('dock')?.classList.add('collapsed');
+    document.getElementById('reveal')?.setAttribute('hidden', '');
+    startVandalHook();
+  } else if (!gardened && !openingPinned && shouldOfferDoor()) {
     setPaused(true);
     setSuiteDesk('tools', 'land');
     skipReveal();
@@ -4588,11 +5398,11 @@ export function boot() {
         paintLessonChip();
       },
     });
-  } else if (isDemoMode()) {
-    setPaused(false);
-    paintLessonChip();
-    showMoment('Demo', 'Orrery', 'Tour · Worlds · Play → Challenge · ?demo=1 for this opening Earth');
   }
+  addEventListener('pagehide', persistGardenLeave);
+  addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') persistGardenLeave();
+  });
   requestAnimationFrame(desktopFrame);
   const quads = (6 * globeN() * globeN()).toLocaleString();
   console.log(`[orrery] foundations rebuild · ${NC.toLocaleString()} cells · ${quads} globe quads (${effectiveGlobeSubd()}× mesh) · ${(vIdx.length / 3).toLocaleString()} tris`);

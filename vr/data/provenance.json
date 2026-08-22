@@ -1,0 +1,212 @@
+{
+  "generated": "2026-08-22T03:36:14.499Z",
+  "tagged": 123,
+  "untagged": 4318,
+  "physics": 4421,
+  "denom": 4441,
+  "untaggedShare": 0.9723035352398108,
+  "kinds": {
+    "measured": 45,
+    "fitted": 50,
+    "invented": 24,
+    "numeric": 5,
+    "derived": 0,
+    "look": 0
+  },
+  "topUntagged": [
+    {
+      "file": "vr/sim/terrainShape.js",
+      "density": 48.51,
+      "untagged": 65,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/lifeColour.js",
+      "density": 44.98,
+      "untagged": 224,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/exophysics.js",
+      "density": 40.8,
+      "untagged": 215,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/scatter.js",
+      "density": 40.46,
+      "untagged": 70,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/alien.js",
+      "density": 37.21,
+      "untagged": 64,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/present.js",
+      "density": 36.49,
+      "untagged": 208,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/earthTerrain.js",
+      "density": 35.51,
+      "untagged": 38,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/planetTick.js",
+      "density": 34.76,
+      "untagged": 65,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/time.js",
+      "density": 34.55,
+      "untagged": 95,
+      "tagged": 0
+    },
+    {
+      "file": "vr/sim/earth.js",
+      "density": 34.51,
+      "untagged": 49,
+      "tagged": 0
+    }
+  ],
+  "history": [
+    {
+      "at": "2026-08-22T01:46:09.936Z",
+      "untaggedShare": 1,
+      "tagged": 0,
+      "untagged": 7442
+    },
+    {
+      "at": "2026-08-22T01:46:27.037Z",
+      "untaggedShare": 0.9925884750787475,
+      "tagged": 40,
+      "untagged": 5357
+    },
+    {
+      "at": "2026-08-22T01:46:52.018Z",
+      "untaggedShare": 0.9925884750787475,
+      "tagged": 40,
+      "untagged": 5357
+    },
+    {
+      "at": "2026-08-22T01:59:25.917Z",
+      "untaggedShare": 0.9926158390252907,
+      "tagged": 40,
+      "untagged": 5377
+    },
+    {
+      "at": "2026-08-22T02:06:03.656Z",
+      "untaggedShare": 0.9926158390252907,
+      "tagged": 40,
+      "untagged": 5377
+    },
+    {
+      "at": "2026-08-22T02:10:14.204Z",
+      "untaggedShare": 0.9852831594634873,
+      "tagged": 79,
+      "untagged": 5289
+    },
+    {
+      "at": "2026-08-22T02:10:18.396Z",
+      "untaggedShare": 0.9852831594634873,
+      "tagged": 79,
+      "untagged": 5289
+    },
+    {
+      "at": "2026-08-22T02:10:33.650Z",
+      "untaggedShare": 0.9850940935345631,
+      "tagged": 80,
+      "untagged": 5287
+    },
+    {
+      "at": "2026-08-22T02:10:33.798Z",
+      "untaggedShare": 0.9850940935345631,
+      "tagged": 80,
+      "untagged": 5287
+    },
+    {
+      "at": "2026-08-22T02:16:43.751Z",
+      "untaggedShare": 0.9765834932821497,
+      "tagged": 122,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:16:54.785Z",
+      "untaggedShare": 0.9765834932821497,
+      "tagged": 122,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:16:58.868Z",
+      "untaggedShare": 0.9763915547024952,
+      "tagged": 123,
+      "untagged": 5087
+    },
+    {
+      "at": "2026-08-22T02:19:16.082Z",
+      "untaggedShare": 0.9763960852043754,
+      "tagged": 123,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:19:19.142Z",
+      "untaggedShare": 0.9763960852043754,
+      "tagged": 123,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:19:27.229Z",
+      "untaggedShare": 0.9763960852043754,
+      "tagged": 123,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:19:46.083Z",
+      "untaggedShare": 0.9763960852043754,
+      "tagged": 123,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:40:00.548Z",
+      "untaggedShare": 0.9763960852043754,
+      "tagged": 123,
+      "untagged": 5088
+    },
+    {
+      "at": "2026-08-22T02:45:15.623Z",
+      "untaggedShare": 0.9746234784402723,
+      "tagged": 123,
+      "untagged": 4724
+    },
+    {
+      "at": "2026-08-22T02:45:39.324Z",
+      "untaggedShare": 0.9746234784402723,
+      "tagged": 123,
+      "untagged": 4724
+    },
+    {
+      "at": "2026-08-22T03:15:17.986Z",
+      "untaggedShare": 0.9723035352398108,
+      "tagged": 123,
+      "untagged": 4318
+    },
+    {
+      "at": "2026-08-22T03:16:01.264Z",
+      "untaggedShare": 0.9723035352398108,
+      "tagged": 123,
+      "untagged": 4318
+    },
+    {
+      "at": "2026-08-22T03:36:14.499Z",
+      "untaggedShare": 0.9723035352398108,
+      "tagged": 123,
+      "untagged": 4318
+    }
+  ]
+}

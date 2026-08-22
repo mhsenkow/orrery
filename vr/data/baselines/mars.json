@@ -1,0 +1,19 @@
+{
+  "world": "Mars",
+  "ruleId": "ares",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 40 },
+  "n": 32,
+  "source": "Solar System baseline (B46/B48) — thin 6 mbar column + sterile gate",
+  "early": {
+    "meanTemp": { "lo": 0.15, "hi": 0.55, "tag": "fitted", "why": "thin air + teqK 210; was overheating when P≈1 from gas sum" },
+    "meanLife": { "lo": 0, "hi": 0.02, "tag": "fitted", "why": "B48 sterile — no spontaneous biosphere" },
+    "O2": { "lo": 0, "hi": 0.05, "tag": "measured", "why": "thin O₂ expected" },
+    "iceFrac": { "lo": 0.005, "hi": 0.2, "tag": "fitted", "why": "polar ice present (smoke)" }
+  },
+  "late": {
+    "meanTemp": { "lo": 0.15, "hi": 0.6, "tag": "fitted", "why": "stays finite / cold" },
+    "meanLife": { "lo": 0, "hi": 0.02, "tag": "fitted", "why": "B48 holds through late window" },
+    "O2": { "lo": 0, "hi": 0.08, "tag": "fitted", "why": "no O₂ runaway" }
+  }
+}

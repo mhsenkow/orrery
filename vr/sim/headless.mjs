@@ -2,22 +2,13 @@
 /** Headless runner — arbitrary ruleset, duration, structured output.
  *  Next backlog items 59, 66. */
 
-import { createHash } from 'node:crypto';
 import { W, generate, simTick, RULESETS, serializeRun } from '../world.js';
 import { assertBudgets } from './assert.js';
 import { NC } from '../sphere.js';
 import { formatLivingLine, livingMetrics } from './livemetric.js';
+import { hashFields } from './hashFields.js';
 
-function hashFields(W) {
-  const h = createHash('sha256');
-  for (const key of ['h', 'temp', 'life', 'ice', 'moist']) {
-    if (W[key]) h.update(Buffer.from(W[key].buffer));
-  }
-  if (W.gases) h.update(JSON.stringify(W.gases));
-  h.update(String(W.ageYr));
-  h.update(String(W.meanLife));
-  return h.digest('hex').slice(0, 16);
-}
+export { hashFields };
 
 export function runHeadless({
   seed = 20260808,
@@ -25,10 +16,14 @@ export function runHeadless({
   ticks = 100,
   deepTime = false,
   assertEvery = 0,
+  profile = false,
 } = {}) {
   const base = RULESETS.find((r) => r.id === ruleId) || RULESETS[0];
   const rule = { ...base, deepTime };
   generate(seed, rule);
+  // D16 — golden / headless pin the CPU climate path.
+  W._gpgpuOff = true;
+  W._profileTicks = !!profile;
   const budgets = [];
   for (let i = 0; i < ticks; i++) {
     simTick(true);
@@ -57,6 +52,7 @@ export function runHeadless({
     budgets,
     save: serializeRun(),
   };
+  if (W._ms) out.ms = W._ms;
   if (living) {
     out.living = living;
     out.livingLine = formatLivingLine(living);

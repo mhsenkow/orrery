@@ -1,9 +1,23 @@
 /** Rulesets — content units with chemistry, orbit, and signature phenomena.
- *  The five invented worlds (terra/vermis/selene/ares/daisy) are synthetic —
- *  exempt from the real-data WorldRecord schema. Catalogue BODY entries pull
- *  measured parameters from vr/worldParams.js instead of these templates. */
+ *  Synthetic Type worlds (terra/vermis/selene/ares/venus/titan/europa/daisy)
+ *  are exempt from the real-data WorldRecord schema. Catalogue BODY entries pull
+ *  measured parameters from vr/worldParams.js instead of these templates.
+ *
+ *  Physics dials for Earth live in terraParams.js (A8). Palette functions below
+ *  are look, not science.
+ *  @provenance look
+ */
 
 import { clamp, lerp } from './math.js';
+import {
+  GAS_N2, GAS_O2, GAS_CO2, GAS_CH4, GAS_H2O,
+  EARTH_OBLIQUITY_DEG, EARTH_ECC, EARTH_LAND_FRAC,
+  EARTH_CORE_MASS, EARTH_CORE_RAD,
+  EARTH_FREEZE, EARTH_SOLAR, EARTH_RELIEF, EARTH_ARIDITY,
+  EARTH_GH_BIAS, EARTH_MIN_CO2, EARTH_TOTAL_WATER, EARTH_CONTINENT,
+  EARTH_N_PLATES, EARTH_TARGET_TEMP, EARTH_ATMO_STRENGTH,
+  THRIVE_START_AGE_GA,
+} from './sim/terraParams.js';
 
 /** Earth land: pleasant NASA-ish biomes that still separate cleanly from orbit. */
 const landTerra = (t, m, l, e, ice, extra) => {
@@ -77,35 +91,24 @@ const TERRA = {
      −30 °C — which is why an Earth at 281 K carried no ice at all, sea or land,
      and why the calibration harness could report a temperate planet with empty
      poles for as long as it did. */
-  relief: 0.028, solar: 1.04, freeze: 0.406, aridity: 0.05,
-  rotationPeriod: 1.0, obliquity: 23.4 * Math.PI / 180, eccentricity: 0.0167,
+  relief: EARTH_RELIEF, solar: EARTH_SOLAR, freeze: EARTH_FREEZE, aridity: EARTH_ARIDITY,
+  rotationPeriod: 1.0, obliquity: EARTH_OBLIQUITY_DEG * Math.PI / 180, eccentricity: EARTH_ECC,
   gravity: 1.0, magnetosphere: 1.0,
-  interior: { coreMassFrac: 0.32, coreRadiusFrac: 0.55, heatFlow: 1.0, conductivity: 1.0, lidMode: 'mobile', note: 'Fe–Ni core · active dynamo · mobile-lid plates' },
-  // Volume mixing ratios; CO₂ ~420 ppm. Greenhouse bias stands in for H₂O/GHG column.
-  gases: { N2: 0.7808, O2: 0.2095, CO2: 0.00042, CH4: 0.0000019, H2O: 0.01, dust: 0.0, sulphate: 0 },
-  /* Refitted. `greenhouseFromGases` now models water vapour explicitly with band
-     saturation instead of a linear term worth half a kelvin, so this constant no
-     longer stands in for the H₂O column — it stands in for everything else. The
-     number moved because three things it had been silently absorbing were fixed:
-     a cloud field that had been empty (relative humidity was defined against the
-     global vapour mass, so it sat near 0.1), a cloud greenhouse that was not
-     modelled at all, and an 85% heat leak in the ocean's surface-to-deep
-     exchange, and an 85% heat leak in the ocean's surface-to-deep exchange —
-     that last one worth some 30 K on its own, and the reason this number came
-     down rather than up. Water vapour now supplies about 0.10 of the greenhouse
-     by itself, which is roughly the 16 K it is worth on the real Earth, so what
-     is left for a constant to stand in for is very little. Equilibrium mean
-     temperature here is ~0.50 (288 K) against a `targetMeanTemp` of 0.50.
-
-     Refitted again when the water-vapour greenhouse became *local* — the polar
-     column is dry, so applying the planetary mean everywhere had been worth some
-     6 K of spurious polar warmth and was flattening the pole-to-equator gradient
-     the whole circulation runs on. That change cools the poles and barely touches
-     the tropics, so the constant came back up to hold the mean. */
-  ghBias: 0.027, minCO2: 0.00038,
-  totalWater: 0.92, continentFrac: 0.38, nPlates: 12,
-  targetLandFrac: 0.29, targetMeanTemp: 0.50,
-  atmo: [0.28, 0.50, 0.92], atmoStrength: 0.92, sky: [0.012, 0.035, 0.08],
+  interior: {
+    coreMassFrac: EARTH_CORE_MASS, coreRadiusFrac: EARTH_CORE_RAD,
+    heatFlow: 1.0, conductivity: 1.0, lidMode: 'mobile',
+    note: 'Fe–Ni core · active dynamo · mobile-lid plates',
+  },
+  // Volume mixing ratios; CO₂ ~420 ppm. Greenhouse bias stands in for residual GHG.
+  gases: {
+    N2: GAS_N2, O2: GAS_O2, CO2: GAS_CO2, CH4: GAS_CH4, H2O: GAS_H2O,
+    dust: 0.0, sulphate: 0,
+  },
+  /* Refitted residual greenhouse — see terraParams EARTH_GH_BIAS citation trail. */
+  ghBias: EARTH_GH_BIAS, minCO2: EARTH_MIN_CO2,
+  totalWater: EARTH_TOTAL_WATER, continentFrac: EARTH_CONTINENT, nPlates: EARTH_N_PLATES,
+  targetLandFrac: EARTH_LAND_FRAC, targetMeanTemp: EARTH_TARGET_TEMP,
+  atmo: [0.28, 0.50, 0.92], atmoStrength: EARTH_ATMO_STRENGTH, sky: [0.012, 0.035, 0.08],
   signature: 'glacial',
   // Open-ocean albedo ~0.06; the blue is sky. `d` is shallowness.
   ocean: (d) => [4 + 16 * d, 10 + 28 * d, 18 + 38 * d],
@@ -128,7 +131,7 @@ const EARTH_THRIVE = {
   thrive: true,
   // 2.0 Ma BP → adaptiveTickYears gives 200 yr/tick, so ~11 ticks/s of real
   // time is ~2 kyr/s and a ten-minute session never reaches the present clamp.
-  startAgeGa: 4.565,
+  startAgeGa: THRIVE_START_AGE_GA,
 };
 
 export const RULESETS = [
@@ -182,7 +185,11 @@ export const RULESETS = [
   {
     id: 'ares', name: 'Ares', blurb: 'Thin CO₂. Dust storms that eat a hemisphere.',
     synthetic: true,
-    relief: 0.068, solar: 0.72, freeze: 0.20, aridity: 0.42,
+    // B48 — no spontaneous biosphere; Life tools may still seed deliberately.
+    sterile: true,
+    // B46 — thin column must be explicit or gas sum ≈ 1 bar and the world cooks.
+    surfacePressureBar: 0.006, teqK: 210,
+    relief: 0.068, solar: 0.43, freeze: 0.28, aridity: 0.55,
     rotationPeriod: 1.03, obliquity: 25 * Math.PI / 180, eccentricity: 0.09,
     gravity: 0.38, magnetosphere: 0.05,
     interior: { coreMassFrac: 0.18, coreRadiusFrac: 0.45, heatFlow: 0.25, conductivity: 0.15, lidMode: 'stagnant', note: 'Partly solid core · no global dynamo · stagnant lid' },
@@ -200,6 +207,75 @@ export const RULESETS = [
         r = lerp(r, 36, k); g = lerp(g, 72, k); b = lerp(b, 28, k);
       }
       return [r, g, b];
+    },
+  },
+  {
+    id: 'venus', name: 'Venus', blurb: '92 bar CO₂ runaway. Near-isothermal hellscape.',
+    synthetic: true,
+    sterile: true,
+    surfacePressureBar: 92, teqK: 735,
+    relief: 0.04, solar: 1.91, freeze: 0.02, aridity: 0.95,
+    rotationPeriod: -243, obliquity: 177.4 * Math.PI / 180, eccentricity: 0.007,
+    gravity: 0.9, magnetosphere: 0.0,
+    interior: { coreMassFrac: 0.30, coreRadiusFrac: 0.52, heatFlow: 0.9, conductivity: 0.4, lidMode: 'episodic', note: 'Earth-mass core · slow spin kills dynamo · episodic lid' },
+    gases: { N2: 0.035, O2: 0, CO2: 0.965, CH4: 0, H2O: 0.00003, dust: 0, sulphate: 0.08 },
+    totalWater: 0.02, continentFrac: 1.0, nPlates: 6,
+    atmo: [1.0, 0.82, 0.32], atmoStrength: 1.8, sky: [0.08, 0.06, 0.03],
+    signature: 'runaway',
+    ocean: () => [120, 90, 50],
+    land: (t, m, l, e, ice) => {
+      const high = clamp((e - 0.4) * 1.6, 0, 1);
+      let r = lerp(168, 210, high), g = lerp(120, 170, high), b = lerp(48, 70, high);
+      return [r, g, b];
+    },
+  },
+  {
+    id: 'titan', name: 'Titan', blurb: '1.5 bar N₂. Methane lakes, tholin haze, ice shell.',
+    synthetic: true,
+    sterile: true,
+    methaneSolvent: true,
+    iceShell: true,
+    surfacePressureBar: 1.5, teqK: 94,
+    relief: 0.03, solar: 0.11, freeze: 0.62, aridity: 0.2,
+    rotationPeriod: 16, obliquity: 27 * Math.PI / 180, eccentricity: 0.029,
+    gravity: 0.14, magnetosphere: 0.0,
+    interior: { coreMassFrac: 0.04, coreRadiusFrac: 0.18, heatFlow: 0.12, conductivity: 0.1, lidMode: 'ice', note: 'Rock kernel under ice · little or no dynamo' },
+    gases: { N2: 0.95, O2: 0, CO2: 0.01, CH4: 0.05, H2O: 0.001, dust: 0, sulphate: 0 },
+    totalWater: 0.7, continentFrac: 0.55, nPlates: 4,
+    atmo: [0.95, 0.55, 0.22], atmoStrength: 0.7, sky: [0.06, 0.04, 0.02],
+    signature: 'methane',
+    ocean: () => [40, 55, 70],
+    land: (t, m, l, e, ice) => {
+      if (ice > 0.5) return [220, 210, 190];
+      const dune = clamp(m * 0.5 + e * 0.3, 0, 1);
+      return [
+        lerp(180, 132, dune),
+        lerp(140, 68, dune),
+        lerp(70, 36, dune),
+      ];
+    },
+  },
+  {
+    id: 'europa', name: 'Europa', blurb: 'Ice lid over a hidden ocean. Airless; vents only.',
+    synthetic: true,
+    sterile: true,
+    airless: true,
+    iceShell: true,
+    tidalHeat: 0.35,
+    surfacePressureBar: 0, teqK: 102,
+    relief: 0.02, solar: 0.18, freeze: 0.78, aridity: 1.0,
+    rotationPeriod: 3.55, obliquity: 0.1 * Math.PI / 180, eccentricity: 0.009,
+    gravity: 0.13, magnetosphere: 0.05,
+    interior: { coreMassFrac: 0.04, coreRadiusFrac: 0.18, heatFlow: 0.2, conductivity: 0.15, lidMode: 'ice', note: 'Ice–ocean stack · induced field sketch' },
+    gases: { N2: 0, O2: 0, CO2: 0, CH4: 0, H2O: 0, dust: 0, sulphate: 0 },
+    totalWater: 0.95, continentFrac: 0.08, nPlates: 3,
+    atmo: [0.55, 0.62, 0.75], atmoStrength: 0.08, sky: [0.002, 0.003, 0.008],
+    signature: 'iceshell',
+    ocean: () => [40, 60, 90],
+    land: (t, m, l, e, ice) => {
+      const crack = clamp(Math.abs(e - 0.5) * 2, 0, 1);
+      const g = 200 + 30 * crack;
+      return [g * 0.92, g * 0.96, g];
     },
   },
   {

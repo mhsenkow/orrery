@@ -1,0 +1,17 @@
+{
+  "world": "Europa",
+  "ruleId": "europa",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 24 },
+  "n": 32,
+  "source": "First-cut Solar System baseline (B55) — iceShell + airless",
+  "early": {
+    "meanTemp": { "lo": 0, "hi": 0.25, "tag": "fitted", "why": "cold ice lid" },
+    "meanLife": { "lo": 0, "hi": 0.02, "tag": "fitted", "why": "airless bioTick zeros life" },
+    "O2": { "lo": 0, "hi": 0.001, "tag": "measured", "why": "no atmosphere" },
+    "iceFrac": { "lo": 0.3, "hi": 1.0, "tag": "fitted", "why": "ice shell surface" }
+  },
+  "late": {
+    "meanLife": { "lo": 0, "hi": 0.02, "tag": "fitted", "why": "stays sterile at surface" }
+  }
+}

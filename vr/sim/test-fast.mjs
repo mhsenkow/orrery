@@ -1,0 +1,319 @@
+#!/usr/bin/env node
+/** Fast tier — quality-400 F1/F3/F11/F21/F26/F32/F35/F37/F38.
+ *  Budget: <18 s (grew with Sixth-gate asserts; still an edit loop). Fail on unhandled rejection.
+ *
+ *   node sim/test-fast.mjs
+ *   node sim/test-fast.mjs --timing
+ */
+
+import { readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
+
+import { FIELD_BY_NAME, fieldsSchemaHash, fieldCount } from './fields.js';
+import { report, recentErrors, installGlobalErrorHandlers } from './report.js';
+import { withWorld, hashFields } from './testHelpers.js';
+import { paintDisc } from './pictureDisc.js';
+import { darkEnabled, _resetDarkGateCache } from './darkGate.js';
+
+const __dir = dirname(fileURLToPath(import.meta.url));
+const TIMING = process.argv.includes('--timing');
+const WRITE_COUNT = process.argv.includes('--write-count');
+const times = [];
+let passed = 0;
+let failed = 0;
+const failIds = [];
+const t0 = performance.now();
+
+process.on('unhandledRejection', (err) => {
+  console.error('unhandledRejection', err);
+  process.exit(1);
+});
+
+function ok(id, cond, detail = '') {
+  const mark = performance.now();
+  if (cond) {
+    passed++;
+    console.log('  ✓', id, TIMING ? `(${(performance.now() - mark).toFixed(1)}ms)` : '');
+  } else {
+    failed++;
+    failIds.push(id);
+    console.error('  ✗', id, detail);
+  }
+  if (TIMING) times.push({ name: id, ms: performance.now() - mark });
+}
+
+async function section(title, fn) {
+  console.log(title);
+  const s0 = performance.now();
+  await fn();
+  if (TIMING) console.log(`  · section ${title} ${(performance.now() - s0).toFixed(0)}ms`);
+}
+
+await section('fields (H1)', () => {
+  ok('F-fields-count', fieldCount() >= 30, String(fieldCount()));
+  ok('F-fields-life', !!FIELD_BY_NAME.life);
+  ok('F-fields-hash', /^[0-9a-f]{8}$/.test(fieldsSchemaHash()));
+});
+
+await section('report (J1)', () => {
+  installGlobalErrorHandlers({
+    addEventListener() {},
+    __orreryErrorsInstalled: false,
+  });
+  report('info', 'ORR-TEST-001', 'fast tier');
+  ok(
+    'F-report-ring',
+    recentErrors().some((e) => e.code === 'ORR-TEST-001'),
+  );
+});
+
+await section('helpers + picture (F19/F25/F32)', () => {
+  // One generate — keep the fast tier under 15s on CI.
+  withWorld({ seed: 7, ruleId: 'terra' }, (W) => {
+    const h = hashFields(W);
+    ok('F-withWorld-hash', /^[0-9a-f]{16}$/.test(h), h);
+    const disc = paintDisc(W, 32);
+    ok('F-paintDisc-filled', disc.filled > 20, String(disc.filled));
+    ok('F-paintDisc-rgba', disc.rgba.length === 32 * 32 * 4);
+  });
+});
+
+await section('local cue (NEXT)', async () => {
+  const { localMotionCue, CUE_KINDS, ACT_KIND } = await import('./localCue.js');
+  ok('F-cue-kinds', CUE_KINDS.includes('fire') && CUE_KINDS.includes('herd'));
+  ok('F-cue-act-ignite', ACT_KIND.ignite === 'fire');
+  withWorld({ seed: 11, ruleId: 'terra' }, (W) => {
+    const cell = 0;
+    if (W.fire) W.fire[cell] = 0.4;
+    const cue = localMotionCue(W, cell, 2, 'ignite');
+    ok('F-cue-fire', !!cue && (cue.kind === 'fire' || cue.kind === 'place'), cue?.kind);
+  });
+});
+
+await section('focus trap (M14)', async () => {
+  const { trapTab, dialogFocusables } = await import('./focusTrap.js');
+  ok('F-trap-fn', typeof trapTab === 'function');
+  const root = { querySelectorAll: () => [], ownerDocument: { activeElement: null } };
+  const ev = {
+    key: 'Tab',
+    preventDefault() {
+      this.done = true;
+    },
+    shiftKey: false,
+  };
+  ok('F-trap-empty', trapTab(root, ev) === true && ev.done);
+  ok('F-focusables-empty', dialogFocusables(null).length === 0);
+});
+
+await section('keymap (M10)', async () => {
+  const { KEYMAP, matchKey, keymapHelpLines } = await import('./keymap.js');
+  ok('F-keymap-size', KEYMAP.length >= 10, String(KEYMAP.length));
+  ok('F-keymap-spin', matchKey('ArrowLeft', 'planet')?.intent === 'spin');
+  ok('F-keymap-act', matchKey('Enter', 'planet')?.intent === 'act');
+  ok('F-keymap-descend', matchKey('\\', 'planet')?.intent === 'descend');
+  ok(
+    'F-keymap-help',
+    keymapHelpLines().some((l) => /Enter/.test(l)),
+  );
+});
+
+await section('dark gate (F38)', () => {
+  const prev = globalThis.location;
+  try {
+    globalThis.location = { search: '' };
+    _resetDarkGateCache();
+    ok('F-dark-off-default', darkEnabled() === false);
+    globalThis.location = { search: '?dark=1' };
+    _resetDarkGateCache();
+    ok('F-dark-on-query', darkEnabled() === true);
+    globalThis.location = { search: '?dark=0' };
+    _resetDarkGateCache();
+    ok('F-dark-force-off', darkEnabled() === false);
+  } finally {
+    if (prev === undefined) delete globalThis.location;
+    else globalThis.location = prev;
+    _resetDarkGateCache();
+  }
+});
+
+await section('url flags present (F37)', () => {
+  const html = readFileSync(join(__dir, '../index.html'), 'utf8');
+  const main = readFileSync(join(__dir, '../main.js'), 'utf8');
+  ok('F-flag-playtest', main.includes('playtest') && main.includes('isPlaytestMode'));
+  ok('F-flag-demo', main.includes("get('demo')"));
+  ok('F-flag-dark', main.includes('darkEnabled'));
+  ok('F-html-lang', /<html[^>]*lang=/.test(html));
+  ok(
+    'F-canvas-focus',
+    /id="c"[^>]*tabindex="0"/.test(html) || /tabindex="0"[^>]*id="c"/.test(html),
+  );
+  ok('F-kbd-sheet', html.includes('id="kbdSheet"'));
+  ok(
+    'F-cat-dialog',
+    /id="catpanel"[^>]*role="dialog"/.test(html) &&
+      /id="landpick"[^>]*aria-modal="true"/.test(html),
+  );
+  ok('F-apply-tool-fn', main.includes('applyToolAtKbCursor') && main.includes('activeOverlayRoot'));
+  ok('F-touch-44', /min-height:\s*44px/.test(html) && html.includes('@media (pointer: coarse)'));
+  ok('F-lab-diag', html.includes('id="labDiag"') && main.includes('droppedTicks'));
+  const render = readFileSync(join(__dir, '../render.js'), 'utf8');
+  ok('F-cloud-vnoise', /densAt[\s\S]*?vnoise\(sp \* 3\.2/.test(render));
+});
+
+await section('save harden (I8/I22)', async () => {
+  const { loadRunMeta } = await import('../world.js');
+  let threw = false;
+  try {
+    loadRunMeta('{not json');
+  } catch (e) {
+    threw = /Corrupt save/i.test(String(e.message || e));
+  }
+  ok('F-corrupt-refuse', threw);
+  threw = false;
+  try {
+    loadRunMeta({ version: 9, n: 32, seed: 1, ruleId: 'terra' });
+  } catch (e) {
+    threw = /does not match live N/i.test(String(e.message || e));
+  }
+  ok('F-n-mismatch-refuse', threw);
+});
+
+await section('mid-run save (I13)', async () => {
+  const { serializeRun } = await import('../world.js');
+  withWorld({ seed: 42, ruleId: 'terra' }, (W) => {
+    W.ageYr = (W.ageYr || 0) + 500;
+    const snap = serializeRun();
+    ok('F-mid-ser', snap.version >= 9 && snap.seed != null && snap.ageYr === W.ageYr);
+    ok('F-mid-fieldsHash', typeof snap.fieldsHash === 'string');
+  });
+});
+
+await section('sixth gate smoke', async () => {
+  const { HUD_CADENCE_MS } = await import('./hudCadence.js');
+  ok('F-hud-cadence', HUD_CADENCE_MS.climate === 400 && HUD_CADENCE_MS.hud === 500);
+  const { ERROR_CODES, expected } = await import('./report.js');
+  ok('F-error-codes', ERROR_CODES['ORR-SAVE-001']);
+  expected('ORR-TEST-001', 'expected swallow');
+  const main = readFileSync(join(__dir, '../main.js'), 'utf8');
+  ok('F-pinch-m22', main.includes('pinch-and-step') || main.includes('_pinchPts'));
+  ok('F-dark-lazy', main.includes('ensureDarkUi'));
+  const { FIELDS } = await import('./fields.js');
+  ok(
+    'F-h9-fields',
+    FIELDS.some((r) => r.name === 'h' && r.type === 'float32[]'),
+  );
+});
+
+await section('autosave rotate (I23/I24)', async () => {
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem: (k) => (store.has(k) ? store.get(k) : null),
+    setItem: (k, v) => {
+      store.set(k, String(v));
+    },
+    removeItem: (k) => {
+      store.delete(k);
+    },
+  };
+  const { writeAutosave, readAutosave, readAutosavePrev, clearAutosave } =
+    await import('./hooks.js');
+  clearAutosave();
+  writeAutosave({ seed: 1, label: 'a' });
+  writeAutosave({ seed: 2, label: 'b' });
+  ok('F-autosave-cur', readAutosave()?.seed === 2);
+  ok('F-autosave-prev', readAutosavePrev()?.seed === 1);
+  clearAutosave();
+});
+
+await section('diagnostics (J5/J6)', async () => {
+  const { diagnosticsText, SESSION_ID, report, recentErrors } = await import('./report.js');
+  report('info', 'ORR-TEST-DIAG', 'probe');
+  const text = diagnosticsText({ droppedTicks: 3 });
+  ok('F-diag-session', typeof SESSION_ID === 'string' && SESSION_ID.startsWith('sess-'));
+  ok('F-diag-blob', /session:/.test(text) && /droppedTicks: 3/.test(text));
+  ok(
+    'F-diag-ring',
+    recentErrors().some((e) => e.code === 'ORR-TEST-DIAG'),
+  );
+});
+
+await section('catalogue lazy-load (K17)', async () => {
+  const path = join(__dir, 'catalogueLoad.js');
+  ok('F-cat-load-exists', existsSync(path));
+  const mod = await import('./catalogueLoad.js');
+  ok('F-cat-ensure-fn', typeof mod.ensureCatalogue === 'function');
+  ok('F-cat-ready-fn', typeof mod.catalogueReady === 'function');
+  ok('F-cat-not-ready', mod.catalogueReady() === false);
+  // Do not call ensureCatalogue() here — the catalogue chunk is ~3.4k lines.
+});
+
+await section('smoke', async () => {
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, [join(__dir, 'smoke.mjs')], {
+    cwd: join(__dir, '..'),
+    encoding: 'utf8',
+  });
+  ok('F-smoke', r.status === 0, r.stderr?.slice(-400) || r.stdout?.slice(-200));
+});
+
+await section('save fixtures (I11/F35)', async () => {
+  const { loadRunMeta, serializeRun, RULESETS } = await import('../world.js');
+  const dir = join(__dir, '../data/fixtures/saves');
+  const files = readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  ok('F-fixtures-present', files.length >= 2, files.join(','));
+
+  for (const file of files) {
+    const raw = JSON.parse(readFileSync(join(dir, file), 'utf8'));
+    ok(`F-${file}-ver`, (raw.version ?? 0) >= 7);
+    ok(`F-${file}-rule`, !!raw.ruleId && RULESETS.some((r) => r.id === raw.ruleId));
+  }
+
+  const v9 = JSON.parse(readFileSync(join(dir, 'v9-earth-seed42.json'), 'utf8'));
+  try {
+    loadRunMeta(v9);
+    const again = serializeRun();
+    ok('F-v9-load', true);
+    ok('F-v9-ver', again.version >= 7);
+    ok('F-v9-fieldsHash', typeof again.fieldsHash === 'string' && again.fieldsHash.length === 8);
+    ok('F-v9-seed', again.seed === v9.seed || again.landSeed === (v9.landSeed ?? v9.seed));
+  } catch (e) {
+    ok('F-v9-load', false, String(e.message || e));
+  }
+});
+
+const elapsed = performance.now() - t0;
+const countPath = join(__dir, '../data/fast-assert-count.json');
+const baseCount = existsSync(countPath) ? JSON.parse(readFileSync(countPath, 'utf8')).count : 0;
+const sectionPassed = passed;
+ok('F-assert-ratchet', sectionPassed >= baseCount, `${sectionPassed} < ${baseCount}`);
+if (WRITE_COUNT || !existsSync(countPath)) {
+  writeFileSync(
+    countPath,
+    JSON.stringify(
+      { count: sectionPassed, updated: new Date().toISOString().slice(0, 10) },
+      null,
+      2,
+    ) + '\n',
+  );
+  console.log(`wrote assert count baseline ${sectionPassed}`);
+} else if (sectionPassed > baseCount) {
+  console.warn(`assert count grew ${baseCount} → ${sectionPassed} — run with --write-count`);
+}
+
+console.log('');
+console.log(`fast · ${passed} passed · ${failed} failed · ${(elapsed / 1000).toFixed(2)}s`);
+if (failIds.length) console.error('failed ids:', failIds.join(', '));
+if (TIMING && times.length) {
+  const slow = [...times].sort((a, b) => b.ms - a.ms).slice(0, 20);
+  console.log('slowest:');
+  for (const row of slow) console.log(`  ${row.ms.toFixed(1).padStart(7)}ms  ${row.name}`);
+}
+if (elapsed > 18000) {
+  console.error(`fast tier exceeded 18s budget (${(elapsed / 1000).toFixed(2)}s)`);
+  process.exit(1);
+}
+process.exit(failed ? 1 : 0);

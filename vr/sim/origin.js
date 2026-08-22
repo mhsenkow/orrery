@@ -190,6 +190,8 @@ function tidePoolFactor(W, c) {
 
 export function originTick(W, chronLog) {
   if (W.rule?.daisyworld || W.rule?.airless) return;
+  // B48 — sterile worlds never originate unless Life tools already flipped abiogenesis.
+  if (W.rule?.sterile && !W.transitions?.abiogenesis) return;
   initOrigin(W);
   const T = W.transitions;
   if (!T) return;

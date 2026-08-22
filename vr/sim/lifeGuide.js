@@ -1,5 +1,6 @@
 /** Species page, genome card, tree layout, Newick — the inspectable biosphere. */
 
+import { clamp } from '../math.js';
 import { AXES, INTEGERS, ORGAN_BY_ID, BAND_BY_ID, BIOCHEM } from './lifeGrammar.js';
 import { describeGenome, expressBodyPlan, genomeKey, morphPenalty } from './genome.js';
 import { nodeOf, TRAITS, kleiberDensity } from './evolve.js';

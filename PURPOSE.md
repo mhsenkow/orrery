@@ -24,10 +24,17 @@ When these faces conflict:
 3. **Delight in the first ninety seconds** beats feature count in the dock.
 4. **Stated limits** beat implied precision.
 
+Work order lives in one place: [`NEXT.md`](NEXT.md). Playtest claims live in [`PLAYTESTS.md`](PLAYTESTS.md).
+
+## Optional layer (not a face)
+
+**Dark / Evil** — war, ordnance, deterrence, authored harm — is implemented but **not** one of the four faces. It is a gated optional layer (`?dark=1`). Default play and demos stay on the planet loop and Strike tools. See [`briefs/product.md`](briefs/product.md) and [`briefs/evil.md`](briefs/evil.md).
+
 ## Not for
 
 - Predicting next year’s climate.
 - Replacing a GCM, a biogeochemical box model, or a phylogenetics package.
 - Unlimited planetary vandalism without consequence — scarcity and attribution are load-bearing.
+- Shipping a nuclear-exchange sim as the front door.
 
 See [`briefs/model-limits.md`](briefs/model-limits.md).

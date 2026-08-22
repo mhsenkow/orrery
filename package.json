@@ -1,0 +1,24 @@
+{
+  "name": "orrery",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lint": "eslint --max-warnings 0 scripts/fields-census.mjs scripts/module-map.mjs scripts/fields-report.mjs scripts/typecheck-ratchet.mjs vr/sim/fields.js vr/sim/report.js vr/sim/hashFields.js vr/sim/testHelpers.js vr/sim/test-fast.mjs vr/sim/keymap.js vr/sim/focusTrap.js",
+    "format": "prettier --write scripts/fields-census.mjs scripts/module-map.mjs scripts/fields-report.mjs scripts/typecheck-ratchet.mjs vr/sim/fields.js vr/sim/report.js vr/sim/hashFields.js vr/sim/testHelpers.js vr/sim/test-fast.mjs vr/sim/keymap.js vr/sim/focusTrap.js eslint.config.js prettier.config.js",
+    "format:check": "prettier --check scripts/fields-census.mjs scripts/module-map.mjs scripts/fields-report.mjs scripts/typecheck-ratchet.mjs vr/sim/fields.js vr/sim/report.js vr/sim/hashFields.js vr/sim/testHelpers.js vr/sim/test-fast.mjs vr/sim/keymap.js vr/sim/focusTrap.js eslint.config.js prettier.config.js",
+    "typecheck": "node scripts/typecheck-ratchet.mjs",
+    "typecheck:tsc": "tsc -p jsconfig.json --noEmit",
+    "fields:census": "node scripts/fields-census.mjs",
+    "fields:report": "node scripts/fields-report.mjs",
+    "modules:map": "node scripts/module-map.mjs",
+    "verify": "npm run lint && npm run format:check && npm run typecheck && npm run fields:report && node scripts/determinism-lint.mjs && node scripts/orphan-suites.mjs && npm run test:fast --prefix vr"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/node": "^22.20.1",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "typescript": "^5.8.2"
+  }
+}

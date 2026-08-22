@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": false,
+    "skipLibCheck": true,
+    "maxNodeModuleJsDepth": 0
+  },
+  "include": [
+    "vr/sim/fields.js",
+    "vr/sim/report.js",
+    "vr/sim/units.js",
+    "vr/sim/hashFields.js",
+    "vr/sim/darkGate.js"
+  ],
+  "exclude": ["node_modules", "vr/data", "site"]
+}

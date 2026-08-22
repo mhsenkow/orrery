@@ -58,6 +58,9 @@ export function climateSnapshot(Wref = W) {
     rossbyNote: Wref._rossbyNote || '',
     tropPole: Wref._tropPole ?? null,
     colourMs: Wref._msColour ?? null,
+    tickMs: Wref._msTick ?? null,
+    msTable: Wref._ms || null,
+    degraded: Wref._degraded || null,
     intertidalPct: (Wref.intertidalFrac || 0) * 100,
     meanPress: meanField(Wref.press),
     teqK: Wref.rule?.teqK ?? null,
@@ -583,6 +586,7 @@ export function refreshClimatePanel(opts = {}) {
       <div class="clim-chip"><span>ITCZ</span><b>${snap.itczDeg.toFixed(0)}°</b></div>
       <div class="clim-chip"><span>Moon</span><b>${snap.moonIllum != null ? `${(snap.moonIllum * 100) | 0}%` : '—'}</b></div>
       <div class="clim-chip"><span>ms</span><b>${snap.colourMs != null ? snap.colourMs.toFixed(1) : '—'}</b></div>
+      <div class="clim-chip"><span>tick</span><b>${snap.tickMs != null ? snap.tickMs.toFixed(1) : '—'}</b></div>
     `;
   }
   const chart = document.getElementById('climChart');
@@ -607,7 +611,7 @@ export function refreshClimatePanel(opts = {}) {
     explain.innerHTML = `
       <div class="clim-fact"><b>${snap.cells}</b> circulation cells / hemisphere · trades near ITCZ read as <b>${band}</b></div>
       <div class="clim-fact">${snap.rossbyNote || snap.spinNote}${snap.tropPole != null ? ` · tropics−pole ΔT <b>${snap.tropPole.toFixed(2)}</b>` : ''}</div>
-      <div class="clim-fact">Cloud cover ~<b>${(snap.meanCloud * 100) | 0}%</b> · mean wind <b>${snap.meanWind.toFixed(2)}</b>${snap.colourMs != null ? ` · colour <b>${snap.colourMs.toFixed(1)} ms</b>` : ''}</div>
+      <div class="clim-fact">Cloud cover ~<b>${(snap.meanCloud * 100) | 0}%</b> · mean wind <b>${snap.meanWind.toFixed(2)}</b>${snap.colourMs != null ? ` · colour <b>${snap.colourMs.toFixed(1)} ms</b>` : ''}${snap.tickMs != null ? ` · sim <b>${snap.tickMs.toFixed(1)} ms</b>` : ''}${snap.degraded?.length ? ` · reduced: ${snap.degraded.join(', ')}` : ''}</div>
       <div class="clim-fact">${snap.moon
         ? `Moon ${snap.moon.mass.toFixed(2)} M @ ${snap.moon.distance.toFixed(2)} · axis ${W.obliquityWander ? 'wanders' : 'stable'}`
         : 'No moon — solar tide only, obliquity may wander'}</div>

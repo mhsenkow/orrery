@@ -1,0 +1,28 @@
+{
+  "world": "Earth",
+  "ruleId": "terra",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 40 },
+  "n": 32,
+  "source": "Frozen modern-Earth anchor (B41). Bands tightened B21–B25 from earth-reference.json.",
+  "early": {
+    "meanTemp": { "lo": 0.42, "hi": 0.58, "tag": "fitted@earth", "why": "±~0.08 around 0.50 (~288 K); ≤3×" },
+    "landFrac": { "lo": 0.248, "hi": 0.336, "tag": "measured", "why": "±15% around 0.292 (B24)" },
+    "iceFrac": { "lo": 0.02, "hi": 0.12, "tag": "fitted", "why": "non-zero cryosphere (B23); upper tightened vs first gate" },
+    "O2": { "lo": 0.18, "hi": 0.24, "tag": "measured", "why": "around 0.2095 (±~15%)" },
+    "CO2ppm": { "lo": 315, "hi": 525, "tag": "measured", "why": "±25% around ~420 ppm (B22)" },
+    "meanLife": { "lo": 0.08, "hi": 0.24, "tag": "invented", "why": "≤3× around ~0.18 carrying-capacity mid (B21)" },
+    "zonalTemp": { "lo": 0.20, "hi": 0.70, "tag": "fitted", "why": "zonal structure present" },
+    "zonalPrecip": { "lo": 0.15, "hi": 0.75, "tag": "fitted", "why": "precip not uniform" },
+    "tropPole": { "lo": 0.08, "hi": 0.24, "tag": "fitted", "why": "~45 K / 160 K ≈ 0.28 map; band ≤3× around mid (B25)" },
+    "meanPrecip": { "lo": 0.02, "hi": 0.20, "tag": "fitted", "why": "hydrologic cycle running" }
+  },
+  "late": {
+    "meanLife": { "lo": 0.08, "hi": 0.28, "tag": "invented", "why": "biosphere holds after 40 ticks; ≤3.5×" }
+  },
+  "golden": {
+    "ticks": 40,
+    "seed": 42,
+    "note": "Updated via scripts/golden-corpus.mjs --update when intentional"
+  }
+}

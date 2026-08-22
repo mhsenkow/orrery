@@ -1,28 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>ORRERY</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@500;700;800&family=IBM+Plex+Mono:wght@400;500&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../shared/tokens.css">
+<link rel="stylesheet" href="./fonts/fonts.css">
+<link rel="preload" href="./fonts/syne-700.woff2" as="font" type="font/woff2" crossorigin>
 <style>
-  :root { color-scheme: dark;
-    --bg: #03050a;
-    --panel: rgba(8,12,20,.78);
-    --line: rgba(120,160,220,.14);
-    --text: #e6eef8;
-    --dim: #7a8aa3;
-    --accent: #6ea0ff;
-    --accent2: #2a55c8;
-    --ok: #6fd6a4;
-    --amber: #e4b86a;
-    --copper: #c4784a;
-    --ease: cubic-bezier(0.4, 0, 0.2, 1);
-    --safe-t: env(safe-area-inset-top, 0px);
-    --safe-r: env(safe-area-inset-right, 0px);
-    --safe-b: env(safe-area-inset-bottom, 0px);
-    --safe-l: env(safe-area-inset-left, 0px);
-    --gutter: 12px;
+  :root { color-scheme: dark; }
+  /* L35 — visible focus on dark UI */
+  :focus-visible {
+    outline: 2px solid var(--orr-gold, #c4a35a);
+    outline-offset: 2px;
   }
+  /* M16 — skip past chrome to the planet */
+  .skip-planet {
+    position: absolute; left: -999px; top: 8px; z-index: 100;
+    padding: 8px 12px; background: var(--panel); color: var(--text);
+    border: 1px solid var(--line); border-radius: 8px;
+  }
+  .skip-planet:focus { left: calc(var(--gutter) + var(--safe-l)); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0;
+  }
+  #kbdSheet {
+    position: fixed; inset: 0; z-index: 90; display: flex; align-items: center; justify-content: center;
+    background: rgba(3,5,10,.55); pointer-events: auto;
+  }
+  #kbdSheet[hidden] { display: none !important; }
+  #kbdSheet .kbd-card {
+    max-width: min(420px, 92vw); padding: 16px 18px; border-radius: 12px;
+    background: var(--panel); border: 1px solid var(--line); color: var(--text);
+    box-shadow: 0 16px 48px rgba(0,0,0,.45);
+  }
+  #kbdSheet h3 {
+    margin: 0 0 10px; font-family: Syne, sans-serif; font-size: 13px;
+    letter-spacing: .14em; text-transform: uppercase; color: var(--orr-gold, #c4a35a);
+  }
+  #kbdSheet .kbd-body p { margin: 0 0 8px; font-size: 12px; color: var(--dim); line-height: 1.45; }
+  #kbdSheet button { margin-top: 8px; }
   * { box-sizing: border-box; }
   html,body { margin:0; height:100%; height:100dvh; background:var(--bg); overflow:hidden;
     font: 12.5px/1.45 "IBM Plex Mono", ui-monospace, Menlo, monospace; color:var(--text);
@@ -35,6 +53,11 @@
       linear-gradient(180deg, #05070e 0%, #03050a 100%);
   }
   #c { display:block; width:100%; height:100%; touch-action:none; position:relative; z-index:1; }
+  #c:focus { outline: none; }
+  #c:focus-visible {
+    outline: 2px solid var(--orr-gold, #c4a35a);
+    outline-offset: -2px;
+  }
   #ui { position:fixed; inset:0; pointer-events:none; z-index:2; }
   #ui.hidden { display:none; }
   #scalerung {
@@ -415,6 +438,34 @@
   .dock-foot { display:flex; gap:4px; flex-wrap:wrap; }
   .dock-foot button { font-size:11px; padding:5px 8px; }
   .hint-mini { font-size:10px; color:var(--dim); margin:6px 0 0; line-height:1.4; }
+  .modes-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin: 8px 0 4px;
+  }
+  .mode-card {
+    border: 1px solid rgba(140, 170, 210, 0.18);
+    background: rgba(8, 16, 28, 0.45);
+    border-radius: 6px;
+    padding: 8px 8px 7px;
+    min-width: 0;
+  }
+  .mode-kicker {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 0 0 6px;
+  }
+  .mode-card .dock-foot { margin: 0; }
+  .mode-card .dock-foot button { width: 100%; justify-content: center; }
+  .mode-blurb {
+    font-size: 10px;
+    color: var(--dim);
+    margin: 6px 0 0;
+    line-height: 1.35;
+  }
   .field-label {
     display:flex; align-items:center; gap:6px; margin:0;
     font-size:10px; color:var(--dim); line-height:1.4;
@@ -794,9 +845,24 @@
     transition: border-color .2s var(--ease), transform .2s var(--ease);
   }
   .door-card:hover { border-color:rgba(110,160,255,.5); transform: translateY(-1px); }
+  .door-card.on { border-color:rgba(228,184,106,.55); box-shadow: inset 0 0 0 1px rgba(228,184,106,.2); }
+  .door-card.done { opacity: 0.72; }
+  .door-card.done .dt { color: #9ec4a8; }
   .door-card .dk { font-size:10px; letter-spacing:.22em; text-transform:uppercase; color:var(--amber); margin-bottom:6px; }
   .door-card .dt { font-family: Syne, sans-serif; font-weight:800; font-size:16px; margin-bottom:6px; }
   .door-card .db { font-size:12px; color:#b8c8e0; line-height:1.4; }
+  .door-foot {
+    display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;
+    padding-top:10px; border-top:1px solid var(--line);
+  }
+  .door-foot button {
+    font: inherit; cursor:pointer; border-radius:8px; padding:8px 12px;
+    border:1px solid var(--line); background:rgba(0,0,0,.28); color:inherit;
+  }
+  .door-foot button:hover { border-color:rgba(110,160,255,.45); }
+  #doorcontinue { border-color:rgba(228,184,106,.45); color:#f0d9a0; background:rgba(40,32,12,.45); }
+  #doorreset { color:#c8a0a0; }
+  .camp-row.camp-reset { border-style:dashed; color:#c8a0a0; }
   #campaigntrack { display:flex; flex-direction:column; gap:6px; margin:8px 0 10px; }
   .camp-row {
     display:flex; align-items:center; gap:8px; text-align:left;
@@ -835,6 +901,12 @@
   #receipt.show { opacity:1; transform:translate(-50%, 0); }
   #receipt b { color:#f0c070; font-weight:600; }
   #receipt small { color:#9fb0c8; font-size:11px; }
+  #receipt .receipt-btn {
+    margin-top:6px; margin-right:6px; padding:3px 8px; font:inherit; font-size:11px;
+    color:#d8e4f4; background:rgba(255,255,255,0.08); border:1px solid rgba(255,255,255,0.18);
+    border-radius:4px; cursor:pointer;
+  }
+  #receipt .receipt-btn:hover { background:rgba(255,255,255,0.14); }
 
   #commitring {
     pointer-events:none; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
@@ -1597,14 +1669,14 @@
     #topbar .actions { flex-wrap: nowrap; flex-shrink: 0; gap: 4px; }
     #topbar .actions button {
       padding: 8px;
-      min-height: 40px;
-      min-width: 40px;
+      min-height: 44px;
+      min-width: 44px;
     }
     #topbar .actions .btn-label,
     #topbar #tourbtn .btn-label { display: none; }
     #topbar .actions .ico,
     #topbar #tourbtn .ico { width: 16px; height: 16px; }
-    #tourbtn { padding: 8px; min-height: 40px; min-width: 40px; }
+    #tourbtn { padding: 8px; min-height: 44px; min-width: 44px; }
     #worldchip { font-size: 11px; flex: 1 1 auto; }
     #lessonchip { max-width: 5.5rem; overflow: hidden; text-overflow: ellipsis; }
 
@@ -1652,11 +1724,20 @@
     }
     .dock-tabs .btn-label { display: none; }
     .suite-desk-tab .btn-label { display: none; }
-    .suite-desk-tab { min-width: 44px; min-height: 40px; padding: 8px 6px; }
+    .suite-desk-tab { min-width: 44px; min-height: 44px; padding: 8px 6px; }
     .phone-only { display: block !important; }
     .desk-only { display: none !important; }
     .clim-strip { grid-template-columns: 1fr 1fr; }
     .clim-compare { grid-template-columns: 1fr; }
+    .tools button, .dock-foot button, .god-actions button, .god-primary,
+    #toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsEvil button {
+      min-height: 44px;
+      padding: 10px 12px;
+      font-size: 12px;
+    }
+    .dock-body { font-size: 13px; line-height: 1.45; }
+    #landpickclose, #landpickcontinue, #catclose { min-height: 44px; min-width: 44px; }
+    .lp-card { min-height: 44px; }
     #localkey .lk-grid,
     #localkey .lk-grid.guilds,
     #localkey .lk-grid.marks,
@@ -1754,12 +1835,18 @@
   }
 
   @media (pointer: coarse) {
-    #topbar button, .dock-tabs button, .rib-pause, .rib-ff, .rib-step {
-      min-height: 36px;
+    #topbar button, .dock-tabs button, .rib-pause, .rib-ff, .rib-step,
+    .suite-desk-tab, .tools button, .dock-foot button, #toolrail .toolrail-arm, #toolrail .toolrail-clear {
+      min-height: 44px;
+      min-width: 44px;
     }
   }
 </style>
-<canvas id="c"></canvas>
+</head>
+<body>
+<a class="skip-planet" href="#c">Skip to planet</a>
+<div id="planetLive" class="sr-only" aria-live="polite"></div>
+<canvas id="c" tabindex="0" role="application" aria-label="Planet. Arrow keys spin, WASD moves cursor, plus minus zoom, letter keys arm tools, Enter applies or descends."></canvas>
 <div id="bootload" aria-live="polite">
   <div class="boot-brand">Orrery</div>
   <div class="boot-spin" aria-hidden="true"></div>
@@ -2102,7 +2189,8 @@
             <button type="button" id="viewThought" aria-pressed="true" title="Cernunnos — floating train of thought about the view">Thought</button>
           </div>
           <div class="sec-h" data-sec-icon="keys">Keys</div>
-          <p class="hint-mini">Open <b>key</b> on the map panel for globe crosses, night lights, map glyphs, hunt wedges, and cover colours. Keyboard: <kbd>scroll</kbd> zoom · drag spin · <kbd>shift-drag</kbd> park · <kbd>Home</kbd> recenter · <kbd>R</kbd> reseed · <kbd>space</kbd> pause · <kbd>,.</kbd> clock</p>
+          <p class="hint-mini">Open <b>key</b> on the map panel for globe crosses, night lights, map glyphs, hunt wedges, and cover colours.</p>
+          <p class="hint-mini" id="viewKeysKbd"></p>
           <div class="tools clim-actions" style="margin-top:6px">
             <button type="button" id="viewOpenKey" title="Globe & map legend">Globe &amp; map key</button>
           </div>
@@ -2130,6 +2218,7 @@
           <button type="button" id="labFinale" title="Write an ending artefact from how this world went">Finale</button>
           <button type="button" id="labPng" title="Export the first Lab chart as PNG">PNG</button>
           <button type="button" id="labDual" title="Dev: 24 ticks in a worker, compare hashes">Dual</button>
+          <button type="button" id="labDiag" title="Copy diagnostics — seed, N, climate path, last errors">Diagnostics</button>
         </div>
         <div id="labstats"></div>
       </div>
@@ -2141,9 +2230,21 @@
         <div class="suite-desk on" data-suite-panel="sandbox" data-desk-panel="modes">
           <div class="sec-h" data-sec-icon="modes">Modes</div>
           <div class="clim-strip" id="worldModeStrip" aria-live="polite"></div>
-          <div class="dock-foot">
-            <button type="button" id="budget" aria-pressed="false">Free</button>
-            <button type="button" id="autopilot" aria-pressed="false">Gaia</button>
+          <div class="modes-pair">
+            <div class="mode-card">
+              <div class="mode-kicker">Your power</div>
+              <div class="dock-foot">
+                <button type="button" id="budget" aria-pressed="false" title="Cycle energy rules">Free</button>
+              </div>
+              <p class="mode-blurb" id="energyBlurb">Sandbox. Tools never spend energy or wait on cooldowns.</p>
+            </div>
+            <div class="mode-card">
+              <div class="mode-kicker">Planet autopilot</div>
+              <div class="dock-foot">
+                <button type="button" id="autopilot" aria-pressed="false" title="Cycle Gaia drive">Off</button>
+              </div>
+              <p class="mode-blurb" id="gaiaBlurb">You drive. The planet will not nudge solar or CO₂ on its own.</p>
+            </div>
           </div>
           <div class="dock-foot" style="margin-top:6px;flex-wrap:wrap;gap:8px">
             <label class="field-label">
@@ -2171,7 +2272,7 @@
               </select>
             </label>
           </div>
-          <p class="hint-mini">Sim cells regenerate the world (RAM is not the limiter — tick time is). Globe quads are visual only. Mesh auto-caps at ~768 edge.</p>
+          <p class="hint-mini">Energy is <em>your</em> scarcity. Gaia is the <em>planet</em> acting without you. Sim cells regenerate the world (tick time limits, not RAM). Globe quads are visual only.</p>
         </div>
         <div class="suite-desk" data-suite-panel="sandbox" data-desk-panel="archive" hidden>
           <div class="sec-h" data-sec-icon="archive">Archive</div>
@@ -2228,11 +2329,16 @@
       <button type="button" id="doorskip">Just the planet</button>
     </div>
     <div id="doorgrid"></div>
+    <div id="doorfoot" class="door-foot">
+      <button type="button" id="doorcontinue">Continue</button>
+      <button type="button" id="doorskipahead" title="Mark this lesson done and start the next">Skip lesson</button>
+      <button type="button" id="doorreset" title="Clear all lesson progress">Reset tour</button>
+    </div>
   </div>
 
   <div id="timeribbon"></div>
 
-  <div id="landpick" role="dialog" aria-label="Pick a starting world">
+  <div id="landpick" role="dialog" aria-modal="true" aria-label="Pick a starting world">
     <div class="lp-head">
       <div>
         <h1>Pick a starting world</h1>
@@ -2258,7 +2364,7 @@
     <div id="localkeylist"></div>
   </div>
 
-  <div id="catpanel">
+  <div id="catpanel" role="dialog" aria-modal="true" aria-label="Worlds">
     <div class="cat-head">
       <h1>Worlds</h1>
       <div class="cat-nav">
@@ -2328,5 +2434,14 @@
     <button type="button" id="eorefClose">Hide still</button>
   </div>
 </div>
-<div id="err"></div>
-    <script type="module" src="./main.js?v=alive69"></script>
+<div id="err" role="status" aria-live="polite"></div>
+<div id="kbdSheet" hidden role="dialog" aria-modal="true" aria-label="Keyboard shortcuts">
+  <div class="kbd-card">
+    <h3>Keyboard</h3>
+    <div class="kbd-body"></div>
+    <button type="button" id="kbdSheetClose">Close</button>
+  </div>
+</div>
+<script type="module" src="./main.js?v=alive71"></script>
+</body>
+</html>

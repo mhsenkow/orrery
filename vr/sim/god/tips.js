@@ -206,7 +206,7 @@ export const PLAY_TIPS = {
   },
   tourbtn: {
     title: 'Tour',
-    body: 'Re-open the front door or resume the next lesson. Hold Earth → Daisyworld → Mars → Io → Europa → Titan. Shortcut: ?',
+    body: 'Opens the lesson door — continue, skip ahead, pick any beat, or reset to Hold Earth. Shortcut: ?',
   },
   landpickcontinue: {
     title: 'Continue to lessons',
@@ -261,12 +261,12 @@ export const PLAY_TIPS = {
     body: 'Copies four words and a landscape — ember-coral-dune-frost.shattered — plus a ?world= link. Anyone opening that link gets the same starting continents.',
   },
   budget: {
-    title: 'Energy mode',
-    body: 'Free: tools are unlimited. Observe: looking is free, acting costs. Budget: SimEarth-style scarcity — income rises with a healthy biosphere.',
+    title: 'Your power (Energy)',
+    body: 'Free → Observe → Budget → Free. Free is sandbox (no spend). Observe: looking free, acting costs. Budget: income from a healthy biosphere; overspend hurts life. Independent of Gaia.',
   },
   autopilot: {
-    title: 'Gaia',
-    body: 'Cycles the planetary autopilot: off → Regulator (hold the climate) → Gardener (grow life) → Experimenter (nudge when calm) → off. It reads mood, tipping proximity and resilience — not just temperature — then nudges solar/CO₂. Daisyworld regulation is separate and does not need this button.',
+    title: 'Planet autopilot (Gaia)',
+    body: 'Off → Regulator → Gardener → Experimenter → Off. When on, the planet nudges solar/CO₂ with the same verbs you have. Regulator holds climate; Gardener grows life; Experimenter pokes when calm. Not Daisyworld. Independent of Energy.',
   },
   pause: {
     title: 'Pause',
@@ -518,7 +518,7 @@ export const SUITE_TIPS = {
     notes: { title: 'Notes', body: 'Model limits and glossary. What this sim will not pretend to know.' },
   },
   sandbox: {
-    modes: { title: 'Modes', body: 'Energy (Free / Observe / Budget), Gaia autopilot, and grid resolution.' },
+    modes: { title: 'Modes', body: 'Two separate dials: Energy (your scarcity) and Gaia (planet autopilot), plus grid resolution.' },
     archive: { title: 'Archive', body: 'Orrery table of shelf worlds, and a markdown chronicle export.' },
   },
 };

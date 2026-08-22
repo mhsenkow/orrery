@@ -1,0 +1,15 @@
+{
+  "world": "Daisyworld",
+  "ruleId": "daisy",
+  "seeds": [1],
+  "ticks": { "early": 8, "late": 24 },
+  "n": 32,
+  "source": "Tutorial two-species feedback (B94 class)",
+  "early": {
+    "meanTemp": { "lo": 0.25, "hi": 0.75, "tag": "fitted", "why": "daisy feedback band" },
+    "meanLife": { "lo": 0.05, "hi": 0.95, "tag": "invented", "why": "daisies are the biosphere" }
+  },
+  "late": {
+    "meanTemp": { "lo": 0.25, "hi": 0.75, "tag": "fitted", "why": "temperature regulated" }
+  }
+}

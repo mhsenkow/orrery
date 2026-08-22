@@ -38,7 +38,7 @@ void main(){
   float insol = texture(uSun, vUV).r * uSolar;
   float above = max(0.0, h - uSea);
   // Clouds trap infrared as well as reflecting sunlight — same term as atmo.js.
-  float eq = insol * (1.0 - alb) * 0.95 + uGh * 1.4 + c0.a * uCloudGh - above * uLapse * 0.35 + 0.12;
+  float eq = insol * (1.0 - alb) * 0.95 + uGh * 1.4 + clouds * uCloudGh - above * uLapse * 0.35 + 0.12;
   float mass = mix(0.14, 0.035, isSea);
   if (uAirless > 0.5) mass = 0.45;
   // 4-neighbour Laplacian via geo neighbour UVs packed in uNbr0/1 would be ideal;
@@ -244,7 +244,8 @@ void main(){
   vec3 dir = texture(uDir, vUV).rgb;
   float h = g.r;
   float isSea = step(h, uSea);
-  float alb = clamp(c0.b * 0.42 + c0.a * uCloudAlb + g.a * 0.22 + mix(0.18, 0.06, isSea), 0.0, 0.85);
+  float clouds = c0.a;
+  float alb = clamp(c0.b * 0.42 + clouds * uCloudAlb + g.a * 0.22 + mix(0.18, 0.06, isSea), 0.0, 0.85);
   float insol = texture(uSun, vUV).r * uSolar;
   float above = max(0.0, h - uSea);
   // Clouds trap infrared as well as reflecting sunlight — same term as atmo.js.
@@ -254,7 +255,6 @@ void main(){
   float t = clamp(c0.r + (eq - c0.r) * mass, 0.0, 1.6);
   float m = c0.g;
   float ice = c0.b;
-  float clouds = c0.a;
   float ash = f0.a;
   float precip = f0.b;
 

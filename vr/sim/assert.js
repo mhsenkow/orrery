@@ -34,26 +34,30 @@ export function assertSpeciesScale(W) {
   }
 }
 
-/** Area-weighted water proxy: ocean depth + moisture on land + ice.
+/** Area-weighted water inventory — one formula for hydro + assert (C81 / A29).
  *
- *  Deliberately *not* `hydroTick`'s water mass. `hydro.js` keeps its own
- *  inventory on a different scale (it weights vapour ×50 and depth ×0.5) and it
- *  acts on the result — a drift above 0.5 nudges `gases.H2O` and clamps the
- *  routed mass. The two used to share `W._waterMass0` and `W.waterMass`, so
- *  whichever ran last won the latch, and a debug assertion could hand hydro a
- *  reference on the wrong scale and make it push water into the air to close a
- *  gap that did not exist. This one is read-only: it publishes `waterProxy*`
- *  and nothing in the simulation reads those. */
-export function waterMass(W) {
-  let m = 0;
+ *  Scale matches hydroTick's acting inventory (vapour×50, moist, ice, depth×0.5).
+ *  assertBudgets used to keep a different proxy and a ±35% band; both now share this.
+ */
+export function waterInventory(W) {
+  const gases = W.gases || {};
   const sea = W.seaLevel;
+  const h = W.h;
+  const moist = W.moist;
+  let mass = (gases.H2O || 0) * 50;
   for (let c = 0; c < NC; c++) {
     const a = AREA[c];
-    if (W.h[c] < sea) m += (sea - W.h[c]) * a;
-    else m += W.moist[c] * 0.02 * a;
-    m += (W.ice[c] || 0) * 0.05 * a;
+    mass += (moist[c] || 0) * a * 0.1;
+    mass += (W.iceLand?.[c] || 0) * a * 0.35;
+    mass += (W.iceSea?.[c] || 0) * a * 0.08;
+    if (h[c] < sea) mass += (sea - h[c]) * a * 0.5;
   }
-  return m;
+  return mass;
+}
+
+/** @deprecated use waterInventory — kept as alias for callers. */
+export function waterMass(W) {
+  return waterInventory(W);
 }
 
 /** Rough carbon inventory in relative units (atmosphere + reservoirs). */
@@ -71,15 +75,20 @@ export function carbonMass(W) {
 /**
  * Run assertions. Returns { ok, warnings[] }.
  * Soft by default — never throws unless W.debugAssert === 'throw'.
+ *
+ * Uses the same `waterInventory` formula as hydroTick (C81) but a separate
+ * latch (`_waterProxy0`) so debug assertions never overwrite hydro's acting
+ * reference (`_waterMass0`).
  */
 export function assertBudgets(W) {
   const warnings = [];
-  if (W._waterProxy0 == null) W._waterProxy0 = waterMass(W);
-  const w = waterMass(W);
+  if (W._waterProxy0 == null) W._waterProxy0 = waterInventory(W);
+  const w = waterInventory(W);
   W.waterProxy = w;
   const drift = W._waterProxy0 > 1e-9 ? (w - W._waterProxy0) / W._waterProxy0 : 0;
   W.waterProxyDrift = drift;
-  if (Math.abs(drift) > 0.35) {
+  // Shared formula — tighten from the old ±35% dual-scale proxy band (C81).
+  if (Math.abs(drift) > 0.12) {
     warnings.push(`water drift ${(drift * 100).toFixed(1)}%`);
   }
 

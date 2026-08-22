@@ -7,6 +7,8 @@
 import { clamp, lerp, fbm, ridged, mulberry32 } from '../math.js';
 import { NC, DIR } from '../sphere.js';
 import { STAMP_BY_ID } from './stampTable.js';
+import { craterCounts } from './landform.js';
+import { worldAxes } from './worldAxes.js';
 
 function randomUnit(rng) {
   const u = rng() * 2 - 1, th = rng() * Math.PI * 2, r = Math.sqrt(1 - u * u);
@@ -482,7 +484,27 @@ function applyOp(W, seed, op, bag, state) {
 }
 
 function finish(W, spec, seed) {
-  if (spec.craters) stampCraters(W.h, seed, spec.craters);
+  // C26 — craterCounts drives stampCraters for cratered worlds.
+  // Do not stamp Earth-like resurfacing planets (would move every heightfield).
+  let craters = null;
+  if (spec.craters != null) {
+    const authored = typeof spec.craters === 'object' ? spec.craters : {};
+    try {
+      const ax = W._worldAxes || (W.rule ? worldAxes(W.rule) : null);
+      const counted = ax && W.rule ? craterCounts(W.rule, ax) : {};
+      craters = { ...counted, ...authored };
+    } catch {
+      craters = authored;
+    }
+  } else if (W.rule?.airless) {
+    try {
+      const ax = W._worldAxes || worldAxes(W.rule);
+      craters = craterCounts(W.rule, ax);
+    } catch { /* */ }
+  }
+  if (craters && ((craters.nLarge | 0) > 0 || (craters.nMid | 0) > 0 || (craters.micro || 0) > 0)) {
+    stampCraters(W.h, seed, craters);
+  }
   if (spec.extraCraters) stampCraters(W.h, seed ^ seedTag(spec.extraCraters.seedXor), spec.extraCraters);
   if (spec.dryWorld != null) dryWorld(W, spec.dryWorld);
   for (let c = 0; c < NC; c++) W.h[c] = clamp(W.h[c], -1.2, 1.2);

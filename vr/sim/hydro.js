@@ -1,4 +1,6 @@
-/** Hydrosphere: conserved water, sea level, rivers, lakes, ice. */
+/** Hydrosphere: conserved water, sea level, rivers, lakes, ice.
+ *  @provenance tagged-module
+ */
 
 import { clamp } from '../math.js';
 import { NC, NBR, NBR8, DIR, AREA, NBR_E, NBR_N, NBR_ICHORD, cellSizeKm } from '../sphere.js';
@@ -13,6 +15,7 @@ import {
 } from './substrateField.js';
 import { coverTick, reservoirTick } from './cover.js';
 import { clathrateTick } from './columnSketch.js';
+import { waterInventory } from './assert.js';
 
 /* The water cycle's rates, in one place.
  *
@@ -31,24 +34,34 @@ import { clathrateTick } from './columnSketch.js';
  * `RAIN_GAIN` converts condensed vapour into the 0–1 rain intensity the rest of
  * the sim reads, set so that a wet tropical cell lands near 0.4 and the sums in
  * `SOIL_PER_RAIN` / `DRY_LOSS` keep a rained-on continent wet. */
+/* fitted: 0.036 — sat vapour at T=0.5; anchors RH */
 const SATREF = 0.036;
+/* fitted: 0.62 — sea evaporative closure per tick (10 yr clock) */
 const EVAP_SEA = 0.62;
+/* fitted: 0.10 — land evaporative closure per tick */
 const EVAP_LAND = 0.10;
-const SOIL_PER_VAPOUR = 7.5;   // soil moisture lost per unit vapour evaporated
-const LAKE_PER_VAPOUR = 2.2;   // lake level lost per unit vapour evaporated
-const SOIL_PER_RAIN = 0.075;   // soil moisture gained per unit rain intensity
+/* fitted: 7.5 — soil moisture lost per unit vapour evaporated */
+const SOIL_PER_VAPOUR = 7.5;
+/* fitted: 2.2 — lake level lost per unit vapour evaporated */
+const LAKE_PER_VAPOUR = 2.2;
+/* fitted: 0.075 — soil moisture gained per unit rain intensity */
+const SOIL_PER_RAIN = 0.075;
 /* Drainage and sublimation from bare soil, scaled by the ruleset's `aridity`.
    That knob used to multiply land *evaporation* — which made a world's dryness a
    property of how readily its soil gave up water to the air rather than of how
    fast it lost it altogether, and left Earth's land barely transpiring at
    aridity 0.05. It reads better as the sink: 0.004 a tick on Earth, eight times
    that on Ares, which is what the old moisture balance did in the end anyway. */
+/* fitted: 0.08 — dry-out per unit aridity per tick */
 const DRY_PER_ARIDITY = 0.08;
+/* fitted: 120 — condensed vapour → 0–1 rain intensity */
 const RAIN_GAIN = 120;
 /* Sea water freezes about 1.8 K below fresh — 0.011 on a scale of 160 K to the
    unit — and `ICE_LATENT` is how much ice one unit of temperature deficit makes,
    i.e. the latent heat of fusion in this model's units. */
+/* measured: 0.011 — ≈1.8 K seawater freeze depression / 160 K */
 const SEA_FREEZE_DROP = 0.011;
+/* fitted: 3.2 — latent heat of fusion in sim units */
 const ICE_LATENT = 3.2;
 
 /** Saturation vapour per cell, cached for the tick. Read by clouds and fog too. */
@@ -712,31 +725,11 @@ export function hydroTick(W) {
   }
 
   if (((W._tickIndex || 0) & 7) === 0 || W._waterMass0 == null) {
-    let mass = gases.H2O * 50;
-    for (let c = 0; c < NC; c++) {
-      mass += moist[c] * AREA[c] * 0.1;
-      mass += W.iceLand[c] * AREA[c] * 0.35;
-      mass += W.iceSea[c] * AREA[c] * 0.08;
-      if (h[c] < W.seaLevel) mass += (W.seaLevel - h[c]) * AREA[c] * 0.5;
-    }
+    // Shared inventory with assertBudgets (C81).
+    const mass = waterInventory(W);
     if (W._waterMass0 == null) W._waterMass0 = mass;
     const drift = mass - W._waterMass0;
-    /* Pull the budget back through the vapour field, gently, and never through
-     * `gases.H2O`.
-     *
-     * This used to correct the inventory by subtracting `drift · 0.002` from
-     * `gases.H2O` directly. On a planet whose total water is some 7 900 units
-     * that is a correction of order one applied to a quantity of order 0.03: the
-     * moment the soil got wetter than the baseline — which is exactly what
-     * happened when the water cycle started working — the atmosphere's water
-     * vapour was zeroed outright, every eighth tick, along with the greenhouse
-     * that depends on it. The visible symptom was a planet cooling 0.2 in three
-     * hundred ticks with no ice to blame it on and no term in the budget out of
-     * place, because between hammer blows everything looked fine.
-     *
-     * `gases.H2O` is a diagnosis of the vapour field now, so writing to it could
-     * never have conserved anything anyway. Correcting the field itself does,
-     * and a bounded fraction per application cannot become a forcing. */
+    /* Pull the budget back through the vapour field, gently, never gases.H2O. */
     const rel = drift / (W._waterMass0 + 1e-6);
     if (Math.abs(rel) > 0.004 && W.vapour) {
       const k = clamp(-rel * 0.05, -0.02, 0.02);

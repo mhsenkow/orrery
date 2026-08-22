@@ -21,6 +21,22 @@ export function saveShelf(shelf) {
 
 export function shelfEntryFromWorld(W, serializeRun) {
   const data = serializeRun();
+  let garden = null;
+  try {
+    // Lazy import avoided — caller may stamp garden; keep fields for delta.
+    garden = {
+      seed: (W.landSeed ?? W.seed) >>> 0,
+      ruleId: W.rule?.id,
+      meanLife: +(W.meanLife || 0).toFixed(4),
+      meanTemp: +(W.meanTemp || 0).toFixed(4),
+      iceFrac: +(W.iceFrac || 0).toFixed(4),
+      builtFrac: +(W.builtFrac || 0).toFixed(4),
+      cities: (W.cities?.length | 0),
+      herds: 0,
+      ageYr: W.ageYr || 0,
+      at: Date.now(),
+    };
+  } catch { /* */ }
   return {
     id: `${W.seed}-${Date.now()}`,
     name: W.worldName || W.rule?.name || 'World',
@@ -34,6 +50,7 @@ export function shelfEntryFromWorld(W, serializeRun) {
     playerFrac: W.attribution?.player || 0,
     style: W.interventionLog ? undefined : undefined,
     savedAt: Date.now(),
+    garden,
     data,
   };
 }

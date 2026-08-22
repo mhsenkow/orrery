@@ -6,12 +6,14 @@ import { NC, NBR, DIR, AREA } from '../sphere.js';
 import { TRAITS, nodeOf } from './evolve.js';
 import { transferOrgan } from './genome.js';
 
-/** Record fossils when lineages die in depositing cells. Item 177. */
+/** Record fossils when lineages die in depositing cells. Item 177.
+ *  Lazy per-cell slots — do not preallocate NC empty arrays (E49). */
 export function recordFossil(W, node, cell, reason = 'burial') {
-  if (!W.fossils) W.fossils = Array.from({ length: NC }, () => []);
+  if (!W.fossils) W.fossils = new Array(NC);
   const depositing = W.sediment[cell] > 0.05 || W.h[cell] < W.seaLevel;
   if (!depositing && W.ice[cell] < 0.3) return;
-  const slot = W.fossils[cell];
+  let slot = W.fossils[cell];
+  if (!slot) slot = W.fossils[cell] = [];
   slot.push({
     name: node.name,
     id: node.id,

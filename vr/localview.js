@@ -700,6 +700,8 @@ export function drawLocalView(cvs, inspect, opts = {}) {
 
   weatherOverlay(ctx, ox, oy, cellPx, cells, side);
   if (hiFi) paintPlumes(ctx, ox, oy, cellPx, cells, side);
+  paintCuePulse(ctx, ox, oy, cellPx, cells, side, opts.cueKind);
+  paintCueSprites(ctx, ox, oy, cellPx, cells, side, opts.cueKind);
 
   const cellToXY = new Map();
   for (let iy = 0; iy < side; iy++) {
@@ -711,6 +713,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
   ctx.imageSmoothingEnabled = hiFi;
   const beings = [];
   const cellCounts = new Map();
+  const cueBoost = opts.cueKind === 'herd' || opts.cueKind === 'fire' || opts.cueKind === 'smoke';
   for (let i = 0; i < ENT.n; i++) {
     const m = ENT.meta[i];
     if (!m || m.dead) continue;
@@ -728,7 +731,7 @@ export function drawLocalView(cvs, inspect, opts = {}) {
     const h = hash2(m.id || m.cell, n);
     const jx = ((h & 255) / 255 - 0.5) * cellPx * 0.45;
     const jy = (((h >> 8) & 255) / 255 - 0.5) * cellPx * 0.45;
-    const gait = entityGait(m);
+    const gait = entityGait(m, cueBoost);
     const cx = ox + px * cellPx + cellPx * 0.5 + jx + gait[0];
     const cy = oy + py * cellPx + cellPx * 0.5 + jy + gait[1];
     const ageK = m.age ? Math.min(1.15, 0.72 + Math.min(40, m.age) * 0.008) : 1;
@@ -881,14 +884,20 @@ function entityBlend(m) {
   return Math.max(0, Math.min(1, 1 - (m.arriveAt - presentTime()) / span));
 }
 
-function entityGait(m) {
+function entityGait(m, cueBoost = false) {
   if (reducedMotion() || m.behav === 'rest') return [0, 0];
   const f = (m.plan?.stride || m.stride || 1);
-  const freq = (m.behav === 'flee' ? 11 : m.behav === 'hunt' ? 9 : 6.5)
+  let freq = (m.behav === 'flee' ? 11 : m.behav === 'hunt' ? 9 : 6.5)
     * Math.pow(Math.max(0.2, f), -0.16);
-  const amp = m.behav === 'flee' ? 1.8 : m.behav === 'hunt' ? 1.45 : 1.1;
+  let amp = m.behav === 'flee' ? 1.8 : m.behav === 'hunt' ? 1.45 : 1.1;
+  if (cueBoost) {
+    freq *= 1.4;
+    amp *= 1.85;
+  }
   const bob = Math.sin(presentTime() * freq + (m.id || 0) * 0.2) * amp;
-  const leanX = m.behav === 'flee' ? Math.cos(presentTime() * freq * 0.5) * 1.2 : 0;
+  const leanX = (m.behav === 'flee' || cueBoost)
+    ? Math.cos(presentTime() * freq * 0.5) * (cueBoost ? 1.6 : 1.2)
+    : 0;
   return [leanX, m.kind <= 2 ? 0 : bob];
 }
 
@@ -1482,6 +1491,110 @@ function paintPlumes(ctx, ox, oy, cellPx, cells, side) {
       if (ash > 0.28) drawPlume(ix, iy, Math.min(1, ash), c ^ 0x51);
     }
   }
+}
+
+function paintCuePulse(ctx, ox, oy, cellPx, cells, side, kind) {
+  if (!kind || kind === 'place' || reducedMotion()) return;
+  const t = presentTime();
+  const pulse = 0.45 + 0.55 * Math.sin(t * 7);
+  let rgba = null;
+  if (kind === 'fire') rgba = [255, 120, 40, 0.18 + pulse * 0.22];
+  else if (kind === 'smoke') rgba = [160, 150, 140, 0.12 + pulse * 0.16];
+  else if (kind === 'herd') rgba = [120, 200, 90, 0.1 + pulse * 0.14];
+  else if (kind === 'life') rgba = [80, 220, 120, 0.08 + pulse * 0.12];
+  if (!rgba) return;
+  ctx.save();
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      const c = cells[iy * side + ix];
+      if (c < 0) continue;
+      let hit = false;
+      if (kind === 'fire') hit = (W.fire?.[c] || 0) > 0.05 || (W.ash?.[c] || 0) > 0.08;
+      else if (kind === 'smoke') hit = (W.smoke?.[c] || 0) > 0.04 || (W.ash?.[c] || 0) > 0.1;
+      else if (kind === 'life') hit = (W.life?.[c] || 0) > 0.25;
+      else if (kind === 'herd') {
+        for (let i = 0; i < (ENT?.n || 0); i++) {
+          if (ENT.cell?.[i] === c && ENT.meta?.[i] && !ENT.meta[i].dead) { hit = true; break; }
+        }
+      }
+      if (!hit) continue;
+      const x = ox + ix * cellPx;
+      const y = oy + iy * cellPx;
+      ctx.fillStyle = `rgba(${rgba[0]},${rgba[1]},${rgba[2]},${rgba[3]})`;
+      ctx.fillRect(x, y, cellPx, cellPx);
+      ctx.strokeStyle = `rgba(${rgba[0]},${rgba[1]},${rgba[2]},${0.35 + pulse * 0.4})`;
+      ctx.lineWidth = Math.max(1, cellPx * 0.08);
+      ctx.strokeRect(x + 1, y + 1, cellPx - 2, cellPx - 2);
+    }
+  }
+  ctx.restore();
+}
+
+/** Brief motion sprites over cued cells — herd walk / fire embers / smoke drift. */
+function paintCueSprites(ctx, ox, oy, cellPx, cells, side, kind) {
+  if (!kind || kind === 'place' || kind === 'life' || reducedMotion()) return;
+  if (cellPx < 4) return;
+  const t = presentTime();
+  ctx.save();
+  let drawn = 0;
+  for (let iy = 0; iy < side; iy++) {
+    for (let ix = 0; ix < side; ix++) {
+      if (drawn > 48) break;
+      const c = cells[iy * side + ix];
+      if (c < 0) continue;
+      let hit = false;
+      if (kind === 'fire') hit = (W.fire?.[c] || 0) > 0.05 || (W.ash?.[c] || 0) > 0.08;
+      else if (kind === 'smoke') hit = (W.smoke?.[c] || 0) > 0.04 || (W.ash?.[c] || 0) > 0.08;
+      else if (kind === 'herd') {
+        for (let i = 0; i < (ENT?.n || 0); i++) {
+          if (ENT.cell?.[i] === c && ENT.meta?.[i] && !ENT.meta[i].dead) { hit = true; break; }
+        }
+      }
+      if (!hit) continue;
+      drawn++;
+      const x0 = ox + ix * cellPx + cellPx * 0.5;
+      const y0 = oy + iy * cellPx + cellPx * 0.5;
+      const h = hash2(c, kind === 'fire' ? 0xf1 : kind === 'smoke' ? 0x51 : 0xb3);
+      if (kind === 'fire') {
+        for (let k = 0; k < 3; k++) {
+          const ph = t * (9 + (k * 1.7)) + ((h >> (k * 3)) & 7);
+          const rise = ((Math.sin(ph) * 0.5 + 0.5) * cellPx * 0.55);
+          const wob = Math.cos(ph * 1.3) * cellPx * 0.12;
+          const a = 0.35 + 0.45 * Math.sin(ph * 0.7 + k);
+          ctx.fillStyle = `rgba(255,${140 + k * 30},${40 + k * 10},${Math.max(0.15, a)})`;
+          ctx.beginPath();
+          ctx.arc(x0 + wob, y0 - rise * 0.35 - k * 1.2, Math.max(1.2, cellPx * (0.08 + k * 0.02)), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (kind === 'smoke') {
+        const drift = ((t * 12 + (h & 255)) % (cellPx * 1.4)) - cellPx * 0.2;
+        const bob = Math.sin(t * 3.2 + c) * cellPx * 0.08;
+        ctx.fillStyle = 'rgba(190,185,178,0.28)';
+        ctx.beginPath();
+        ctx.ellipse(x0 + drift * 0.35, y0 - cellPx * 0.15 + bob, cellPx * 0.28, cellPx * 0.14, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(140,135,130,0.2)';
+        ctx.beginPath();
+        ctx.ellipse(x0 + drift * 0.2 - cellPx * 0.1, y0 - cellPx * 0.28 + bob, cellPx * 0.22, cellPx * 0.1, -0.15, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (kind === 'herd') {
+        const step = Math.sin(t * 8 + c * 0.3);
+        const stride = Math.cos(t * 8 + c * 0.3) * cellPx * 0.18;
+        const bob = Math.abs(step) * cellPx * 0.1;
+        ctx.fillStyle = 'rgba(90,200,100,0.85)';
+        ctx.beginPath();
+        ctx.ellipse(x0 + stride, y0 + cellPx * 0.12 - bob, cellPx * 0.16, cellPx * 0.1, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(200,255,160,0.7)';
+        ctx.lineWidth = Math.max(1, cellPx * 0.05);
+        ctx.beginPath();
+        ctx.moveTo(x0 + stride - cellPx * 0.12, y0 + cellPx * 0.05);
+        ctx.lineTo(x0 + stride + cellPx * 0.18, y0 - cellPx * 0.02 - bob);
+        ctx.stroke();
+      }
+    }
+  }
+  ctx.restore();
 }
 
 function castShadow(ctx, px, py, size, light) {

@@ -1,0 +1,16 @@
+{
+  "world": "Earth Thrive",
+  "ruleId": "thrive",
+  "seeds": [20260808],
+  "ticks": { "early": 8, "late": 40 },
+  "n": 32,
+  "source": "Demo ruleset visitors actually see (B94)",
+  "early": {
+    "meanTemp": { "lo": 0.30, "hi": 0.70, "tag": "fitted", "why": "living Holocene-ish" },
+    "meanLife": { "lo": 0.05, "hi": 0.50, "tag": "invented", "why": "demo biosphere" },
+    "landFrac": { "lo": 0.22, "hi": 0.38, "tag": "measured", "why": "same Earth land fraction" }
+  },
+  "late": {
+    "meanLife": { "lo": 0.04, "hi": 0.55, "tag": "invented", "why": "holds over short run" }
+  }
+}

@@ -12,14 +12,29 @@ import { setOrbit, injectAerosol } from './climate.js';
 import { issueReceipt } from './receipt.js';
 
 export const GAIA_DRIVES = [
-  { id: 'regulator', label: 'Regulator', aim: 'minimise tip risk and temperature swing' },
-  { id: 'gardener', label: 'Gardener', aim: 'maximise living biomass' },
-  { id: 'experimenter', label: 'Experimenter', aim: 'perturb when calm, learn the envelope' },
+  { id: 'regulator', label: 'Regulator', aim: 'minimise tip risk and temperature swing',
+    blurb: 'Holds the climate. Nudges solar and CO₂ when tips or fever rise — not Daisyworld.' },
+  { id: 'gardener', label: 'Gardener', aim: 'maximise living biomass',
+    blurb: 'Grows life. Keeps a living temperature band and feeds CO₂ when the garden is thin.' },
+  { id: 'experimenter', label: 'Experimenter', aim: 'perturb when calm, learn the envelope',
+    blurb: 'Pokes when calm. Brief solar pulses to learn the envelope — can backfire.' },
 ];
 
 export function gaiaDriveOf(W) {
   const id = W.gaiaDrive || 'regulator';
   return GAIA_DRIVES.find((d) => d.id === id) || GAIA_DRIVES[0];
+}
+
+/** UI copy for the World → Modes Gaia button (includes Off). */
+export function gaiaModeMeta(W) {
+  if (!W?.autopilot) {
+    return {
+      label: 'Off',
+      blurb: 'You drive. The planet will not nudge solar or CO₂ on its own.',
+    };
+  }
+  const d = gaiaDriveOf(W);
+  return { label: d.label, blurb: d.blurb || d.aim };
 }
 
 export function tipProximity(W) {

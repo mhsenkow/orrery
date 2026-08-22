@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install root tooling
+        run: npm ci
+      - name: Lint / format / types / fast tests
+        run: npm run verify
+
+  fidelity:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Fidelity gate
+        run: npm run fidelity
+      - name: Smoke
+        run: npm run smoke
+
+  parity-gpu:
+    if: ${{ vars.ORRERY_REQUIRE_GPU == '1' }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: vr
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: CPU↔GPU parity (required)
+        run: npm run parity:gpu

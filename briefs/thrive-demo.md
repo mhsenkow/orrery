@@ -1,9 +1,15 @@
 # The living-planet demo — how to see it
 
+**Demo rule:** Strike only (Ignite / Meteor). Never open Evil / Dark. Unlocking
+war tools with `?dark=1` is out of scope for a first pitch.
+
 Five things should be visible within ten minutes of opening the app with the sim
 running: settlement lights growing on the night side, a fire you started spreading
 through forest with smoke ahead of it and animals running from it, a herd moving
 with one heading, and a nutrient plume where marine animals surface-feed.
+
+**Fast open:** [`vr/?demo=1`](../vr/?demo=1) — living Earth, Strike hook if this
+browser has not done the first act yet.
 
 This is what to open, what to look at, and what the numbers are.
 

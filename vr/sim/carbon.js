@@ -1,29 +1,61 @@
 /** Carbon cycle — organic/inorganic reservoirs, O₂ from burial, proxies, acidification.
- *  Backlog items 98–112. */
+ *  @provenance tagged-module
+ */
 
 import { clamp } from '../math.js';
 import { NC, AREA } from '../sphere.js';
+import { UNIT_MAP } from './units.js';
+export { UNIT_MAP };
+
+/* fitted: 100 — mixing-ratio → reservoir scale */
+const ATM_SCALE = 100;
+/* fitted: 40 — ocean DIC / atmosphere ratio at init */
+const OCEAN_DIC_MULT = 40;
+/* invented: 5000 — vast geologic rock stock (relative) */
+const ROCK_STOCK0 = 5000;
+/* measured: 8.1 — modern surface ocean pH order */
+const PH0 = 8.1;
+/* measured: 3.5 — aragonite saturation order */
+const OMEGA0 = 3.5;
+/* measured: 0.00028 — preindustrial pCO₂ (Walker WHK) */
+const PCO2_REF = 0.00028;
+/* measured: 0.3 — WHK pCO₂ exponent (Walker 1981 shape) */
+const WHK_ALPHA = 0.3;
+/* fitted: 4 — vascular-plant weathering gain (Berner-ish, not 8×) */
+const WHK_PLANT = 4;
+/* fitted: 0.00045 — modern-plant outgassing counterpart */
+const WHK_KVOLC = 0.00045;
+/* numeric: 1e5 — years; dtYr / this → carbon rate norm */
+const CARBON_DT_REF_YR = 1e5;
+/* fitted: 0.12 — NPP draw rate into biomass path */
+const NPP_DRAW = 0.12;
+/* fitted: 0.0004 — biomass burial fraction scale */
+const BURY_BIO = 0.0004;
+/* fitted: 0.0002 — soil burial fraction scale */
+const BURY_SOIL = 0.0002;
+/* fitted: 0.004 — marine export burial scale */
+const BURY_SEA = 0.004;
 
 /** Partition atmospheric CO₂ into playable reservoirs (dimensionless mass units). */
 export function createCarbonState(gases) {
-  const atmC = (gases.CO2 || 0.0004) * 100; // scale mixing ratio → reservoir units
+  const atmC = (gases.CO2 || 0.0004) * ATM_SCALE;
   return {
     atmosphere: atmC,
-    oceanDIC: atmC * 40,      // ocean holds far more DIC than air
+    oceanDIC: atmC * OCEAN_DIC_MULT,
     biomass: 0.01,
     soil: 0.05,
     marineSediment: 2,
-    rock: 5000,             // vast geologic stock
-    buriedOrg: 0.5,         // organic carbon in rock (O₂ source when buried)
+    rock: ROCK_STOCK0,
+    buriedOrg: 0.5,
     methaneClathrate: 0.2,
     coal: 0,
     oil: 0,
-    d13C: 0,                // δ¹³C proxy (‰)
+    d13C: 0,
     d18O: 0,
     d34S: 0,
     sr87: 0.704,
-    surfacePH: 8.1,
-    omegaAragonite: 3.5,    // carbonate saturation
+    surfacePH: PH0,
+    omegaAragonite: OMEGA0,
     burialFlux: 0,
     weatheringFlux: 0,
   };
@@ -32,36 +64,27 @@ export function createCarbonState(gases) {
 export function syncGasesFromCarbon(W) {
   const C = W.carbon;
   if (!C) return;
-  // Map atmosphere reservoir back to mixing ratio (keep other gases)
-  W.gases.CO2 = clamp(C.atmosphere / 100, W.rule.minCO2 ?? 0.00005, 0.85);
+  W.gases.CO2 = clamp(C.atmosphere / ATM_SCALE, W.rule.minCO2 ?? 0.00005, 0.85);
 }
 
-/**
- * Photosynthesis / respiration cancel; free O₂ only from organic burial. Item 99.
- * dtYr scales rates so deep-time ticks still conserve sense.
- */
-
-/** Walker–Hays–Kasting silicate weathering in reservoir units per dt=1.
- *  α=0.3 on pCO₂; β is the existing exp((T−0.55)×4) land factor. */
+/** Walker–Hays–Kasting silicate weathering in reservoir units per dt=1. */
 export function whkWeathering(pCO2, landT, plantsOn) {
-  const pRef = 0.00028; // preindustrial. provenance: measured
-  const pFac = Math.pow(Math.max(1e-6, pCO2) / pRef, 0.3); // provenance: measured-shape (Walker 1981)
-  const plantGain = plantsOn ? 4 : 1; // Berner: vascular plants amplify, not 8×. provenance: fitted
-  const kVolc = 0.00045; // modern-plant outgassing counterpart. provenance: fitted
-  return kVolc * pFac * Math.max(0.05, landT) * plantGain;
+  const pFac = Math.pow(Math.max(1e-6, pCO2) / PCO2_REF, WHK_ALPHA);
+  const plantGain = plantsOn ? WHK_PLANT : 1;
+  return WHK_KVOLC * pFac * Math.max(0.05, landT) * plantGain;
 }
 
 export function carbonTick(W, chronLog) {
   const C = W.carbon;
   if (!C || W.rule.daisyworld) return;
 
-  const dt = Math.min(1, (W.dtYr || 200) / 1e5); // normalize to ~100 kyr reference
+  const dt = Math.min(1, (W.dtYr || 200) / CARBON_DT_REF_YR);
   const { life, h, seaLevel, temp, moist, gases } = W;
 
   // Volcanoes, impacts and the Hadean write gases.CO2; the reservoir is the owner.
-  const mapped = C.atmosphere / 100;
+  const mapped = C.atmosphere / ATM_SCALE;
   if (gases.CO2 > mapped + 1e-7) {
-    C.atmosphere += (gases.CO2 - mapped) * 100;
+    C.atmosphere += (gases.CO2 - mapped) * ATM_SCALE;
   }
 
   // Area-weighted means so rates do not scale with N. AREA is already mean-1.
@@ -81,7 +104,7 @@ export function carbonTick(W, chronLog) {
   }
 
   // Fast cycle is conserved against the biomass pool — life[] is density, not carbon.
-  const draw = Math.min(C.atmosphere * 0.2, nppW * 0.12 * dt);
+  const draw = Math.min(C.atmosphere * 0.2, nppW * NPP_DRAW * dt);
   const release = Math.min(C.biomass * 0.9, C.biomass * 0.1 * dt);
   C.atmosphere = Math.max(0.001, C.atmosphere - draw * 0.3);
   C.oceanDIC = Math.max(0.1, C.oceanDIC - draw * 0.7);
@@ -93,7 +116,7 @@ export function carbonTick(W, chronLog) {
 
   // Burial: fraction of biomass + soil escapes reoxidation → O₂ accumulates
   const anoxia = clamp(1 - gases.O2 * 4, 0.05, 1);
-  const bury = (C.biomass * 0.0004 + C.soil * 0.0002 + seaBio * 0.004) * anoxia * dt;
+  const bury = (C.biomass * BURY_BIO + C.soil * BURY_SOIL + seaBio * BURY_SEA) * anoxia * dt;
   C.burialFlux = bury;
   C.biomass = Math.max(0.001, C.biomass - bury);
   C.buriedOrg += bury;
@@ -119,7 +142,7 @@ export function carbonTick(W, chronLog) {
   // landRunoffT ≈ 0.12 on a temperate vegetated Earth (land×runoff×Tfac).
   const landT = landRunoffT / 0.12;
   const plantsOn = !!W.transitions?.landPlants;
-  const pNow = Math.max(1e-6, C.atmosphere / 100);
+  const pNow = Math.max(1e-6, C.atmosphere / ATM_SCALE);
   let weather = whkWeathering(pNow, landT, plantsOn) * dt;
   weather += 0.4 * 0.00045 * Math.pow(pNow / 0.00028, 0.3) * dt; // seafloor basalt. provenance: fitted
   const outgas = 0.00045 * 4 * dt; // modern-plant reference volcanic return. provenance: fitted
@@ -223,13 +246,3 @@ function countTrenches(W) {
   for (let c = 0; c < NC; c++) if (W.bound[c] === 1) n++; // CONV
   return n;
 }
-
-/** SI calibration map for HUD / docs. Item 198. */
-export const UNIT_MAP = {
-  temp: { sim: '0–1.6 field', si: 'approx °C via (T−0.5)*80+15 on Earth', note: 'fitted' },
-  life: { sim: '0–1 density', si: 'relative biomass / carrying capacity', note: 'invented' },
-  ageYr: { sim: 'years since CAI', si: 'a (years)', note: 'measured' },
-  CO2: { sim: 'volume mixing ratio', si: 'mol/mol', note: 'measured' },
-  carbon: { sim: 'reservoir units', si: '~relative GtC', note: 'fitted' },
-  dtYr: { sim: 'years per tick', si: 'a/tick', note: 'invented for legibility' },
-};

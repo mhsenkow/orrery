@@ -10,6 +10,7 @@ import { columnRgbAt } from './columnField.js';
 // which is two versions of the same physics free to drift apart. `fireDanger`
 // is pure — fields in, number out, no RNG — so the paint path can call it.
 import { fireDanger } from './fire.js';
+// @provenance look
 
 const SENSE_RGB = {
   uvc: [180, 80, 255], uvb: [140, 90, 255], violetBlue: [60, 90, 220],

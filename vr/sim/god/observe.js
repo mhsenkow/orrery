@@ -151,7 +151,7 @@ export function addBookmark(label = '') {
 }
 
 /** Autopilot as character. Item 129 — implementation in gaiaDrive.js. */
-export { gaiaPolicyTick, cycleGaiaButton, gaiaDriveOf, tipProximity, GAIA_DRIVES } from './gaiaDrive.js';
+export { gaiaPolicyTick, cycleGaiaButton, gaiaDriveOf, gaiaModeMeta, tipProximity, GAIA_DRIVES } from './gaiaDrive.js';
 
 /** Notification threshold moves with clock. Item 135. */
 export function noticeThreshold(W) {

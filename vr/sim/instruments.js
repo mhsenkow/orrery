@@ -6,7 +6,7 @@ import { formatAge, ageYrToMaBP } from './time.js';
 import { GUILDS } from './redox.js';
 import { BIOMES } from './ecology.js';
 import { TRAITS } from './evolve.js';
-import { UNIT_MAP } from './carbon.js';
+import { UNIT_MAP } from './units.js';
 import { whyDidThisHappen } from '../chronicle.js';
 import { rngOf } from './rng.js';
 import { describeSubstrate, phaseAtCell } from './substrateField.js';

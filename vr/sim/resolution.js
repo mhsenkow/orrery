@@ -1,4 +1,6 @@
-/** Runtime resolution — N is selectable via setResolution / Lab N select. */
+/** Runtime resolution — N is selectable via setResolution / Lab N select.
+ *  @provenance look
+ */
 
 export const N_LADDER = [
   { N: 32, NC: 32 * 32 * 6, note: '~313 km/cell · fast iterate' },

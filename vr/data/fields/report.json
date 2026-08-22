@@ -1,0 +1,17 @@
+{
+  "updated": "2026-08-22",
+  "censusNames": 744,
+  "budget": 800,
+  "curatedRows": 45,
+  "curatedSaved": 13,
+  "byKind": {
+    "record": 9,
+    "field": 22,
+    "scalar": 11,
+    "uncurated": 423,
+    "derived": 274,
+    "flag": 5
+  },
+  "uncurated": 423,
+  "note": "H3/H28 — classify via fields-census; curate into fields.js"
+}

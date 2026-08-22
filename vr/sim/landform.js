@@ -251,7 +251,7 @@ export function landformCensus(W) {
 
 /**
  * Crater counts from age and resurfacing, not four magic numbers.
- * Not wired into stampCraters yet — that would move every moon's heightfield.
+ * Wired into stampCraters for airless / authored crater stamps (C26).
  */
 export function craterCounts(rule, ax) {
   const age = ax?.age?.v ?? 4.5;

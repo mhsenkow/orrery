@@ -1,5 +1,9 @@
 # The Evil desk — harm with an author
 
+**Gate:** optional Dark layer. Off by default. Unlock with `?dark=1` (or
+`localStorage.orrery.dark = "1"`). Not one of PURPOSE’s four faces — do not demo
+it as the front door. See [`product.md`](product.md) and [`../NEXT.md`](../NEXT.md).
+
 Everything on the Strike desk is something a **planet** does to itself. A rock
 arrives. A fault slips. A plume rises. It is all enormous and none of it has an
 author, and after a while that gets morally weightless: you are pressing
@@ -12,7 +16,7 @@ lands in `life`, `build`, `fire`, `ash`, `nutrientN/P` — fields that the
 biosphere, the settlements, the animals and the renderer already read — so
 nothing downstream had to be taught what a warhead is.
 
-**Where:** Tools → **Evil** (fourth desk, beside Strike).
+**Where (when unlocked):** Tools → **Evil** (beside Strike).
 
 ---
 

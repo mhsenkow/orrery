@@ -9,6 +9,26 @@ export const SCARCITY = {
   budgeted: 'budgeted',
 };
 
+/** UI copy for the World → Modes energy button. */
+export const SCARCITY_META = {
+  free: {
+    label: 'Free',
+    blurb: 'Sandbox. Tools never spend energy or wait on cooldowns — listed costs are for show only.',
+  },
+  observe: {
+    label: 'Observe',
+    blurb: 'Looking is free. Strikes and climate acts cost energy; cooldowns apply.',
+  },
+  budgeted: {
+    label: 'Budget',
+    blurb: 'SimEarth scarcity — income rises with a healthy biosphere; overspend drains life.',
+  },
+};
+
+export function scarcityMeta(mode) {
+  return SCARCITY_META[mode] || SCARCITY_META.free;
+}
+
 /** Approximate Joules-ish units from act magnitude. Item 99. */
 export function thermoCost(tool, magnitude = 1, opts = {}) {
   const base = {

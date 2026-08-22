@@ -1,0 +1,4473 @@
+{
+  "generated": "2026-08-22T03:50:48.552Z",
+  "note": "H2 draft — curate into vr/sim/fields.js. uncurated rows are census-only.",
+  "nameCount": 744,
+  "curated": 321,
+  "uncurated": 423,
+  "rows": [
+    {
+      "name": "dark",
+      "refs": 621,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "h",
+      "refs": 442,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "rule",
+      "refs": 338,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "seaLevel",
+      "refs": 277,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "life",
+      "refs": 260,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "year",
+      "refs": 250,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "build",
+      "refs": 242,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "ageYr",
+      "refs": 194,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "gases",
+      "refs": 191,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "tree",
+      "refs": 140,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "owner",
+      "refs": 127,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "temp",
+      "refs": 115,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "ice",
+      "refs": 105,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "moist",
+      "refs": 105,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "meanTemp",
+      "refs": 93,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "polities",
+      "refs": 92,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "_tickIndex",
+      "refs": 89,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "meanLife",
+      "refs": 80,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "ash",
+      "refs": 67,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "guildDens",
+      "refs": 67,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "carbon",
+      "refs": 66,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "transitions",
+      "refs": 64,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_polityIndex",
+      "refs": 63,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "crust",
+      "refs": 63,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "windU",
+      "refs": 60,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "shellVent",
+      "refs": 59,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "layerStack",
+      "refs": 58,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "toxin",
+      "refs": 56,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "diplo",
+      "refs": 54,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "solar",
+      "refs": 52,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "noSurface",
+      "refs": 50,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "attribution",
+      "refs": 48,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lava",
+      "refs": 48,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "seed",
+      "refs": 48,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "interior",
+      "refs": 46,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "windV",
+      "refs": 45,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "moon",
+      "refs": 44,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "unlockedClass",
+      "refs": 44,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "season",
+      "refs": 43,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "state",
+      "refs": 43,
+      "kind": "flag",
+      "curated": true
+    },
+    {
+      "name": "rad",
+      "refs": 42,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "stackN",
+      "refs": 42,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "flow",
+      "refs": 41,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "popId",
+      "refs": 41,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "iceLand",
+      "refs": 40,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "playerPolity",
+      "refs": 40,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "precip",
+      "refs": 40,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "shellLid",
+      "refs": 40,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "substrate",
+      "refs": 40,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "flight",
+      "refs": 39,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "age",
+      "refs": 38,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "nutrientP",
+      "refs": 38,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rotationPeriod",
+      "refs": 38,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "biome",
+      "refs": 37,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "exclusion",
+      "refs": 36,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fire",
+      "refs": 36,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "bound",
+      "refs": 35,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "dtYr",
+      "refs": 35,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "dust",
+      "refs": 35,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "rock",
+      "refs": 35,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "cities",
+      "refs": 34,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "darkToll",
+      "refs": 34,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "plates",
+      "refs": 33,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "groups",
+      "refs": 32,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "shellOcean",
+      "refs": 32,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stackM",
+      "refs": 32,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "shellMantle",
+      "refs": 31,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "species",
+      "refs": 31,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "nutrientN",
+      "refs": 30,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stackMat",
+      "refs": 30,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "chron",
+      "refs": 29,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "iceFrac",
+      "refs": 29,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "stackSrc",
+      "refs": 29,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "buildEfficiency",
+      "refs": 28,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "frost",
+      "refs": 28,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "shockwave",
+      "refs": 28,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "planetBiochem",
+      "refs": 27,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_atmScale",
+      "refs": 25,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "detonated",
+      "refs": 25,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oceanSurf",
+      "refs": 25,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "toxinIndustry",
+      "refs": 25,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "clouds",
+      "refs": 24,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "exchangesDeclined",
+      "refs": 24,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "mushrooms",
+      "refs": 24,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "npp",
+      "refs": 24,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "radShort",
+      "refs": 24,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "conveyor",
+      "refs": 23,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "obliquity",
+      "refs": 23,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "reef",
+      "refs": 23,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stormField",
+      "refs": 23,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_planetKind",
+      "refs": 22,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "carcassField",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "defenceStats",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "iceSea",
+      "refs": 22,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "intertidal",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeClass",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oceanSalt",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ore",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tracer",
+      "refs": 22,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_empUntil",
+      "refs": 21,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "civ",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fogOfWar",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oceanU",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "radar",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rubble",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "strokeMark",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "techno",
+      "refs": 21,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "disease",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "drones",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "energy",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "flash",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "grain",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ics",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ozone",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "smoke",
+      "refs": 20,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "volcanoes",
+      "refs": 20,
+      "kind": "record",
+      "curated": true
+    },
+    {
+      "name": "exchangesLaunched",
+      "refs": 19,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fought",
+      "refs": 19,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "popBook",
+      "refs": 19,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tideRange",
+      "refs": 19,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "vents",
+      "refs": 19,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_clathrate",
+      "refs": 18,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_seaBase",
+      "refs": 18,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "batteries",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "border",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "flareGlow",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gpsDenied",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "moments",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oceanV",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "soil",
+      "refs": 18,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "surgeField",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophic",
+      "refs": 18,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_baseSolar",
+      "refs": 17,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "autopilot",
+      "refs": 17,
+      "kind": "flag",
+      "curated": true
+    },
+    {
+      "name": "converg",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "epidemic",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "groundW",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "guilds",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "huntKills",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "originCell",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rng",
+      "refs": 17,
+      "kind": "flag",
+      "curated": true
+    },
+    {
+      "name": "sats",
+      "refs": 17,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_worldAxes",
+      "refs": 16,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "detritus",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "escalationRung",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "hotspots",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "interceptors",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "magnetosphere",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "mood",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "preyFear",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ships",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "solarShade",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "worldName",
+      "refs": 16,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_cyberMask",
+      "refs": 15,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_jetCount",
+      "refs": 15,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_landscape",
+      "refs": 15,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_sunDir",
+      "refs": 15,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "comms",
+      "refs": 15,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "doomsday",
+      "refs": 15,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ejecta",
+      "refs": 15,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "pSeen",
+      "refs": 15,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "storms",
+      "refs": 15,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "upwell",
+      "refs": 15,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_epoch",
+      "refs": 14,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_flashCells",
+      "refs": 14,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_radCells",
+      "refs": 14,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "argueResponses",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "beingDens",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "blackDaisy",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "carcassCount",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "crustType",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "landform",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeFront",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeSparks",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "receipts",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "refugees",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "seasonHold",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "shelter",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stormTrail",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tidePhase",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "waveHt",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "whiteDaisy",
+      "refs": 14,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_blastFlash",
+      "refs": 13,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoIndex",
+      "refs": 13,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ixBursts",
+      "refs": 13,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "albedoPaint",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "behavMap",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "casualty",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "dominantPigment",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fireball",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fossils",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaDrive",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lag",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lake",
+      "refs": 13,
+      "kind": "field",
+      "curated": true
+    },
+    {
+      "name": "plateId",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "polityTint",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "warCrimes",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "warFront",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "wrecks",
+      "refs": 13,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_ensoPhase",
+      "refs": 12,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fireCells",
+      "refs": 12,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hydroDirty",
+      "refs": 12,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_spinup",
+      "refs": 12,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_terminationShock",
+      "refs": 12,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "carcasses",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "coastDist",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "cont",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "frontDir",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "habitability",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "health",
+      "refs": 12,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "hydrotherm",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "intercepted",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "interventionLog",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "moonAngle",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "moonIllum",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "press",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "touchHeat",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "vapour",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "wars",
+      "refs": 12,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_agentAt",
+      "refs": 11,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_empRings",
+      "refs": 11,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_extinctionPulse",
+      "refs": 11,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_namedExt",
+      "refs": 11,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_radShortCells",
+      "refs": 11,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shockEvents",
+      "refs": 11,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "builtFrac",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "civPop",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "clockFace",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "exchangesRetaliated",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "exchangeTimeline",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fogReveal",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "immune",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "jetU",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeGrown",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "nutrientPlume",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "prevLife",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stromatolite",
+      "refs": 11,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_carbonMass0",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_landReport",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_monsoon",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_oceanKm",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_toxinCells",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_warCells",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_windRegime",
+      "refs": 10,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "auroraPower",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "energyDebt",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "huntMisses",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "landSeed",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "meanBuild",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "photonUsable",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "refuge",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "regulation",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rnaKb",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "scarcityMode",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tideHeight",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trail",
+      "refs": 10,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_diseaseCells",
+      "refs": 9,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_empPulse",
+      "refs": 9,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hpIceFloor",
+      "refs": 9,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_recoveryBoost",
+      "refs": 9,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "bifRock",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "drainTo",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "erosionLock",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "exchangesConsidered",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fastForward",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fe2Ocean",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fixedDtYr",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fog",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fort",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaLog",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "inFlight",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "memorials",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "mixDepth",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oceanDeep",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngGod",
+      "refs": 9,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_agentTick",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_battFatigue",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkMoments",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_defFatigue",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_degraded",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_iceShell",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_mocSv",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_solarMod",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_spotCell",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_tailings",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_waterMass0",
+      "refs": 8,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "arsenalFired",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "biomeMix",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bookmarks",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "budgetMode",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "chemoPower",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "coastLine",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "convoys",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "daisyAlbedo",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "dynTopo",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "foodWeb",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "front",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaLastAct",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "groupSplits",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "keelingHistory",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "landFrac",
+      "refs": 8,
+      "kind": "scalar",
+      "curated": true
+    },
+    {
+      "name": "matCover",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "meanTideRange",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "protoOrg",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "seaLanes",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "sediment",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "shear",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "smog",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tideWet",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "toxinCells",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "upwelling",
+      "refs": 8,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_adv",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_blastPunch",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_cityLights",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_commsSevered",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkAudioDetSeen",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fetch",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_freshBase",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_iso0",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_itczLat",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_moonDir",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_morphEnvCache",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_planetKindWhy",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_postbio",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_stormNameIx",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_tracerCells",
+      "refs": 7,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "auroraLat",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "biome2",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bodyScale",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "burntArea",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "cooldowns",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "delayedHooks",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "disasterChain",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "enmodBan",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fireDangerMax",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaFailed",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaObjective",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "inhabitance",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ixFlash",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "jetV",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "microplastics",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "obliquityWander",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "plague",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "radPeak",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "riverMouth",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "sai",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "satV",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "scenarioReport",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "sterileWhy",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tips",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "transitionAge",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophHerb",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophOccHerb",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophProd",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tsunamis",
+      "refs": 7,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_bioPulse",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_canvasMode",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_chemPulse",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkAudioDetSkip",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_droppedTicks",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpuDirty",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpuOff",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ladderQuiet",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_landPalette",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_livedT",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_oxEvent",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_pauseBio",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_waterProxy0",
+      "refs": 6,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "ariver",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bankedEnergy",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bioGen",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "disequilibrium",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "drainTo2",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fireCells",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "grazeTotal",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "hazeAntiGreenhouse",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lead",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeDied",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeFlux",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeSpeed",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "mantleU",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "moonPhase",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "morphFirsts",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "originBudget",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "originDifficulty",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "pfas",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "radShortCells",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rateStress",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "solvent",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "spot",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "springsInDays",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "sulfurPaint",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "swarmCount",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "swarmMarks",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "terminatorHab",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "thermohaline",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "timeRateId",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "topSense",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "vort",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "warRuin",
+      "refs": 6,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_actUndo",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_amoc",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_angMom0",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_atmFrozenNote",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_baseObliquity",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_commsUntil",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_contamAg",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkLogTick",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_dyn0",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_epochArrived",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fluidMask",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gaiaLifePrev",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hMean",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hypsoQ",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_igniteLogged",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_inMassExt",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ioBurial",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lidHeat",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_mantle",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_mantleDrift",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ms",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_partisanCut",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_pyroSeeded",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_recoveryYears",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_saltBase",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_springEvent",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ssh",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_stormMax",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_substrateBedrock",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_supplyStall",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_warShade",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_windCells",
+      "refs": 5,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "accidentalLaunches",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "accidentalRecalls",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "chroma",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "cladeCount",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "debrisRing",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "disarmamentCaught",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "diseaseCells",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "dtBio",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "eccentricity",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "energyCap",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaMode",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ghostTowns",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "groupCount",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "groupMerges",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "launched",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lucaId",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "macroDens",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "magTilt",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "morphospaceOccupied",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "nuclearTests",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "originDigest",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "overshootWarn",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ports",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "prevIce",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "proliferations",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "radCells",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "resilience",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stormFocusId",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "toolUses",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "touchMap",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "traces",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophOccCarn",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "warCells",
+      "refs": 5,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_agentsSeeded",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_angMom",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_bootPhase",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_buildsDirty",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_capitalFell",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_columnRecipe",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_conveyorNote",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkBaseline",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_deathLogged",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_dropReason",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoEvent",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoSeen",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_epochStarted",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fireBigLogged",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fireLit",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpu",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpuMs",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpsUntil",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gridDown",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_jetLat",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_landProcesses",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastDetCell",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastEulogy",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lee",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_livedActive",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_livedSeason0",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_moonImpact",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_msTickAcc",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_occupied",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_oDrag",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_oEq",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_order",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_plateNames",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_playerCO2HoldYr",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_regBuildPenalty",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_saltArea",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_sculpted",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_springLogged",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_stackLive",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_strikeTotal",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_thermoclineTilt",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_upslope",
+      "refs": 4,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "archetype",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "borderLen",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "buildersActive",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "coastCount",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "dTempDt",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ecotoneFrac",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "endemicCount",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "energyIncome",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "extinctionDebt",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "frontCells",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "gaiaTipProx",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "hotline",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "landLifeFrac",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "mantleV",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "moonAngleHold",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "moonPhaseHold",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oxyInvent",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "oxyThresh",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "pausedSolar",
+      "refs": 4,
+      "kind": "flag",
+      "curated": true
+    },
+    {
+      "name": "pendingForecast",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "plagueDeaths",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "prevTemp",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "scenarioId",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "shadowBiosphere",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "thermostatPin",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophCarn",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "waterDrift",
+      "refs": 4,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_anyHarm",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_buildLogged",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_chicxulub",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_clathrateNote",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_cycleMode",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkExtSeen",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkLogCount",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkMeanLife",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_drainTick",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_dudAt",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoBasinN",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoBasinTick",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoQ",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ent",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_epiLogged",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_eraSnap",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fetchTick",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ffState",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fireScan",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fluidMaskSea",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_fluidMaskTick",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_h",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hotspotLon",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hypsoStamp",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_isoTick",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ladderShots",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastDetDist",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastSpringLog",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lomagundi",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_m",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_mantleSampled",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_noIgnite",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_osweBoot",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_pendingOriginDigest",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_prevLiving",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_profileTicks",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_rangeId",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_relaxScratch",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_rossby",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_saiPrev",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shellVentCount",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shoreCells",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_skipPhylogenyOnce",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_stackMean",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_strokeTick",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_t",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_tauE",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_tauN",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_tropPole",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_venusOverturns",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_walkerSST",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_zirconWater",
+      "refs": 3,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "activeLIP",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "aerosolPulse",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bioBloom",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "biomeCounts",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bioRate",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bioticTerm",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "chemPlume",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "chokePoints",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "climVisual",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "debugAssert",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "disperseSeeds",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "empHalo",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "fireFront",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "flareCount",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "freshAnomaly",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "frontMean",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "greenhouse",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "herdMax",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "intertidalFrac",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "latDiversity",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "launchSites",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifePrevTick",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "marineOnly",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "medeaScore",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "modulePool",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "mutationRate",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "originReport",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "planetChart",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "plumeCells",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngState",
+      "refs": 3,
+      "kind": "flag",
+      "curated": true
+    },
+    {
+      "name": "shannon",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stopOnAnomaly",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stormCtl",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "strain",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "strataMark",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tideU",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "tideV",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "trophDecomp",
+      "refs": 3,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_chromaTmp",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_coastSea",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_coastTick",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_contTick",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_conveyorSv",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkAudioDoom",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkAudioEmp",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkAudioIx",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkAudioTick",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkPlagueSeen",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkRadHot",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_darkWarSeen",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_earlyWarning",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoBasinLon",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ensoBasinSea",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_falseWarning",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ffExt",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gaiaReceiptTick",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpuResident",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_herdNamedTick",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_isoSea",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_jetSpin",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastExtinctionName",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_livedMoon0",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_nonHydrostatic",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_orderReady",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_prevMeanTemp",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_rangeTick",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_relaxPlan",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shellSpec",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shoreSea",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_simN",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_spotSeeded",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_stormCount",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_substrateCover",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_sweBoot",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_vapourInit",
+      "refs": 2,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "alienSterile",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "ambientMode",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "biosphereWatts",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "bombardMode",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "builtCells",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "carbonDrift",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "carnivore",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "cloudLife",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "crisisStability",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "feedbackGain",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "flashCells",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "freshFlux",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "frontMax",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "herbivore",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "letItRun",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "lifeStepsLast",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "morphChanged",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "orbitalBombardTreaty",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "pathogen",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "polityCount",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "redQueen",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngBio",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngGeo",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "saltDrift",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "senseBands",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "sterileCause",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "strikeCount",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "strikeScorch",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "surfaceFeeders",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "thermostatCheat",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "waterMass",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "waterProxy",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "waterProxyDrift",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "x",
+      "refs": 2,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "_anthroLogged",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_borealStress",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_deterrenceLog",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_entRef",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_forestFrac",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpuClimateTex",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_gpgpuSlot",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_heatPole",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_hydroMean",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_ioResurface",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_jetCoreLat",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_jetCoreU",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_jetMax",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastDropAt",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_lastKill",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_moonDirHold",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_msColour",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_msSim",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_msTick",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_orbitLogged",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_plumeCells",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_reliefScale",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_rossbyNote",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_saiActor",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_seafloorGPa",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shellBudget",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_shellKind",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_speciesScratch",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_tickBudgetMs",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_toxinClassCells",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "_worldDef",
+      "refs": 1,
+      "kind": "derived",
+      "curated": true
+    },
+    {
+      "name": "arsenal",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "condTotal",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "debugProfile",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "evapTotal",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "genesis",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "meanWind",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "precession",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "precipMean",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "radiusKm",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngAgents",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngAtmo",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "rngViz",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "star",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "stormyFrac",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "toxinClass",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "uv",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "uvPulse",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    },
+    {
+      "name": "worldId",
+      "refs": 1,
+      "kind": "uncurated",
+      "curated": false
+    }
+  ]
+}

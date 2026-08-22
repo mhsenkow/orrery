@@ -1,7 +1,8 @@
 # ORRERY — biosphere architecture
 
-**Hand-written. Not generated.** The design that `biosphere-plan.md` implements.
-Read `biosphere-audit.md` first — it is the evidence this design answers.
+**Hand-written. Not generated.** Historical design notes — not a work queue.
+See [`../NEXT.md`](../NEXT.md) for priorities. Read `biosphere-audit.md` for the
+evidence this design answered. The old step-plan dump is retired (`RETIRED.md`).
 
 Scope: unify the two life models, replace the eight-rung ladder with an evolvable body-plan
 module system, and make macro-evolution watchable over a deep-time run without scripting

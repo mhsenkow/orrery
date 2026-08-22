@@ -48,6 +48,22 @@ export function bioTick(W, chronLog) {
     W.meanLife = 0;
     return;
   }
+  // B48 — sterile rulesets (Ares) do not grow a biosphere unless Life tools
+  // already marked abiogenesis / left biomass. Empty sterile worlds stay empty.
+  if (R.sterile && !W.transitions?.abiogenesis) {
+    let any = 0;
+    if (W.life) {
+      for (let c = 0; c < NC; c++) any += W.life[c];
+      if (any < 1e-6) {
+        W.life.fill(0);
+        W.meanLife = 0;
+        return;
+      }
+    } else {
+      W.meanLife = 0;
+      return;
+    }
+  }
 
   /* Who owns `life[]`.
    *

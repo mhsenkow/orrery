@@ -1,5 +1,6 @@
 /** Open-ended evolution — traits, speciation, phylogenetic tree, transitions.
- *  Backlog items 29–58, plus tree-dependent ecology hooks. */
+ *  @provenance tagged-module
+ */
 
 import { clamp } from '../math.js';
 import { NC, NBR, DIR, AREA } from '../sphere.js';
@@ -40,7 +41,8 @@ function cellOccupied(W, c, id) {
   return isDeepTimeEarth(W.rule) && guildBiomass(W, c) > 0.02;
 }
 
-/** Trait indices into population vectors. Item 43. */
+/** Trait indices into population vectors. Item 43.
+ *  All mutation rates below are invented playability dials (A13). */
 export const TRAITS = {
   tOpt: 0,        // thermal optimum
   tBreadth: 1,    // thermal breadth
@@ -56,7 +58,32 @@ export const TRAITS = {
   COUNT: 11,
 };
 
-const MUT_RATE = [0.04, 0.03, 0.03, 0.02, 0.008, 0.03, 0.025, 0.01, 0.02, 0.05, 0.02];
+/* invented: 0.04 — tOpt mutation rate */
+const MUT_TOPT = 0.04;
+/* invented: 0.03 — tBreadth mutation rate */
+const MUT_TBREADTH = 0.03;
+/* invented: 0.03 — desiccation mutation rate */
+const MUT_DESIC = 0.03;
+/* invented: 0.02 — o2Affinity mutation rate */
+const MUT_O2 = 0.02;
+/* invented: 0.008 — bodyMass mutation rate */
+const MUT_MASS = 0.008;
+/* invented: 0.03 — dispersal mutation rate */
+const MUT_DISP = 0.03;
+/* invented: 0.025 — repro mutation rate */
+const MUT_REPRO = 0.025;
+/* invented: 0.01 — trophic mutation rate */
+const MUT_TROPH = 0.01;
+/* invented: 0.02 — defence mutation rate */
+const MUT_DEF = 0.02;
+/* invented: 0.05 — pigment mutation rate */
+const MUT_PIG = 0.05;
+/* invented: 0.02 — radiation mutation rate */
+const MUT_RAD = 0.02;
+const MUT_RATE = [
+  MUT_TOPT, MUT_TBREADTH, MUT_DESIC, MUT_O2, MUT_MASS, MUT_DISP,
+  MUT_REPRO, MUT_TROPH, MUT_DEF, MUT_PIG, MUT_RAD,
+];
 
 export function blankTraits() {
   const t = new Float32Array(TRAITS.COUNT);
@@ -770,6 +797,7 @@ function connectedComponents(cells, W) {
   return comps;
 }
 
+/* numeric: 60 — max convergent pairs checked per tick */
 const MAX_CONV_PAIRS = 60;
 
 function detectConvergence(tree, ageYr, tickIndex) {

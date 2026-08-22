@@ -1796,7 +1796,7 @@ console.log('lessons');
   const {
     LESSONS, DOOR_IDS, TOUR_IDS, huntKeysOf, completeLesson, emptyLessonProgress,
     nextIncompleteLesson, nextTourAfter, huntMatches, lessonChipLabel, shouldOfferDoor,
-    offerTourAgain,
+    offerTourAgain, resetLessonProgress,
   } = await import('./teach.js');
   ok('seven lessons, four doors', LESSONS.length === 7 && DOOR_IDS.length === 4);
   ok('mars hunt is rust', huntKeysOf(LESSONS.find((l) => l.id === 'hunt-mars')).includes('rust'));
@@ -1815,6 +1815,8 @@ console.log('lessons');
   ok('tour complete label', /Tour complete/.test(lessonChipLabel(allDone)));
   ok('hold-earth teaches the map', !!LESSONS.find((l) => l.id === 'hold-earth')?.winHint);
   ok('offerTourAgain resets door', !offerTourAgain({ seenDoor: true, done: {}, current: null }).seenDoor);
+  const wiped = resetLessonProgress();
+  ok('resetLessonProgress clears done', !wiped.seenDoor && !wiped.current && Object.keys(wiped.done).length === 0);
 }
 
 console.log('generate is a full reset');
@@ -2785,7 +2787,7 @@ console.log('entity save round-trip (entsave)');
     .map((m) => `${m.id}:${m.cell}:${m.age}:${m.behav}`).join('|');
   const age0 = W.ageYr;
   const cities0 = W.cities?.length || 0;
-  ok('save v8 carries entities', save.version === 8 && n0 > 0, `${n0} beings`);
+  ok('save carries entities', save.version >= 8 && n0 > 0, `${n0} beings v${save.version}`);
   ok('save carries build and cities', save.buildB64 && Array.isArray(save.cities));
   loadRunMeta(JSON.stringify(save));
   const sig1 = ENT.meta.slice(0, ENT.n).filter((m) => m && !m.dead)
