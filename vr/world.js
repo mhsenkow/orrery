@@ -530,6 +530,10 @@ export function generate(seed, ruleIn) {
   W._solarMod = 1;
   W.season = 0;
   initClockFace(W, rule);
+  if (ruleIn?.climateAnchor) {
+    setClockFace(W, 'years', { force: true });
+    W._climateAnchor = true;
+  }
   // Earth-like worlds keep a Luna; Selene / airless may not
   W.obliquityWander = false;
   if (rule.earthLike && !rule.airless) {

@@ -143,8 +143,9 @@ export function calibrateWorld(ruleId, seed = 20260808, ticks = 8, tolerances = 
   if (opts.n && opts.n !== NC) {
     try { changeResolution(opts.n); } catch { /* headless may pin N */ void 0; }
   }
-  generate(seed, { ...rule, deepTime: !!opts.deepTime });
+  generate(seed, { ...rule, deepTime: !!opts.deepTime, climateAnchor: opts.climateAnchor !== false });
   for (let i = 0; i < ticks; i++) simTick(true);
+  delete W._climateAnchor;
 
   const snap = snapshotOf(W);
   const ctx = {

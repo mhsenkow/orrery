@@ -488,7 +488,7 @@ function fillGeometry(W, rule) {
   const obl = W.obliquity ?? rule?.obliquity ?? EARTH_OBLIQUITY;
   W.season = resolveSeason(W, rule);
   W.spinPhase = resolveSpinPhase(W);
-  sky.orbitAveraged = !isLivedClock(W);
+  sky.orbitAveraged = !isLivedClock(W) && !W._climateAnchor;
   sky.terminatorKmh = terminatorSpeedKmh(W.rotationPeriod, rule?.radiusEarth || 1);
 
   const sunDir = sunDirection(obl, W.season, W.spinPhase, _scratch);

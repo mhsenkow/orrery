@@ -87,7 +87,7 @@ export function insolation(W, c, sunDir) {
   const intern = 1 + (W.rule?.internalHeat || 0);
   const tidal = 1 + Math.min(2, (W.rule?.tidalHeat || 0) * 0.4);
   let beat = 1;
-  if (W.rule?.binaryBeat && (sky?.nLights || 0) <= 1) {
+  if (W.rule?.binaryBeat && (W.sky?.nLights || 0) <= 1) {
     const b = W.rule.binaryBeat;
     beat = circumbinaryBeat(b.L1, b.L2, b.Pbin, W.rule.orbitalPeriodDays, (W.ageYr || 0) * 365.25);
   }
