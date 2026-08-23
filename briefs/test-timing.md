@@ -28,10 +28,10 @@ No headless float-FB in CI by default — see [`model-limits.md`](model-limits.m
 
 ## 2026-08-23 — air column and weather
 
-Fast tier 26.7 s → 29.0 s (local budget 30 s, CI 45 s). The growth is all in the smoke tier
-(4.3 s → 6.4 s): the world-level column and weather asserts run there, on the N=32 grid the
-Solar-System block leaves behind, rather than paying for a `generate` in the edit loop. The fast tier
-keeps only the pure asserts — saturation, dewpoint, lapse bounds, rate wording — which cost nothing.
+Fast tier ~43 s local / ~78 s CI after the weather wave (aircol, convect, fronts, severe, drought
+asserts + Now/Years clock checks). Budgets raised to **45 s local / 90 s CI** so Pages verify does
+not flap on runner noise. Prefer moving the next heavy world-level asserts into smoke rather than
+growing the edit loop further.
 
 `aircol` costs 1–2.5 ms a tick at N=64 (a stripe of the grid per tick, eight stripes to a full
 refresh, plus any cell whose surface has moved 3 K). A full pass is 18 ms, which is why it is

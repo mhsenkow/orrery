@@ -901,8 +901,9 @@ if (TIMING && times.length) {
   console.log('slowest:');
   for (const row of slow) console.log(`  ${row.ms.toFixed(1).padStart(7)}ms  ${row.name}`);
 }
-/* Local edit loop ~40s with sky + SEV/CYC asserts; CI ubuntu runners are ~1.5–2× slower. */
-const BUDGET_MS = process.env.CI ? 55000 : 40000;
+/* Local edit loop ~43s with weather wave asserts; CI ubuntu runners are ~1.5–2× slower
+   (observed ~78s). Keep headroom so Pages verify does not flap on runner noise. */
+const BUDGET_MS = process.env.CI ? 90000 : 45000;
 if (elapsed > BUDGET_MS) {
   console.error(
     `fast tier exceeded ${BUDGET_MS / 1000}s budget (${(elapsed / 1000).toFixed(2)}s)` +
