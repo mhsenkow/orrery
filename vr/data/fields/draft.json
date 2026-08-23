@@ -1,18 +1,18 @@
 {
-  "generated": "2026-08-22T17:28:42.042Z",
+  "generated": "2026-08-23T00:48:08.240Z",
   "note": "P1 — every name classified (field/scalar/record/flag/derived/meta/dead). schemaCurated = in fields.js.",
-  "nameCount": 746,
-  "schemaCurated": 45,
+  "nameCount": 756,
+  "schemaCurated": 56,
   "byKind": {
-    "record": 30,
+    "record": 32,
     "field": 50,
-    "meta": 356,
-    "scalar": 26,
-    "derived": 276,
+    "meta": 355,
+    "scalar": 30,
+    "derived": 281,
     "flag": 8
   },
   "uncurated": 0,
-  "multiWriterCount": 371,
+  "multiWriterCount": 372,
   "rows": [
     {
       "name": "dark",
@@ -122,7 +122,7 @@
     },
     {
       "name": "rule",
-      "refs": 338,
+      "refs": 343,
       "kind": "meta",
       "schemaCurated": true,
       "curated": true,
@@ -210,7 +210,7 @@
     },
     {
       "name": "build",
-      "refs": 242,
+      "refs": 243,
       "kind": "field",
       "schemaCurated": true,
       "curated": true,
@@ -244,7 +244,7 @@
     },
     {
       "name": "ageYr",
-      "refs": 197,
+      "refs": 202,
       "kind": "scalar",
       "schemaCurated": true,
       "curated": true,
@@ -258,7 +258,7 @@
     },
     {
       "name": "gases",
-      "refs": 191,
+      "refs": 193,
       "kind": "record",
       "schemaCurated": true,
       "curated": true,
@@ -428,7 +428,7 @@
     },
     {
       "name": "meanTemp",
-      "refs": 95,
+      "refs": 96,
       "kind": "scalar",
       "schemaCurated": true,
       "curated": true,
@@ -471,7 +471,7 @@
     },
     {
       "name": "meanLife",
-      "refs": 82,
+      "refs": 83,
       "kind": "scalar",
       "schemaCurated": true,
       "curated": true,
@@ -655,7 +655,7 @@
     },
     {
       "name": "solar",
-      "refs": 52,
+      "refs": 54,
       "kind": "scalar",
       "schemaCurated": true,
       "curated": true,
@@ -682,6 +682,23 @@
         "world.js"
       ],
       "writeCount": 3
+    },
+    {
+      "name": "rotationPeriod",
+      "refs": 50,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/god/climate.js",
+        "sim/sky.js",
+        "sim/test.mjs",
+        "sim/time.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 7
     },
     {
       "name": "attribution",
@@ -726,6 +743,21 @@
       "writeCount": 2
     },
     {
+      "name": "moon",
+      "refs": 47,
+      "kind": "record",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/god/climate.js",
+        "sim/god/disaster.js",
+        "sim/god/genesis.js",
+        "sim/sky.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 5
+    },
+    {
       "name": "interior",
       "refs": 46,
       "kind": "record",
@@ -752,21 +784,6 @@
       "writeCount": 5
     },
     {
-      "name": "moon",
-      "refs": 44,
-      "kind": "record",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "sim/god/climate.js",
-        "sim/god/disaster.js",
-        "sim/god/genesis.js",
-        "sim/test.mjs",
-        "world.js"
-      ],
-      "writeCount": 5
-    },
-    {
       "name": "unlockedClass",
       "refs": 44,
       "kind": "scalar",
@@ -777,21 +794,6 @@
         "sim/dark-test.mjs",
         "sim/earth.js",
         "sim/evolve.js",
-        "world.js"
-      ],
-      "writeCount": 5
-    },
-    {
-      "name": "season",
-      "refs": 43,
-      "kind": "scalar",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "sim/climatePanel.js",
-        "sim/clockFace.js",
-        "sim/smoke.mjs",
-        "sim/test.mjs",
         "world.js"
       ],
       "writeCount": 5
@@ -832,6 +834,22 @@
         "sim/test.mjs"
       ],
       "writeCount": 5
+    },
+    {
+      "name": "season",
+      "refs": 42,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/clockFace.js",
+        "sim/sky.js",
+        "sim/smoke.mjs",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 6
     },
     {
       "name": "stackN",
@@ -876,6 +894,20 @@
         "sim/test.mjs"
       ],
       "writeCount": 5
+    },
+    {
+      "name": "fire",
+      "refs": 40,
+      "kind": "field",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "agents.js",
+        "sim/fire.js",
+        "sim/test-fast.mjs",
+        "sim/test.mjs"
+      ],
+      "writeCount": 4
     },
     {
       "name": "iceLand",
@@ -955,20 +987,6 @@
       "writeCount": 4
     },
     {
-      "name": "fire",
-      "refs": 39,
-      "kind": "field",
-      "schemaCurated": true,
-      "curated": true,
-      "writers": [
-        "agents.js",
-        "sim/fire.js",
-        "sim/test-fast.mjs",
-        "sim/test.mjs"
-      ],
-      "writeCount": 4
-    },
-    {
       "name": "flight",
       "refs": 39,
       "kind": "record",
@@ -1019,22 +1037,6 @@
         "world.js"
       ],
       "writeCount": 10
-    },
-    {
-      "name": "rotationPeriod",
-      "refs": 38,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/climatePanel.js",
-        "sim/god/climate.js",
-        "sim/test.mjs",
-        "sim/time.js",
-        "tools.js",
-        "world.js"
-      ],
-      "writeCount": 6
     },
     {
       "name": "biome",
@@ -1164,6 +1166,18 @@
       "writeCount": 3
     },
     {
+      "name": "bodies",
+      "refs": 33,
+      "kind": "record",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/god/climate.js",
+        "sim/sky.js"
+      ],
+      "writeCount": 2
+    },
+    {
       "name": "plates",
       "refs": 33,
       "kind": "record",
@@ -1238,6 +1252,17 @@
       "writeCount": 1
     },
     {
+      "name": "iceFrac",
+      "refs": 30,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/gaia.js"
+      ],
+      "writeCount": 1
+    },
+    {
       "name": "nutrientN",
       "refs": 30,
       "kind": "field",
@@ -1282,17 +1307,6 @@
       "writeCount": 2
     },
     {
-      "name": "iceFrac",
-      "refs": 29,
-      "kind": "scalar",
-      "schemaCurated": true,
-      "curated": true,
-      "writers": [
-        "sim/gaia.js"
-      ],
-      "writeCount": 1
-    },
-    {
       "name": "stackSrc",
       "refs": 29,
       "kind": "meta",
@@ -1326,6 +1340,21 @@
         "sim/test.mjs"
       ],
       "writeCount": 3
+    },
+    {
+      "name": "obliquity",
+      "refs": 28,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/atmo.js",
+        "sim/god/climate.js",
+        "sim/god/index.js",
+        "sim/sky.js",
+        "world.js"
+      ],
+      "writeCount": 5
     },
     {
       "name": "shockwave",
@@ -1477,20 +1506,6 @@
       "writeCount": 2
     },
     {
-      "name": "obliquity",
-      "refs": 23,
-      "kind": "scalar",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "sim/atmo.js",
-        "sim/god/climate.js",
-        "sim/god/index.js",
-        "world.js"
-      ],
-      "writeCount": 4
-    },
-    {
       "name": "reef",
       "refs": 23,
       "kind": "field",
@@ -1507,6 +1522,17 @@
         "sim/redox.js"
       ],
       "writeCount": 8
+    },
+    {
+      "name": "sky",
+      "refs": 23,
+      "kind": "record",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
     },
     {
       "name": "stormField",
@@ -1753,6 +1779,20 @@
       "writeCount": 2
     },
     {
+      "name": "_sunDir",
+      "refs": 20,
+      "kind": "derived",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "render.js",
+        "sim/sky.js",
+        "sim/wind.js",
+        "world.js"
+      ],
+      "writeCount": 4
+    },
+    {
       "name": "disease",
       "refs": 20,
       "kind": "field",
@@ -1878,6 +1918,19 @@
       "writeCount": 2
     },
     {
+      "name": "moments",
+      "refs": 19,
+      "kind": "record",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "sim/test.mjs",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 3
+    },
+    {
       "name": "popBook",
       "refs": 19,
       "kind": "meta",
@@ -1888,6 +1941,20 @@
         "world.js"
       ],
       "writeCount": 2
+    },
+    {
+      "name": "seasonHold",
+      "refs": 19,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/clockFace.js",
+        "sim/sky.js",
+        "world.js"
+      ],
+      "writeCount": 4
     },
     {
       "name": "tideRange",
@@ -1991,19 +2058,6 @@
         "sim/darkOrbit.js"
       ],
       "writeCount": 2
-    },
-    {
-      "name": "moments",
-      "refs": 18,
-      "kind": "record",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "sim/test.mjs",
-        "sim/time.js",
-        "world.js"
-      ],
-      "writeCount": 3
     },
     {
       "name": "oceanV",
@@ -2372,18 +2426,6 @@
       "writeCount": 3
     },
     {
-      "name": "_sunDir",
-      "refs": 15,
-      "kind": "derived",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "sim/wind.js",
-        "world.js"
-      ],
-      "writeCount": 2
-    },
-    {
       "name": "comms",
       "refs": 15,
       "kind": "meta",
@@ -2419,6 +2461,19 @@
         "sim/instruments.js"
       ],
       "writeCount": 4
+    },
+    {
+      "name": "moonIllum",
+      "refs": 15,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/sky.js",
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 3
     },
     {
       "name": "pSeen",
@@ -2600,19 +2655,6 @@
         "sim/darkCity.js"
       ],
       "writeCount": 1
-    },
-    {
-      "name": "seasonHold",
-      "refs": 14,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/climatePanel.js",
-        "sim/clockFace.js",
-        "world.js"
-      ],
-      "writeCount": 3
     },
     {
       "name": "shelter",
@@ -3055,31 +3097,6 @@
       "writeCount": 2
     },
     {
-      "name": "moonAngle",
-      "refs": 12,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/clockFace.js",
-        "sim/tides.js",
-        "world.js"
-      ],
-      "writeCount": 3
-    },
-    {
-      "name": "moonIllum",
-      "refs": 12,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/tides.js",
-        "world.js"
-      ],
-      "writeCount": 2
-    },
-    {
       "name": "press",
       "refs": 12,
       "kind": "meta",
@@ -3219,18 +3236,6 @@
         "world.js"
       ],
       "writeCount": 3
-    },
-    {
-      "name": "clockFace",
-      "refs": 11,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/clockFace.js",
-        "world.js"
-      ],
-      "writeCount": 2
     },
     {
       "name": "exchangesRetaliated",
@@ -3437,6 +3442,18 @@
       "writeCount": 3
     },
     {
+      "name": "clockFace",
+      "refs": 10,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/clockFace.js",
+        "world.js"
+      ],
+      "writeCount": 2
+    },
+    {
       "name": "energyDebt",
       "refs": 10,
       "kind": "meta",
@@ -3629,6 +3646,20 @@
       "writeCount": 2
     },
     {
+      "name": "_solarMod",
+      "refs": 9,
+      "kind": "derived",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "main.js",
+        "sim/atmo.js",
+        "sim/test.mjs",
+        "world.js"
+      ],
+      "writeCount": 4
+    },
+    {
       "name": "bifRock",
       "refs": 9,
       "kind": "meta",
@@ -3651,6 +3682,18 @@
         "sim/hydro.js"
       ],
       "writeCount": 1
+    },
+    {
+      "name": "eccentricity",
+      "refs": 9,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/god/climate.js",
+        "sim/sky.js"
+      ],
+      "writeCount": 2
     },
     {
       "name": "erosionLock",
@@ -3784,6 +3827,18 @@
       "writeCount": 1
     },
     {
+      "name": "moonAngle",
+      "refs": 9,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/sky.js",
+        "world.js"
+      ],
+      "writeCount": 2
+    },
+    {
       "name": "oceanDeep",
       "refs": 9,
       "kind": "meta",
@@ -3884,20 +3939,6 @@
         "sim/ocean.js"
       ],
       "writeCount": 1
-    },
-    {
-      "name": "_solarMod",
-      "refs": 8,
-      "kind": "derived",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "main.js",
-        "sim/atmo.js",
-        "sim/test.mjs",
-        "world.js"
-      ],
-      "writeCount": 4
     },
     {
       "name": "_spotCell",
@@ -4320,14 +4361,14 @@
       "writeCount": 2
     },
     {
-      "name": "_moonDir",
+      "name": "_livedActive",
       "refs": 7,
       "kind": "derived",
       "schemaCurated": false,
       "curated": true,
       "writers": [
         "sim/clockFace.js",
-        "sim/tides.js"
+        "sim/sky.js"
       ],
       "writeCount": 2
     },
@@ -4450,6 +4491,20 @@
         "world.js"
       ],
       "writeCount": 2
+    },
+    {
+      "name": "debugAssert",
+      "refs": 7,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/assert.js",
+        "sim/fields.js",
+        "sim/worldGuard.js",
+        "world.js"
+      ],
+      "writeCount": 4
     },
     {
       "name": "delayedHooks",
@@ -4651,6 +4706,17 @@
       "writeCount": 1
     },
     {
+      "name": "spinPhase",
+      "refs": 7,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
+    },
+    {
       "name": "sterileWhy",
       "refs": 7,
       "kind": "meta",
@@ -4834,9 +4900,21 @@
       "curated": true,
       "writers": [
         "sim/clockFace.js",
+        "sim/sky.js",
         "world.js"
       ],
-      "writeCount": 2
+      "writeCount": 3
+    },
+    {
+      "name": "_moonRaw",
+      "refs": 6,
+      "kind": "derived",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "world.js"
+      ],
+      "writeCount": 1
     },
     {
       "name": "_oxEvent",
@@ -4907,19 +4985,6 @@
         "world.js"
       ],
       "writeCount": 1
-    },
-    {
-      "name": "debugAssert",
-      "refs": 6,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/assert.js",
-        "sim/fields.js",
-        "sim/worldGuard.js"
-      ],
-      "writeCount": 3
     },
     {
       "name": "disequilibrium",
@@ -5033,18 +5098,6 @@
         "sim/mantle.js"
       ],
       "writeCount": 1
-    },
-    {
-      "name": "moonPhase",
-      "refs": 6,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/clockFace.js",
-        "sim/tides.js"
-      ],
-      "writeCount": 2
     },
     {
       "name": "morphFirsts",
@@ -5733,17 +5786,6 @@
       "writeCount": 1
     },
     {
-      "name": "eccentricity",
-      "refs": 5,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/god/climate.js"
-      ],
-      "writeCount": 1
-    },
-    {
       "name": "energyCap",
       "refs": 5,
       "kind": "scalar",
@@ -5947,6 +5989,17 @@
         "sim/test.mjs"
       ],
       "writeCount": 2
+    },
+    {
+      "name": "spinAxis",
+      "refs": 5,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
     },
     {
       "name": "stormFocusId",
@@ -6282,17 +6335,6 @@
       "writeCount": 1
     },
     {
-      "name": "_livedActive",
-      "refs": 4,
-      "kind": "derived",
-      "schemaCurated": false,
-      "curated": true,
-      "writers": [
-        "sim/clockFace.js"
-      ],
-      "writeCount": 1
-    },
-    {
       "name": "_livedSeason0",
       "refs": 4,
       "kind": "derived",
@@ -6303,6 +6345,17 @@
         "world.js"
       ],
       "writeCount": 2
+    },
+    {
+      "name": "_moonDir",
+      "refs": 4,
+      "kind": "derived",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
     },
     {
       "name": "_moonImpact",
@@ -6651,28 +6704,6 @@
       "writeCount": 1
     },
     {
-      "name": "moonAngleHold",
-      "refs": 4,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/clockFace.js"
-      ],
-      "writeCount": 1
-    },
-    {
-      "name": "moonPhaseHold",
-      "refs": 4,
-      "kind": "meta",
-      "schemaCurated": false,
-      "curated": false,
-      "writers": [
-        "sim/clockFace.js"
-      ],
-      "writeCount": 1
-    },
-    {
       "name": "oxyInvent",
       "refs": 4,
       "kind": "meta",
@@ -6725,6 +6756,17 @@
       "curated": false,
       "writers": [
         "sim/anthro.js"
+      ],
+      "writeCount": 1
+    },
+    {
+      "name": "precessionPhase",
+      "refs": 4,
+      "kind": "scalar",
+      "schemaCurated": true,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
       ],
       "writeCount": 1
     },
@@ -7112,6 +7154,39 @@
         "world.js"
       ],
       "writeCount": 2
+    },
+    {
+      "name": "_livedMoon",
+      "refs": 3,
+      "kind": "derived",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
+    },
+    {
+      "name": "_livedSeason",
+      "refs": 3,
+      "kind": "derived",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
+    },
+    {
+      "name": "_livedSpin",
+      "refs": 3,
+      "kind": "derived",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
     },
     {
       "name": "_lomagundi",
@@ -7659,6 +7734,17 @@
       "writeCount": 1
     },
     {
+      "name": "moonPhase",
+      "refs": 3,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/sky.js"
+      ],
+      "writeCount": 1
+    },
+    {
       "name": "mutationRate",
       "refs": 3,
       "kind": "meta",
@@ -8071,6 +8157,17 @@
       "writeCount": 1
     },
     {
+      "name": "_livedSpin0",
+      "refs": 2,
+      "kind": "derived",
+      "schemaCurated": false,
+      "curated": true,
+      "writers": [
+        "sim/clockFace.js"
+      ],
+      "writeCount": 1
+    },
+    {
       "name": "_nonHydrostatic",
       "refs": 2,
       "kind": "derived",
@@ -8402,6 +8499,28 @@
       "curated": false,
       "writers": [
         "world.js"
+      ],
+      "writeCount": 1
+    },
+    {
+      "name": "moonAngleHold",
+      "refs": 2,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/clockFace.js"
+      ],
+      "writeCount": 1
+    },
+    {
+      "name": "moonPhaseHold",
+      "refs": 2,
+      "kind": "meta",
+      "schemaCurated": false,
+      "curated": false,
+      "writers": [
+        "sim/clockFace.js"
       ],
       "writeCount": 1
     },

@@ -18,10 +18,16 @@ import {
   stormControl, setStormControl,
 } from './storms.js';
 import { coastDeskSnapshot, coastAtCell } from './coast.js';
+import { systemBodyList, describeSky, scrubLivedSeason, skyTick } from './sky.js';
+import { FANTASY_SCENARIOS, applySkyScenario, patchSkyBody } from './skyScenarios.js';
+import { isLivedClock } from './clockFace.js';
 
 let setOverlayFn = null;
 let activeDesk = 'sky';
 let selectedStormId = null;
+let selectedBodyId = null;
+let systemDragging = false;
+let systemListSig = '';
 /** @type {{ day: number, svg: string, label: string, cells: number, regime: string } | null} */
 let compareA = null;
 /** @type {{ day: number, svg: string, label: string, cells: number, regime: string } | null} */
@@ -72,6 +78,8 @@ export function climateSnapshot(Wref = W) {
     paramsNote: wr
       ? `${wr.name} · ${wr.radius?.v?.toFixed?.(2) ?? '—'} R⊕ · ${wr.mass?.v?.toFixed?.(2) ?? '—'} M⊕ · S=${wr.S?.v?.toPrecision?.(3) ?? '—'}`
       : null,
+    terminatorKmh: Wref.sky?.terminatorKmh ?? null,
+    skyLine: describeSky(Wref),
     springNote: tide.phase === 'springs'
       ? 'Syzygy — lunar + solar tides add'
       : tide.phase === 'neaps'
@@ -204,8 +212,14 @@ export function applyTiltDeg(deg) {
 
 /** Scrub seasonal phase (degrees of orbit). */
 export function applySeasonDeg(deg) {
-  W.season = (clamp(deg, 0, 360) * Math.PI) / 180;
-  if ((W.clockFace || 'years') === 'years') W.seasonHold = W.season;
+  const rad = (clamp(deg, 0, 360) * Math.PI) / 180;
+  if (isLivedClock(W)) {
+    scrubLivedSeason(W, rad);
+  } else {
+    W.season = rad;
+    W.seasonHold = rad;
+    skyTick(W);
+  }
   W._gpgpuDirty = true;
   return { ok: true, season: W.season };
 }
@@ -234,6 +248,8 @@ export function climatePanelChrome() {
       ${deskTab('storm', 'stormdesk', 'Storms', 'Seed and track cyclones')}
       ${deskTab('coast', 'coastdesk', 'Coast', 'Intertidal and flood risk')}
       ${deskTab('compare', 'compare', 'Compare', 'Freeze A/B synoptic')}
+      ${deskTab('system', 'sky', 'System', 'Body list — the orrery')}
+      ${deskTab('fantasy', 'scenariostart', 'Fantasy', 'Multi-star and multi-moon scenarios')}
     </div>
 
     <div class="clim-desk on" data-desk-panel="sky" role="tabpanel">
@@ -401,6 +417,65 @@ export function climatePanelChrome() {
       </div>
       <p class="god-note" id="cmpNote">Day length sets Rhines banding — not only wind speed.</p>
     </div>
+
+    <div class="clim-desk" data-desk-panel="system" role="tabpanel" hidden>
+      <div class="clim-strip" id="systemStrip" aria-live="polite"></div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('sky')}<span>Architecture</span></div>
+        <p class="god-note" id="systemArch">—</p>
+        <p class="god-note" id="systemSkyLine">—</p>
+      </div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('moon')}<span>Bodies</span></div>
+        <div id="systemBodyList" class="clim-list"></div>
+        <p class="god-note" id="systemNote">Select a body to edit its numbers.</p>
+      </div>
+      <div class="god-block" id="systemInspector" hidden>
+        <div class="god-h"><span id="systemInspTitle">Body</span></div>
+        <div class="view-row" id="systemTeffRow">
+          <label for="systemTeff">Teff</label>
+          <input type="range" id="systemTeff" min="2000" max="8000" value="5772" step="50">
+          <span class="val" id="systemTeffVal">5772 K</span>
+        </div>
+        <div class="view-row" id="systemLumRow">
+          <label for="systemLum">Lum</label>
+          <input type="range" id="systemLum" min="2" max="300" value="100" step="2">
+          <span class="val" id="systemLumVal">1.00</span>
+        </div>
+        <div class="view-row" id="systemMassRow">
+          <label for="systemMass">Mass</label>
+          <input type="range" id="systemMass" min="2" max="300" value="100" step="2">
+          <span class="val" id="systemMassVal">1.00</span>
+        </div>
+        <div class="view-row" id="systemDistRow">
+          <label for="systemDist">Dist</label>
+          <input type="range" id="systemDist" min="35" max="280" value="100" step="2">
+          <span class="val" id="systemDistVal">1.00</span>
+        </div>
+        <div class="view-row" id="systemInclRow">
+          <label for="systemIncl">Incl</label>
+          <input type="range" id="systemIncl" min="0" max="180" value="5" step="1">
+          <span class="val" id="systemInclVal">5°</span>
+        </div>
+        <div class="view-row" id="systemRadiusRow">
+          <label for="systemRadius">Size</label>
+          <input type="range" id="systemRadius" min="25" max="200" value="100" step="5">
+          <span class="val" id="systemRadiusVal">1.00 R</span>
+        </div>
+        <div class="view-row" id="systemAlbedoRow">
+          <label for="systemAlbedo">Albedo</label>
+          <input type="range" id="systemAlbedo" min="4" max="40" value="12" step="1">
+          <span class="val" id="systemAlbedoVal">0.12</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="clim-desk" data-desk-panel="fantasy" role="tabpanel" hidden>
+      <div class="clim-strip" id="fantasyStrip" aria-live="polite"></div>
+      <p class="god-note">Authored sky setups — up to three suns and two moons. Measured where noted.</p>
+      <div id="fantasyList" class="clim-list"></div>
+      <p class="god-note" id="fantasyNote">Switch to <b>Now</b> clock face to watch the beat. Circumbinary worlds beat rather than cycle.</p>
+    </div>
   `;
 }
 
@@ -415,6 +490,121 @@ function setDesk(id) {
     p.hidden = !on;
   });
   if (id === 'storm') setOverlayFn?.('storm');
+}
+
+function refreshSystemDesk() {
+  const bodies = systemBodyList(W);
+  const strip = document.getElementById('systemStrip');
+  if (strip) {
+    const nL = bodies.filter((b) => b.kind === 'light').length;
+    const nS = bodies.filter((b) => b.kind === 'sat').length;
+    strip.innerHTML = `
+      <div class="clim-chip"><span>Lights</span><b>${nL}</b></div>
+      <div class="clim-chip"><span>Sats</span><b>${nS}</b></div>
+      <div class="clim-chip"><span>Terminator</span><b>${(W.sky?.terminatorKmh || 0).toFixed(0)} km/h</b></div>
+      <div class="clim-chip"><span>Eclipse</span><b>${((W.sky?.eclipse?.magnitude || 0) * 100).toFixed(0)}%</b></div>
+    `;
+  }
+  const arch = document.getElementById('systemArch');
+  if (arch) {
+    const nL = bodies.filter((b) => b.kind === 'light').length;
+    const nS = bodies.filter((b) => b.kind === 'sat').length;
+    const archLabel = nL === 0 ? 'rogue' : nL === 1 ? 'single' : nL === 2 ? 'binary' : `${nL}-light`;
+    arch.textContent = `${archLabel} host · ${nS} satellite${nS === 1 ? '' : 's'}`;
+  }
+  const line = document.getElementById('systemSkyLine');
+  if (line) line.textContent = describeSky(W);
+  const list = document.getElementById('systemBodyList');
+  if (list) {
+    const sig = bodies.map((b) => (
+      b.kind === 'sat'
+        ? `${b.id}:sat:${(b.illum * 100) | 0}`
+        : `${b.id}:light:${(b.insol || 0).toFixed(2)}`
+    )).join('|');
+    if (!bodies.length) {
+      list.innerHTML = `<div class="clim-empty">No bodies — rogue planet or airless world.</div>`;
+      selectedBodyId = null;
+      systemListSig = '';
+    } else if (!systemDragging && sig !== systemListSig) {
+      systemListSig = sig;
+      list.innerHTML = bodies.map((b) => {
+        const icon = b.kind === 'light' ? 'sky' : 'moon';
+        const meta = b.kind === 'light'
+          ? `T=${(b.teff || 0).toFixed(0)} K · L=${(b.lum || 0).toFixed(2)} · S=${(b.insol || 0).toFixed(2)}`
+          : `R=${(b.radius || 1).toFixed(2)} · M=${(b.mass || 0).toFixed(2)} · a=${(b.a || 0).toFixed(2)}` +
+            (b.illum != null ? ` · ${(b.illum * 100) | 0}% lit` : '');
+        const sel = b.id === selectedBodyId ? ' aria-pressed="true"' : '';
+        return `<button type="button" class="clim-row" data-body="${b.id}"${sel}>
+          <span class="clim-row-name">${iconSVG(icon)}${b.name}</span>
+          <span class="clim-row-meta">${meta}</span>
+        </button>`;
+      }).join('');
+      if (!selectedBodyId || !bodies.find((b) => b.id === selectedBodyId)) {
+        selectedBodyId = bodies[0]?.id || null;
+      }
+    }
+  }
+  syncSystemInspector();
+}
+
+function syncSystemInspector() {
+  const insp = document.getElementById('systemInspector');
+  if (!insp || systemDragging) return;
+  const bodies = systemBodyList(W);
+  const row = bodies.find((b) => b.id === selectedBodyId);
+  if (!row) {
+    insp.hidden = true;
+    return;
+  }
+  insp.hidden = false;
+  const title = document.getElementById('systemInspTitle');
+  if (title) title.textContent = row.name;
+  const isLight = row.kind === 'light';
+  document.getElementById('systemTeffRow').hidden = !isLight;
+  document.getElementById('systemLumRow').hidden = !isLight;
+  document.getElementById('systemMassRow').hidden = isLight;
+  document.getElementById('systemInclRow').hidden = isLight;
+  document.getElementById('systemRadiusRow').hidden = false;
+  document.getElementById('systemAlbedoRow').hidden = isLight;
+  document.getElementById('systemDistRow').hidden = false;
+  if (isLight) {
+    syncSlider('systemTeff', row.teff || 5772, `${(row.teff || 0).toFixed(0)} K`, 'systemTeffVal');
+    syncSlider('systemLum', Math.round((row.lum || 1) * 100), (row.lum || 1).toFixed(2), 'systemLumVal');
+    syncSlider('systemDist', Math.round((row.a || 1) * 100), `${(row.a || 1).toFixed(2)} AU`, 'systemDistVal');
+    syncSlider('systemRadius', Math.round((row.radius || 1) * 100), `${(row.radius || 1).toFixed(2)} R☉`, 'systemRadiusVal');
+  } else {
+    syncSlider('systemMass', Math.round((row.mass || 1) * 100), (row.mass || 1).toFixed(2), 'systemMassVal');
+    syncSlider('systemIncl', Math.round(row.inclDeg || 0), `${(row.inclDeg || 0).toFixed(0)}°`, 'systemInclVal');
+    syncSlider('systemDist', Math.round((row.a || 1) * 100), (row.a || 1).toFixed(2), 'systemDistVal');
+    syncSlider('systemRadius', Math.round((row.radius || 1) * 100), `${(row.radius || 1).toFixed(2)} R`, 'systemRadiusVal');
+    syncSlider('systemAlbedo', Math.round((row.albedo || 0.12) * 100), (row.albedo || 0.12).toFixed(2), 'systemAlbedoVal');
+  }
+}
+
+function refreshFantasyDesk() {
+  const strip = document.getElementById('fantasyStrip');
+  if (strip) {
+    const active = FANTASY_SCENARIOS.find((s) => s.id === W.skyScenario);
+    strip.innerHTML = active
+      ? `<div class="clim-chip"><span>Active</span><b>${active.title}</b></div>`
+      : `<div class="clim-chip"><span>Active</span><b>default</b></div>`;
+  }
+  const list = document.getElementById('fantasyList');
+  if (list) {
+    list.innerHTML = FANTASY_SCENARIOS.map((s) => {
+      const on = W.skyScenario === s.id ? ' aria-pressed="true"' : '';
+      const tag = s.measured ? 'measured' : 'authored';
+      return `<button type="button" class="clim-row" data-scenario="${s.id}"${on}>
+        <span class="clim-row-name">${iconSVG('scenariostart')}${s.title}</span>
+        <span class="clim-row-meta">${s.lights}☉ · ${s.sats} moon${s.sats > 1 ? 's' : ''} · ${tag}</span>
+      </button>
+      <p class="god-note" style="margin:-4px 0 8px 2.2rem">${s.blurb}</p>`;
+    }).join('');
+  }
+  const note = document.getElementById('fantasyNote');
+  if (note && W.rule?.binaryBeat) {
+    note.textContent = `Binary beat active (P=${W.rule.binaryBeat.Pbin} d). Put the clock on Now to watch flux swing.`;
+  }
 }
 
 function snapFrame(label) {
@@ -568,6 +758,8 @@ function refreshCoastDesk() {
 export function refreshClimatePanel(opts = {}) {
   if (activeDesk === 'storm') refreshStormDesk();
   else if (activeDesk === 'coast') refreshCoastDesk();
+  else if (activeDesk === 'system') refreshSystemDesk();
+  else if (activeDesk === 'fantasy') refreshFantasyDesk();
   else if (activeDesk === 'compare') {
     const day = W.rotationPeriod || 1;
     syncSlider('cmpDay', Math.round(day * 100), `${day.toFixed(2)}×`, 'cmpDayVal');
@@ -751,6 +943,62 @@ export function bindClimatePanel(opts = {}) {
     document.getElementById('climMoonDistVal').textContent = d.toFixed(2);
   });
   moonDist?.addEventListener('change', applyMoonFromUI);
+
+  document.getElementById('systemBodyList')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-body]');
+    if (!btn) return;
+    selectedBodyId = btn.dataset.body;
+    refreshSystemDesk();
+  });
+
+  const applyBodyPatch = () => {
+    if (!selectedBodyId) return;
+    const bodies = systemBodyList(W);
+    const row = bodies.find((b) => b.id === selectedBodyId);
+    if (!row) return;
+    if (row.kind === 'light') {
+      patchSkyBody(W, selectedBodyId, {
+        teff: +document.getElementById('systemTeff')?.value || row.teff,
+        lum: (+document.getElementById('systemLum')?.value || 100) / 100,
+        a: (+document.getElementById('systemDist')?.value || 100) / 100,
+        radius: (+document.getElementById('systemRadius')?.value || 100) / 100,
+      });
+    } else {
+      patchSkyBody(W, selectedBodyId, {
+        mass: (+document.getElementById('systemMass')?.value || 100) / 100,
+        a: (+document.getElementById('systemDist')?.value || 100) / 100,
+        incl: ((+document.getElementById('systemIncl')?.value || 5) * Math.PI) / 180,
+        radius: (+document.getElementById('systemRadius')?.value || 100) / 100,
+        albedo: (+document.getElementById('systemAlbedo')?.value || 12) / 100,
+      });
+    }
+    onChange?.('sky-body');
+    refreshClimatePanel({ forceAll: true });
+  };
+  ['systemTeff', 'systemLum', 'systemMass', 'systemDist', 'systemIncl', 'systemRadius', 'systemAlbedo'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('pointerdown', () => { systemDragging = true; });
+    el.addEventListener('pointerup', () => {
+      systemDragging = false;
+      refreshClimatePanel({ forceAll: true });
+    });
+    el.addEventListener('change', () => { systemDragging = false; });
+    el.addEventListener('input', applyBodyPatch);
+  });
+
+  document.getElementById('fantasyList')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-scenario]');
+    if (!btn) return;
+    const res = applySkyScenario(W, btn.dataset.scenario);
+    if (res.ok) {
+      setDesk('system');
+      showMoment?.('Sky', btn.dataset.scenario,
+        FANTASY_SCENARIOS.find((s) => s.id === btn.dataset.scenario)?.blurb || '');
+      onChange?.('fantasy');
+      refreshClimatePanel({ forceAll: true });
+    }
+  });
 
   const wireOverlays = (rootId) => {
     document.getElementById(rootId)?.addEventListener('click', (e) => {

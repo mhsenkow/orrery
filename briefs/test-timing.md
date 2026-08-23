@@ -22,6 +22,6 @@ Wall ~4 minutes. Dominant costs (by inspection of loop bounds + known probes):
 
 Long holds and probes that must not sit in the edit loop: biosphere 750, thrive 500, dark suites when enabled.
 
-## GPU
+| `skyTick` at 1 light + 1 sat | `sky.js` | < 0.05 ms (N=32) |
 
 No headless float-FB in CI by default — see [`model-limits.md`](model-limits.md). Optional `npm run parity:gpu --prefix vr`.

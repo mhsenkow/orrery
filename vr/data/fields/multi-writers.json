@@ -1,5 +1,5 @@
 {
-  "generated": "2026-08-22T17:28:42.042Z",
+  "generated": "2026-08-23T00:48:08.240Z",
   "rows": [
     {
       "name": "h",
@@ -270,7 +270,7 @@
         "tools.js"
       ],
       "writeCount": 24,
-      "refs": 242,
+      "refs": 243,
       "owner": "city",
       "saved": true
     },
@@ -624,7 +624,7 @@
         "sim/test.mjs"
       ],
       "writeCount": 7,
-      "refs": 95,
+      "refs": 96,
       "owner": "atmo",
       "saved": false
     },
@@ -656,9 +656,25 @@
         "world.js"
       ],
       "writeCount": 7,
-      "refs": 52,
+      "refs": 54,
       "owner": "atmo",
       "saved": false
+    },
+    {
+      "name": "rotationPeriod",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/god/climate.js",
+        "sim/sky.js",
+        "sim/test.mjs",
+        "sim/time.js",
+        "tools.js",
+        "world.js"
+      ],
+      "writeCount": 7,
+      "refs": 50,
+      "owner": "sky",
+      "saved": true
     },
     {
       "name": "flow",
@@ -735,7 +751,7 @@
         "sim/redox.js"
       ],
       "writeCount": 6,
-      "refs": 82,
+      "refs": 83,
       "owner": "bio",
       "saved": false
     },
@@ -755,19 +771,19 @@
       "saved": null
     },
     {
-      "name": "rotationPeriod",
+      "name": "season",
       "writers": [
         "sim/climatePanel.js",
-        "sim/god/climate.js",
+        "sim/clockFace.js",
+        "sim/sky.js",
+        "sim/smoke.mjs",
         "sim/test.mjs",
-        "sim/time.js",
-        "tools.js",
         "world.js"
       ],
       "writeCount": 6,
-      "refs": 38,
-      "owner": null,
-      "saved": null
+      "refs": 42,
+      "owner": "sky",
+      "saved": true
     },
     {
       "name": "iceSea",
@@ -824,7 +840,7 @@
         "world.js"
       ],
       "writeCount": 5,
-      "refs": 191,
+      "refs": 193,
       "owner": "atmo",
       "saved": true
     },
@@ -843,6 +859,20 @@
       "saved": true
     },
     {
+      "name": "moon",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/god/disaster.js",
+        "sim/god/genesis.js",
+        "sim/sky.js",
+        "sim/test.mjs"
+      ],
+      "writeCount": 5,
+      "refs": 47,
+      "owner": "sky",
+      "saved": true
+    },
+    {
       "name": "windV",
       "writers": [
         "sim/dark.js",
@@ -857,20 +887,6 @@
       "saved": false
     },
     {
-      "name": "moon",
-      "writers": [
-        "sim/god/climate.js",
-        "sim/god/disaster.js",
-        "sim/god/genesis.js",
-        "sim/test.mjs",
-        "world.js"
-      ],
-      "writeCount": 5,
-      "refs": 44,
-      "owner": null,
-      "saved": null
-    },
-    {
       "name": "unlockedClass",
       "writers": [
         "sim/dark-scenario.mjs",
@@ -881,20 +897,6 @@
       ],
       "writeCount": 5,
       "refs": 44,
-      "owner": null,
-      "saved": null
-    },
-    {
-      "name": "season",
-      "writers": [
-        "sim/climatePanel.js",
-        "sim/clockFace.js",
-        "sim/smoke.mjs",
-        "sim/test.mjs",
-        "world.js"
-      ],
-      "writeCount": 5,
-      "refs": 43,
       "owner": null,
       "saved": null
     },
@@ -939,6 +941,20 @@
       "refs": 34,
       "owner": null,
       "saved": null
+    },
+    {
+      "name": "obliquity",
+      "writers": [
+        "sim/atmo.js",
+        "sim/god/climate.js",
+        "sim/god/index.js",
+        "sim/sky.js",
+        "world.js"
+      ],
+      "writeCount": 5,
+      "refs": 28,
+      "owner": "sky",
+      "saved": true
     },
     {
       "name": "clouds",
@@ -1019,7 +1035,7 @@
         "world.js"
       ],
       "writeCount": 4,
-      "refs": 197,
+      "refs": 202,
       "owner": "world",
       "saved": true
     },
@@ -1037,6 +1053,19 @@
       "saved": null
     },
     {
+      "name": "fire",
+      "writers": [
+        "agents.js",
+        "sim/fire.js",
+        "sim/test-fast.mjs",
+        "sim/test.mjs"
+      ],
+      "writeCount": 4,
+      "refs": 40,
+      "owner": "fire",
+      "saved": false
+    },
+    {
       "name": "substrate",
       "writers": [
         "sim/colstack.js",
@@ -1048,19 +1077,6 @@
       "refs": 40,
       "owner": "substrateField",
       "saved": true
-    },
-    {
-      "name": "fire",
-      "writers": [
-        "agents.js",
-        "sim/fire.js",
-        "sim/test-fast.mjs",
-        "sim/test.mjs"
-      ],
-      "writeCount": 4,
-      "refs": 39,
-      "owner": "fire",
-      "saved": false
     },
     {
       "name": "exclusion",
@@ -1115,19 +1131,6 @@
       "saved": null
     },
     {
-      "name": "obliquity",
-      "writers": [
-        "sim/atmo.js",
-        "sim/god/climate.js",
-        "sim/god/index.js",
-        "world.js"
-      ],
-      "writeCount": 4,
-      "refs": 23,
-      "owner": null,
-      "saved": null
-    },
-    {
       "name": "_empUntil",
       "writers": [
         "sim/dark-test.mjs",
@@ -1154,6 +1157,19 @@
       "saved": null
     },
     {
+      "name": "_sunDir",
+      "writers": [
+        "render.js",
+        "sim/sky.js",
+        "sim/wind.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 20,
+      "owner": "sky",
+      "saved": false
+    },
+    {
       "name": "energy",
       "writers": [
         "sim/gaia.js",
@@ -1176,6 +1192,19 @@
       ],
       "writeCount": 4,
       "refs": 20,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "seasonHold",
+      "writers": [
+        "sim/climatePanel.js",
+        "sim/clockFace.js",
+        "sim/sky.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 19,
       "owner": null,
       "saved": null
     },
@@ -1357,7 +1386,20 @@
         "world.js"
       ],
       "writeCount": 4,
-      "refs": 8,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "debugAssert",
+      "writers": [
+        "sim/assert.js",
+        "sim/fields.js",
+        "sim/worldGuard.js",
+        "world.js"
+      ],
+      "writeCount": 4,
+      "refs": 7,
       "owner": null,
       "saved": null
     },
@@ -1627,6 +1669,18 @@
       "saved": null
     },
     {
+      "name": "moments",
+      "writers": [
+        "sim/test.mjs",
+        "sim/time.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 19,
+      "owner": null,
+      "saved": null
+    },
+    {
       "name": "vents",
       "writers": [
         "sim/origin.js",
@@ -1644,18 +1698,6 @@
         "sim/darkLand.js",
         "sim/diplomacy.js",
         "sim/polity.js"
-      ],
-      "writeCount": 3,
-      "refs": 18,
-      "owner": null,
-      "saved": null
-    },
-    {
-      "name": "moments",
-      "writers": [
-        "sim/test.mjs",
-        "sim/time.js",
-        "world.js"
       ],
       "writeCount": 3,
       "refs": 18,
@@ -1699,6 +1741,18 @@
       "saved": null
     },
     {
+      "name": "moonIllum",
+      "writers": [
+        "sim/sky.js",
+        "sim/tides.js",
+        "world.js"
+      ],
+      "writeCount": 3,
+      "refs": 15,
+      "owner": null,
+      "saved": null
+    },
+    {
       "name": "carcassCount",
       "writers": [
         "agents.js",
@@ -1715,18 +1769,6 @@
       "writers": [
         "agents.js",
         "sim/lifeFront.js",
-        "world.js"
-      ],
-      "writeCount": 3,
-      "refs": 14,
-      "owner": null,
-      "saved": null
-    },
-    {
-      "name": "seasonHold",
-      "writers": [
-        "sim/climatePanel.js",
-        "sim/clockFace.js",
         "world.js"
       ],
       "writeCount": 3,
@@ -1787,18 +1829,6 @@
       "writers": [
         "agents.js",
         "sim/trophicField.js",
-        "world.js"
-      ],
-      "writeCount": 3,
-      "refs": 12,
-      "owner": null,
-      "saved": null
-    },
-    {
-      "name": "moonAngle",
-      "writers": [
-        "sim/clockFace.js",
-        "sim/tides.js",
         "world.js"
       ],
       "writeCount": 3,
@@ -2119,10 +2149,10 @@
       "saved": null
     },
     {
-      "name": "_oxEvent",
+      "name": "_livedT",
       "writers": [
-        "sim/bio.js",
-        "sim/extinction.js",
+        "sim/clockFace.js",
+        "sim/sky.js",
         "world.js"
       ],
       "writeCount": 3,
@@ -2131,11 +2161,11 @@
       "saved": null
     },
     {
-      "name": "debugAssert",
+      "name": "_oxEvent",
       "writers": [
-        "sim/assert.js",
-        "sim/fields.js",
-        "sim/worldGuard.js"
+        "sim/bio.js",
+        "sim/extinction.js",
+        "world.js"
       ],
       "writeCount": 3,
       "refs": 6,
@@ -2281,7 +2311,7 @@
         "world.js"
       ],
       "writeCount": 2,
-      "refs": 338,
+      "refs": 343,
       "owner": "world",
       "saved": true
     },
@@ -2339,6 +2369,17 @@
       "refs": 42,
       "owner": null,
       "saved": null
+    },
+    {
+      "name": "bodies",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/sky.js"
+      ],
+      "writeCount": 2,
+      "refs": 33,
+      "owner": "sky",
+      "saved": true
     },
     {
       "name": "stackMat",
@@ -2671,17 +2712,6 @@
       "saved": null
     },
     {
-      "name": "_sunDir",
-      "writers": [
-        "sim/wind.js",
-        "world.js"
-      ],
-      "writeCount": 2,
-      "refs": 15,
-      "owner": null,
-      "saved": null
-    },
-    {
       "name": "doomsday",
       "writers": [
         "sim/deterrence.js",
@@ -2858,17 +2888,6 @@
       "saved": null
     },
     {
-      "name": "moonIllum",
-      "writers": [
-        "sim/tides.js",
-        "world.js"
-      ],
-      "writeCount": 2,
-      "refs": 12,
-      "owner": null,
-      "saved": null
-    },
-    {
       "name": "press",
       "writers": [
         "sim/viz.js",
@@ -2916,17 +2935,6 @@
       "name": "builtFrac",
       "writers": [
         "sim/city.js",
-        "world.js"
-      ],
-      "writeCount": 2,
-      "refs": 11,
-      "owner": null,
-      "saved": null
-    },
-    {
-      "name": "clockFace",
-      "writers": [
-        "sim/clockFace.js",
         "world.js"
       ],
       "writeCount": 2,
@@ -2993,6 +3001,17 @@
       "name": "_oceanKm",
       "writers": [
         "sim/columnSketch.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 10,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "clockFace",
+      "writers": [
+        "sim/clockFace.js",
         "world.js"
       ],
       "writeCount": 2,
@@ -3111,6 +3130,17 @@
       "saved": null
     },
     {
+      "name": "eccentricity",
+      "writers": [
+        "sim/god/climate.js",
+        "sim/sky.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
       "name": "exchangesConsidered",
       "writers": [
         "sim/deterrence.js",
@@ -3147,6 +3177,17 @@
       "name": "inFlight",
       "writers": [
         "sim/ordnance.js",
+        "world.js"
+      ],
+      "writeCount": 2,
+      "refs": 9,
+      "owner": null,
+      "saved": null
+    },
+    {
+      "name": "moonAngle",
+      "writers": [
+        "sim/sky.js",
         "world.js"
       ],
       "writeCount": 2,
@@ -3265,10 +3306,10 @@
       "saved": null
     },
     {
-      "name": "_moonDir",
+      "name": "_livedActive",
       "writers": [
         "sim/clockFace.js",
-        "sim/tides.js"
+        "sim/sky.js"
       ],
       "writeCount": 2,
       "refs": 7,
@@ -3441,17 +3482,6 @@
       "saved": null
     },
     {
-      "name": "_livedT",
-      "writers": [
-        "sim/clockFace.js",
-        "world.js"
-      ],
-      "writeCount": 2,
-      "refs": 6,
-      "owner": null,
-      "saved": null
-    },
-    {
       "name": "_waterProxy0",
       "writers": [
         "sim/assert.js",
@@ -3500,17 +3530,6 @@
       "writers": [
         "sim/bio.js",
         "world.js"
-      ],
-      "writeCount": 2,
-      "refs": 6,
-      "owner": null,
-      "saved": null
-    },
-    {
-      "name": "moonPhase",
-      "writers": [
-        "sim/clockFace.js",
-        "sim/tides.js"
       ],
       "writeCount": 2,
       "refs": 6,

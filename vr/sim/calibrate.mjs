@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { W, generate, simTick, RULESETS, changeResolution } from '../world.js';
 import { NC } from '../sphere.js';
 import { zonalFraction } from './surfaceStats.js';
+import { skyCalibration } from './sky.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASELINES = join(HERE, '../data/baselines');
@@ -182,12 +183,58 @@ export function listBaselines() {
     .map((f) => f.replace(/\.json$/, ''));
 }
 
+/** Sky spine calibration (GATE14). */
+export function calibrateSky(ruleId = 'terra', seed = 20260808, tolerances = {}, opts = {}) {
+  const rule = RULESETS.find((r) => r.id === ruleId);
+  if (!rule) {
+    return { pass: false, ruleId, seed, checks: [], error: `unknown ruleset ${ruleId}` };
+  }
+  if (opts.n && opts.n !== NC) {
+    try { changeResolution(opts.n); } catch { void 0; }
+  }
+  generate(seed, { ...rule, deepTime: !!opts.deepTime });
+  simTick(true);
+  const snap = skyCalibration(W);
+  const ctx = {
+    world: opts.world || rule.name || ruleId,
+    ruleId,
+    seed,
+    n: NC,
+    tick: 1,
+    source: opts.source || '',
+  };
+  const checks = [];
+  for (const [name, band] of Object.entries(tolerances)) {
+    checks.push(check(name, snap[name], band, ctx));
+  }
+  return { pass: checks.every((c) => c.ok), ruleId, seed, checks, snapshot: snap, world: ctx.world };
+}
+
 /** Run one baseline file (early + optional late). */
 export function calibrateBaseline(id, opts = {}) {
   const bl = typeof id === 'string' ? loadBaseline(id) : id;
   const ruleId = bl.ruleId;
   if (!RULESETS.some((r) => r.id === ruleId)) {
     return { pass: false, skipped: true, reason: `no ruleset ${ruleId}`, world: bl.world, ruleId };
+  }
+  const skyKeys = ['obliquityDeg', 'siderealDayH', 'terminatorKmh', 'lunarInclDeg'];
+  const isSky = bl.early && skyKeys.some((k) => k in bl.early);
+  if (isSky) {
+    const seed = opts.seed ?? bl.seeds?.[0] ?? 20260808;
+    const early = calibrateSky(ruleId, seed, bl.early, {
+      world: bl.world,
+      source: bl.source,
+      n: bl.n || 32,
+    });
+    return {
+      pass: early.pass,
+      world: bl.world,
+      ruleId,
+      seed,
+      early,
+      failures: early.checks.filter((c) => !c.ok),
+      messages: early.checks.filter((c) => !c.ok).map((f) => f.message),
+    };
   }
   const seed = opts.seed ?? bl.seeds?.[0] ?? 20260808;
   const n = bl.n || 32;

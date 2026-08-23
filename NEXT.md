@@ -43,6 +43,8 @@ Themes 12–20 → [`briefs/quality-400.md`](briefs/quality-400.md). **First–S
 
 Themes 16–20 re-read → [`briefs/architecture-400.md`](briefs/architecture-400.md). **First-20 complete**; P24 handoffs, R43 four-source intents, Q11 Pages→`dist/` landed.
 
+Sky as a system (one ephemeris, then N moons and N suns) → [`briefs/sky-system-500.md`](briefs/sky-system-500.md). **First-25 gate landed** — `sky.js`, save v10, System desk, GATE14 calibration; rows 26–500 remain in the register.
+
 ---
 
 ## Explicitly not next

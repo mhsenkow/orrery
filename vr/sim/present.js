@@ -127,7 +127,7 @@ export function cellLight(c) {
   const build = W.build?.[c] || 0;
   const lights = night * (build > 0.12 ? Math.min(1, (build - 0.08) * 1.4) : 0);
   const cloud = W.clouds?.[c] || 0;
-  const moon = (W.moon && W.moon.mass > 0.05) ? (W.moonIllum ?? 0.5) : 0;
+  const moon = (W.moon && W.moon.mass > 0.05) ? (W.moonIllum ?? 0) : 0;
   return { sun, expo: expo * (1 - cloud * 0.42), warm, night, lights, cloud, moon };
 }
 

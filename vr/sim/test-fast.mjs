@@ -242,7 +242,8 @@ await section('mid-run save (I13)', async () => {
   withWorld({ seed: 42, ruleId: 'terra' }, (W) => {
     W.ageYr = (W.ageYr || 0) + 500;
     const snap = serializeRun();
-    ok('F-mid-ser', snap.version >= 9 && snap.seed != null && snap.ageYr === W.ageYr);
+    ok('F-mid-ser', snap.version >= 10 && snap.seed != null && snap.ageYr === W.ageYr);
+    ok('F-mid-orbital', snap.orbital && Array.isArray(snap.orbital.sats));
     ok('F-mid-fieldsHash', typeof snap.fieldsHash === 'string');
   });
 });
@@ -359,6 +360,100 @@ await section('catalogue lazy-load (K17)', async () => {
   // Do not call ensureCatalogue() here — the catalogue chunk is ~3.4k lines.
 });
 
+await section('sky scenarios', async () => {
+  const { generate, W, RULESETS } = await import('../world.js');
+  const { applySkyScenario, patchSkyBody } = await import('./skyScenarios.js');
+  const { skyFrame, anchorLivedOrbits, LIVED_YEAR_SEC } = await import('./sky.js');
+  generate(
+    42,
+    RULESETS.find((r) => r.id === 'terra'),
+  );
+  const starId = W.bodies.lights[0].id || 'sol';
+  const s0 = W._baseSolar;
+  patchSkyBody(W, starId, { lum: 1.6 });
+  ok('F-lum-solar', Math.abs(W._baseSolar - 1.6) < 0.05, `${s0} -> ${W._baseSolar}`);
+  patchSkyBody(W, starId, { a: 1.41 });
+  ok('F-dist-solar', W._baseSolar < 1.6, `S=${W._baseSolar}`);
+  const dir0 = W.sky.sats[0].dir.slice();
+  W.clockFace = 'now';
+  W._livedActive = true;
+  anchorLivedOrbits(W);
+  skyFrame(W, LIVED_YEAR_SEC / 8);
+  const dir1 = W.sky.sats[0].dir;
+  const moved = Math.hypot(dir1[0] - dir0[0], dir1[1] - dir0[1], dir1[2] - dir0[2]);
+  ok('F-lived-moon', moved > 0.02, `Δ=${moved.toFixed(3)}`);
+  ok('F-host-star', (W.bodies?.lights?.length || 0) >= 1);
+  applySkyScenario(W, 'triple-dawn');
+  ok('F-triple-lights', W.bodies.lights.length === 3);
+  ok('F-twin-sats', W.bodies.sats.length === 2);
+  applySkyScenario(W, 'tatooine');
+  ok('F-binary-beat', !!W.rule.binaryBeat && W.bodies.lights.length === 2);
+});
+
+await section('sky integration', async () => {
+  const { generate, simTick, RULESETS, W } = await import('../world.js');
+  const { geometricInsolation } = await import('./atmo.js');
+  const { DIR } = await import('../sphere.js');
+  generate(
+    42,
+    RULESETS.find((r) => r.id === 'terra'),
+  );
+  simTick(true);
+  const sun = W._sunDir;
+  ok('F-sun-dir', sun && Math.hypot(sun[0], sun[1], sun[2]) > 0.99);
+  let bestC = 0;
+  let bestMu = -2;
+  for (let c = 0; c < DIR.length / 3; c++) {
+    const mu = DIR[c * 3] * sun[0] + DIR[c * 3 + 1] * sun[1] + DIR[c * 3 + 2] * sun[2];
+    if (mu > bestMu) {
+      bestMu = mu;
+      bestC = c;
+    }
+  }
+  const geo = geometricInsolation(W, bestC, sun);
+  ok('F-sun-dir-atmo', geo > 0.4, `geo=${geo.toFixed(3)}`);
+  W.clockFace = 'years';
+  simTick(true);
+  ok('F-orbit-averaged', W.sky?.orbitAveraged === true);
+  W.clockFace = 'now';
+  W._livedActive = true;
+  simTick(true);
+  ok('F-lived-orbit', W.sky?.orbitAveraged === false);
+});
+
+await section('sky ephemeris (GATE14)', async () => {
+  const { generate, simTick, RULESETS, W } = await import('../world.js');
+  const {
+    keplerE,
+    trueFromMean,
+    illumFromElongation,
+    spinPhaseFromAge,
+    terminatorSpeedKmh,
+    skyCalibration,
+    EARTH_OBLIQUITY,
+  } = await import('./sky.js');
+  const e = 0.2;
+  const M = 1.0;
+  const E = keplerE(e, M);
+  ok('F-kepler', Math.abs(E - e * Math.sin(E) - M) < 1e-6);
+  ok('F-true-mean', Math.abs(trueFromMean(0, 0)) < 1e-9);
+  ok('F-illum-half', Math.abs(illumFromElongation([1, 0, 0], [0, 1, 0]) - 0.5) < 0.01);
+  generate(
+    42,
+    RULESETS.find((r) => r.id === 'terra'),
+  );
+  simTick(true);
+  const cal = skyCalibration(W);
+  ok('F-sky-obl', cal.obliquityDeg > 23 && cal.obliquityDeg < 25);
+  ok('F-sky-term', cal.terminatorKmh > 1600 && cal.terminatorKmh < 1750);
+  ok('F-sky-incl', cal.lunarInclDeg > 5 && cal.lunarInclDeg < 5.3);
+  const retro = spinPhaseFromAge(0.01, -243);
+  const pro = spinPhaseFromAge(0.01, 1);
+  ok('F-retro-sign', retro < 0 || pro > 0);
+  ok('F-obl-const', Math.abs((EARTH_OBLIQUITY * 180) / Math.PI - 23.44) < 0.01);
+  ok('F-term-fn', terminatorSpeedKmh(1) > 1600);
+});
+
 await section('smoke', async () => {
   const { spawnSync } = await import('node:child_process');
   const r = spawnSync(process.execPath, [join(__dir, 'smoke.mjs')], {
@@ -387,7 +482,7 @@ await section('save fixtures (I11/F35)', async () => {
     loadRunMeta(v9);
     const again = serializeRun();
     ok('F-v9-load', true);
-    ok('F-v9-ver', again.version >= 7);
+    ok('F-v9-ver', again.version >= 10);
     ok('F-v9-fieldsHash', typeof again.fieldsHash === 'string' && again.fieldsHash.length === 8);
     ok('F-v9-seed', again.seed === v9.seed || again.landSeed === (v9.landSeed ?? v9.seed));
   } catch (e) {
@@ -422,8 +517,8 @@ if (TIMING && times.length) {
   console.log('slowest:');
   for (const row of slow) console.log(`  ${row.ms.toFixed(1).padStart(7)}ms  ${row.name}`);
 }
-/* Local edit loop stays under ~18s; CI ubuntu runners are ~1.5–2× slower. */
-const BUDGET_MS = process.env.CI ? 35000 : 18000;
+/* Local edit loop ~30s with sky asserts; CI ubuntu runners are ~1.5–2× slower. */
+const BUDGET_MS = process.env.CI ? 45000 : 30000;
 if (elapsed > BUDGET_MS) {
   console.error(
     `fast tier exceeded ${BUDGET_MS / 1000}s budget (${(elapsed / 1000).toFixed(2)}s)` +

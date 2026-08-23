@@ -63,12 +63,14 @@ import { giantTick } from './sim/jets.js';
 import { skyFromStarAtmosphere } from './sim/scatter.js';
 import { applyIceShell, iceShellTick } from './sim/iceshell.js';
 import { initTides, tidesTick } from './sim/tides.js';
+import { initSky, skyTick, packOrbital, unpackOrbital, migrateOrbitalFromRuleset } from './sim/sky.js';
+import { applyCatalogueSky } from './sim/skyScenarios.js';
 import { initStorms, resetStorms, stormsTick } from './sim/storms.js';
 import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
 import { isModernEarth, isDeepTimeEarth, cloneRuleForRun, isPinnedEarth } from './sim/ruleMode.js';
-import { applySeasonPolicy, initClockFace, shouldHoldCalendar } from './sim/clockFace.js';
+import { initClockFace, shouldHoldCalendar, setClockFace } from './sim/clockFace.js';
 import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
 import { agentsTick, resetEntities, packEntities, restoreEntities } from './agents.js';
@@ -490,6 +492,8 @@ export function generate(seed, ruleIn) {
   W.dtBio = 0;
   W.lifeStepsLast = 1;
   W.lifeSpeed = 1;
+  W.livedRate = 1;
+  W.livedDayRate = 1;
 
   initDeepTime(W, rule);
 
@@ -529,15 +533,14 @@ export function generate(seed, ruleIn) {
   // Earth-like worlds keep a Luna; Selene / airless may not
   W.obliquityWander = false;
   if (rule.earthLike && !rule.airless) {
-    W.moon = { mass: 1, distance: 1, formed: 4.51e9 };
+    W._moonRaw = { mass: 1, distance: 1, formed: 4.51e9 };
   } else if (rule.id === 'selene' || rule.airless) {
-    W.moon = null;
+    W._moonRaw = null;
   } else {
-    // Not `W.moon ||` — a generate for a moonless-by-default world inherited the
-    // previous planet's Luna, so switching worlds in one session gave a different
-    // planet than loading that world fresh (tides, obliquity, then climate).
-    W.moon = { mass: 0.6, distance: 1.2, formed: W.ageYr };
+    W._moonRaw = { mass: 0.6, distance: 1.2, formed: W.ageYr };
   }
+  initSky(W, rule);
+  applyCatalogueSky(W, rule);
   W.energy = W.energyCap;
   W.moments = {};
   W.argueResponses = [];
@@ -764,7 +767,7 @@ export function generate(seed, ruleIn) {
         if (i % 8 === 0) bootPhase('Climate', `${i + 1} / ${warm}`);
         geostrophicWind(W);
         giantTick(W, null);
-        atmoTick(W, _sunDir);
+        atmoTick(W, sunDirForAtmo());
       }
     } else {
       for (let i = 0; i < warm; i++) {
@@ -914,9 +917,15 @@ export function generate(seed, ruleIn) {
   W.prevTemp.set(W.temp);
   W.prevLife.set(W.life);
   W.prevIce.set(W.ice);
+  skyTick(W);
 }
 
 let _sunDir = [1, 0.3, 0];
+
+function sunDirForAtmo() {
+  const d = W._sunDir;
+  return d && d.length >= 3 ? d : _sunDir;
+}
 
 export function setSunDir(x, y, z) {
   const l = Math.hypot(x, y, z) || 1;
@@ -973,7 +982,7 @@ export function simTick(silent = false) {
   // Dim the sun from war soot / L1 shade before climate integrates.
   applyWarShade(W);
 
-  applySeasonPolicy(W, rule);
+  section('sky', () => skyTick(W));
 
   if (!rule.daisyworld && !rule.airless && !W.noSurface && rate.tectonics && !W._canvasMode) {
     tectonicsTick(W, W.chron, log);
@@ -988,7 +997,7 @@ export function simTick(silent = false) {
   geostrophicWind(W);
   giantTick(W, log);
   const gpu = section('atmo', () => gpgpuClimateTick(W));
-  if (!gpu) section('atmo', () => atmoTick(W, _sunDir));
+  if (!gpu) section('atmo', () => atmoTick(W, sunDirForAtmo()));
   else {
     section('atmo', () => {
       advectScalar(W.temp, W.windU, W.windV, W._adv, 0.35);
@@ -1287,13 +1296,13 @@ function unpackFloatField(b64, into) {
   into.set(buf.subarray(0, n));
 }
 
-/** Event-log save. Version 8 adds build, settlements and the living population.
+/** Event-log save. Version 10 adds orbital block (lights, sats, spin).
  *  Version 9 adds unitsHash / provenanceHash for schema drift detection. */
 export function serializeRun() {
   const land = W._landscape || W.rule?.landscape || 'auto';
   const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 9,
+    version: 10,
     seed: W.seed,
     landSeed,
     landscape: land,
@@ -1325,6 +1334,9 @@ export function serializeRun() {
     originDifficulty: W.originDifficulty ?? 1,
     clockFace: W.clockFace || 'years',
     seasonHold: W.seasonHold ?? null,
+    livedRate: W.livedRate ?? 1,
+    livedDayRate: W.livedDayRate ?? 1,
+    orbital: packOrbital(W),
     buildB64: packFloatField(W.build),
     cities: (W.cities || []).map((c) => ({ ...c })),
     civPop: W.civPop ?? 0,
@@ -1397,8 +1409,8 @@ export function loadRunMeta(json) {
   }
   const ver = data.version ?? 0;
   // D21/D22 — read version; never half-load unknown futures.
-  if (ver > 9) {
-    throw new Error(`Save version ${ver} is newer than this build (supports ≤9). Update ORRERY or export a fresh save.`);
+  if (ver > 10) {
+    throw new Error(`Save version ${ver} is newer than this build (supports ≤10). Update ORRERY or export a fresh save.`);
   }
   if (ver > 0 && ver < 7) {
     throw new Error(`Save version ${ver} is too old to migrate automatically. Re-generate from seed ${data.seed}.`);
@@ -1489,10 +1501,19 @@ export function loadRunMeta(json) {
     W.dark = W.dark || {};
     Object.assign(W.dark, data.dark);
   }
-  if (data.clockFace) W.clockFace = data.clockFace;
+  if (data.clockFace) setClockFace(W, data.clockFace, { force: true });
+  if (data.livedRate != null) W.livedRate = data.livedRate;
+  if (data.livedDayRate != null) W.livedDayRate = data.livedDayRate;
   if (data.seasonHold != null) {
     W.seasonHold = data.seasonHold;
-    W.season = data.seasonHold;
+    if ((W.clockFace || 'years') !== 'now') W.season = data.seasonHold;
+  }
+  if (data.orbital) {
+    unpackOrbital(W, data.orbital);
+    skyTick(W);
+  } else if (ver < 10) {
+    migrateOrbitalFromRuleset(W, rule);
+    skyTick(W);
   }
   return data;
 }

@@ -25,6 +25,7 @@ import { meshForEntity } from './sim/mesh.js';
 import { initGpgpu } from './sim/gpgpu/index.js';
 import { slotWorldPos, tickTable } from './sim/orreryTable.js';
 import { illuminantGain, starTeffOf, isSunTeff } from './sim/illum.js';
+import { blackbodyRgb } from './sim/exophysics.js';
 
 export let gl = null;
 export let canvas = null;
@@ -2395,13 +2396,84 @@ function cloudShellMul(R) {
   return 1.0045;
 }
 
+/** Visible host star(s) on a distant sky shell — not in the lunar orbit band. */
+function drawHostLights(proj, view, camPos, sun, scale, inXR) {
+  const lights = W.bodies?.lights || [];
+  const skyLights = W.sky?.lights || [];
+  if (!lights.length || !bodyProg) return;
+
+  const px = MODEL[12];
+  const py = MODEL[13];
+  const pz = MODEL[14];
+  const toCam = [camPos[0] - px, camPos[1] - py, camPos[2] - pz];
+  const camL = Math.hypot(...toCam) || 1;
+  toCam[0] /= camL; toCam[1] /= camL; toCam[2] /= camL;
+
+  gl.enable(gl.DEPTH_TEST);
+  for (let i = 0; i < lights.length; i++) {
+    const body = lights[i];
+    if (body.heating === 'none') continue;
+    const pay = skyLights[i];
+    const dir = pay?.dir || sun;
+    // Sky shell — well outside the moon orbit band (~1.5–2.2 local units).
+    const re = (inXR ? 11 : 14) * scale;
+    const lx = dir[0] * re;
+    const ly = dir[1] * re;
+    const lz = dir[2] * re;
+    const wx = MODEL[0] * lx + MODEL[4] * ly + MODEL[8] * lz + MODEL[12];
+    const wy = MODEL[1] * lx + MODEL[5] * ly + MODEL[9] * lz + MODEL[13];
+    const wz = MODEL[2] * lx + MODEL[6] * ly + MODEL[10] * lz + MODEL[14];
+    const angRad = pay?.angRad > 0
+      ? pay.angRad
+      : (0.533 * Math.PI / 180) * (body.radius || 1) / Math.max(0.01, body.a || 1);
+    // Physical disc radius — no moon-sized floor.
+    const starR = clamp(angRad * re * 1.05, inXR ? 0.012 : 0.018, inXR ? 0.55 : 0.85);
+    const teff = body.teff || 5772;
+    const rgb = blackbodyRgb(teff);
+    const lum = Math.max(0.02, body.lum || 1);
+    const bloom = clamp(Math.pow(lum, 0.32) * 1.2, 0.35, 2.6);
+    // Only draw when the star sits in the sky hemisphere toward the camera.
+    const toStar = [wx - px, wy - py, wz - pz];
+    const tsL = Math.hypot(...toStar) || 1;
+    if ((toStar[0] * toCam[0] + toStar[1] * toCam[1] + toStar[2] * toCam[2]) / tsL < 0.08) continue;
+
+    m4trs(TMP, [0, 0, 0, 1], wx, wy, wz, starR);
+    gl.useProgram(bodyProg);
+    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(bodyProg.u.uModel, false, TMP);
+    gl.uniform3fv(bodyProg.u.uSun, toCam);
+    gl.uniform3fv(bodyProg.u.uCam, camPos);
+    gl.uniform3fv(bodyProg.u.uCol, rgb);
+    gl.uniform1f(bodyProg.u.uShine, bloom * 2.8);
+    gl.uniform1f(bodyProg.u.uRough, 0.02);
+    gl.uniform1f(bodyProg.u.uSeed, (teff % 17) + i * 0.3);
+    gl.uniform1f(bodyProg.u.uExposure, _exposure * (1 + bloom * 0.18));
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
+    let l = gl.getAttribLocation(bodyProg, 'aPos');
+    gl.enableVertexAttribArray(l);
+    gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+
+    m4trs(TMP, [0, 0, 0, 1], wx, wy, wz, starR * 3.2);
+    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.depthMask(false);
+    gl.uniform1f(bodyProg.u.uShine, bloom * 0.28);
+    gl.uniform3fv(bodyProg.u.uCol, [rgb[0] * 1.1, rgb[1] * 1.03, rgb[2] * 0.92]);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+  }
+  disableAll();
+}
+
 export function drawScene(proj, view, camPos, inXR, S, hands) {
   const R = W.rule;
   const originPlay = S?.originSketch && !S.originSketch.done;
-  // Sun tracks seasons on the ecliptic; obliquity sets how far it climbs
-  const sunY = Math.sin(W.season || 0) * Math.sin(W.obliquity || 0);
-  const sun = [Math.cos(S.sunAng), sunY, Math.sin(S.sunAng)];
-  const sl = Math.hypot(...sun) || 1; sun[0] /= sl; sun[1] /= sl; sun[2] /= sl;
+  // Sun direction from unified ephemeris (sky.js)
+  const sun = W._sunDir ? [W._sunDir[0], W._sunDir[1], W._sunDir[2]] : [1, 0, 0];
 
   const scale = inXR ? S.scaleXR : 1;
   const px = inXR ? S.posXR[0] : (S.camPanX || 0);
@@ -2533,8 +2605,14 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     (W.iceFrac > 0.03 && W.meanLife > 0.05) ? 0.08 : 0, // snow-line presence cue
   ));
   if (planetProg.u.uMoon) {
-    const moon = (W.moon && W.moon.mass > 0.05) ? clamp(W.moonIllum ?? 0.5, 0, 1) : 0;
-    gl.uniform1f(planetProg.u.uMoon, moon);
+    let moonLit = 0;
+    for (let i = 0; i < (W.bodies?.sats?.length || 0); i++) {
+      const s = W.bodies.sats[i];
+      if ((s?.mass || 0) < 0.05) continue;
+      moonLit = Math.max(moonLit, W.sky?.sats?.[i]?.illum ?? 0);
+    }
+    if (!moonLit && W.moon && W.moon.mass > 0.05) moonLit = W.moonIllum ?? 0;
+    gl.uniform1f(planetProg.u.uMoon, clamp(moonLit, 0, 1));
   }
   gl.uniform1f(planetProg.u.uDaisy, R.daisyworld ? 1 : 0);
   gl.uniform1f(planetProg.u.uEarth, R.earthLike ? 1 : 0);
@@ -2897,10 +2975,37 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     disableAll();
   }
 
-  /* diegetic health orb — small sphere near planet */
-  {
-    const hx = px + (inXR ? 0.28 : 1.35), hy = py + (inXR ? 0.15 : 0.9), hz = pz + (inXR ? -0.1 : 0);
-    m4trs(TMP, [0, 0, 0, 1], hx, hy, hz, inXR ? 0.025 : 0.08);
+  /* diegetic health orb — pinned to the spin pole, not in lunar orbit */
+  if (!inXR) {
+    const upX = MODEL[1];
+    const upY = MODEL[5];
+    const upZ = MODEL[9];
+    const pole = Math.hypot(upX, upY, upZ) || 1;
+    const hx = px + (upX / pole) * 1.05 * scale;
+    const hy = py + (upY / pole) * 1.05 * scale;
+    const hz = pz + (upZ / pole) * 1.05 * scale;
+    m4trs(TMP, [0, 0, 0, 1], hx, hy, hz, 0.028 * scale);
+    const hCol = [
+      lerp(0.8, 0.2, W.health),
+      lerp(0.2, 0.75, W.health),
+      lerp(0.25, 0.55, W.health),
+    ];
+    if (W.state === 'snowball') { hCol[0] = 0.7; hCol[1] = 0.85; hCol[2] = 1; }
+    if (W.state === 'moist-greenhouse') { hCol[0] = 1; hCol[1] = 0.4; hCol[2] = 0.1; }
+    gl.useProgram(healthProg);
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniform1f(healthProg.u.uScale, 1);
+    gl.uniform3fv(healthProg.u.uCol, hCol);
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
+    l = gl.getAttribLocation(healthProg, 'aPos');
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
+    gl.disable(gl.BLEND); disableAll();
+  } else {
+    const hx = px + 0.28, hy = py + 0.15, hz = pz - 0.1;
+    m4trs(TMP, [0, 0, 0, 1], hx, hy, hz, 0.025);
     const hCol = [
       lerp(0.8, 0.2, W.health),
       lerp(0.2, 0.75, W.health),
@@ -2957,46 +3062,56 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     ensureRings(false);
   }
 
-  /* Moon — orbit + phase synced to tidal lunar angle */
-  if (W.moon && W.moon.mass > 0.05) {
-    const ε = W.obliquity || 0;
-    const dist = Math.max(0.38, W.moon.distance || 1);
-    const mass = Math.max(0.2, Math.min(2.5, W.moon.mass || 1));
-    const ang = W.moonAngle != null ? W.moonAngle : ((S._t || 0) * 0.00012) / dist;
-    const s = Math.sin(ε), c = Math.cos(ε);
-    const ux = -c, uy = s;
-    const re = 1.55 + dist * 0.45;
-    const lx = (ux * Math.cos(ang)) * re;
-    const ly = (uy * Math.cos(ang)) * re;
-    const lz = Math.sin(ang) * re;
+  /* Host star(s) on the sky shell — before moons so satellites stay foreground */
+  drawHostLights(proj, view, camPos, sun, scale, inXR);
+
+  /* Moons — one mesh per satellite, position/phase from sky ephemeris */
+  const sats = W.bodies?.sats || [];
+  const skySats = W.sky?.sats || [];
+  for (let si = 0; si < sats.length; si++) {
+    const sat = sats[si];
+    if (!sat || (sat.mass || 0) < 0.05) continue;
+    const pay = skySats[si];
+    const dir = pay?.dir || W._moonDir || [1, 0, 0];
+    const dist = Math.max(0.35, sat.a || 1);
+    const mass = Math.max(0.05, Math.min(3, sat.mass || 1));
+    const rad = Math.max(0.25, Math.min(2.5, sat.radius || 1));
+    const re = 1.52 + dist * 0.42 + si * 0.08;
+    const lx = dir[0] * re;
+    const ly = dir[1] * re;
+    const lz = dir[2] * re;
     const wx = MODEL[0] * lx + MODEL[4] * ly + MODEL[8] * lz + MODEL[12];
     const wy = MODEL[1] * lx + MODEL[5] * ly + MODEL[9] * lz + MODEL[13];
     const wz = MODEL[2] * lx + MODEL[6] * ly + MODEL[10] * lz + MODEL[14];
-    const moonR = (inXR ? 0.018 : 0.055) * Math.cbrt(mass) * (1.15 / dist) * scale;
+    let moonR = (inXR ? 0.018 : 0.055) * Math.cbrt(mass) * (rad * 1.12 / dist) * scale;
+    if (pay?.angRad > 0) moonR *= clamp(pay.angRad / 0.009, 0.55, 1.85);
+    if (sats.length > 1) moonR *= 1.1 + si * 0.12;
+    moonR = Math.max(moonR, (inXR ? 0.016 : 0.038) * scale);
     m4trs(TMP, [0, 0, 0, 1], wx, wy, wz, moonR);
     const toMoon = [wx - px, wy - py, wz - pz];
     const ml = Math.hypot(...toMoon) || 1;
     const mdir = [toMoon[0] / ml, toMoon[1] / ml, toMoon[2] / ml];
-    // Lit fraction from sun; earthshine on dark limb
-    const sunDot = mdir[0] * sun[0] + mdir[1] * sun[1] + mdir[2] * sun[2];
-    const lit = W.moonIllum != null
-      ? clamp(W.moonIllum, 0.06, 1)
-      : clamp(0.5 + 0.5 * sunDot, 0.06, 1);
+    const lit = pay?.illum != null
+      ? clamp(pay.illum, 0.06, 1)
+      : clamp(0.5 + 0.5 * (mdir[0] * sun[0] + mdir[1] * sun[1] + mdir[2] * sun[2]), 0.06, 1);
     const earthshine = 0.1 + (W.iceFrac || 0) * 0.08 + (W.meanLife || 0) * 0.04;
-    // Warm crescent rim when nearly new
     const warm = lit < 0.35 ? 1.08 : 1;
-    /* The phase now comes out of the geometry — the sun direction crosses a real
-     * lit sphere — so uShine only carries albedo and earthshine, not the phase. */
-    const albedo = W.moon.albedo != null ? clamp(W.moon.albedo * 5.5, 0.35, 1.6) : 1;
+    const alb = sat.albedo != null ? clamp(sat.albedo * 5.5, 0.35, 1.6) : 1;
+    const hue = si === 0 ? [0.70, 0.665, 0.60] : [0.74, 0.68, 0.64];
+    let seed = sat.seed;
+    if (seed == null) {
+      seed = 3.7;
+      for (let k = 0; k < (sat.id || '').length; k++) seed = (seed + (sat.id.charCodeAt(k) % 17)) % 17;
+    }
     gl.useProgram(bodyProg);
     gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
     gl.uniformMatrix4fv(bodyProg.u.uModel, false, TMP);
     gl.uniform3fv(bodyProg.u.uSun, sun);
     gl.uniform3fv(bodyProg.u.uCam, camPos);
-    gl.uniform3fv(bodyProg.u.uCol, [0.70 * warm, 0.665, 0.60]);
-    gl.uniform1f(bodyProg.u.uShine, (0.92 + earthshine) * albedo);
+    gl.uniform3fv(bodyProg.u.uCol, [hue[0] * warm, hue[1] * warm, hue[2]]);
+    gl.uniform1f(bodyProg.u.uShine, (0.88 + earthshine * (1 - si * 0.15)) * alb * lit);
     gl.uniform1f(bodyProg.u.uRough, 0.25);
-    gl.uniform1f(bodyProg.u.uSeed, (W.moon.seed || 3.7) % 17);
+    gl.uniform1f(bodyProg.u.uSeed, seed % 17);
     gl.uniform1f(bodyProg.u.uExposure, _exposure);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
     l = gl.getAttribLocation(bodyProg, 'aPos');

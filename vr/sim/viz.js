@@ -313,6 +313,16 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
   const lifeSpeed = panel.lifeSpeed || 1;
   const lifeBtns = [1, 2, 4, 8].map((n) =>
     `<button type="button" class="rib-life-btn${n === lifeSpeed ? ' on' : ''}" data-life-speed="${n}" title="${n}× biology steps per climate tick">${n}×</button>`).join('');
+  const seasonDeg = Math.round(panel.seasonDeg ?? 0);
+  const livedHoldId = panel.livedSeasonHoldId || holdId;
+  const livedSeasonBtns = SEASON_HOLDS.map((h) =>
+    `<button type="button" class="rib-lived-season-btn${h.id === livedHoldId ? ' on' : ''}" data-lived-season="${h.id}" title="${h.title}">${h.label}</button>`).join('');
+  const skyRate = panel.livedRate ?? 1;
+  const skyBtns = (panel.livedSkyRates || [0.5, 1, 2, 4]).map((n) =>
+    `<button type="button" class="rib-sky-btn${n === skyRate ? ' on' : ''}" data-lived-sky-rate="${n}" title="${n}× year, moon & season">${n === 0.5 ? '½' : n}×</button>`).join('');
+  const dayRate = panel.livedDayRate ?? 1;
+  const dayBtns = (panel.livedDayRates || [0.5, 1, 2, 4]).map((n) =>
+    `<button type="button" class="rib-day-btn${n === dayRate ? ' on' : ''}" data-lived-day-rate="${n}" title="${n}× day length (terminator spin)">${n === 0.5 ? '½' : n}×</button>`).join('');
   return `<div class="ics-ribbon${pausedCls}${lived ? ' is-now' : ' is-years'}">
     <div class="rib-head">
       <span class="rib-mode">${mode}</span>
@@ -326,12 +336,21 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
     </div>
     <p class="rib-face-hint">${lived
       ? (panel.calendarHeld
-        ? 'Calendar held at present · days and seasons still move'
-        : 'Days, seasons and the moon · the calendar holds')
-      : 'Years pass · this season stays'}${panel.winterHint ? ` · <span class="rib-winter">${panel.winterHint}</span>` : ''}</p>
-    ${lived ? '' : `<div class="rib-hold" role="group" aria-label="Held season">${holdBtns}</div>`}
+        ? 'Sky moves (day, season, moon) · calendar welded at the present'
+        : 'Sky moves on the clock · geology calendar holds')
+      : 'Years advance (ice, life, cities) · season, moon & day frozen at hold'}${panel.winterHint ? ` · <span class="rib-winter">${panel.winterHint}</span>` : ''}</p>
+    ${lived ? `<div class="rib-lived-season" role="group" aria-label="Time of year">
+      <span class="rib-lived-label">Season</span>
+      <div class="rib-lived-season-btns">${livedSeasonBtns}</div>
+      <input type="range" class="rib-season-range" data-lived-season-range min="0" max="359" value="${seasonDeg}" step="1" aria-label="Season angle">
+      <span class="rib-season-val" data-lived-season-val>${seasonDeg}°</span>
+    </div>
+    <div class="rib-lived-speed" role="group" aria-label="Sky animation speed">
+      <span class="rib-lived-label" title="Year, moon & season rate">Sky</span>${skyBtns}
+      <span class="rib-lived-label" title="Day / terminator spin only">Day</span>${dayBtns}
+    </div>` : `<div class="rib-hold" role="group" aria-label="Held season">${holdBtns}</div>`}
     <div class="rib-life" role="group" aria-label="Biology speed">
-      <span class="rib-life-label">Life</span>${lifeBtns}
+      <span class="rib-life-label" title="Biology substeps per climate tick — not the sky clock">Bio</span>${lifeBtns}
       <span class="rib-dt">${panel.dtBio != null ? `bio ${Number(panel.dtBio).toPrecision(3)} yr` : ''}</span>
     </div>
     <div class="rib-clock">
@@ -341,7 +360,7 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       <select class="rib-rate" data-rate-select aria-label="Years per tick">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
       <button type="button" class="rib-step" data-rate-step="1" title="Faster (.)" aria-label="Faster clock">+</button>
       <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>`}
-      <span class="rib-dt">${clock?.paused ? 'paused' : (lived ? (panel.livedLabel || 'lived') : dt)}</span>
+      <span class="rib-dt" data-lived-tick>${clock?.paused ? 'paused' : (lived ? (panel.livedLabel || 'lived') : dt)}</span>
     </div>
   </div>`;
 }

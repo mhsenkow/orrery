@@ -1,6 +1,6 @@
 # Calibration report
 
-Generated 2026-08-22T03:36:21.254Z
+Generated 2026-08-23T00:48:03.650Z
 
 | World | Rule | Result |
 |---|---|---|
@@ -9,6 +9,7 @@ Generated 2026-08-22T03:36:21.254Z
 | Europa | europa | pass |
 | Mars | ares | pass |
 | Selene | selene | pass |
+| Earth sky | terra | pass |
 | Earth Thrive | thrive | pass |
 | Titan | titan | pass |
 | Venus | venus | pass |

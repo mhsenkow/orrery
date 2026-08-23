@@ -1,20 +1,20 @@
 {
-  "updated": "2026-08-22",
-  "censusNames": 746,
-  "budget": 746,
-  "curatedRows": 45,
-  "curatedSaved": 13,
+  "updated": "2026-08-23",
+  "censusNames": 756,
+  "budget": 756,
+  "curatedRows": 56,
+  "curatedSaved": 21,
   "byKind": {
-    "record": 30,
+    "record": 32,
     "field": 50,
-    "meta": 356,
-    "scalar": 26,
-    "derived": 276,
+    "meta": 355,
+    "scalar": 30,
+    "derived": 281,
     "flag": 8
   },
   "uncurated": 0,
-  "schemaCurated": 45,
-  "multiWriterCount": 371,
+  "schemaCurated": 56,
+  "multiWriterCount": 372,
   "note": "H3/H28/P1/P22 — classify via fields-census; multi-writers in multi-writers.json",
   "multiWritersTop": [
     {
@@ -286,7 +286,7 @@
         "tools.js"
       ],
       "writeCount": 24,
-      "refs": 242,
+      "refs": 243,
       "owner": "city",
       "saved": true
     },

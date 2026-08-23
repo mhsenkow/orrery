@@ -49,6 +49,7 @@ What this simulation deliberately does **not** do. Stating the boundary is what 
 - **Technosphere.** `W.techno` is a lazy object, not an NC array. Holocene Earth reads 20 TW / ~0.01% absorbed insolation without extra CO₂. Waste heat applies above 1%. Fossil emissions on uncalibrated worlds. Overlay `techno`. Fusion/orbital/post-bio tagged invented. Giants skip. Not a road network, not a Dyson swarm.
 - **Not round.** `isNonHydrostatic` is true below ~400 km. Phobos, Arrokoth and 67P are flagged `not round` on the chip and still drawn as cube-spheres — the engine has no irregular-body mesh.
 - **Tidal heat.** `tidalHeatFluxWm2` is Io-normalised (~2 W/m² on Io). The Moon is far smaller. Heat-pipe interiors require a moon (or Io-level heatFlow), not a close-in airless exoplanet.
+- **Sky.** One analytic ephemeris (`sim/sky.js`) — Keplerian lights and satellites, equilibrium tides, fitted eclipses. No N-body, no Laskar chaos. See [`sky-model.md`](sky-model.md).
 - Most catalogue bodies still inherit Earth-flavoured biology until ruleset flags (`iceShell`, `methaneSolvent`, `tidallyLocked`, `starTeff`) say otherwise. Host stars are now objects (`sim/star.js`) with Teff-derived photon fraction and sky tint; insolation still soft-clamps for playability.
 - Phosphine / Venus aerial life is framed as contested, not affirmed.
 

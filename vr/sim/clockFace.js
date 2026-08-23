@@ -8,6 +8,9 @@
  */
 
 import { isPinnedEarth } from './ruleMode.js';
+import { skyFrame, LIVED_YEAR_SEC, LUNAR_ORBITS_YR, anchorLivedOrbits, snapshotHeldOrbits, isLivedClock } from './sky.js';
+
+export { isLivedClock };
 
 export const CLOCK_FACES = [
   { id: 'now', label: 'Now', hint: 'Days, seasons, moon' },
@@ -21,12 +24,8 @@ export const SEASON_HOLDS = [
   { id: 'dec', label: 'Dec', deg: 270, title: 'December solstice' },
 ];
 
-const YEAR_SEC = 48;
-const MONTH_SEC = YEAR_SEC / 13.4;
-
-export function isLivedClock(W) {
-  return (W.clockFace || 'years') === 'now';
-}
+const YEAR_SEC = LIVED_YEAR_SEC;
+const MONTH_SEC = YEAR_SEC / LUNAR_ORBITS_YR;
 
 export function clockFaceOf(W) {
   return isLivedClock(W) ? 'now' : 'years';
@@ -59,22 +58,21 @@ export function setSeasonHold(W, degOrId) {
   return rad;
 }
 
-export function setClockFace(W, id) {
+export function setClockFace(W, id, opts = {}) {
   const next = id === 'now' ? 'now' : 'years';
   const prev = clockFaceOf(W);
-  if (next === prev && W.clockFace) return next;
+  if (next === prev && W.clockFace && !opts.force) return next;
   W.clockFace = next;
   W._livedActive = next === 'now';
   if (next === 'years') {
+    snapshotHeldOrbits(W);
     if (W.seasonHold == null) W.seasonHold = W.season || 0;
     W.season = W.seasonHold;
-    W.moonAngleHold = W.moonAngle ?? 0;
-    W.moonPhaseHold = W.moonPhase ?? 0;
-    if (W._moonDir) W._moonDirHold = W._moonDir.slice();
   } else {
+    anchorLivedOrbits(W);
     W._livedT = 0;
     W._livedSeason0 = W.season || 0;
-    W._livedMoon0 = W.moonAngle ?? 0;
+    W._livedSpin0 = W.spinPhase ?? 0;
   }
   return next;
 }
@@ -92,51 +90,25 @@ export function initClockFace(W, rule) {
   W._livedSeason0 = W.season || 0;
   W.moonAngleHold = null;
   W.moonPhaseHold = null;
+  W.spinPhaseHold = null;
+  W._livedActive = W.clockFace === 'now';
+  if (W._moonDir) delete W._moonDirHold;
+  for (const sat of W.bodies?.sats || []) delete sat._heldM;
 }
 
 /**
- * Presentation-clock season + moon. Call from the frame loop, not simTick.
- * ~48 s of watching is one orbital year; the month is 13.4× faster.
+ * Presentation-clock advance — delegates geometry to sky.js (EPH19).
  */
 export function livedTick(W, dtSec) {
-  if (!isLivedClock(W)) return;
-  const dt = Math.max(0, dtSec || 0);
-  if (dt) W._livedActive = true;
-  W._livedT = (W._livedT || 0) + dt;
-  const t = W._livedT;
-  W.season = (W._livedSeason0 || 0) + t * (Math.PI * 2) / YEAR_SEC;
-  const moon0 = W._livedMoon0 || 0;
-  const lunar = moon0 + t * (Math.PI * 2) / MONTH_SEC;
-  W.moonAngle = lunar;
-  W.moonPhase = ((lunar / (Math.PI * 2)) % 1 + 1) % 1;
-  W._moonDir = [Math.cos(lunar), 0, Math.sin(lunar)];
+  skyFrame(W, dtSec);
 }
 
-/** Sim-tick season policy. Returns true if this tick owns season. */
+/** Sim-tick season policy — sky owns season; this only gates calendar advance. */
 export function applySeasonPolicy(W, rule) {
   if (W._livedActive && isLivedClock(W)) return false;
-  if (W.seasonHold != null && !isLivedClock(W)) {
-    W.season = W.seasonHold;
-    return false;
-  }
-  /* One apparent year in ~36 ticks, for any world running a fine enough clock.
-   *
-   * Only the pinned Earth used to get this; everything else advanced the season
-   * by `0.02 · dtYr/10⁴` — 2·10⁻⁵ radians a tick at ten years a tick, which is
-   * one cycle per 314 000 ticks, or no season at all. That is the wrong default
-   * for a world whose clock *can* carry a season: a deep-time run stepped down
-   * to decades, or any world the player has put on the lived clock and then
-   * released. Worlds on the "years" face hold their season deliberately and
-   * return above — at 200 years a tick the equinox hold is the annual-mean
-   * insolation, which is the honest thing to show — so this only reaches worlds
-   * that have no hold and a tick short enough to mean something. */
+  if (W.seasonHold != null && !isLivedClock(W)) return false;
   const dt = W.dtYr || 200;
-  if (dt <= 1000) {
-    W.season = (W.season || 0) + Math.min(dt, 10) * (Math.PI * 2) / 365.25;
-    return true;
-  }
-  W.season = (W.season || 0) + 0.02 * Math.min(1, dt / 1e4);
-  return true;
+  return dt <= 1000 || dt <= 1e4;
 }
 
 /** Skip calendar advance while watching lived time. */

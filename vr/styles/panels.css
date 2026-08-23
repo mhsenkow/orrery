@@ -64,7 +64,14 @@
     letter-spacing: .16em; text-transform: uppercase; color: #9fc0ff; margin: 0 0 8px;
   }
   .lab-card[hidden], .suite-desk[hidden] { display: none !important; }
-  .clim-list { display: flex; flex-direction: column; gap: 4px; }
+  .clim-desk[data-desk-panel="system"],
+  .clim-desk[data-desk-panel="fantasy"] {
+    max-height: min(56vh, 480px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 2px;
+  }
+  .clim-list .clim-row { touch-action: manipulation; }
   .clim-row {
     display: flex; flex-direction: column; gap: 2px; text-align: left;
     padding: 7px 8px; border-radius: 7px;

@@ -9,6 +9,7 @@ import { injectGas } from '../atmo.js';
 import { paintBrush, beginStroke } from './brush.js';
 import { issueReceipt } from './receipt.js';
 import { tidesTick } from '../tides.js';
+import { makeMoonView, LUNAR_INCL, LUNAR_ECC, skyTick } from '../sky.js';
 import { rngOf } from '../rng.js';
 import { ROCHE_DISTANCE } from '../tides.js';
 
@@ -39,6 +40,7 @@ export function setOrbit(opts = {}) {
     });
     chronLog(W.year, 'tool', 0, W.solar, 'Orbit elements set');
   }
+  skyTick(W);
   return { ok: true, solar: W.solar, obliquity: W.obliquity, eccentricity: W.eccentricity };
 }
 
@@ -209,7 +211,26 @@ export function setMoon(mass = 1, distance = 1, opts = {}) {
     note = ` · clamped to Roche floor (${ROCHE_DISTANCE})`;
   }
   const wasGone = !(W.moon && W.moon.mass > 0.1);
-  W.moon = { mass, distance: dist, formed: W.moon?.formed ?? W.ageYr };
+  if (mass < 0.1) {
+    W.bodies = W.bodies || { lights: [], sats: [] };
+    W.bodies.sats = [];
+    W.moon = null;
+    if (W.sky) W.sky.nSats = 0;
+  } else {
+    W.bodies = W.bodies || { lights: [], sats: [] };
+    if (!W.bodies.sats.length) {
+      W.bodies.sats.push({
+        id: 'moon0', name: 'Moon', mass, radius: 1, dens: 3.34, albedo: 0.12,
+        a: dist, e: LUNAR_ECC, incl: LUNAR_INCL, node: 0, argp: 0, M0: 0,
+        retro: false, formedYr: W.ageYr, _distNow: dist,
+      });
+    } else {
+      W.bodies.sats[0].mass = mass;
+      W.bodies.sats[0].a = dist;
+    }
+    W.moon = makeMoonView(W.bodies.sats[0]);
+    if (W.sky) W.sky.nSats = 1;
+  }
   if (mass < 0.1) {
     W.obliquityWander = true;
     if (wasGone === false && !opts.soft) {
@@ -232,6 +253,7 @@ export function setMoon(mass = 1, distance = 1, opts = {}) {
       : `Axis stabilised · equilibrium tides raise intertidal zones${note}`,
   });
   chronLog(W.year, 'tool', 0, mass, mass < 0.1 ? 'Moon stripped' : `Moon set @ ${dist.toFixed(2)}${note}`);
+  skyTick(W);
   tidesTick(W);
   return { ok: true, moon: W.moon, rocheClamped: distance < ROCHE_DISTANCE };
 }

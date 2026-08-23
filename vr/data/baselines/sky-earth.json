@@ -1,0 +1,16 @@
+{
+  "world": "Earth sky",
+  "ruleId": "terra",
+  "seeds": [20260808],
+  "ticks": { "early": 1, "late": 1 },
+  "n": 32,
+  "source": "Sky-system GATE14 spine — obliquity, insolation, day length, lunar geometry.",
+  "early": {
+    "obliquityDeg": { "lo": 23.0, "hi": 25.0, "tag": "measured", "why": "IAU ε ≈ 23.44°; ruleset uses 23.4°" },
+    "siderealDayH": { "lo": 23.9, "hi": 24.0, "tag": "measured", "why": "23h 56m 04s" },
+    "yearD": { "lo": 365.2, "hi": 365.3, "tag": "measured", "why": "365.256 d tropical year" },
+    "siderealMonthD": { "lo": 27.2, "hi": 27.4, "tag": "measured", "why": "27.321661 d" },
+    "lunarInclDeg": { "lo": 5.0, "hi": 5.3, "tag": "measured", "why": "5.145° to ecliptic" },
+    "terminatorKmh": { "lo": 1600, "hi": 1750, "tag": "derived", "why": "≈1670 km/h at equator" }
+  }
+}

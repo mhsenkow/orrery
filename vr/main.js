@@ -5,7 +5,8 @@ import { installGlobalErrorHandlers, setErrorSink, endBootDeferral, expected } f
 import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
 import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
 import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js';
-import { setClockFace, setSeasonHold, livedTick } from './sim/clockFace.js';
+import { setClockFace, setSeasonHold, livedTick, isLivedClock, SEASON_HOLDS } from './sim/clockFace.js';
+import { scrubLivedSeason, setLivedSkyRate, setLivedDayRate } from './sim/sky.js';
 import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed, enableWorldAsserts } from './world.js';
 import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
 import { freshSeed } from './sim/rng.js';
@@ -1360,6 +1361,50 @@ function applyLifeSpeed(n) {
   updateHUD();
 }
 
+function applyLivedSeasonHold(id) {
+  const h = SEASON_HOLDS.find((x) => x.id === id);
+  if (!h) return;
+  scrubLivedSeason(W, (h.deg * Math.PI) / 180);
+  const ribbon = document.getElementById('timeribbon');
+  if (ribbon) delete ribbon.dataset.seasonDrag;
+  updateHUD();
+}
+
+function applyLivedSeasonDeg(deg) {
+  scrubLivedSeason(W, (deg * Math.PI) / 180);
+  updateHUD();
+}
+
+function applyLivedSkyRate(rate) {
+  setLivedSkyRate(W, +rate);
+  const ribbon = document.getElementById('timeribbon');
+  if (ribbon) delete ribbon.dataset.sig;
+  updateHUD();
+}
+
+function applyLivedDayRate(rate) {
+  setLivedDayRate(W, +rate);
+  const ribbon = document.getElementById('timeribbon');
+  if (ribbon) delete ribbon.dataset.sig;
+  updateHUD();
+}
+
+function refreshLivedRibbonDom(ribbon, panel) {
+  if (panel.clockFace !== 'now') return;
+  const tickEl = ribbon.querySelector('[data-lived-tick]');
+  if (tickEl && panel.livedLabel) tickEl.textContent = panel.livedLabel;
+  if (ribbon.dataset.seasonDrag) return;
+  const deg = Math.round(panel.seasonDeg ?? 0);
+  const range = ribbon.querySelector('[data-lived-season-range]');
+  const val = ribbon.querySelector('[data-lived-season-val]');
+  if (range) range.value = deg;
+  if (val) val.textContent = `${deg}°`;
+  const holdId = panel.livedSeasonHoldId || 'mar';
+  ribbon.querySelectorAll('[data-lived-season]').forEach((btn) => {
+    btn.classList.toggle('on', btn.dataset.livedSeason === holdId);
+  });
+}
+
 function applyEra(eraId) {
   if (!eraId || !availableEras(W.rule).some((e) => e.id === eraId)) return;
   const rule = ruleForEra(W.rule, eraId);
@@ -1422,6 +1467,24 @@ function bindTimeRibbon() {
       applyLifeSpeed(life.dataset.lifeSpeed);
       return;
     }
+    const livedSeason = e.target.closest('[data-lived-season]');
+    if (livedSeason) {
+      e.preventDefault();
+      applyLivedSeasonHold(livedSeason.dataset.livedSeason);
+      return;
+    }
+    const skyRate = e.target.closest('[data-lived-sky-rate]');
+    if (skyRate) {
+      e.preventDefault();
+      applyLivedSkyRate(skyRate.dataset.livedSkyRate);
+      return;
+    }
+    const dayRate = e.target.closest('[data-lived-day-rate]');
+    if (dayRate) {
+      e.preventDefault();
+      applyLivedDayRate(dayRate.dataset.livedDayRate);
+      return;
+    }
     const step = e.target.closest('[data-rate-step]');
     if (step) {
       e.preventDefault();
@@ -1436,6 +1499,24 @@ function bindTimeRibbon() {
     }
     const rateSel = e.target.closest('[data-rate-select]');
     if (rateSel) applyTimeRate(rateSel.value);
+  });
+  ribbon.addEventListener('input', (e) => {
+    const range = e.target.closest('[data-lived-season-range]');
+    if (!range) return;
+    ribbon.dataset.seasonDrag = '1';
+    const deg = +range.value || 0;
+    const val = ribbon.querySelector('[data-lived-season-val]');
+    if (val) val.textContent = `${deg}°`;
+    applyLivedSeasonDeg(deg);
+  });
+  ribbon.addEventListener('change', (e) => {
+    const range = e.target.closest('[data-lived-season-range]');
+    if (!range) return;
+    delete ribbon.dataset.seasonDrag;
+    applyLivedSeasonDeg(+range.value || 0);
+  });
+  ribbon.addEventListener('pointerup', (e) => {
+    if (e.target.closest('[data-lived-season-range]')) delete ribbon.dataset.seasonDrag;
   });
 }
 
@@ -1548,6 +1629,7 @@ function updateHUD() {
     (W.solarShade ? ` · shade <b>${((W.solarShade || 0) * 100) | 0}%</b>` : '') + `<br>` +
     `tilt <b>${((W.obliquity || 0) * 180 / Math.PI).toFixed(1)}°</b>` +
     ` · day <b>${(W.rotationPeriod || 1).toFixed(2)}×</b>` +
+    (W.sky?.terminatorKmh ? ` · <b>${W.sky.terminatorKmh.toFixed(0)}</b> km/h` : '') +
     (W.magnetosphere != null ? ` · B <b>${W.magnetosphere.toFixed(2)}</b>` : '') +
     (W.interior?.lidMode ? ` · <b>${W.interior.lidMode}</b>` : '') +
     (W.moon && W.moon.mass > 0.1
@@ -1627,12 +1709,13 @@ function updateHUD() {
     const needle = Math.min(100, Math.max(0, ((4567 - (W.ics?.maBP ?? 0)) / 4567) * 100)) | 0;
     const ageLabel = formatAge(W.ageYr || W.year);
     const panel = timePanelState(W, S);
-    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}|${panel.lifeSpeed}|${panel.livedLabel}|${panel.winterHint}|${(W.dark?.winter * 100) | 0}`;
+    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}|${panel.lifeSpeed}|${panel.livedRate}|${panel.livedDayRate}|${panel.winterHint}|${(W.dark?.winter * 100) | 0}`;
     if (ribbon.dataset.sig !== sig) {
       ribbon.dataset.sig = sig;
       ribbon.innerHTML = icsRibbonHTML(W.ics, ageLabel, W.ics?.maBP, clock, panel);
       bindRibbonTips(ribbon);
     }
+    refreshLivedRibbonDom(ribbon, panel);
   }
 
   announceNewMoments();
@@ -1865,10 +1948,11 @@ function update(t) {
   const dt = Math.min(0.05, (t - lastT) / 1000 || 0);
   lastT = t;
   S._t = t;
-  S.sunAng += dt * (S.dayWatch ? 0.42 : 0.055);
-  setSunDir(Math.cos(S.sunAng), 0.34, Math.sin(S.sunAng));
+  if (S.paused) {
+    S.sunAng += dt * (S.dayWatch ? 0.42 : 0.055);
+  }
   presentAdvance(dt * (S.dayWatch ? 2.2 : 1));
-  if (!S.paused) livedTick(W, dt * (S.dayWatch ? 1.6 : 1));
+  if (isLivedClock(W)) livedTick(W, dt * (S.dayWatch ? 1.6 : 1));
   stepFlow(dt * (S.dayWatch ? 1.8 : 1));
   presentAgents();
   uploadEntities();

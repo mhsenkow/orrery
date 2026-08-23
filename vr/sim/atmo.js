@@ -65,6 +65,7 @@ export function geometricInsolation(W, c, sunDir) {
   const dec = Math.sin(obl) * Math.sin(season);
   // fitted: dailyMeanMu(0,0)=1/π → INSOL_SEASON_BIAS + INSOL_SEASON_GAIN/π ≈ 0.55
   const seasonal = INSOL_SEASON_BIAS + dailyMeanMu(y, dec) * INSOL_SEASON_GAIN;
+  if (W.sky?.orbitAveraged) return seasonal;
   let diurnal = lerp(0.5 + 0.5 * day, day, 1 - atm * 0.85);
   if (W.rule && !W.rule.earthLike) {
     const I = thermalInertiaAt(W, c);
@@ -81,17 +82,38 @@ export function geometricInsolation(W, c, sunDir) {
 export function insolation(W, c, sunDir) {
   const heating = W.rule?.star?.heating;
   let extra = 1;
-  if (heating === 'particle') extra = 0.4; // pulsar wind — albedo-irrelevant floor
+  if (heating === 'particle') extra = 0.4;
   if (heating === 'none' || W.rule?.freeFloater) extra = 0;
   const intern = 1 + (W.rule?.internalHeat || 0);
   const tidal = 1 + Math.min(2, (W.rule?.tidalHeat || 0) * 0.4);
   let beat = 1;
-  if (W.rule?.binaryBeat) {
+  if (W.rule?.binaryBeat && (sky?.nLights || 0) <= 1) {
     const b = W.rule.binaryBeat;
     beat = circumbinaryBeat(b.L1, b.L2, b.Pbin, W.rule.orbitalPeriodDays, (W.ageYr || 0) * 365.25);
   }
   if (heating === 'none') return (W.rule?.tidalHeat || 0) * 0.05;
-  return W.solar * (W._solarMod || 1) * geometricInsolation(W, c, sunDir) * extra * intern * tidal * beat;
+
+  const sky = W.sky;
+  const nL = sky?.nLights || 0;
+  if (nL > 1 && sky.lights) {
+    let fluxSum = 0;
+    let geoFlux = 0;
+    for (let i = 0; i < nL; i++) {
+      const body = W.bodies?.lights?.[i];
+      if (body?.heating === 'none') continue;
+      const L = sky.lights[i];
+      const flux = L.flux || 0;
+      const occ = 1 - (L.occluded || 0);
+      fluxSum += flux;
+      geoFlux += flux * occ * geometricInsolation(W, c, L.dir || sunDir);
+    }
+    const geo = fluxSum > 1e-8
+      ? geoFlux / fluxSum
+      : geometricInsolation(W, c, sunDir);
+    return W.solar * (W._solarMod || 1) * geo * extra * intern * tidal * beat;
+  }
+  const occ = 1 - (sky?.lights?.[0]?.occluded || 0);
+  return W.solar * (W._solarMod || 1) * geometricInsolation(W, c, sunDir) * extra * intern * tidal * beat * occ;
 }
 
 /** Advect a scalar by a geographic (east, north) velocity pair.

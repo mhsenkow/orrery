@@ -1,5 +1,5 @@
 /** Lunar/solar tidal potential + breathing shore + basin range.
- *  Moon phase is shared with the renderer. */
+ *  Moon phase and direction owned by sky.js — this module reads only. */
 
 import { NC, DIR, NBR } from '../sphere.js';
 import { clamp } from '../math.js';
@@ -12,40 +12,28 @@ export function initTides(W) {
     W.tideHeight = new Float32Array(NC);
     W.intertidal = new Float32Array(NC);
     W.tideWet = new Float32Array(NC);
-    W.tideU = new Float32Array(NC); // tidal current proxies
+    W.tideU = new Float32Array(NC);
     W.tideV = new Float32Array(NC);
   }
 }
 
+function satTideAmp(sat) {
+  const mass = clamp(sat.mass || 1, 0.05, 3);
+  const dist = clamp(sat.a || 1, 0.35, 3);
+  return (0.018 * mass) / (dist * dist * dist);
+}
+
 /**
  * Two-bulge equilibrium tide; range amplified on shelves.
- * Sets W.moonPhase / W.moonAngle for renderer sync.
+ * Reads W.sky.sats[] — single-moon behaviour preserved when nSats === 1.
  */
 export function tidesTick(W) {
   initTides(W);
-  const moon = W.moon;
   const sun = W._sunDir || [1, 0, 0];
+  const sats = W.bodies?.sats || [];
+  const skySats = W.sky?.sats || [];
 
-  if ((W.clockFace || 'years') === 'now' && W._livedActive) {
-    // Moon angle owned by livedTick.
-  } else if (W.seasonHold != null && (W.clockFace || 'years') === 'years'
-    && (W.moonAngleHold != null || W.moonPhaseHold != null)) {
-    W.moonAngle = W.moonAngleHold ?? W.moonAngle ?? 0;
-    W.moonPhase = W.moonPhaseHold ?? W.moonPhase ?? 0;
-    const a = W.moonAngle;
-    W._moonDir = [Math.cos(a), 0, Math.sin(a)];
-  } else {
-    const lunarOrb = (W.ageYr || 0) * Math.PI * 2 * 13.4;
-    const lunarDay = lunarOrb * 0.966;
-    W.moonAngle = lunarDay;
-    W.moonPhase = (lunarOrb / (Math.PI * 2)) % 1;
-    const mx = Math.cos(lunarDay), mz = Math.sin(lunarDay);
-    W._moonDir = [mx, 0, mz];
-  }
-  const mx = W._moonDir?.[0] ?? 1;
-  const mz = W._moonDir?.[2] ?? 0;
-
-  if (!moon || moon.mass < 0.05) {
+  if (!sats.length) {
     const solarAmp = 0.008;
     let meanRange = 0, wetN = 0;
     for (let c = 0; c < NC; c++) {
@@ -65,15 +53,23 @@ export function tidesTick(W) {
     return;
   }
 
-  const mass = clamp(moon.mass || 1, 0.05, 3);
-  const dist = clamp(moon.distance || 1, 0.35, 3);
-  const amp = (0.018 * mass) / (dist * dist * dist);
-  const solarAmp = amp * 0.46;
+  let amp = 0;
+  let mx = 0;
+  let mz = 0;
+  let moonDotSun = 0;
+  for (let i = 0; i < sats.length; i++) {
+    const body = sats[i];
+    const pay = skySats[i];
+    if (!pay) continue;
+    amp += satTideAmp(body);
+    if (i === 0) {
+      mx = pay.dir[0];
+      mz = pay.dir[2];
+      moonDotSun = mx * sun[0] + pay.dir[1] * sun[1] + mz * sun[2];
+    }
+  }
 
-  const moonDotSun = mx * sun[0] + mz * sun[2];
-  // Phase fraction for lit crescent: 0 new, 0.5 full
-  const phaseAng = Math.acos(clamp(moonDotSun, -1, 1));
-  W.moonIllum = 0.5 + 0.5 * moonDotSun; // 0..1 lit fraction approx
+  const solarAmp = amp * 0.46;
   const springFactor = 0.55 + 0.45 * Math.abs(moonDotSun);
   const isSpring = Math.abs(moonDotSun) > 0.85;
   const isNeap = Math.abs(moonDotSun) < 0.25;
@@ -84,8 +80,15 @@ export function tidesTick(W) {
   let meanRange = 0, wetN = 0;
   for (let c = 0; c < NC; c++) {
     const x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
-    const cosM = x * mx + z * mz;
-    const lunar = amp * (1.5 * cosM * cosM - 0.5);
+    let lunar = 0;
+    for (let i = 0; i < sats.length; i++) {
+      const body = sats[i];
+      const pay = skySats[i];
+      if (!pay) continue;
+      const a = satTideAmp(body);
+      const cosM = x * pay.dir[0] + y * pay.dir[1] + z * pay.dir[2];
+      lunar += a * (1.5 * cosM * cosM - 0.5);
+    }
     const cosS = x * sun[0] + y * sun[1] + z * sun[2];
     const solar = solarAmp * (1.5 * cosS * cosS - 0.5);
     const h = (lunar + solar) * springFactor;
@@ -94,7 +97,6 @@ export function tidesTick(W) {
     W.tideRange[c] = basinRange(W, c, raw);
     meanRange += W.tideRange[c];
 
-    // Tidal currents ~ ∇height (proxy)
     let du = 0, dv = 0;
     for (let k = 0; k < 4; k++) {
       const nb = NBR[c * 4 + k];
@@ -118,26 +120,23 @@ export function tidesTick(W) {
   }
 
   if (W._seaBase == null) W._seaBase = W.seaLevel;
-  // Do not overwrite hydro's ice/thermal sea level — tideHeight adds on top locally
 }
 
 /** Shelf / basin amplification — Fundy-ish vs Mediterranean-ish. */
 function basinRange(W, c, raw) {
   const sea = W._seaBase ?? W.seaLevel;
   const elev = W.h[c] - sea;
-  // Shallow shelf: amplify; deep basin / enclosed-ish: damp
   let factor = 1;
   if (elev > -0.08 && elev < 0.05) {
-    // Count ocean neighbours — embayment proxy
     let oceanN = 0, landN = 0;
     for (let k = 0; k < 4; k++) {
       const nb = NBR[c * 4 + k];
       if (W.h[nb] < sea) oceanN++; else landN++;
     }
-    if (landN >= 2 && oceanN >= 1) factor = 2.4; // funnel / bay
-    else if (elev > -0.04) factor = 1.55; // shelf
+    if (landN >= 2 && oceanN >= 1) factor = 2.4;
+    else if (elev > -0.04) factor = 1.55;
   } else if (elev < -0.2) {
-    factor = 0.45; // deep ocean — small surface range
+    factor = 0.45;
   }
   return raw * factor;
 }
@@ -154,7 +153,6 @@ function updateShoreCell(W, c) {
   if (near && range > 0.012 && Math.abs(elev) < 0.018) {
     W.intertidal[c] = Math.min(1, W.intertidal[c] + 0.3);
   }
-  // Hours wet proxy (0–1) for inspect
   if (near) {
     W.tideWet[c] = clamp(0.5 - elev / Math.max(0.01, range), 0, 1);
   }

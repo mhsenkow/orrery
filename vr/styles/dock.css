@@ -60,7 +60,8 @@
     width: min(320px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
   }
   #timeribbon .rib-head, #timeribbon .rib-clock,
-  #timeribbon .rib-faces, #timeribbon .rib-hold { pointer-events:auto; }
+  #timeribbon .rib-faces, #timeribbon .rib-hold,
+  #timeribbon .rib-lived-season, #timeribbon .rib-lived-speed { pointer-events:auto; }
   .ics-ribbon {
     padding:8px 10px 7px; border-radius:12px;
     background:var(--panel); backdrop-filter:blur(16px) saturate(1.1);
@@ -171,10 +172,41 @@
   .rib-life-btn.on {
     background:rgba(110,200,140,.18); border-color:rgba(110,200,140,.5); color:#c8f0d0;
   }
-  .rib-face-btn:hover, .rib-hold-btn:hover, .rib-life-btn:hover {
+  .rib-lived-season, .rib-lived-speed {
+    display:flex; align-items:center; gap:4px; margin-top:6px; flex-wrap:wrap;
+  }
+  .rib-lived-label {
+    font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:#6a7a94;
+    flex:0 0 auto; min-width:2.4em;
+  }
+  .rib-lived-season-btns { display:flex; gap:2px; flex:1 1 auto; }
+  .rib-lived-season-btn, .rib-sky-btn, .rib-day-btn {
+    font:inherit; cursor:pointer; flex:1; min-width:0; height:22px; padding:0 4px;
+    font-size:9px; letter-spacing:.04em; color:#8aa0c0;
+    background:rgba(255,255,255,.04); border:1px solid var(--line); border-radius:7px;
+  }
+  .rib-lived-season-btn.on {
+    background:rgba(198,154,79,.18); border-color:rgba(198,154,79,.5); color:#f0d9a8;
+  }
+  .rib-sky-btn.on {
+    background:rgba(110,160,255,.2); border-color:rgba(110,160,255,.5); color:#d8e8ff;
+  }
+  .rib-day-btn.on {
+    background:rgba(160,140,220,.18); border-color:rgba(160,140,220,.5); color:#e8d8ff;
+  }
+  .rib-season-range {
+    flex:1 1 72px; min-width:56px; height:18px; margin:0 2px;
+    accent-color: rgba(198,154,79,.85);
+  }
+  .rib-season-val {
+    font-size:9px; color:#9aacc4; min-width:2.4em; text-align:right;
+  }
+  .rib-face-btn:hover, .rib-hold-btn:hover, .rib-life-btn:hover,
+  .rib-lived-season-btn:hover, .rib-sky-btn:hover, .rib-day-btn:hover {
     background:rgba(110,160,255,.14); border-color:rgba(110,160,255,.4);
   }
-  .rib-face-btn:focus-visible, .rib-hold-btn:focus-visible, .rib-life-btn:focus-visible {
+  .rib-face-btn:focus-visible, .rib-hold-btn:focus-visible, .rib-life-btn:focus-visible,
+  .rib-lived-season-btn:focus-visible, .rib-sky-btn:focus-visible, .rib-day-btn:focus-visible {
     outline:none; border-color:rgba(110,160,255,.65);
     box-shadow:0 0 0 2px rgba(110,160,255,.25);
   }
