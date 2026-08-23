@@ -1,6 +1,6 @@
 {
   "note": "Golden corpus (D76). Hashes are CPU-path only. Update with: node vr/sim/headless.mjs --update-golden",
-  "generated": "2026-08-23T01:56:57.919Z",
+  "generated": "2026-08-23T05:55:04.310Z",
   "entries": [
     {
       "id": "terra-42-40",
@@ -8,7 +8,7 @@
       "seed": 42,
       "ticks": 40,
       "deepTime": false,
-      "hash": "2a8b2cc27f677025"
+      "hash": "693ea0d082033de5"
     },
     {
       "id": "terra-20260808-40",
@@ -16,7 +16,7 @@
       "seed": 20260808,
       "ticks": 40,
       "deepTime": false,
-      "hash": "4e7007c56e35fa5b"
+      "hash": "ba7763a0fcedd0a7"
     },
     {
       "id": "thrive-20260808-40",
@@ -24,7 +24,7 @@
       "seed": 20260808,
       "ticks": 40,
       "deepTime": false,
-      "hash": "af78b95c03ec53b0"
+      "hash": "8aea5535852c3a06"
     },
     {
       "id": "ares-20260808-24",
@@ -32,7 +32,7 @@
       "seed": 20260808,
       "ticks": 24,
       "deepTime": false,
-      "hash": "b4c82db4fe174e32"
+      "hash": "03c31f27a2487aed"
     },
     {
       "id": "daisy-1-24",
@@ -40,7 +40,7 @@
       "seed": 1,
       "ticks": 24,
       "deepTime": false,
-      "hash": "34243069db62532d"
+      "hash": "6a6499a02d219189"
     }
   ]
 }

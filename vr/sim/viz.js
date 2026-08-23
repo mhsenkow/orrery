@@ -301,7 +301,7 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
   const eraOpts = eras.map((e) =>
     `<option value="${e.id}"${e.id === eraId ? ' selected' : ''}>${e.label}</option>`).join('');
   const rateOpts = rates.map((r) =>
-    `<option value="${r.id}"${r.id === rateId ? ' selected' : ''}>${r.label}${r.dtYr == null ? '' : ' / tick'}</option>`).join('');
+    `<option value="${r.id}"${r.id === rateId ? ' selected' : ''}${r.disabled ? ' disabled' : ''}${r.title ? ` title="${r.title}"` : ''}>${r.label}${r.dtYr == null ? '' : ' / tick'}${r.disabled ? ' (era)' : ''}</option>`).join('');
   const ff = panel.ff ? ' aria-pressed="true"' : ' aria-pressed="false"';
   const face = panel.clockFace || 'years';
   const lived = face === 'now';
@@ -335,10 +335,8 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       ${faceBtns}
     </div>
     <p class="rib-face-hint">${lived
-      ? (panel.calendarHeld
-        ? 'Sky moves (day, season, moon) · calendar welded at the present'
-        : 'Sky moves on the clock · geology calendar holds')
-      : 'Years advance (ice, life, cities) · season, moon & day frozen at hold'}${panel.winterHint ? ` · <span class="rib-winter">${panel.winterHint}</span>` : ''}</p>
+      ? 'Now — one year slowly (day, season, moon) · calendar held · climate at day-scale'
+      : 'Years — periods advance (ice, life, cities) · season, moon & day frozen at hold'}${panel.winterHint ? ` · <span class="rib-winter">${panel.winterHint}</span>` : ''}</p>
     ${lived ? `<div class="rib-lived-season" role="group" aria-label="Time of year">
       <span class="rib-lived-label">Season</span>
       <div class="rib-lived-season-btns">${livedSeasonBtns}</div>
@@ -357,10 +355,10 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       <button type="button" class="rib-pause" data-time-pause aria-pressed="${paused ? 'true' : 'false'}" title="Pause (Space)">${paused ? '▶' : '⏸'}</button>
       ${lived ? '' : `
       <button type="button" class="rib-step" data-rate-step="-1" title="Slower (,)" aria-label="Slower clock">−</button>
-      <select class="rib-rate" data-rate-select aria-label="Years per tick">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
+      <select class="rib-rate" data-rate-select aria-label="Years per tick" title="${panel.rateCapNote || 'Years advanced per simulation tick'}">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
       <button type="button" class="rib-step" data-rate-step="1" title="Faster (.)" aria-label="Faster clock">+</button>
       <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>`}
-      <span class="rib-dt" data-lived-tick>${clock?.paused ? 'paused' : (lived ? (panel.livedLabel || 'lived') : dt)}</span>
+      <span class="rib-dt" data-lived-tick title="${panel.rateCapNote || ''}">${clock?.paused ? 'paused' : (lived ? (panel.livedLabel || 'lived') : dt)}</span>
     </div>
   </div>`;
 }

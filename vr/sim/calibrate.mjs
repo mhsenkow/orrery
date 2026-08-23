@@ -8,6 +8,7 @@ import { W, generate, simTick, RULESETS, changeResolution } from '../world.js';
 import { NC } from '../sphere.js';
 import { zonalFraction } from './surfaceStats.js';
 import { skyCalibration } from './sky.js';
+import { weatherCalib } from './weather.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BASELINES = join(HERE, '../data/baselines');
@@ -265,10 +266,32 @@ export function calibrateBaseline(id, opts = {}) {
     late = { pass: checks.every((c) => c.ok), checks, snapshot: snap, ticks: lateTicks };
   }
 
-  const pass = early.pass && (!late || late.pass);
+  /* GATE1: optional weather spine after the late (or early) tick count. */
+  let weather = null;
+  if (bl.weather) {
+    const weatherTicks = bl.ticks?.weather ?? Math.max(lateTicks, earlyTicks, 40);
+    const have = late ? lateTicks : earlyTicks;
+    for (let i = have; i < weatherTicks; i++) simTick(true);
+    const cal = weatherCalib(W);
+    const ctx = {
+      world: bl.world, ruleId, seed, n: NC, tick: weatherTicks, source: bl.source || 'weatherCalib',
+    };
+    const checks = [];
+    if (cal) {
+      for (const [name, band] of Object.entries(bl.weather)) {
+        checks.push(check(name, cal[name], band, ctx));
+      }
+    } else {
+      checks.push(check('weatherCalib', NaN, [0, 0], { ...ctx, source: 'no column' }));
+    }
+    weather = { pass: checks.every((c) => c.ok), checks, snapshot: cal, ticks: weatherTicks };
+  }
+
+  const pass = early.pass && (!late || late.pass) && (!weather || weather.pass);
   const failures = [
     ...early.checks.filter((c) => !c.ok),
     ...(late?.checks || []).filter((c) => !c.ok),
+    ...(weather?.checks || []).filter((c) => !c.ok),
   ];
   return {
     pass,
@@ -277,6 +300,7 @@ export function calibrateBaseline(id, opts = {}) {
     seed,
     early,
     late,
+    weather,
     failures,
     messages: failures.map((f) => f.message),
   };

@@ -98,6 +98,84 @@ export const UNIT_MAP = {
     note: 'invented',
     tag: 'invented',
   },
+  cape: {
+    sim: 'CAPE (J/kg)',
+    si: 'J/kg',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  cin: {
+    sim: 'CIN (J/kg)',
+    si: 'J/kg',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  lclKm: {
+    sim: 'lifted condensation level (km AGL)',
+    si: 'km',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  pwat: {
+    sim: 'precipitable water (mm)',
+    si: 'mm',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  shear: {
+    sim: 'vertical wind shear (0–6 km)',
+    si: 'relative',
+    note: 'fitted',
+    tag: 'fitted',
+  },
+  shear01: {
+    sim: '0–1 km wind shear',
+    si: 'relative',
+    note: 'fitted',
+    tag: 'fitted',
+  },
+  stp: {
+    sim: 'significant tornado parameter',
+    si: 'dimensionless composite',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  srh: {
+    sim: 'storm-relative helicity (m²/s²)',
+    si: 'm²/s²',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  rainMmHr: {
+    sim: 'rain rate (mm/hr)',
+    si: 'mm/hr',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  drought: {
+    sim: 'drought accumulator (0–1)',
+    si: 'relative severity',
+    note: 'fitted',
+    tag: 'fitted',
+  },
+  freezeKm: {
+    sim: 'freezing level (km AGL)',
+    si: 'km',
+    note: 'numeric',
+    tag: 'numeric',
+  },
+  gust: {
+    sim: 'gust factor (0–1)',
+    si: 'relative',
+    note: 'fitted',
+    tag: 'fitted',
+  },
+  ascent: {
+    sim: 'vertical velocity proxy',
+    si: 'relative (+ up, − down)',
+    note: 'fitted',
+    tag: 'fitted',
+  },
 };
 
 /** Schema hash so saves can detect unit-convention drift (A40). */

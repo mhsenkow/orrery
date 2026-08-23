@@ -1,10 +1,14 @@
 /** Lived time vs years — two clocks, one panel.
  *
- *  Now: day, season and moon run on the presentation clock. The calendar holds.
- *  Years: the calendar runs; season (and moon phase) stay on a held snapshot.
+ *  Now: watch one year slowly — day, season and moon on the presentation clock.
+ *       The geologic calendar holds; climate integrates at day-scale so weather
+ *       matches the sky instead of leaping decades per breath.
+ *  Years: watch periods of years — calendar advances at the rate dial; season
+ *       (and moon phase) stay on a held snapshot.
  *
- *  Pinned Holocene Earth keeps the old season-from-dtYr path until the player
- *  picks a hold, so the golden run is unchanged.
+ *  Pinned Holocene Earth still uses the old season-from-dtYr path only when the
+ *  lived presentation clock is not active (headless / golden), so the golden
+ *  run is unchanged.
  */
 
 import { isPinnedEarth } from './ruleMode.js';
@@ -13,9 +17,12 @@ import { skyFrame, LIVED_YEAR_SEC, LUNAR_ORBITS_YR, anchorLivedOrbits, snapshotH
 export { isLivedClock };
 
 export const CLOCK_FACES = [
-  { id: 'now', label: 'Now', hint: 'Days, seasons, moon' },
-  { id: 'years', label: 'Years', hint: 'Calendar runs · season holds' },
+  { id: 'now', label: 'Now', hint: 'One year, slowly — day & season' },
+  { id: 'years', label: 'Years', hint: 'Periods jump · season holds' },
 ];
+
+/** ~1 day of climate per sim tick at livedRate 1 — watching a year, not an era. */
+const LIVED_CLIMATE_DT_YR = 1 / 365.25;
 
 export const SEASON_HOLDS = [
   { id: 'mar', label: 'Mar', deg: 0, title: 'March equinox' },
@@ -111,7 +118,26 @@ export function applySeasonPolicy(W, rule) {
   return dt <= 1000 || dt <= 1e4;
 }
 
-/** Skip calendar advance while watching lived time. */
-export function shouldHoldCalendar(W, rule) {
-  return isLivedClock(W) && !isPinnedEarth(rule);
+/** Skip geologic calendar advance while watching lived time (any world). */
+export function shouldHoldCalendar(W, _rule) {
+  return isLivedClock(W);
+}
+
+/**
+ * Climate integration step for this sim tick.
+ * On Now: day-scale so hydro/weather track the sky year.
+ * On Years: whatever `advanceClock` (or the rate dial) last set.
+ */
+export function climateDtYr(W) {
+  if (!isLivedClock(W)) return W.dtYr || 200;
+  const rate = W.livedRate ?? 1;
+  return LIVED_CLIMATE_DT_YR * Math.max(0.25, Math.min(8, rate));
+}
+
+/** Apply lived climate dt when the calendar is held on Now. */
+export function applyLivedClimateDt(W) {
+  if (!isLivedClock(W)) return W.dtYr || 200;
+  W._dtYrGeologic = W.dtYr || W._dtYrGeologic || 200;
+  W.dtYr = climateDtYr(W);
+  return W.dtYr;
 }

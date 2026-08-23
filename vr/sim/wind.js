@@ -258,12 +258,17 @@ export function geostrophicWind(W) {
   for (let c = 0; c < NC; c++) {
     const lat = DIR[c * 3 + 1];
     const f = lat * fScale;
-    let tJump = 0;
+    let tJump = 0, qJump = 0;
     for (let k = 0; k < 4; k++) {
       const nb = NBR[c * 4 + k];
       tJump = Math.max(tJump, Math.abs((W.temp[nb] || 0) - (W.temp[c] || 0)));
+      if (W.vapour) {
+        qJump = Math.max(qJump, Math.abs((W.vapour[nb] || 0) - (W.vapour[c] || 0)));
+      }
     }
-    W.front[c] = clamp(tJump * 14, 0, 1);
+    // FRONT1: temperature gradient + moisture gradient (partial — no deformation tensor)
+    // FRONT1: temperature gradient + moisture gradient (partial — no deformation tensor)
+    W.front[c] = clamp(tJump * 14 + qJump * 6, 0, 1);
     const spd = Math.sqrt(W.windU[c] * W.windU[c] + W.windV[c] * W.windV[c]);
     spdSum += spd;
     fAbs += Math.abs(f);

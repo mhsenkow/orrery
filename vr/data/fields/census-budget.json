@@ -1,5 +1,5 @@
 {
-  "maxNames": 756,
-  "updated": "2026-08-22",
-  "note": "P14 — sky fields + climate panel; growth ratcheted after schema rows"
+  "maxNames": 835,
+  "updated": "2026-08-23",
+  "note": "P14 — 810 → 835 for synoptic fronts (fronts.js): frontStrength, frontKind, windShift, dryline, stormTrack, eady, block, coldTongue; and drought extension (DRY rows): soilRoot, soilDeep, aridity, droughtClass, droughtAge, droughtRegion, heatIndex, flashDrought, petField, aetField. Every one has a row in fields.js."
 }

@@ -85,7 +85,7 @@ const landTerra = (t, m, l, e, ice, extra) => {
  *  Named so the demo Earth below can inherit it without a second copy. */
 const TERRA = {
   id: 'terra', name: 'Earth', blurb: 'Modern Earth — calibration basis for life, time, tectonics.',
-  synthetic: true, earthLike: true,
+  synthetic: true, earthLike: true, tSurfK: 288,
   /* `freeze` is the ice line on the same scale the thermometer uses: 288 K at
      0.5, 160 K to the unit, so water's 273 K is 0.406. It was 0.28 — 243 K, or
      −30 °C — which is why an Earth at 281 K carried no ice at all, sea or land,
@@ -188,7 +188,7 @@ export const RULESETS = [
     // B48 — no spontaneous biosphere; Life tools may still seed deliberately.
     sterile: true,
     // B46 — thin column must be explicit or gas sum ≈ 1 bar and the world cooks.
-    surfacePressureBar: 0.006, teqK: 210,
+    surfacePressureBar: 0.006, teqK: 210, tSurfK: 215,
     relief: 0.068, solar: 0.43, freeze: 0.28, aridity: 0.55,
     rotationPeriod: 1.03, obliquity: 25 * Math.PI / 180, eccentricity: 0.09,
     gravity: 0.38, magnetosphere: 0.05,
@@ -213,7 +213,7 @@ export const RULESETS = [
     id: 'venus', name: 'Venus', blurb: '92 bar CO₂ runaway. Near-isothermal hellscape.',
     synthetic: true,
     sterile: true,
-    surfacePressureBar: 92, teqK: 735,
+    surfacePressureBar: 92, teqK: 735, tSurfK: 735,
     relief: 0.04, solar: 1.91, freeze: 0.02, aridity: 0.95,
     rotationPeriod: -243, obliquity: 177.4 * Math.PI / 180, eccentricity: 0.007,
     gravity: 0.9, magnetosphere: 0.0,
@@ -235,7 +235,7 @@ export const RULESETS = [
     sterile: true,
     methaneSolvent: true,
     iceShell: true,
-    surfacePressureBar: 1.5, teqK: 94,
+    surfacePressureBar: 1.5, teqK: 94, tSurfK: 94,
     relief: 0.03, solar: 0.11, freeze: 0.62, aridity: 0.2,
     rotationPeriod: 16, obliquity: 27 * Math.PI / 180, eccentricity: 0.029,
     gravity: 0.14, magnetosphere: 0.0,

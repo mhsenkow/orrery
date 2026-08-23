@@ -237,6 +237,27 @@ Commands: `npm run provenance|calibrate:all|golden:corpus|parity|determinism|fid
 | R43 | Pointer / touch / XR emit `act`·`spin`·`zoom`·`pan`·`descend` via `dispatchIntent` |
 | Q11 / Q12 | `.github/workflows/pages.yml` builds `dist/` after `verify`; serves Pages from artifact |
 
+### Weather register wave (2026-08-23)
+
+| Row | Shipped |
+|---|---|
+| COL1–10 | 8-level σ column; ice saturation; `tSurfK` anchors; SBCAPE/MLCAPE/MUCAPE/CIN/LCL/EL/freeze/PWAT/SRH |
+| COL21–29 | `weatherClock.js` two-clock contract; dial on Weather desk; column `keep` + CIN/shear/diurnal consumed in `aircol` |
+| CONV1–6 | `convectTick` mass-flux rain; conv/strat split; shallow/deep; stratiform identity |
+| CONV11–20 | Shared `CONV_RAIN_K` knob; GATE1 fitted@model bands in `earth.json`; **golden re-blessed** |
+| CONV23–52 | Cold pools, Bunkers motion, anvil, virga, fog/dew, freezing rain/graupel, water budget, canopy, infiltration |
+| SEV1–10 | Tornado/hail/downburst markers; footprint + scar; rate description |
+| CYC1–4 | TC intensity from column; RI under low shear + high PWAT + warm SST |
+| FRONT1–20 | Diagnostic fronts, dryline, storm-track/block memory |
+| DRY1–21 | Dual soil (ephemeral), PET/AET, aridity, ENSO drought, bio carrying-cap feedback |
+| LOC (core) | precip type, visibility, frost/dew, rainbow, localview weather overlay, a11y line |
+| VIZ (core) | Sounding CAPE/CIN shade; hodograph mini; reflectivity/IR/WV; weather desk + warnings + calib |
+| GATE1, 21, 25–26, 31, 47–48 | `weatherCalib` in `calibrate-all`; determinism; golden discipline; v11 ephemeral close; shipped/NEXT |
+
+**CONV20 golden rationale:** soft convection + drought feedback shifted prognostic `moist`/`life` enough to move `hashFields` (`h/temp/life/ice/moist`). Regenerated once via `scripts/golden-corpus.mjs --update`. Weather fields stay **out** of the hash on purpose (GATE25 deliberate exception — ephemeral `convRain`/markers). Earth early precip bands eased slightly for the soft convective add. Earth physical rain/CAPE/drought spines remain CONV11 north star via `earthTargets`, not claimed as met.
+
+**GATE31:** closed without v12 — soil/scar/coldPool/convRain/`stormTrack` stay `saved: false`; only `drought` persists (v11).
+
 ---
 
 ## What this doc is not

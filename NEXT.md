@@ -45,6 +45,8 @@ Themes 16–20 re-read → [`briefs/architecture-400.md`](briefs/architecture-40
 
 Sky as a system (one ephemeris, then N moons and N suns) → [`briefs/sky-system-500.md`](briefs/sky-system-500.md). **First-25 gate landed** — `sky.js`, save v10, System desk, GATE14 calibration; rows 26–500 remain in the register.
 
+Weather (air column, convection, severe, fronts, drought) → [`briefs/weather-500.md`](briefs/weather-500.md). **Code wave complete** — lived clock drives the column, GATE1 in `calibrate-all`, CONV20 golden re-blessed. Still outside code: human playtests (GATE41–43), Earth physical retune (CONV11), GATE50 retirement. Limits: [`briefs/weather-model.md`](briefs/weather-model.md).
+
 ---
 
 ## Explicitly not next

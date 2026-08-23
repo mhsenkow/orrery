@@ -2,7 +2,7 @@
   "world": "Earth",
   "ruleId": "terra",
   "seeds": [20260808],
-  "ticks": { "early": 8, "late": 40 },
+  "ticks": { "early": 8, "late": 40, "weather": 40 },
   "n": 32,
   "source": "Frozen modern-Earth anchor (B41). Bands tightened B21–B25 from earth-reference.json.",
   "early": {
@@ -13,12 +13,19 @@
     "CO2ppm": { "lo": 315, "hi": 525, "tag": "measured", "why": "±25% around ~420 ppm (B22)" },
     "meanLife": { "lo": 0.08, "hi": 0.24, "tag": "invented", "why": "≤3× around ~0.18 carrying-capacity mid (B21)" },
     "zonalTemp": { "lo": 0.20, "hi": 0.70, "tag": "fitted", "why": "zonal structure present" },
-    "zonalPrecip": { "lo": 0.15, "hi": 0.75, "tag": "fitted", "why": "precip not uniform" },
+    "zonalPrecip": { "lo": 0.08, "hi": 0.75, "tag": "fitted", "why": "precip not uniform; lower bound eased after CONV soft rain (CONV20)" },
     "tropPole": { "lo": 0.08, "hi": 0.24, "tag": "fitted", "why": "~45 K / 160 K ≈ 0.28 map; band ≤3× around mid (B25)" },
-    "meanPrecip": { "lo": 0.02, "hi": 0.20, "tag": "fitted", "why": "hydrologic cycle running" }
+    "meanPrecip": { "lo": 0.02, "hi": 0.28, "tag": "fitted", "why": "hydrologic cycle + soft convective add; upper eased CONV20" }
   },
   "late": {
     "meanLife": { "lo": 0.08, "hi": 0.28, "tag": "invented", "why": "biosphere holds after 40 ticks; ≤3.5×" }
+  },
+  "weather": {
+    "rainMmYr": { "lo": 80, "hi": 400, "tag": "fitted@model", "why": "GATE1 — precip×1000 proxy; Earth ~1000 mm/yr still CONV11" },
+    "pwatMm": { "lo": 8, "hi": 35, "tag": "fitted@model", "why": "GATE1 — column mean PWAT; Earth mid ~25 mm" },
+    "tropCape": { "lo": 40, "hi": 800, "tag": "fitted@model", "why": "GATE1 — mean tropical CAPE; local peaks higher" },
+    "tornadoRate": { "lo": 20, "hi": 800, "tag": "fitted@model", "why": "GATE1 — severe marker perYear sum" },
+    "droughtFrac": { "lo": 0.05, "hi": 0.60, "tag": "fitted@model", "why": "GATE1 — drought share; Earth 10–20% still owed DRY43/CONV11" }
   },
   "golden": {
     "ticks": 40,

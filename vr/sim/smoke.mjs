@@ -143,6 +143,11 @@ console.log('Solar System Type fidelity (B47/B49/B53)');
 
   const titan = RULESETS.find((r) => r.id === 'titan');
   generate(20260808, titan);
+  for (let i = 0; i < 3; i++) simTick(true);
+  /* Methane is a working solvent at 1.5 bar and none of this module's
+     thermodynamics is methane's, so a Titan column here is a dry one. */
+  ok('Titan column is dry', (W.air?.capeMax || 0) < 200, W.air?.capeMax);
+  ok('Titan solvent named', /methane/.test(W.air?.solvent || ''), W.air?.solvent);
   const mat = cycleMaterial(W);
   ok('Titan cycle is methane ice (B53)', mat?.id === 'ch4Ice', mat?.id);
   const win = liquidWindow(mat, livePressureBar(W));
@@ -152,6 +157,79 @@ console.log('Solar System Type fidelity (B47/B49/B53)');
     0.006,
   );
   ok('Mars CO₂ has no liquid at 6 mbar (B54)', marsWin == null, marsWin);
+}
+
+console.log('air column + weather on a live world (AIR/WX)');
+{
+  /* Runs last, on the N=32 grid the Solar-System block leaves behind: the point
+     is the physics, not the resolution, and a coarse grid says it four times
+     faster. */
+  const { simTick } = await import('../world.js');
+  const A = await import('./aircol.js');
+  const Wx = await import('./weather.js');
+  const rule = RULESETS.find((r) => r.id === 'terra') || RULESETS[0];
+  generate(20260808, rule);
+  for (let i = 0; i < 8; i++) simTick(true);
+
+  ok('column allocated', W.airT?.length === W.temp.length * A.AIR_LEVELS, String(W.airT?.length));
+  ok('column booted', W.air?.boot === true);
+  ok('Earth is calibrated', W.air?.calibrated === true);
+  /* Earth's severe-weather range. A planet whose peak column cannot reach a
+     thousand joules has no thunderstorms; one past ten thousand has a bug. */
+  ok('peak CAPE in Earth range', W.air.capeMax > 800 && W.air.capeMax < 9000, W.air.capeMax);
+  ok('precipitable water plausible', W.air.pwatMean > 1 && W.air.pwatMean < 90, W.air.pwatMean);
+
+  let bad = 0, cinMax = 0;
+  for (let c = 0; c < W.temp.length; c++) {
+    if (!Number.isFinite(W.cape[c]) || W.cape[c] < 0) bad++;
+    if (!Number.isFinite(W.pwat[c]) || W.pwat[c] < 0) bad++;
+    if (Math.abs(W.ascent[c]) > 1.0001) bad++;
+    if (W.cin[c] > cinMax) cinMax = W.cin[c];
+  }
+  ok('column fields finite', bad === 0, String(bad));
+  ok('inhibition capped', cinMax <= 800.001, String(cinMax));
+
+  // The drawn sounding must be the same column the tick integrated.
+  let hi = 0;
+  for (let c = 0; c < W.temp.length; c++) if (W.cape[c] > W.cape[hi]) hi = c;
+  const snd = A.soundingAt(W, hi);
+  ok('sounding has every level', snd.levels.length === A.AIR_LEVELS);
+  ok('sounding descends in pressure',
+    snd.levels.every((l, i) => i === 0 || l.pHPa < snd.levels[i - 1].pHPa));
+  ok('sounding agrees with the field', Math.abs(snd.cape - W.cape[hi]) < 1,
+    `${snd.cape} vs ${W.cape[hi]}`);
+  ok('sounding gains height', snd.levels[A.AIR_LEVELS - 1].zKm > snd.levels[0].zKm);
+  ok('sounding line reads', A.formatSounding(W, hi).includes('CAPE'));
+
+  ok('weather has its own RNG fork', typeof W.rngWeather === 'function');
+  let dBad = 0;
+  for (let c = 0; c < W.temp.length; c++) {
+    if (W.drought[c] < 0 || W.drought[c] > 1) dBad++;
+    if (W.h[c] < W.seaLevel && W.drought[c] !== 0) dBad++;
+  }
+  ok('drought bounded and dry-land only', dBad === 0, String(dBad));
+  ok('severe markers capped', (W.wx.list?.length || 0) <= 6, String(W.wx.list?.length));
+  const line = Wx.weatherSnapshot(W).line;
+  ok('weather line reads', typeof line === 'string' && line.length > 4, line);
+
+  /* Several things at once, which is the point of carrying convection and
+     drought apart from the cyclone tracker. Run it out and count what stands. */
+  let everSevere = 0, everDrought = 0;
+  for (let i = 0; i < 60; i++) {
+    simTick(true);
+    if ((W.wx.list?.length || 0) > 0) everSevere++;
+    if ((W.wx.droughtFrac || 0) > 0.005) everDrought++;
+  }
+  ok('severe convection happens', everSevere > 5, `${everSevere}/60 ticks`);
+  ok('drought happens', everDrought > 10, `${everDrought}/60 ticks`);
+
+  /* Organised convection (CONV) */
+  const Conv = await import('./convect.js');
+  ok('convClass exists', Conv.convClassOk(W));
+  const wb = Conv.waterBudget(W);
+  ok('waterBudget residual finite', Number.isFinite(wb.residual), String(wb.residual));
+  ok('waterBudget precip positive', wb.precip >= 0, String(wb.precip));
+  ok('virga reduces precip when dry', Conv.virgaReducesPrecip(W));
 }
 
 console.log(`\nsmoke: ${passed} passed, ${failed} failed`);

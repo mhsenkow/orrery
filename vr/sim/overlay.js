@@ -46,6 +46,13 @@ export const OVERLAYS = [
   { id: 'shear', label: 'Shear', icon: 'weather', tip: 'Vertical wind shear between the surface and the flow aloft. Low shear over a warm sea lets a tropical cyclone build a chimney; high shear tears one apart, and feeds midlatitude storms instead.' },
   { id: 'vort', label: 'Vorticity', icon: 'spin', tip: 'Relative vorticity of the air. Cyclones are patches; the jet is a ribbon. Sign follows the hemisphere.' },
   { id: 'front', label: 'Fronts', icon: 'weather', tip: 'Temperature gradient. Bright lines are weather-bearing fronts, not biome contours.' },
+  { id: 'frontKind', label: 'Front type', icon: 'weather', tip: 'Cold (blue), warm (red), occluded (purple), stationary (grey). Classification from wind vs temperature gradient.' },
+  { id: 'drylineMap', label: 'Dryline', icon: 'weather', tip: 'Moisture jump without a temperature jump — the invisible front that fires supercells.' },
+  { id: 'stormTrackMap', label: 'Storm track', icon: 'weather', tip: 'Accumulated cyclone and front activity. The bright ribbon is where weather crosses the planet.' },
+  { id: 'blockMap', label: 'Blocking', icon: 'weather', tip: 'Persistent ridges. Blocking highs divert the jet, park droughts, and make heatwaves.' },
+  { id: 'eadyMap', label: 'Eady growth', icon: 'weather', tip: 'Baroclinic growth rate from shear times temperature gradient. Where extratropical cyclones are born.' },
+  { id: 'aridityMap', label: 'Aridity', icon: 'weather', tip: 'PET / precipitation climatology. Desert vs grassland is this number.' },
+  { id: 'heatMap', label: 'Heat index', icon: 'weather', tip: 'Heatwave index from blocking + extreme temperature. Red is dangerous.' },
   { id: 'npp', label: 'NPP', icon: 'seedGuild', tip: 'Net primary productivity — how hard the biosphere is growing on that cell.' },
   { id: 'guild', label: 'Guild', icon: 'o2', tip: 'Dominant metabolism colour (cyano, methanogen, aerobe…). Same palette as Seed guild.' },
   { id: 'diversity', label: 'Clade diversity', icon: 'seed', tip: 'How many lineages occupy the cell. Bright = crowded tree, not just biomass.' },
@@ -63,6 +70,16 @@ export const OVERLAYS = [
   { id: 'sense', label: 'Sense', icon: 'inspect', tip: 'The globe as the dominant lineage perceives it — photon band, electric, acoustic. Dark cells have no sensors, or none that this sky delivers.' },
   { id: 'range', label: 'Range', icon: 'seed', tip: 'Geographic range of the most abundant living lineage. Bright = occupied cells of the dominant clade.' },
   { id: 'proto', label: 'Prebiotic', icon: 'seedGuild', tip: 'Prebiotic inventory — reduced carbon on catalytic surfaces. The origin is likeliest where this is brightest.' },
+  { id: 'cin', label: 'CIN', icon: 'weather', tip: 'Convective inhibition — the cap holding convection down. Low CIN means storms fire easily; high CIN means they wait for a trigger.' },
+  { id: 'rainrate', label: 'Rain rate', icon: 'weather', tip: 'Rainfall intensity in mm/hr equivalent. Bright is heavy rain. Distinct from accumulated precip.' },
+  { id: 'flood', label: 'Flood risk', icon: 'weather', tip: 'Flash flood risk from heavy rain on steep, saturated ground. Bright is danger.' },
+  { id: 'precipconv', label: 'Precip conv', icon: 'weather', tip: 'Convective share of precipitation. Bright = shower-type rain from instability; dark = stratiform.' },
+  { id: 'reflectivity', label: 'Reflectivity', icon: 'weather', tip: 'Radar-like view of precipitation intensity. Green → yellow → red → purple. The nearest thing to a weather radar this grid can carry.' },
+  { id: 'ircloud', label: 'IR cloud', icon: 'weather', tip: 'Infrared cloud proxy — bright where cloud tops are cold and high, dark where clear sky shows warm ground.' },
+  { id: 'wv', label: 'Water vapour', icon: 'weather', tip: 'Water vapour channel from precipitable water. Bright green is moist air; dark is dry air aloft — dry slots that tear storms.' },
+  { id: 'stp', label: 'STP', icon: 'weather', tip: 'Significant tornado parameter. High STP values signal the overlap of instability, shear, helicity, and low cloud base that breeds violent tornadoes.' },
+  { id: 'shear01', label: '0–1km shear', icon: 'weather', tip: 'Low-level wind shear from the bottom two air-column levels. High values with even modest CAPE can spin up tornadoes.' },
+  { id: 'outlook', label: 'Severe outlook', icon: 'weather', tip: 'Convective outlook categories 1–5. A composite of STP, tornado risk, shear, and CAPE — the forecast map before the storms.' },
   { id: 'faces', label: 'Cube faces', icon: 'inspect', tip: 'Six cube-sphere faces. If a straight line lights up, something is treating a face as the world.' },
   { id: 'zonal', label: 'Zonal residual', icon: 'weather', tip: 'Temperature minus a latitude-only guess. Black means banded; colour means real structure.' },
   { id: 'ecotone', label: 'Ecotone', icon: 'seed', tip: 'Biome membership entropy. Bright = a boundary (savanna/grass, treeline); dark = a core.' },
@@ -81,6 +98,10 @@ export const OVERLAYS = [
   { id: 'plume', label: 'Nutrient plume', icon: 'upwell', tip: 'Where animals fertilised the water. Surface-feeding whale-scale life brings N and P up; the green is the bloom that follows.' },
   { id: 'beings', label: 'Beings', icon: 'seed', tip: 'Where the animals actually are. Bright clumps are herds and pods; a rate, not a habitat map — sprites are hidden at orbit, this is not.' },
   { id: 'weather', label: 'Weather', icon: 'weather', tip: 'One picture of the sky: cloud grey, rain blue, cyclone cores white, lightning yellow. What you would see from a window, not a field.' },
+  { id: 'cape', label: 'CAPE', icon: 'weather', tip: 'Convective available potential energy. High CAPE means the atmosphere wants to overturn — thunderstorms, hail, tornadoes.' },
+  { id: 'ascent', label: 'Ascent', icon: 'weather', tip: 'Vertical motion of the air. Blue is sinking (clear, dry); red is rising (clouds, rain). The Hadley cell and monsoon are patterns in this.' },
+  { id: 'droughtMap', label: 'Drought', icon: 'weather', tip: 'Drought intensity. Red is severe — the rain that should come did not, and the ground is drying. Accumulates over many ticks.' },
+  { id: 'pwat', label: 'PW', icon: 'weather', tip: 'Precipitable water in the column, in mm. High values feed the heaviest rain; low values are dry air that evaporates storms.' },
   { id: 'fallout', label: 'Fallout', icon: 'core', tip: 'Radiation — bursts, fallout, buried waste. Half-life of thousands of ticks: this outlives the civilisation that made it.' },
   { id: 'toxin', label: 'Toxin', icon: 'aerosol', tip: 'Chemical contamination. Creeps downhill and downstream, kills slowly, and the ground never looks wrong.' },
   { id: 'plague', label: 'Plague', icon: 'plague', tip: 'Epidemic intensity, and in dark green the immune. It travels between settlements, not across country, and burns out where it has been.' },
@@ -97,13 +118,27 @@ export const OVERLAYS = [
   { id: 'flux', label: 'Life flux', icon: 'seed', tip: 'Where biomass grew or died this tick. Green is gain, magenta is loss — rates, not occupancy.' },
 ];
 
+/* VIZ15–21: Weather overlays grouped together under a logical order. */
 const OVERLAY_ORDER = [
-  'none', 'temp', 'press', 'vapour', 'fog', 'ariver', 'wind', 'jet', 'shear', 'vort', 'front', 'current', 'enso', 'wave', 'upwell', 'river', 'mantle',
-  'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
-  'tide', 'storm', 'weather', 'npp', 'guild', 'beings', 'sense', 'range', 'proto', 'techno', 'fire', 'plume',
+  'none', 'temp', 'press',
+  // Weather group
+  'weather', 'cape', 'cin', 'ascent', 'pwat', 'droughtMap', 'shear', 'stp', 'shear01', 'outlook',
+  'rainrate', 'flood', 'precipconv', 'reflectivity', 'ircloud', 'wv',
+  // Atmosphere
+  'vapour', 'fog', 'ariver', 'wind', 'jet', 'vort', 'front',
+  'frontKind', 'drylineMap', 'stormTrackMap', 'blockMap', 'eadyMap', 'aridityMap', 'heatMap',
+  // Ocean
+  'current', 'enso', 'wave', 'upwell', 'river',
+  // Geology
+  'mantle', 'plates', 'bounds', 'crust', 'substrate', 'phase', 'cover', 'forms', 'column', 'crustAge', 'vent',
+  // Storms & coast
+  'tide', 'intertidal', 'storm',
+  // Life
+  'npp', 'guild', 'beings', 'sense', 'range', 'proto', 'techno', 'fire', 'plume',
+  'diversity', 'ecotone', 'lifefront', 'flux',
+  // Dark / misc
   'fallout', 'toxin', 'plague', 'borders', 'war', 'casualty', 'warfront', 'behav', 'trophic', 'fear', 'carcass', 'trail',
-  'lifefront', 'flux',
-  'faces', 'zonal', 'ecotone',
+  'touch', 'faces', 'zonal',
 ];
 
 export function overlayById(id) {
@@ -193,6 +228,38 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = 30 + f * 200;
       g = 40 + f * 80;
       b = 50 + f * 40;
+    } else if (mode === 'frontKind') {
+      const fk = W.frontKind?.[c] || 0;
+      const fs = W.frontStrength?.[c] || 0;
+      if (fk === 1) { r = 40 + fs * 60; g = 80 + fs * 120; b = 180 + fs * 70; } // cold — blue
+      else if (fk === 2) { r = 200 + fs * 55; g = 60 + fs * 40; b = 40; } // warm — red
+      else if (fk === 3) { r = 140 + fs * 80; g = 40 + fs * 30; b = 160 + fs * 60; } // occluded — purple
+      else if (fk === 4) { r = 120 + fs * 60; g = 120 + fs * 60; b = 120 + fs * 50; } // stationary — grey
+      else { r = r * 0.2; g = g * 0.2; b = b * 0.22; }
+    } else if (mode === 'drylineMap') {
+      const dl = W.dryline?.[c] || 0;
+      if (dl > 0.05) { r = 180 + dl * 70; g = 140 + dl * 40; b = 40 + dl * 20; }
+      else { r = r * 0.2; g = g * 0.22; b = b * 0.25; }
+    } else if (mode === 'stormTrackMap') {
+      const st = W.stormTrack?.[c] || 0;
+      r = 14 + st * 200; g = 20 + st * 140; b = 40 + st * 180;
+    } else if (mode === 'blockMap') {
+      const bl = W.block?.[c] || 0;
+      if (bl > 0.05) { r = 200 + bl * 55; g = 140 + bl * 60; b = 30; }
+      else { r = r * 0.2; g = g * 0.2; b = b * 0.22; }
+    } else if (mode === 'eadyMap') {
+      const ea = W.eady?.[c] || 0;
+      r = 14 + ea * 240; g = 30 + ea * 100; b = 60 + (1 - ea) * 60;
+    } else if (mode === 'aridityMap') {
+      const ar = Math.min(1, (W.aridity?.[c] || 0) / 3);
+      const land = W.h[c] >= W.seaLevel;
+      if (land) { r = 40 + ar * 200; g = 50 + (1 - ar) * 60; b = 20 + (1 - ar) * 30; }
+      else { r = 10; g = 14; b = 20; }
+    } else if (mode === 'heatMap') {
+      const hi = W.heatIndex?.[c] || 0;
+      const land = W.h[c] >= W.seaLevel;
+      if (land) { r = 30 + hi * 225; g = 30 + (1 - hi) * 40; b = 20; }
+      else { r = 10; g = 12; b = 18; }
     } else if (mode === 'current') {
       const u = W.oceanU?.[c] || 0, v = W.oceanV?.[c] || 0;
       const spd = Math.min(1, Math.hypot(u, v));
@@ -500,6 +567,51 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
       r = base + k * 250;
       g = base + k * 190;
       b = base + k * 70;
+    } else if (mode === 'cape') {
+      const cp = W.cape?.[c] || 0;
+      const k = Math.min(1, cp / 3000);
+      r = 14 + k * 240; g = 20 + (1 - k) * 50 + k * 90; b = 28 + (1 - k) * 60;
+    } else if (mode === 'ascent') {
+      /* VIZ40: diverging scale — rising warm (red/orange), sinking cool (blue). */
+      const asc = W.ascent?.[c] || 0;
+      if (asc > 0) {
+        const k = Math.min(1, asc * 3);
+        r = 40 + k * 210; g = 40 + k * 80 - k * k * 40; b = 40;
+      } else {
+        const k = Math.min(1, -asc * 3);
+        r = 40; g = 40 + k * 60; b = 60 + k * 190;
+      }
+    } else if (mode === 'droughtMap') {
+      const d = W.drought?.[c] || 0;
+      const land = W.h[c] >= W.seaLevel;
+      if (land) {
+        r = 30 + d * 210; g = 40 + (1 - d) * 50; b = 20 + (1 - d) * 30;
+      } else {
+        r = 10; g = 14; b = 20;
+      }
+    } else if (mode === 'pwat') {
+      const pw = W.pwat?.[c] || 0;
+      const k = Math.min(1, pw / 60);
+      r = 14 + k * 30; g = 28 + k * 120; b = 60 + k * 180;
+    } else if (mode === 'cin') {
+      const ci = W.cin?.[c] || 0;
+      const k = Math.min(1, ci / 400);
+      r = 14 + k * 220; g = 28 + (1 - k) * 60; b = 60 + (1 - k) * 140;
+    } else if (mode === 'rainrate') {
+      const rr = Math.min(1, (W.rainMmHr?.[c] || 0) / 80);
+      r = 14 + rr * 40; g = 28 + rr * 100; b = 80 + rr * 170;
+    } else if (mode === 'flood') {
+      const fl = W.floodRisk?.[c] || 0;
+      const land = W.h[c] >= W.seaLevel;
+      if (land) {
+        r = 20 + fl * 230; g = 30 + (1 - fl) * 40; b = 20 + (1 - fl) * 20;
+      } else {
+        r = 8; g = 12; b = 18;
+      }
+    } else if (mode === 'precipconv') {
+      const pc = W.precipConv?.[c] || 0;
+      const k = Math.min(1, pc * 12);
+      r = 14 + k * 200; g = 20 + k * 140; b = 40 + (1 - k) * 60;
     } else if (mode === 'weather') {
       /* Everything the sky is doing, in one frame. The individual fields already
          have overlays; none of them is what a player means by "the weather". */
@@ -576,6 +688,38 @@ export function applyOverlay(W, vDat, vCell, NV, mode) {
         g = 10 + m * 30;
         b = 28 + m * 140;
       }
+    } else if (mode === 'reflectivity') {
+      /* VIZ23: radar-like stepped scale: green→yellow→red→purple. */
+      const rr = Math.min(1, (W.rainMmHr?.[c] || 0) / 100 + (W.precip?.[c] || 0) * 2);
+      if (rr < 0.2) { r = 14; g = 20 + rr * 500; b = 14; }
+      else if (rr < 0.45) { const t = (rr - 0.2) / 0.25; r = 14 + t * 240; g = 120 + t * 130; b = 14; }
+      else if (rr < 0.7) { const t = (rr - 0.45) / 0.25; r = 255; g = 250 - t * 210; b = 14; }
+      else { const t = (rr - 0.7) / 0.3; r = 255 - t * 100; g = 40; b = 40 + t * 180; }
+    } else if (mode === 'ircloud') {
+      /* VIZ24: IR cloud proxy — cold tops bright, warm ground dark. */
+      const cl = W.clouds?.[c] || 0;
+      const lcl = W.lclKm?.[c] || 0;
+      const k = Math.min(1, cl * (0.5 + lcl * 0.12));
+      r = 240 - k * 200; g = 240 - k * 190; b = 255 - k * 140;
+    } else if (mode === 'wv') {
+      /* VIZ25: water vapour channel from pwat. */
+      const pw = W.pwat?.[c] || 0;
+      const k = Math.min(1, pw / 50);
+      r = 10 + (1 - k) * 30; g = 20 + k * 180; b = 15 + k * 40;
+    } else if (mode === 'stp') {
+      const s = Math.min(1, (W.stp?.[c] || 0) / 3);
+      r = 14 + s * 240; g = 20 + (1 - s) * 40 + s * 60; b = 28 + (1 - s) * 50;
+    } else if (mode === 'shear01') {
+      const s = Math.min(1, (W.shear01?.[c] || 0) * 2);
+      r = 14 + s * 200; g = 30 + s * 100; b = 50 + (1 - s) * 40;
+    } else if (mode === 'outlook') {
+      const cat = W.severeOutlook?.[c] || 0;
+      if (cat >= 5) { r = 255; g = 40; b = 220; }
+      else if (cat >= 4) { r = 255; g = 40; b = 40; }
+      else if (cat >= 3) { r = 255; g = 140; b = 40; }
+      else if (cat >= 2) { r = 255; g = 220; b = 40; }
+      else if (cat >= 1) { r = 80; g = 200; b = 80; }
+      else { r = r * 0.2; g = g * 0.2; b = b * 0.22; }
     }
     vDat[o] = r | 0; vDat[o + 1] = g | 0; vDat[o + 2] = b | 0;
   }

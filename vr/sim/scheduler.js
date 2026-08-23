@@ -16,6 +16,12 @@ export const DEGRADATION_ORDER = Object.freeze([
   'phylogeny',
   'dark',
   'agents',
+  /* Newest and most droppable: the column is a diagnostic whose fields persist
+     between ticks, so a skipped pass costs staleness rather than state. The
+     expensive one goes last so it is the first thing shed. */
+  'drought',
+  'severe',
+  'aircol',
 ]);
 
 /** Never drop these — conserved / structural (E23). */

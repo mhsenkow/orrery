@@ -1,7 +1,7 @@
 /** Named storms as tracked objects — seed, steer, surge.
  *  Toy cyclones: midlatitude commas + tropical eyes when SST/shear allow. */
 
-import { NC, DIR, NBR, NBR_E, NBR_N, NBR_ICHORD } from '../sphere.js';
+import { NC, DIR, NBR, NBR_E, NBR_N, NBR_ICHORD, AREA, cellSizeKm } from '../sphere.js';
 import { clamp, lerp } from '../math.js';
 import { issueReceipt } from './god/receipt.js';
 import { rngOf } from './rng.js';
@@ -10,6 +10,30 @@ const STORM_NAMES = [
   'Aria', 'Boreas', 'Coriolis', 'Dyne', 'Eddy', 'Front', 'Gale', 'Hadley',
   'Isobar', 'Jet', 'Kelvin', 'Leeward', 'Mistral', 'Nimbus', 'Occlude', 'Polar',
 ];
+
+/* CYC6: ocean heat content proxy depth (m) for OHC computation */
+const OHC_DEPTH_M = 100;
+/* CYC7: cold wake SST depression per tick behind storm centre */
+const COLD_WAKE_RATE = 0.012;
+/* CYC7: cold wake recovery per tick */
+const COLD_WAKE_DECAY = 0.92;
+
+/**
+ * CYC2: potential intensity from SST and outflow temperature.
+ * PI = sqrt(Ck/Cd * (SST - T_outflow) * SST / T_outflow) * scale.
+ * Returns normalised 0–1 intensity cap.
+ */
+export function potentialIntensity(W, c) {
+  const sst = W.temp?.[c] || 0;
+  if (sst < 0.55) return 0;
+  const sstK = sst * 180 + 180;
+  const tropKm = W.tropKm?.[c] || W.elKm?.[c] || 12;
+  const outflowK = Math.max(180, sstK - tropKm * 6.5);
+  const ck_cd = 0.9;
+  const dT = Math.max(0, sstK - outflowK);
+  const piRaw = Math.sqrt(ck_cd * dT * sstK / Math.max(200, outflowK));
+  return clamp(piRaw / 22, 0, 1);
+}
 
 /** Ensure storm list + fields. */
 /** Clear the storm state a new world must not inherit. Called from `generate`. */
@@ -21,12 +45,12 @@ export function resetStorms(W) {
   if (W.stormField?.length === NC) W.stormField.fill(0);
   if (W.surgeField?.length === NC) W.surgeField.fill(0);
   if (W.stormTrail?.length === NC) W.stormTrail.fill(0);
+  if (W.sstWake?.length === NC) W.sstWake.fill(0);
+  if (W.stormCone) W.stormCone.fill(0);
+  W._basinStats = null;
 }
 
 export function initStorms(W) {
-  /* `if (!W.storms)` is an ensure, not a reset — so a cyclone that was alive when
-     the player generated a new world stayed alive on it, with its track and surge
-     field intact. `generate` calls `resetStorms` above. */
   if (!W.storms) W.storms = [];
   if (!W.stormField || W.stormField.length !== NC) {
     W.stormField = new Float32Array(NC);
@@ -34,6 +58,12 @@ export function initStorms(W) {
   }
   if (!W.stormTrail || W.stormTrail.length !== NC) {
     W.stormTrail = new Float32Array(NC);
+  }
+  if (!W.sstWake || W.sstWake.length !== NC) {
+    W.sstWake = new Float32Array(NC);
+  }
+  if (!W.stormCone || W.stormCone.length !== NC) {
+    W.stormCone = new Float32Array(NC);
   }
   W._stormNameIx = W._stormNameIx || 0;
   if (!W.stormCtl) {
@@ -75,7 +105,12 @@ export function tropicalFavor(W, c) {
   if (sst < 0.62) return 0;
   const shear = W.shear?.[c] ?? 0;
   const moist = W.moist?.[c] || 0;
-  return clamp((sst - 0.58) * 2.2 * Math.max(0, 1.1 - shear * 1.8) * (0.4 + moist), 0, 1);
+  let f = (sst - 0.58) * 2.2 * Math.max(0, 1.1 - shear * 1.8) * (0.4 + moist);
+  const cape = W.cape?.[c] || 0;
+  const pwat = W.pwat?.[c] || 0;
+  if (cape > 200) f += clamp(cape / 4000, 0, 0.15);
+  if (pwat > 25) f += clamp(pwat / 400, 0, 0.1);
+  return clamp(f, 0, 1);
 }
 
 /**
@@ -141,6 +176,9 @@ export function seedStorm(W, cell, opts = {}) {
     };
   }
 
+  /* CYC2: cap initial intensity at PI */
+  const pi = kind === 'tropical' ? potentialIntensity(W, best) : 1;
+  const rawIntensity = clamp((0.35 + favor * 0.45) * vigor, 0.3, 1);
   const storm = {
     id: `s-${W.ageYr | 0}-${best}`,
     name: nextName(W),
@@ -148,11 +186,18 @@ export function seedStorm(W, cell, opts = {}) {
     cell: best,
     lat: DIR[best * 3 + 1],
     lon: Math.atan2(-DIR[best * 3 + 2], DIR[best * 3]),
-    intensity: clamp((0.35 + favor * 0.45) * vigor, 0.3, 1),
+    intensity: Math.min(rawIntensity, pi > 0 ? pi : rawIntensity),
+    pi,
     age: 0,
     track: [best],
     landfall: false,
     surgeHit: false,
+    /* CYC8: radius of maximum wind (cells) and outer radius */
+    rmw: kind === 'tropical' ? 2 + Math.round(favor * 2) : 4,
+    outerRadius: kind === 'tropical' ? 5 + Math.round(favor * 3) : 7,
+    /* CYC power dissipation tracking */
+    pdi: 0,
+    rainAccum: 0,
   };
   W.storms.push(storm);
   paintStorm(W, storm);
@@ -180,16 +225,27 @@ function paintStorm(W, s) {
   const ctl = stormControl(W);
   const size = clamp(ctl.size ?? 1, 0.5, 2.2);
   const focus = s.id === W.stormFocusId ? 1.4 : 1;
-  const rad = Math.round((s.kind === 'tropical' ? 5 : 7) * size);
+  const rmw = s.rmw || (s.kind === 'tropical' ? 3 : 4);
+  const outer = s.outerRadius || (s.kind === 'tropical' ? 5 : 7);
+  const rad = Math.round(outer * size);
   const seen = new Set([c0]);
   const q = [{ c: c0, d: 0 }];
   while (q.length) {
     const { c, d } = q.shift();
-    const fall = Math.exp(-d * (0.38 / size)) * s.intensity * focus;
+    /* CYC9: wind profile peaks at RMW, not the centre.
+       Holland-like: V(r) = Vmax * (rmw/r)^0.5 * exp((1 - (rmw/r)^0.5) / b)
+       Simplified to a smooth shape peaking at rmw. */
+    let fall;
+    if (s.kind === 'tropical' && d > 0 && d <= rmw) {
+      fall = s.intensity * (d / rmw) * focus;
+    } else if (d > rmw) {
+      fall = Math.exp(-(d - rmw) * (0.38 / size)) * s.intensity * focus;
+    } else {
+      fall = s.intensity * focus * (s.kind === 'tropical' ? 0.28 : 1);
+    }
     W.stormField[c] = Math.max(W.stormField[c], fall);
     W.clouds[c] = Math.max(W.clouds[c], 0.35 + fall * 0.55);
     W.precip[c] = Math.max(W.precip[c] || 0, fall * 0.7);
-    // Eye: clear centre for tropical
     if (s.kind === 'tropical' && d === 0) {
       W.clouds[c] = Math.min(W.clouds[c], 0.25);
       W.stormField[c] = s.intensity * 0.28 * focus;
@@ -250,34 +306,51 @@ export function stormsTick(W, log = null) {
     }
   }
 
+  /* CYC7: cold wake decay */
+  if (W.sstWake) {
+    for (let c = 0; c < NC; c++) {
+      if (W.sstWake[c] > 0.001) W.sstWake[c] *= COLD_WAKE_DECAY;
+      else W.sstWake[c] = 0;
+    }
+  }
+
+  /* CYC forecast cone: clear each tick then repaint */
+  if (W.stormCone) W.stormCone.fill(0);
+
   const alive = [];
+  let totalPdi = 0;
   for (const s of W.storms) {
     s.age++;
     const lat = DIR[s.cell * 3 + 1];
-    /* Steered by the flow at its middle levels — the jet — with a share of the
-       surface wind. A depression follows the thickness field it lives in, which
-       is why real systems run down the storm track instead of wandering with the
-       local breeze. */
+    const absLat = Math.abs(lat);
+
+    /* CYC2: refresh PI each tick */
+    if (s.kind === 'tropical') {
+      s.pi = potentialIntensity(W, s.cell);
+    }
+
+    /* CYC17–19: recurvature via beta drift + deep-layer mean wind steering.
+       Beta drift pushes poleward and slightly westward. */
     const ju = W.jetU?.[s.cell] ?? W.windU[s.cell] ?? 0;
     const jv = W.jetV?.[s.cell] ?? W.windV[s.cell] ?? 0;
     let u = ju * 0.45 + (W.windU[s.cell] || 0) * 0.25 + (s.steerU || 0);
     let v = jv * 0.4 + (W.windV[s.cell] || 0) * 0.2 + (s.steerV || 0);
     if (s.kind === 'tropical') {
       u += -0.15;
-      v += -Math.sign(lat || 1) * 0.04;
-      if (Math.abs(lat) > 0.35) u += 0.2;
+      /* CYC17: beta drift — poleward component */
+      const betaDrift = -Math.sign(lat || 1) * 0.06;
+      v += betaDrift;
+      /* CYC18: recurvature — at higher latitudes the westerlies take over */
+      if (absLat > 0.25) {
+        const recurveFactor = clamp((absLat - 0.25) / 0.3, 0, 1);
+        u += 0.25 * recurveFactor;
+      }
     } else {
       u += 0.12;
     }
     s.steerU *= 0.85;
     s.steerV *= 0.85;
 
-    /* Steer along the flow, in the flow's own frame. The score used to be
-       `dx·u + dz·u·0.3 + dy·v` over the neighbour's world-space offset: a
-       longitude times a zonal wind plus a latitude times a meridional one, with
-       the zonal component counted twice on two different axes. Storms drifted in
-       a direction that had little to do with the steering flow, which is why
-       tropical systems never tracked west and then recurved. */
     let next = s.cell, best = -1e9;
     const i0 = s.cell * 4;
     for (let k = 0; k < 4; k++) {
@@ -300,17 +373,92 @@ export function stormsTick(W, log = null) {
     const favor = s.kind === 'tropical' ? tropicalFavor(W, s.cell) : midlatFavor(W, s.cell);
     const onLand = W.h[s.cell] >= W.seaLevel;
     if (onLand) {
-      s.intensity *= 0.82;
+      /* CYC14–15: landfall decay modulated by terrain moisture.
+         Wet terrain sustains the storm longer. */
+      const terrainMoist = W.moist?.[s.cell] || 0;
+      const decayRate = lerp(0.78, 0.88, clamp(terrainMoist, 0, 1));
+      s.intensity *= decayRate;
       if (!s.landfall) {
         s.landfall = true;
         if (log) log(W.year, 'storm', s.cell, s.intensity, `${s.name} landfall`);
       }
+      /* CYC21+: inland flood from accumulated rain */
+      if (s.intensity > 0.3) {
+        s.rainAccum = (s.rainAccum || 0) + s.intensity * 0.05;
+        if (W.moist) W.moist[s.cell] = Math.min(1, (W.moist[s.cell] || 0) + s.intensity * 0.08);
+      }
     } else {
-      s.intensity = clamp(s.intensity * 0.97 + favor * 0.04 * vigor, 0.05, 1);
+      /* CYC6: ocean heat content proxy — warm deep water sustains storm */
+      const sst = W.temp?.[s.cell] || 0;
+      const ohc = sst * OHC_DEPTH_M / 100;
+      const ohcBonus = s.kind === 'tropical' ? clamp((ohc - 0.5) * 0.04, 0, 0.03) : 0;
+
+      /* CYC7: cold wake — previous storms cool the ocean */
+      const wakeEffect = W.sstWake?.[s.cell] || 0;
+
+      s.intensity = clamp(
+        s.intensity * 0.97 + favor * 0.04 * vigor + ohcBonus - wakeEffect * 0.08,
+        0.05, 1,
+      );
+
+      if (s.kind === 'tropical') {
+        const shear = W.shear?.[s.cell] ?? 0;
+        const pwat = W.pwat?.[s.cell] || 0;
+
+        /* CYC5: kill intensity when pwat is low in mid-levels */
+        if (pwat < 20) {
+          s.intensity *= 0.92;
+        }
+
+        /* CYC11: rapid intensification — rate-limited and shear-gated */
+        const prevIntensity = s._prevIntensity || s.intensity;
+        const riRate = s.intensity - prevIntensity;
+        if (shear < 0.15 && pwat > 35 && sst > 0.7) {
+          const riGain = clamp(0.06 * vigor, 0, 0.08);
+          s.intensity = clamp(s.intensity + riGain, 0, 1);
+        }
+        if (shear > 0.45) {
+          s.intensity *= 0.9;
+        }
+        /* CYC11: cap RI rate */
+        if (s.intensity - prevIntensity > 0.1) {
+          s.intensity = prevIntensity + 0.1;
+        }
+        s._prevIntensity = s.intensity;
+
+        /* CYC2: clamp intensity to PI */
+        if (s.pi > 0) {
+          s.intensity = Math.min(s.intensity, s.pi);
+        }
+
+        /* CYC7: deposit cold wake */
+        if (W.sstWake && s.intensity > 0.3) {
+          W.sstWake[s.cell] = clamp(
+            (W.sstWake[s.cell] || 0) + s.intensity * COLD_WAKE_RATE,
+            0, 0.15,
+          );
+        }
+
+        /* CYC13: extratropical transition when latitude is high */
+        if (absLat > 0.45 && s.kind === 'tropical') {
+          s.kind = 'extratropical';
+          s.intensity *= 0.85;
+          if (log) log(W.year, 'storm', s.cell, s.intensity, `${s.name} ET transition`);
+        }
+      }
     }
+
+    /* CYC power dissipation index */
+    s.pdi = (s.pdi || 0) + Math.pow(s.intensity, 3);
+    totalPdi += s.pdi;
 
     if (s.intensity > 0.45) applySurge(W, s, log);
     paintStorm(W, s);
+
+    /* CYC forecast cone stub */
+    if (W.stormCone) {
+      stormForecastCone(W, s);
+    }
 
     if (s.intensity > 0.12 && s.age < 80) alive.push(s);
     else if (log && s.intensity <= 0.12) {
@@ -320,6 +468,10 @@ export function stormsTick(W, log = null) {
   W.storms = alive;
   W._stormCount = alive.length;
   W._stormMax = alive.reduce((m, s) => Math.max(m, s.intensity), 0);
+  W._totalPdi = totalPdi;
+
+  /* CYC basin stats (refreshed each tick) */
+  W._basinStats = computeBasinStats(W);
 }
 
 function applySurge(W, s, log = null) {
@@ -354,6 +506,63 @@ function applySurge(W, s, log = null) {
   }
 }
 
+/**
+ * CYC forecast cone: paint uncertainty cells ahead of the storm's current
+ * steering vector. Fills W.stormCone with values 0–1.
+ */
+export function stormForecastCone(W, storm) {
+  if (!W.stormCone) return;
+  const c0 = storm.cell;
+  const ju = W.jetU?.[c0] ?? W.windU?.[c0] ?? 0;
+  const jv = W.jetV?.[c0] ?? W.windV?.[c0] ?? 0;
+  let u = ju * 0.4 + (W.windU?.[c0] || 0) * 0.2;
+  let v = jv * 0.35 + (W.windV?.[c0] || 0) * 0.15;
+  if (storm.kind === 'tropical') { u -= 0.12; }
+
+  let cur = c0;
+  for (let step = 0; step < 8; step++) {
+    const spread = 1 + step;
+    const seen = new Set([cur]);
+    let ring = [cur];
+    for (let d = 0; d < spread; d++) {
+      const next = [];
+      for (const c of ring) {
+        W.stormCone[c] = Math.max(W.stormCone[c], clamp(1 - step * 0.12 - d * 0.15, 0.1, 1));
+        for (let k = 0; k < 4; k++) {
+          const nb = NBR[c * 4 + k];
+          if (!seen.has(nb)) { seen.add(nb); next.push(nb); }
+        }
+      }
+      ring = next;
+    }
+    let bestNb = cur, bestScore = -1e9;
+    for (let k = 0; k < 4; k++) {
+      const i = cur * 4 + k;
+      const score = (u * NBR_E[i] + v * NBR_N[i]) * NBR_ICHORD[i];
+      if (score > bestScore) { bestScore = score; bestNb = NBR[i]; }
+    }
+    cur = bestNb;
+  }
+}
+
+/** CYC basin stats: count storms by type, max intensity, total PDI. */
+function computeBasinStats(W) {
+  const storms = W.storms || [];
+  let tropical = 0, extratropical = 0, maxIntensity = 0;
+  for (const s of storms) {
+    if (s.kind === 'tropical') tropical++;
+    else extratropical++;
+    if (s.intensity > maxIntensity) maxIntensity = s.intensity;
+  }
+  return {
+    total: storms.length,
+    tropical,
+    extratropical,
+    maxIntensity,
+    totalPdi: W._totalPdi || 0,
+  };
+}
+
 /** Panel / HUD snapshot. */
 export function stormDeskSnapshot(W) {
   initStorms(W);
@@ -366,18 +575,24 @@ export function stormDeskSnapshot(W) {
     name: s.name,
     kind: s.kind,
     intensity: s.intensity,
+    pi: s.pi || 0,
     age: s.age,
     landfall: s.landfall,
     surgeHit: s.surgeHit,
     cell: s.cell,
+    rmw: s.rmw || 0,
+    outerRadius: s.outerRadius || 0,
+    pdi: s.pdi || 0,
     springRisk: W.tidePhase === 'springs' && s.intensity > 0.5,
   })).sort((a, b) => b.intensity - a.intensity);
+  const stats = W._basinStats || computeBasinStats(W);
   return {
     count: list.length,
     max: W._stormMax || list[0]?.intensity || 0,
     basin,
     list,
     tidePhase: W.tidePhase || '—',
+    basinStats: stats,
     note: list.length
       ? `${list.length} on the track · ${list[0].name} strongest`
       : basin > 0.35

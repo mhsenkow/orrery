@@ -10,6 +10,7 @@ const TAG = {
   agents: 0xa6e47801,
   god: 0x60d60d60,
   atmo: 0xa740a740,
+  weather: 0x3ee7ce55,
   viz: 0xf15f15f1,
 };
 
@@ -53,6 +54,9 @@ export function attachWorldRng(W, seed) {
   W.rngAgents = forkRng(s, TAG.agents);
   W.rngGod = forkRng(s, TAG.god);
   W.rngAtmo = forkRng(s, TAG.atmo);
+  /* Severe weather draws its own stream: sharing `rngGod` with storm genesis
+     would have made every convective roll shift the cyclone that came next. */
+  W.rngWeather = forkRng(s, TAG.weather);
   W.rngViz = forkRng(s, TAG.viz);
 }
 

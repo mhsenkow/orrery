@@ -32,12 +32,21 @@ function envelopeOk(cls, t, m, O2, uvOk, isSea) {
 }
 
 export function carryingCapacity(W, c) {
-  if (W.npp) return carryingCapacityNPP(W, c);
-  const insol = Math.max(0.15, W.temp[c]);
-  const water = W.h[c] < W.seaLevel ? 1 : Math.max(0.2, W.moist[c]);
-  const nut = Math.min(W.nutrientN[c], W.nutrientP[c]);
-  const raw = insol * water * (0.5 + nut * 0.55);
-  return clamp(0.55 + raw * 0.45, 0.55, 1);
+  let k;
+  if (W.npp) {
+    k = carryingCapacityNPP(W, c);
+  } else {
+    const insol = Math.max(0.15, W.temp[c]);
+    const water = W.h[c] < W.seaLevel ? 1 : Math.max(0.2, W.moist[c]);
+    const nut = Math.min(W.nutrientN[c], W.nutrientP[c]);
+    const raw = insol * water * (0.5 + nut * 0.55);
+    k = clamp(0.55 + raw * 0.45, 0.55, 1);
+  }
+  if (W.drought) {
+    const d = W.drought[c] || 0;
+    if (d > 0.01) k *= (1 - 0.55 * d);
+  }
+  return k;
 }
 
 export function bioTick(W, chronLog) {

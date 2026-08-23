@@ -6,8 +6,8 @@
   "indexHtmlIds": 214,
   "inlineCssLines": 211,
   "stylesCssFiles": 7,
-  "stylesCssBytes": 80746,
-  "censusNames": 756,
+  "stylesCssBytes": 80787,
+  "censusNames": 832,
   "bareCatches": 0,
-  "note": "architecture-400 ratchets — growth fails CI"
+  "note": "architecture-400 ratchets — growth fails CI. 2026-08-23: censusNames 778→832 for weather wave (aircol/weather/convect/fronts fields); stylesCssBytes +41 for ribbon clickability (whole .ics-ribbon pointer-events)."
 }

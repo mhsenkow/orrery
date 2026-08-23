@@ -35,16 +35,30 @@ export function timePanelState(W, S = {}) {
   const seasonName = seasonDeg < 45 || seasonDeg >= 315 ? 'Mar'
     : seasonDeg < 135 ? 'Jun'
       : seasonDeg < 225 ? 'Sep' : 'Dec';
-  const calendarHeld = isPinnedEarth(rule) || (face === 'now' && !rule.thrive && !!rule.earthLike);
+  const calendarHeld = face === 'now';
   const livedRate = W.livedRate ?? 1;
   const livedDayRate = W.livedDayRate ?? 1;
   const seasonHoldId = nearestSeasonHold(W).id;
   const livedSeasonHoldId = face === 'now' ? nearestHoldFromDeg(seasonDeg).id : seasonHoldId;
+  /* Holocene Earth clamps ticks > 100 yr (see setTimeRate) — grey those out so
+     the menu doesn't look broken when kyr/Myr bounce back to 10 yr. */
+  const modern = isModernEarth(rule);
+  const rates = TIME_RATES.map((r) => {
+    const blocked = modern && r.dtYr != null && r.dtYr > 200;
+    return {
+      ...r,
+      disabled: blocked,
+      title: blocked
+        ? 'Holocene caps at 100 yr/tick — open an older era for kyr / Myr'
+        : undefined,
+    };
+  });
   return {
     mode: modeLabel(rule),
     eraId: currentEraId(rule) || W._epoch?.id || 'present',
     eras: availableEras(rule),
-    rates: TIME_RATES,
+    rates,
+    rateCapNote: modern ? 'Holocene · max 100 yr/tick' : null,
     rateId: W.timeRateId || 'auto',
     paused: !!S.paused,
     ff: !!W.fastForward,

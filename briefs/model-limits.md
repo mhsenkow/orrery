@@ -83,3 +83,17 @@ When a constant is unmarked, treat it as **invented** until annotated.
 - Instruments (core, ice core, Keeling, diversity, redox gauge, transit spectrum, paper export) read the live model.
 - Surface colour responds to NPP, sediment plumes, seasonal snow, pigment guild, ozone/aerosol rim terms.
 - `node vr/sim/calibrate.mjs` asserts modern Earth within stated tolerances.
+
+## Weather and the air column (2026-08-23)
+
+Six sigma levels of temperature and humidity per cell, built hydrostatically from the surface state
+each pass — diagnostic at any tick longer than a month, which is every tick the app currently runs.
+CAPE, CIN, LCL, precipitable water, storm-relative helicity and a mass-continuity vertical velocity
+come off that column; tornadoes, hail and downbursts are ingredient-driven markers standing for a
+*rate* over the tick, never for one event; drought is an accumulator against each cell's own rainfall
+normal. Latent heat is water's alone — a methane world is a dry column here and says so. Absolute
+CAPE is only as good as `rule.tSurfK`, and `airBudget().calibrated` is false where the ruleset has no
+measured surface temperature. Convection does not yet make rain: `hydro.js` still owns precipitation,
+and everything in `aircol.js` / `weather.js` is additive, so the golden corpus is unchanged.
+
+Full limits: [`weather-model.md`](weather-model.md).

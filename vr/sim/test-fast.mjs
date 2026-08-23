@@ -421,6 +421,27 @@ await section('sky integration', async () => {
   ok('F-lived-orbit', W.sky?.orbitAveraged === false);
 });
 
+await section('Now vs Years clocks', async () => {
+  const { generate, simTick, RULESETS, W } = await import('../world.js');
+  const { setClockFace, shouldHoldCalendar, climateDtYr } = await import('./clockFace.js');
+  const { cloneRuleForRun } = await import('./ruleMode.js');
+  const thrive = RULESETS.find((r) => r.id === 'thrive') || RULESETS.find((r) => r.id === 'terra');
+  generate(7, cloneRuleForRun(thrive));
+
+  setClockFace(W, 'years', { force: true });
+  W.fixedDtYr = 500;
+  const ageY0 = W.ageYr;
+  simTick(true);
+  ok('F-years-advances-age', W.ageYr > ageY0, `Δ=${W.ageYr - ageY0}`);
+  ok('F-years-geologic-dt', W.dtYr >= 10, `dt=${W.dtYr}`);
+
+  setClockFace(W, 'now', { force: true });
+  const ageN0 = W.ageYr;
+  simTick(true);
+  ok('F-now-holds-calendar', shouldHoldCalendar(W) && W.ageYr === ageN0, `Δ=${W.ageYr - ageN0}`);
+  ok('F-now-day-scale-climate', climateDtYr(W) < 0.01 && W.dtYr < 0.01, `dt=${W.dtYr}`);
+});
+
 await section('sky ephemeris (GATE14)', async () => {
   const { generate, simTick, RULESETS, W } = await import('../world.js');
   const {
@@ -452,6 +473,369 @@ await section('sky ephemeris (GATE14)', async () => {
   ok('F-retro-sign', retro < 0 || pro > 0);
   ok('F-obl-const', Math.abs((EARTH_OBLIQUITY * 180) / Math.PI - 23.44) < 0.01);
   ok('F-term-fn', terminatorSpeedKmh(1) > 1600);
+});
+
+await section('air column + weather (AIR/WX)', async () => {
+  const A = await import('./aircol.js');
+  const Wx = await import('./weather.js');
+
+  // Thermodynamics, standalone — no world needed.
+  ok('F-air-esat-monotonic', A.esatPa(300) > A.esatPa(280) && A.esatPa(280) > A.esatPa(250));
+  ok('F-air-esat-earth', Math.abs(A.esatPa(293.15) - 2339) / 2339 < 0.02, String(A.esatPa(293.15)));
+  ok(
+    'F-air-qsat-earth',
+    Math.abs(A.qsat(293.15, 101325) - 0.0146) < 0.0015,
+    String(A.qsat(293.15, 101325)),
+  );
+  /* Mars: at 600 Pa the saturation vapour pressure of water passes the surface
+     pressure, and the direct specific-humidity formula divides by a negative. */
+  ok('F-air-qsat-bounded', A.qsat(295, 600) <= 1 && A.qsat(295, 600) > 0, String(A.qsat(295, 600)));
+  ok('F-air-dewpoint-sat', Math.abs(A.dewpointK(288, 1) - 288) < 0.6, String(A.dewpointK(288, 1)));
+  ok('F-air-dewpoint-dry', A.dewpointK(300, 0.4) < 300 - 8, String(A.dewpointK(300, 0.4)));
+
+  /* The world-level column asserts live in the smoke tier, on worlds it already
+     generates — a `generate` plus six ticks costs the edit loop two and a half
+     seconds to say what a shared world can say for nothing. */
+  /* Every lapse limit is a fraction of the planet's own dry adiabat. Held at
+     Earth's numbers the floor exceeded Titan's entire adiabat, the floor beat the
+     ceiling, and a methane world reported eight thousand joules of water
+     convection. Asserted on the bounds themselves rather than on a generated
+     Titan — the claim is about the constants, and a `generate` costs the fast
+     tier a second and a half to make it. */
+  const earthL = A.lapseBounds(1, 28.96);
+  const titanL = A.lapseBounds(0.14, 28);
+  ok('F-air-lapse-earth-dry', Math.abs(earthL.dry - 9.0e-3) < 0.3e-3, String(earthL.dry));
+  ok('F-air-lapse-earth-floor', Math.abs(earthL.floor - 2.0e-3) < 0.2e-3, String(earthL.floor));
+  ok('F-air-lapse-titan-order', titanL.adiabat < 2e-3, String(titanL.adiabat));
+  ok('F-air-lapse-floor-under-dry', titanL.floor < titanL.dry && earthL.floor < earthL.dry);
+
+  /* Airless: asserted against a synthetic world rather than a generated one —
+     the claim is about what the readout says with no column, and a `generate`
+     costs a second of the fast tier to say it. */
+  const airless = Wx.weatherSnapshot({
+    air: { regime: 'no column' },
+    rule: { airless: true },
+    severe: [],
+    storms: [],
+  });
+  ok('F-wx-airless-line', airless.line.includes('no atmosphere'), airless.line);
+  ok('F-wx-airless-zero', airless.capeMax === 0 && airless.droughtFrac === 0);
+
+  ok('F-air-levels-8', A.AIR_LEVELS === 8, String(A.AIR_LEVELS));
+  ok(
+    'F-air-esat-ice',
+    A.esatPa(250) < A.esatPa(273.15),
+    `ice ${A.esatPa(250).toFixed(1)} vs liq ${A.esatPa(273.15).toFixed(1)}`,
+  );
+
+  ok('F-precipType-export', typeof Wx.precipTypeAt === 'function');
+  const snowW = {
+    precip: new Float32Array([0.1]),
+    freezeKm: new Float32Array([0.2]),
+    temp: new Float32Array([0.48]),
+    cape: new Float32Array([0]),
+  };
+  ok('F-precipType-snow', Wx.precipTypeAt(snowW, 0) === 'snow', Wx.precipTypeAt(snowW, 0));
+  const rainW = {
+    precip: new Float32Array([0.1]),
+    freezeKm: new Float32Array([5]),
+    temp: new Float32Array([0.7]),
+    cape: new Float32Array([0]),
+  };
+  ok('F-precipType-rain', Wx.precipTypeAt(rainW, 0) === 'rain', Wx.precipTypeAt(rainW, 0));
+  const noneW = { precip: new Float32Array([0]) };
+  ok('F-precipType-none', Wx.precipTypeAt(noneW, 0) === 'none');
+
+  ok('F-convectTick-export', typeof Wx.convectTick === 'function');
+
+  const Conv = await import('./convect.js');
+  ok(
+    'F-convect-exports',
+    typeof Conv.orgConvectionTick === 'function' &&
+      typeof Conv.waterBudget === 'function' &&
+      typeof Conv.convClassOk === 'function' &&
+      typeof Conv.virgaReducesPrecip === 'function' &&
+      typeof Conv.extendedPrecipType === 'function',
+  );
+
+  ok('F-convClass-enum', Conv.CONV_NONE === 0 && Conv.CONV_MCS === 5);
+
+  const Bio = await import('./bio.js');
+  ok(
+    'F-drought-suppresses-K',
+    (() => {
+      const baseW = {
+        npp: null,
+        temp: new Float32Array([0.6]),
+        h: new Float32Array([0.6]),
+        seaLevel: 0.5,
+        moist: new Float32Array([0.5]),
+        nutrientN: new Float32Array([0.5]),
+        nutrientP: new Float32Array([0.5]),
+      };
+      const k0 = Bio.carryingCapacity(baseW, 0);
+      baseW.drought = new Float32Array([0.8]);
+      const k1 = Bio.carryingCapacity(baseW, 0);
+      return k1 < k0 * 0.8;
+    })(),
+    'drought should suppress carrying capacity',
+  );
+
+  // LOC49-50: new weather helper exports
+  ok('F-cloudTypeAt-export', typeof Wx.cloudTypeAt === 'function');
+  ok('F-cloudTypeAt-clear', Wx.cloudTypeAt({ clouds: new Float32Array([0]) }, 0) === 'clear');
+  ok(
+    'F-cloudTypeAt-stratus',
+    Wx.cloudTypeAt(
+      {
+        clouds: new Float32Array([0.5]),
+        cape: new Float32Array([0]),
+        lclKm: new Float32Array([1]),
+      },
+      0,
+    ) === 'stratus',
+  );
+
+  ok('F-visibilityReduction-export', typeof Wx.visibilityReduction === 'function');
+  ok(
+    'F-visReduction-clear',
+    Wx.visibilityReduction(
+      {
+        precip: new Float32Array([0]),
+        fog: new Float32Array([0]),
+        dust: new Float32Array([0]),
+        clouds: new Float32Array([0]),
+      },
+      0,
+    ) === 0,
+  );
+  ok(
+    'F-visReduction-fog',
+    Wx.visibilityReduction(
+      {
+        precip: new Float32Array([0]),
+        fog: new Float32Array([1]),
+        dust: new Float32Array([0]),
+        clouds: new Float32Array([0]),
+      },
+      0,
+    ) > 0.5,
+  );
+
+  ok('F-frostDewAt-export', typeof Wx.frostDewAt === 'function');
+  ok(
+    'F-frostDewAt-none-midday',
+    Wx.frostDewAt(
+      { temp: new Float32Array([0.7]), moist: new Float32Array([0.8]), wxClock: 0.5 },
+      0,
+    ) === 'none',
+  );
+
+  ok('F-rainbowAt-export', typeof Wx.rainbowAt === 'function');
+  ok('F-rainbowAt-no-rain', Wx.rainbowAt({ precip: new Float32Array([0]) }, 0) === false);
+
+  ok('F-weatherAudioGains-export', typeof Wx.weatherAudioGains === 'function');
+  const audioW = {
+    precip: new Float32Array([0.2]),
+    gust: new Float32Array([0.3]),
+    windU: new Float32Array([0.1]),
+    windV: new Float32Array([0.1]),
+    freezeKm: new Float32Array([5]),
+    temp: new Float32Array([0.7]),
+    cape: new Float32Array([0]),
+  };
+  const gains = Wx.weatherAudioGains(audioW, 0);
+  ok('F-audioGains-rain', gains.rain > 0, gains.rain);
+  ok('F-audioGains-wind', gains.wind >= 0, gains.wind);
+
+  ok('F-weatherSequenceAt-export', typeof Wx.weatherSequenceAt === 'function');
+  const seq = Wx.weatherSequenceAt({ wxClock: 0.5, season: 0 }, 0);
+  ok('F-weatherSeq-diurnal', typeof seq.diurnal === 'string' && seq.diurnal.length > 0);
+
+  ok('F-weatherBioResponse-export', typeof Wx.weatherBioResponse === 'function');
+  ok('F-worldWeatherString-export', typeof Wx.worldWeatherString === 'function');
+  ok('F-weatherA11yLine-export', typeof Wx.weatherA11yLine === 'function');
+  ok('F-weatherCalib-export', typeof Wx.weatherCalib === 'function');
+});
+
+await section('SEV + CYC rows', async () => {
+  const Wx = await import('./weather.js');
+  const St = await import('./storms.js');
+  const { FIELD_BY_NAME } = await import('./fields.js');
+
+  /* EF distribution: most tornadoes should be weak (EF ≤ 2).
+     Real event strengths cluster below 0.3 (beta-like), so sample that way. */
+  const efCounts = [0, 0, 0, 0, 0, 0];
+  for (let i = 0; i < 500; i++) {
+    const s = Math.pow(i / 500, 2.5);
+    efCounts[Wx.efScale(s)]++;
+  }
+  const weakFrac = (efCounts[0] + efCounts[1] + efCounts[2]) / 500;
+  ok('F-ef-weak-bias', weakFrac > 0.5, `weak ${(weakFrac * 100).toFixed(0)}%`);
+  ok('F-ef-scale-0', Wx.efScale(0.05) === 0);
+  ok('F-ef-scale-5', Wx.efScale(0.85) === 5);
+
+  /* STP computation */
+  const stpVal = Wx.computeSTP(2000, 200, 1.0, 0.5);
+  ok('F-stp-positive', stpVal > 0.5, `stp=${stpVal.toFixed(2)}`);
+  ok('F-stp-zero-cape', Wx.computeSTP(0, 200, 1.0, 0.5) === 0);
+
+  /* STP field exists in schema */
+  ok('F-stp-field', !!FIELD_BY_NAME.stp, 'stp field missing');
+  ok('F-shear01-field', !!FIELD_BY_NAME.shear01, 'shear01 field missing');
+  ok('F-scar-field', !!FIELD_BY_NAME.scar, 'scar field missing');
+  ok('F-severeOutlook-field', !!FIELD_BY_NAME.severeOutlook, 'severeOutlook field missing');
+  ok('F-sstWake-field', !!FIELD_BY_NAME.sstWake, 'sstWake field missing');
+  ok('F-stormCone-field', !!FIELD_BY_NAME.stormCone, 'stormCone field missing');
+  ok('F-shelter-field', !!FIELD_BY_NAME.shelter, 'shelter field missing');
+  ok('F-disasterMem-field', !!FIELD_BY_NAME.disasterMem, 'disasterMem field missing');
+
+  /* Hail size */
+  ok('F-hail-size', Wx.hailSizeMm(2000, 3) > 10, `hail=${Wx.hailSizeMm(2000, 3)}`);
+  ok('F-hail-zero-low-cape', Wx.hailSizeMm(200, 3) === 0);
+
+  /* PI clamps intensity */
+  const piVal = St.potentialIntensity({ temp: new Float32Array([0.65]) }, 0);
+  ok('F-pi-positive', piVal > 0 && piVal <= 1, `pi=${piVal.toFixed(2)}`);
+  const piCold = St.potentialIntensity({ temp: new Float32Array([0.4]) }, 0);
+  ok('F-pi-cold-zero', piCold === 0, `piCold=${piCold}`);
+
+  /* Dust devil on ares (Mars) — severeMode returns dustdevil on warm dry Mars surface */
+  const aresW = {
+    rule: { id: 'ares', dustDevils: true },
+    cape: new Float32Array([50]),
+    temp: new Float32Array([0.5]),
+    h: new Float32Array([0.6]),
+    seaLevel: 0.5,
+    ice: new Float32Array([0]),
+    tornadoRisk: new Float32Array([0]),
+    pwat: new Float32Array([2]),
+    lclKm: new Float32Array([3]),
+    shear: new Float32Array([0]),
+    shear01: new Float32Array([0]),
+    srh: new Float32Array([0]),
+  };
+  const aresMode = Wx.severeMode(aresW, 0);
+  ok('F-dustdevil-ares', aresMode?.kind === 'dustdevil', `kind=${aresMode?.kind}`);
+
+  /* trackLog grows — initWeather creates trackLog */
+  const trackW = {};
+  Wx.initWeather(trackW);
+  ok('F-trackLog-init', Array.isArray(trackW.wx.trackLog));
+
+  /* Severe outlook function */
+  ok('F-outlook-fn', typeof Wx.severeOutlookAt === 'function');
+  ok('F-outlook-zero', Wx.severeOutlookAt({}, 0) === 0);
+
+  /* liftCap function */
+  ok('F-liftcap-fn', typeof Wx.liftCap === 'function');
+
+  /* SEVERE_KINDS includes new types */
+  ok('F-kinds-waterspout', Wx.SEVERE_KINDS.includes('waterspout'));
+  ok('F-kinds-dustdevil', Wx.SEVERE_KINDS.includes('dustdevil'));
+});
+
+await section('FRONT rows (FRONT48)', async () => {
+  const Fr = await import('./fronts.js');
+  const { FIELD_BY_NAME } = await import('./fields.js');
+
+  ok('F-frontsTick-fn', typeof Fr.frontsTick === 'function');
+  ok('F-frontTypeAt-fn', typeof Fr.frontTypeAt === 'function');
+  ok('F-frontBudget-fn', typeof Fr.frontBudget === 'function');
+
+  ok('F-frontStrength-field', !!FIELD_BY_NAME.frontStrength, 'frontStrength field missing');
+  ok('F-frontKind-field', !!FIELD_BY_NAME.frontKind, 'frontKind field missing');
+  ok('F-windShift-field', !!FIELD_BY_NAME.windShift, 'windShift field missing');
+  ok('F-dryline-field', !!FIELD_BY_NAME.dryline, 'dryline field missing');
+  ok('F-stormTrack-field', !!FIELD_BY_NAME.stormTrack, 'stormTrack field missing');
+  ok('F-eady-field', !!FIELD_BY_NAME.eady, 'eady field missing');
+  ok('F-block-field', !!FIELD_BY_NAME.block, 'block field missing');
+  ok('F-coldTongue-field', !!FIELD_BY_NAME.coldTongue, 'coldTongue field missing');
+
+  const ft = Fr.frontTypeAt({}, 0);
+  ok('F-frontTypeAt-empty', ft.kind === 0 && ft.name === 'none');
+
+  const budget = Fr.frontBudget({});
+  ok('F-frontBudget-empty', budget.frontCells === 0 && budget.blockCells === 0);
+});
+
+await section('DRY rows (DRY48)', async () => {
+  const Wx = await import('./weather.js');
+  const { FIELD_BY_NAME } = await import('./fields.js');
+
+  ok('F-soilRoot-field', !!FIELD_BY_NAME.soilRoot, 'soilRoot field missing');
+  ok('F-soilDeep-field', !!FIELD_BY_NAME.soilDeep, 'soilDeep field missing');
+  ok('F-aridity-field', !!FIELD_BY_NAME.aridity, 'aridity field missing');
+  ok('F-droughtClass-field', !!FIELD_BY_NAME.droughtClass, 'droughtClass field missing');
+  ok('F-droughtAge-field', !!FIELD_BY_NAME.droughtAge, 'droughtAge field missing');
+  ok('F-heatIndex-field', !!FIELD_BY_NAME.heatIndex, 'heatIndex field missing');
+  ok('F-flashDrought-field', !!FIELD_BY_NAME.flashDrought, 'flashDrought field missing');
+  ok('F-petField-field', !!FIELD_BY_NAME.petField, 'petField field missing');
+  ok('F-aetField-field', !!FIELD_BY_NAME.aetField, 'aetField field missing');
+
+  ok('F-droughtBudget-fn', typeof Wx.droughtBudget === 'function');
+  ok('F-droughtClassAt-fn', typeof Wx.droughtClassAt === 'function');
+
+  const db = Wx.droughtBudget({});
+  ok('F-droughtBudget-empty', db.droughtFrac === 0 && db.heatCells === 0);
+
+  ok('F-droughtClassAt-zero', Wx.droughtClassAt({}, 0) === 0);
+});
+
+await section('COL rows (COL4/8/12/21–30/31)', async () => {
+  const A = await import('./aircol.js');
+  const WC = await import('./weatherClock.js');
+
+  // COL4: MUCAPE field exists after allocation
+  const mockW = {};
+  A.allocAir(mockW, 1);
+  ok('F-muCape-alloc', mockW.muCape instanceof Float32Array && mockW.muCape.length === 1);
+  ok('F-tropKm-alloc', mockW.tropKm instanceof Float32Array);
+  ok('F-capK-alloc', mockW.capK instanceof Float32Array);
+  ok('F-wbzKm-alloc', mockW.wbzKm instanceof Float32Array);
+
+  // COL21–30: weatherClock advances
+  const wW = {};
+  WC.allocWeatherClock(wW);
+  WC.setWeatherSpeed(wW, 60);
+  ok('F-wxClock-enabled', wW.wxClock.enabled === true);
+  const h0 = wW.wxClock.hourOfDay;
+  WC.weatherClockTick(wW, 1);
+  ok('F-wxClock-advances', wW.wxClock.hourOfDay !== h0, `${h0} → ${wW.wxClock.hourOfDay}`);
+  ok(
+    'F-wxClock-diurnal',
+    typeof wW.wxClock.diurnal === 'number' && Math.abs(wW.wxClock.diurnal) <= 1,
+  );
+
+  // COL24/25: night shear + dawn CIN boosts written by the clock
+  WC.setWeatherSpeed(wW, 24);
+  wW.wxClock.hourOfDay = 20;
+  WC.weatherClockTick(wW, 0.01);
+  ok('F-wxClock-shearBoost', wW.wxClock.shearBoost > 0, `shear=${wW.wxClock.shearBoost}`);
+  wW.wxClock.hourOfDay = 5;
+  WC.weatherClockTick(wW, 0.01);
+  ok('F-wxClock-cinBoost', wW.wxClock.cinBoost > 0, `cin=${wW.wxClock.cinBoost}`);
+
+  // COL31: methane solvent detection on Titan
+  ok('F-solventOf-water', A.solventOf({ rule: {} }) === 'water');
+  ok('F-solventOf-methane', A.solventOf({ rule: { methaneSolvent: true } }) === 'methane');
+  ok('F-esatCH4-finite', Number.isFinite(A.esatCH4(100)) && A.esatCH4(100) > 0);
+  ok('F-esatCO2-finite', Number.isFinite(A.esatCO2(180)) && A.esatCO2(180) > 0);
+
+  // COL5: entrainment reduces CAPE — compare lapse bounds to verify dry logic
+  // (full CAPE reduction tested via the smoke tier's world-level asserts)
+  const earthL = A.lapseBounds(1, 28.96);
+  ok('F-entrain-constant', typeof A.esatPa === 'function' && earthL.dry > earthL.floor);
+
+  // COL8: tropKm on a generated world is finite
+  withWorld({ seed: 9, ruleId: 'terra' }, (W) => {
+    ok(
+      'F-tropKm-finite',
+      W.tropKm && W.tropKm.some((v) => v > 0 && Number.isFinite(v)),
+      `max: ${W.tropKm ? Math.max(...W.tropKm) : 'null'}`,
+    );
+    ok('F-muCape-field', W.muCape && W.muCape.length > 0);
+  });
 });
 
 await section('smoke', async () => {
@@ -517,8 +901,8 @@ if (TIMING && times.length) {
   console.log('slowest:');
   for (const row of slow) console.log(`  ${row.ms.toFixed(1).padStart(7)}ms  ${row.name}`);
 }
-/* Local edit loop ~30s with sky asserts; CI ubuntu runners are ~1.5–2× slower. */
-const BUDGET_MS = process.env.CI ? 45000 : 30000;
+/* Local edit loop ~40s with sky + SEV/CYC asserts; CI ubuntu runners are ~1.5–2× slower. */
+const BUDGET_MS = process.env.CI ? 55000 : 40000;
 if (elapsed > BUDGET_MS) {
   console.error(
     `fast tier exceeded ${BUDGET_MS / 1000}s budget (${(elapsed / 1000).toFixed(2)}s)` +

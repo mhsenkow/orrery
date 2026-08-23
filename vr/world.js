@@ -59,6 +59,7 @@ import { attachWorldRng } from './sim/rng.js';
 import { assertBudgets } from './sim/assert.js';
 import { initOcean, oceanTick } from './sim/ocean.js';
 import { geostrophicWind } from './sim/wind.js';
+import { frontsTick, frontBudget } from './sim/fronts.js';
 import { giantTick } from './sim/jets.js';
 import { skyFromStarAtmosphere } from './sim/scatter.js';
 import { applyIceShell, iceShellTick } from './sim/iceshell.js';
@@ -66,16 +67,20 @@ import { initTides, tidesTick } from './sim/tides.js';
 import { initSky, skyTick, packOrbital, unpackOrbital, migrateOrbitalFromRuleset } from './sim/sky.js';
 import { applyCatalogueSky } from './sim/skyScenarios.js';
 import { initStorms, resetStorms, stormsTick } from './sim/storms.js';
+import { airColumnTick, allocAir, resetAir } from './sim/aircol.js';
+import { allocWeatherClock, weatherClockTick } from './sim/weatherClock.js';
+import { initWeather, resetWeather, severeTick, droughtTick, convectTick, wireWeatherModules, droughtBudget } from './sim/weather.js';
+import { orgConvectionTick } from './sim/convect.js';
 import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';
 import { gpgpuClimateTick } from './sim/gpgpu/index.js';
 import { isModernEarth, isDeepTimeEarth, cloneRuleForRun, isPinnedEarth } from './sim/ruleMode.js';
-import { initClockFace, shouldHoldCalendar, setClockFace } from './sim/clockFace.js';
+import { initClockFace, shouldHoldCalendar, applyLivedClimateDt, setClockFace } from './sim/clockFace.js';
 import { applyEpochAtGenerate } from './sim/epoch.js';
 import { seedTechnosphere, technoTick } from './sim/techno.js';
 import { agentsTick, resetEntities, packEntities, restoreEntities } from './agents.js';
-import { fireTick, resetFireState } from './sim/fire.js';
-import { lightningTick, resetLightning } from './sim/lightning.js';
+import { fireTick, resetFireState, igniteFire } from './sim/fire.js';
+import { lightningTick, resetLightning, strike as lightningStrike } from './sim/lightning.js';
 import { anthroTick, resetAnthro } from './sim/anthro.js';
 import { ordnanceTick, resetOrdnance } from './sim/ordnance.js';
 import {
@@ -333,6 +338,8 @@ function bootPhase(label, detail = '') {
   if (typeof W._bootPhase === 'function') W._bootPhase(label, detail);
 }
 
+/* SEV32/34: wire lightning and fire into weather's lazy references */
+wireWeatherModules({ strike: lightningStrike }, { igniteFire });
 
 
 export function generate(seed, ruleIn) {
@@ -596,6 +603,8 @@ export function generate(seed, ruleIn) {
   W.volcanoes = [];
   W.ash.fill(0); W.dust.fill(0); W.sediment.fill(0);
   resetStorms(W);
+  resetAir(W);
+  resetWeather(W);
   if (W.frost) W.frost.fill(0);
   if (W.lag) W.lag.fill(0);
   if (W.grain) W.grain.fill(0);
@@ -880,6 +889,9 @@ export function generate(seed, ruleIn) {
   if (!rule.airless) oceanTick(W);
   initTides(W);
   initStorms(W);
+  allocAir(W);
+  allocWeatherClock(W);
+  initWeather(W);
   if (rule.iceShell) applyIceShell(W, rule);
   stampSubstrate(W);
   stampCover(W);
@@ -976,7 +988,18 @@ export function simTick(silent = false) {
   };
 
   if (!rule.daisyworld) {
-    if (!shouldHoldCalendar(W, rule)) advanceClock(W, rule);
+    if (shouldHoldCalendar(W, rule)) {
+      /* Now: calendar welded; climate steps at day-scale so one year of sky
+         is not decades of geology per breath. */
+      applyLivedClimateDt(W);
+    } else {
+      if (W._dtYrGeologic != null && W.fixedDtYr == null) {
+        /* Restore geologic step when leaving Now before adaptive runs. */
+        W.dtYr = W._dtYrGeologic;
+      }
+      advanceClock(W, rule);
+      W._dtYrGeologic = W.dtYr;
+    }
     if (!silent) hadeanTick(W, log);
   } else {
     W.dtYr = 10;
@@ -999,6 +1022,7 @@ export function simTick(silent = false) {
   // CPU shallow-water wind always — hydro, storms and overlays read windU/V / converg / front.
   // GPGPU only replaces the thermal relaxation loop.
   geostrophicWind(W);
+  frontsTick(W);
   giantTick(W, log);
   const gpu = section('atmo', () => gpgpuClimateTick(W));
   if (!gpu) section('atmo', () => atmoTick(W, sunDirForAtmo()));
@@ -1017,7 +1041,20 @@ export function simTick(silent = false) {
   if (!rule.airless && !W.noSurface) {
     oceanTick(W);
     section('tides', () => tidesTick(W));
+    /* The column before the phenomena that read it: instability, shear and
+       vertical motion are diagnosed from this tick's winds and moisture, then
+       storms, severe convection and the drought index all consume the same
+       sounding rather than each inventing one. */
+    /* COL21–30: weather clock tick with a short effective dt (1/60s nominal
+       per sim tick); the real-time advance happens in the frame loop via
+       livedTick path. Here we just prod the diurnal modulations. */
+    if (W.wxClock?.enabled) weatherClockTick(W, 1 / 60);
+    section('aircol', () => airColumnTick(W));
+    section('convect', () => convectTick(W));
+    section('orgconv', () => orgConvectionTick(W));
     section('storms', () => stormsTick(W, log));
+    section('severe', () => severeTick(W, log));
+    section('drought', () => droughtTick(W, log));
     section('lightning', () => lightningTick(W));
   }
   if (W._iceShell) iceShellTick(W);
@@ -1300,13 +1337,14 @@ function unpackFloatField(b64, into) {
   into.set(buf.subarray(0, n));
 }
 
-/** Event-log save. Version 10 adds orbital block (lights, sats, spin).
+/** Event-log save. Version 11 adds the drought accumulator — the only weather
+ *  state with a memory longer than a tick. Version 10 adds orbital block.
  *  Version 9 adds unitsHash / provenanceHash for schema drift detection. */
 export function serializeRun() {
   const land = W._landscape || W.rule?.landscape || 'auto';
   const landSeed = (W.landSeed ?? W.seed) >>> 0;
   return {
-    version: 10,
+    version: 11,
     seed: W.seed,
     landSeed,
     landscape: land,
@@ -1342,6 +1380,7 @@ export function serializeRun() {
     livedDayRate: W.livedDayRate ?? 1,
     orbital: packOrbital(W),
     buildB64: packFloatField(W.build),
+    droughtB64: W.drought ? packFloatField(W.drought) : null,
     cities: (W.cities || []).map((c) => ({ ...c })),
     civPop: W.civPop ?? 0,
     builtFrac: W.builtFrac ?? 0,
@@ -1413,8 +1452,8 @@ export function loadRunMeta(json) {
   }
   const ver = data.version ?? 0;
   // D21/D22 — read version; never half-load unknown futures.
-  if (ver > 10) {
-    throw new Error(`Save version ${ver} is newer than this build (supports ≤10). Update ORRERY or export a fresh save.`);
+  if (ver > 11) {
+    throw new Error(`Save version ${ver} is newer than this build (supports ≤11). Update ORRERY or export a fresh save.`);
   }
   if (ver > 0 && ver < 7) {
     throw new Error(`Save version ${ver} is too old to migrate automatically. Re-generate from seed ${data.seed}.`);
@@ -1471,6 +1510,11 @@ export function loadRunMeta(json) {
   if (data.gases) Object.assign(W.gases, data.gases);
   if (data.rngState != null) W.rngState = data.rngState;
   if (data.buildB64 && data.n === SIM_N) unpackFloatField(data.buildB64, W.build);
+  /* v10 and older have no drought block; `resetWeather` has already zeroed it,
+     which is the right migration — an unrecorded drought never happened. */
+  if (data.droughtB64 && data.n === SIM_N && W.drought) {
+    unpackFloatField(data.droughtB64, W.drought);
+  }
   if (data.cities) W.cities = data.cities.map((c) => ({ ...c }));
   if (data.civPop != null) W.civPop = data.civPop;
   if (data.builtFrac != null) W.builtFrac = data.builtFrac;
@@ -1523,3 +1567,4 @@ export function loadRunMeta(json) {
 }
 
 export { RULESETS, LIFE_CLASSES, seedLife, chronLog, formatAge, treeSummary };
+export { setWeatherSpeed, weatherClockState } from './sim/weatherClock.js';

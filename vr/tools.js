@@ -34,7 +34,8 @@ import {
   strikeImpact, placeLIP, triggerGRB, stellarFlare, releaseClathrate,
   releasePathogen, theiaImpact,
 } from './sim/god/disaster.js';
-import { seedStorm } from './sim/storms.js';
+import { seedStorm, potentialIntensity, stormForecastCone } from './sim/storms.js';
+import { liftCap } from './sim/weather.js';
 import { igniteFire, fireDanger, flammableAt } from './sim/fire.js';
 import { pourToxin, irradiate, seedDisease, openWar, hazardAt } from './sim/anthro.js';
 import { launch, detonate, defenceAt, richestTarget, pickLaunchSite, markTrace, PROFILES, defendCell } from './sim/ordnance.js';
@@ -71,6 +72,7 @@ export const TOOLS = [
   { id: 'shade', name: 'L1 shade', key: '', cost: 40, group: 'clim' },
   { id: 'aerosol', name: 'Aerosol', key: '', cost: 18, group: 'clim' },
   { id: 'weather', name: 'Local rain', key: '', cost: 5, group: 'clim' },
+  { id: 'liftcap', name: 'Lift cap', key: '', cost: 4, group: 'clim' },
   { id: 'meteor', name: 'Meteor', key: 'm', cost: 60, group: 'dis' },
   { id: 'volcano', name: 'Force erupt', key: 'u', cost: 40, group: 'dis' },
   { id: 'lip', name: 'LIP', key: '', cost: 80, group: 'dis' },
@@ -438,6 +440,13 @@ export function useToolAt(cell, extra = {}) {
       markCellHit(cell, 0.85);
       break;
     }
+
+    case 'liftcap':
+      liftCap(W, cell);
+      chronLog(W.year, 'tool', cell, 1, 'Lift cap — CIN cleared locally');
+      result.said = 'Cap lifted — CIN cleared, convection can fire';
+      markCellHit(cell, 0.5);
+      break;
 
     case 'meteor':
       result = { ...result, ...strikeImpact(cell, {

@@ -22,10 +22,10 @@ The planet turns; lights do not orbit the mesh for physics. The renderer may sti
 
 ## Two clocks
 
-| Face | Season / moon | Insolation |
+| Face | Season / moon | Calendar / climate |
 |---|---|---|
-| **Now** | Instantaneous on the presentation clock (`skyFrame`) | Diurnal + seasonal geometry |
-| **Years** | Held snapshot (`seasonHold`) unless scrubbed | Orbit-averaged where noted; season hold = annual-mean honesty |
+| **Now** | Instantaneous on the presentation clock (`skyFrame`) | Age held; climate integrates at ~day scale — watch one year slowly |
+| **Years** | Held snapshot (`seasonHold`) unless scrubbed | Age jumps by the rate dial; season hold = annual-mean honesty |
 
 ## Limits
 

@@ -29,6 +29,14 @@
 - HTML paints `#bootload` with brand + static `.boot-disc` before the module graph.
 - After `initGL`, `desktopFrame` starts so the WebGL clear/sky can paint while docks and `generate()` continue.
 
+## Weather at cold start (GATE44)
+
+A new player's first world has legible, not maximal, weather. The air column is diagnostic on the
+first tick (striped rebuild fills in over eight ticks), so the first globe shows pressure bands and
+cloud cover but not yet a mature sounding. Severe markers do not fire until CAPE has had time to
+build — typically tick 3–5 on Earth. Drought needs ~20 ticks of memory. This means a new player
+sees "weather exists" without being overwhelmed by warnings.
+
 ## Follow-ups (not this gate)
 - ~~Bundle / code-split entry (K*)~~ — `npm run build` (architecture Q1); code-split chunks for dark/catalogue already via dynamic `import()`
 - Defer non-boot docks (catalogue / Dark on demand) — partially landed

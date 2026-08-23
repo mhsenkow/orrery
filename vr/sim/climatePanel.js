@@ -2,9 +2,12 @@
  *  Live instruments + levers for the climate constructs you can see from orbit. */
 
 import { clamp } from '../math.js';
-import { W, chronLog } from '../world.js';
+import { W, chronLog, setWeatherSpeed } from '../world.js';
 import { NC, DIR } from '../sphere.js';
 import { setOrbit, setMoon } from './god/climate.js';
+import { airBudget, formatSounding, soundingAt } from './aircol.js';
+import { weatherSnapshot, droughtLabel, precipTypeAt, weatherCalib } from './weather.js';
+import { waterBudget, CONV_LABELS } from './convect.js';
 import { tideBudget, ROCHE_DISTANCE } from './tides.js';
 import { circulationCellCount, windBandAt } from './wind.js';
 import { rhinesJetCount, maybeReseedJets } from './jets.js';
@@ -246,6 +249,7 @@ export function climatePanelChrome() {
     <div class="clim-desks" role="tablist" aria-label="Sky desks">
       ${deskTab('sky', 'sky', 'Sky', 'Circulation, moon, tides')}
       ${deskTab('storm', 'stormdesk', 'Storms', 'Seed and track cyclones')}
+      ${deskTab('wxdesk', 'weather', 'Weather', 'Convection, drought, warnings')}
       ${deskTab('coast', 'coastdesk', 'Coast', 'Intertidal and flood risk')}
       ${deskTab('compare', 'compare', 'Compare', 'Freeze A/B synoptic')}
       ${deskTab('system', 'sky', 'System', 'Body list — the orrery')}
@@ -331,6 +335,14 @@ export function climatePanelChrome() {
         <p class="god-note" id="stormNote">Teal basins can organise. Named storms leave a gold track.</p>
       </div>
       <div class="god-block">
+        <div class="god-h">${iconSVG('stormdesk')}<span>Weather now</span></div>
+        <div class="clim-strip" id="wxStrip" aria-live="polite"></div>
+        <div id="wxList" class="clim-list"></div>
+        <p class="god-note" id="wxNote">Convection, severe outbreaks and drought — read off the air column, not the surface.</p>
+        <p class="god-note" id="wxSounding"></p>
+        <canvas id="wxSoundingChart" width="220" height="160" style="display:none;margin:6px 0;border-radius:4px;background:#181c24"></canvas>
+      </div>
+      <div class="god-block">
         <div class="god-h">${iconSVG('seedstorm')}<span>Seed &amp; steer</span></div>
         <div class="tools clim-actions" id="stormActions">
           <button type="button" id="stormSeedAt">${iconSVG('seedstorm')}<span class="btn-label">Seed at inspect</span></button>
@@ -367,6 +379,46 @@ export function climatePanelChrome() {
         <p class="god-note">Genesis is how often a basin tries on its own. Strict is how often a seed is allowed to fail.</p>
       </div>
       <div class="clim-callout" id="stormCallout"></div>
+    </div>
+
+    <div class="clim-desk" data-desk-panel="wxdesk" role="tabpanel" hidden>
+      <div class="clim-strip" id="wxdeskStrip" aria-live="polite"></div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('weather')}<span>Weather desk</span></div>
+        <div id="wxdeskLine" class="clim-meter"></div>
+        <p class="god-note">One-line summary of active weather across the globe.</p>
+      </div>
+      <div class="god-block" id="wxWarnings">
+        <div class="god-h">${iconSVG('weather')}<span>Warnings</span></div>
+        <div id="wxWarnList" class="clim-list"></div>
+        <p class="god-note">Active severe markers, drought, and cyclone warnings in plain language.</p>
+      </div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('weather')}<span>Overlays</span></div>
+        <div class="view-row">
+          <button type="button" data-overlay="weather">${iconSVG('weather')}<span class="btn-label">Weather</span></button>
+          <button type="button" data-overlay="cape">${iconSVG('weather')}<span class="btn-label">CAPE</span></button>
+          <button type="button" data-overlay="reflectivity">${iconSVG('weather')}<span class="btn-label">Radar</span></button>
+          <button type="button" data-overlay="ircloud">${iconSVG('weather')}<span class="btn-label">IR</span></button>
+          <button type="button" data-overlay="wv">${iconSVG('weather')}<span class="btn-label">WV</span></button>
+          <button type="button" data-overlay="droughtMap">${iconSVG('weather')}<span class="btn-label">Drought</span></button>
+        </div>
+        <p class="god-note">The globe painted as a forecast desk sees it — radar, IR satellite, water vapour.</p>
+      </div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('weather')}<span>Lived weather</span></div>
+        <div class="view-row">
+          <label for="wxSpeed">Hours/s</label>
+          <input type="range" id="wxSpeed" min="0" max="240" value="0" step="6" title="Weather hours per real second">
+          <span class="val" id="wxSpeedVal">off</span>
+        </div>
+        <p class="god-note">Advances the column's day without moving geology. Zero keeps the column diagnostic.</p>
+      </div>
+      <div class="god-block">
+        <div class="god-h">${iconSVG('weather')}<span>Calibration</span></div>
+        <div id="wxCalib" class="clim-list"></div>
+        <p class="god-note">Model-fitted spines (Earth physical targets still listed as CONV11 north star).</p>
+      </div>
     </div>
 
     <div class="clim-desk" data-desk-panel="coast" role="tabpanel" hidden>
@@ -658,6 +710,195 @@ function findBestStormCell() {
   return { cell: best, score };
 }
 
+/**
+ * Weather beyond the cyclone track: what the column says, what is convecting,
+ * and where the ground is dry. Three scales in one block, each named at the
+ * scale it is real at — a marker stands for a rate, not for one funnel.
+ */
+function refreshWeatherBlock() {
+  const air = airBudget(W);
+  const wx = weatherSnapshot(W);
+  const strip = document.getElementById('wxStrip');
+  if (strip) {
+    strip.innerHTML = `
+      <div class="clim-chip" title="Convective available potential energy, peak column">
+        <span>CAPE</span><b>${air.capeMax ? air.capeMax.toFixed(0) : '—'}</b></div>
+      <div class="clim-chip" title="Precipitable water, planetary mean">
+        <span>Water</span><b>${air.pwatMean.toFixed(0)} mm</b></div>
+      <div class="clim-chip" title="What the column is doing"><span>Column</span><b>${air.regime}</b></div>
+      <div class="clim-chip" title="Share of land in named drought">
+        <span>Drought</span><b>${(wx.droughtFrac * 100).toFixed(0)}%</b></div>
+    `;
+  }
+  const list = document.getElementById('wxList');
+  if (list) {
+    const rows = wx.list.slice(0, 4);
+    list.innerHTML = rows.length
+      ? rows.map((e) => `<div class="clim-row" data-severe="${e.id}">
+          <span class="clim-row-name">${iconSVG('stormdesk')}${e.label}</span>
+          <span class="clim-row-meta">~${e.count} · CAPE ${e.cape.toFixed(0)} · SRH ${e.srh.toFixed(0)}</span>
+        </div>`).join('')
+      : `<div class="clim-empty">Nothing severe. ${air.regime === 'stable'
+        ? 'The column is stable — nothing to lift.'
+        : 'Instability without shear organises nothing.'}</div>`;
+  }
+  const note = document.getElementById('wxNote');
+  if (note) {
+    const worst = W.wx?.worstCell ?? -1;
+    const dry = worst >= 0 && (W.drought?.[worst] || 0) > 0.25
+      ? ` · worst ground: ${droughtLabel(W.drought[worst])}`
+      : '';
+    const cc = W._conv?.classCounts;
+    const convBits = cc
+      ? ` · conv: ${cc[1] || 0} cell, ${cc[2] || 0} multi, ${cc[3] || 0} squall, ${cc[4] || 0} super, ${cc[5] || 0} MCS`
+      : '';
+    const wb = waterBudget(W);
+    const budgetBit = Number.isFinite(wb.residual)
+      ? ` · water Δ=${wb.residual.toFixed(4)}`
+      : '';
+    note.textContent = `${wx.line}${dry}${convBits}${budgetBit}`
+      + (air.calibrated ? '' : ' · uncalibrated world: joules are a sketch');
+  }
+  const snd = document.getElementById('wxSounding');
+  if (snd) {
+    /* The most unstable column on the planet, not an arbitrary cell: the panel
+       has no access to the pointer's inspect cell (that lives on the UI state,
+       not on `W`), and the peak column is the more useful sounding anyway. */
+    let hi = -1;
+    if (W.cape?.length) {
+      hi = 0;
+      for (let c = 1; c < W.cape.length; c++) if (W.cape[c] > W.cape[hi]) hi = c;
+    }
+    snd.textContent = hi >= 0 ? `Peak column · ${formatSounding(W, hi)}` : '';
+
+    const chart = document.getElementById('wxSoundingChart');
+    if (chart && hi >= 0) {
+      const s = soundingAt(W, hi);
+      if (s && s.levels.length) {
+        chart.style.display = 'block';
+        paintSoundingChart(chart, s);
+      } else {
+        chart.style.display = 'none';
+      }
+    }
+  }
+}
+
+function paintSoundingChart(canvas, snd) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  const lvs = snd.levels;
+  if (!lvs.length) return;
+
+  const pad = { l: 32, r: 8, t: 12, b: 18 };
+  const cw = w - pad.l - pad.r;
+  const ch = h - pad.t - pad.b;
+
+  let tMin = 1e9, tMax = -1e9, zMax = 0;
+  for (const lv of lvs) {
+    const lo = Math.min(lv.tK, lv.tdK, lv.parcelK);
+    const hi = Math.max(lv.tK, lv.parcelK);
+    if (lo < tMin) tMin = lo;
+    if (hi > tMax) tMax = hi;
+    if (lv.zKm > zMax) zMax = lv.zKm;
+  }
+  tMin = Math.floor(tMin - 5);
+  tMax = Math.ceil(tMax + 5);
+  zMax = Math.max(2, zMax);
+
+  const tx = (t) => pad.l + ((t - tMin) / (tMax - tMin)) * cw;
+  const ty = (z) => pad.t + ch - (z / zMax) * ch;
+
+  ctx.strokeStyle = '#334';
+  ctx.lineWidth = 0.5;
+  for (let z = 0; z <= zMax; z += Math.max(1, Math.round(zMax / 4))) {
+    const y = ty(z);
+    ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke();
+    ctx.fillStyle = '#778'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+    ctx.fillText(`${z}`, pad.l - 3, y + 3);
+  }
+  ctx.fillStyle = '#667'; ctx.font = '8px sans-serif'; ctx.textAlign = 'center';
+  ctx.fillText('km', pad.l - 3, pad.t - 2);
+
+  const drawLine = (field, color, dash) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash(dash || []);
+    ctx.beginPath();
+    for (let i = 0; i < lvs.length; i++) {
+      const x = tx(lvs[i][field]), y = ty(lvs[i].zKm);
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  };
+  /* VIZ1–6: shade CAPE (warm) and CIN (cool) between parcel and environment. */
+  for (let i = 1; i < lvs.length; i++) {
+    const x0t = tx(lvs[i - 1].tK), x0p = tx(lvs[i - 1].parcelK);
+    const x1t = tx(lvs[i].tK), x1p = tx(lvs[i].parcelK);
+    const y0 = ty(lvs[i - 1].zKm), y1 = ty(lvs[i].zKm);
+    const buoyant = (lvs[i - 1].parcelK + lvs[i].parcelK) > (lvs[i - 1].tK + lvs[i].tK);
+    ctx.fillStyle = buoyant ? 'rgba(220,120,40,0.18)' : 'rgba(60,120,200,0.15)';
+    ctx.beginPath();
+    ctx.moveTo(x0t, y0); ctx.lineTo(x0p, y0);
+    ctx.lineTo(x1p, y1); ctx.lineTo(x1t, y1);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  drawLine('tK', '#e84', []);
+  drawLine('tdK', '#4b8', []);
+  drawLine('parcelK', '#fc4', [4, 3]);
+
+  /* VIZ1–6: mark LCL, freeze, EL on the sounding chart. */
+  const markZ = (zKm, label, color) => {
+    if (!(zKm > 0) || zKm > zMax) return;
+    const ym = ty(zKm);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(pad.l, ym); ctx.lineTo(w - pad.r, ym); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = color;
+    ctx.font = '7px sans-serif'; ctx.textAlign = 'left';
+    ctx.fillText(label, pad.l + 2, ym - 2);
+  };
+  markZ(snd.lclKm, 'LCL', '#8cf');
+  markZ(snd.freezeKm, '0°C', '#adf');
+  markZ(snd.elKm, 'EL', '#fa8');
+
+  ctx.fillStyle = '#889'; ctx.font = '8px sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText('T', w - pad.r - 28, h - 3);
+  ctx.fillStyle = '#4b8';
+  ctx.fillText('Td', w - pad.r - 16, h - 3);
+  ctx.fillStyle = '#fc4';
+  ctx.fillText('P', w - pad.r - 4, h - 3);
+
+  /* VIZ11–14: hodograph mini — wind turning with height. */
+  if (snd.levels.length >= 3) {
+    const hR = 28;
+    const hCx = w - pad.r - hR - 4, hCy = pad.t + hR + 4;
+    let maxW = 1;
+    for (const lv of snd.levels) maxW = Math.max(maxW, Math.hypot(lv.uMs, lv.vMs));
+    ctx.strokeStyle = 'rgba(180,200,255,0.35)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.arc(hCx, hCy, hR, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = '#8bf';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    for (let i = 0; i < snd.levels.length; i++) {
+      const lv = snd.levels[i];
+      const hx = hCx + (lv.uMs / maxW) * hR;
+      const hy = hCy - (lv.vMs / maxW) * hR;
+      i === 0 ? ctx.moveTo(hx, hy) : ctx.lineTo(hx, hy);
+    }
+    ctx.stroke();
+    ctx.fillStyle = '#8bf'; ctx.font = '7px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('hodo', hCx, hCy + hR + 9);
+  }
+}
+
 function refreshStormDesk() {
   const snap = stormDeskSnapshot(W);
   const strip = document.getElementById('stormStrip');
@@ -696,6 +937,7 @@ function refreshStormDesk() {
   W.stormFocusId = selectedStormId || null;
   const note = document.getElementById('stormNote');
   if (note) note.textContent = snap.note;
+  refreshWeatherBlock();
   const call = document.getElementById('stormCallout');
   if (call) {
     const risky = snap.list.find((s) => s.springRisk);
@@ -754,9 +996,71 @@ function refreshCoastDesk() {
   }
 }
 
+/* VIZ34-38: refresh the weather desk — one-line, warnings, calibration. */
+function refreshWeatherDesk() {
+  const snap = weatherSnapshot(W);
+  const lineEl = document.getElementById('wxdeskLine');
+  if (lineEl) lineEl.textContent = snap.line || '—';
+
+  const stripEl = document.getElementById('wxdeskStrip');
+  if (stripEl) {
+    const chips = [];
+    if (snap.storms) chips.push(`${snap.storms} storm${snap.storms > 1 ? 's' : ''}`);
+    if (snap.severe) chips.push(`${snap.severeCount} severe`);
+    if (snap.droughtFrac > 0.02) chips.push(`drought ${(snap.droughtFrac * 100).toFixed(0)}%`);
+    chips.push(`CAPE max ${snap.capeMax.toFixed(0)}`);
+    const wx = W.wxClock;
+    if (wx?.enabled) chips.push(`wx ${wx.hourOfDay.toFixed(0)}h`);
+    stripEl.innerHTML = chips.map((t) => `<span class="clim-chip">${t}</span>`).join(' ');
+  }
+
+  const speedEl = document.getElementById('wxSpeed');
+  const speedVal = document.getElementById('wxSpeedVal');
+  if (speedEl && speedVal && document.activeElement !== speedEl) {
+    const hps = W.wxClock?.hoursPerSec || 0;
+    speedEl.value = String(hps);
+    speedVal.textContent = hps > 0 ? `${hps} h/s` : 'off';
+  }
+
+  const warnList = document.getElementById('wxWarnList');
+  if (warnList) {
+    if (!snap.list.length && snap.droughtFrac < 0.02) {
+      warnList.innerHTML = '<p class="god-note">No active warnings.</p>';
+    } else {
+      const rows = [];
+      for (const ev of snap.list.slice(0, 5)) {
+        const badge = ev.kind === 'tornado' ? '🌪' : ev.kind === 'hail' ? '🧊' : '⚡';
+        rows.push(`<div class="clim-row">${badge} ${ev.label} — ${ev.count} events${ev.ef ? ` (EF${ev.ef})` : ''}</div>`);
+      }
+      if (snap.droughtFrac > 0.02) {
+        rows.push(`<div class="clim-row">☀ ${droughtLabel(snap.droughtMax)} drought — ${(snap.droughtFrac * 100).toFixed(0)}% of land</div>`);
+      }
+      warnList.innerHTML = rows.join('');
+    }
+  }
+
+  const calibEl = document.getElementById('wxCalib');
+  if (calibEl) {
+    const cal = weatherCalib(W);
+    if (!cal) { calibEl.textContent = 'No column data yet.'; return; }
+    const row = (label, val, range) => {
+      const inBand = val >= range[0] && val <= range[1];
+      return `<div class="clim-row">${label}: <b>${val.toFixed(1)}</b> <span style="opacity:0.6">[${range[0]}–${range[1]}]</span> ${inBand ? '✓' : '⚠'}</div>`;
+    };
+    calibEl.innerHTML = [
+      row('Rain mm/yr', cal.rainMmYr, cal.targets.rainMmYr),
+      row('PWAT mm', cal.pwatMm, cal.targets.pwatMm),
+      row('Tropical CAPE', cal.tropCape, cal.targets.tropCape),
+      row('Tornado rate/yr', cal.tornadoRate, cal.targets.tornadoRate),
+      row('Drought frac', cal.droughtFrac, cal.targets.droughtFrac),
+    ].join('');
+  }
+}
+
 /** Refresh live readouts; sync slider labels without fighting user drag. */
 export function refreshClimatePanel(opts = {}) {
   if (activeDesk === 'storm') refreshStormDesk();
+  else if (activeDesk === 'wxdesk') refreshWeatherDesk();
   else if (activeDesk === 'coast') refreshCoastDesk();
   else if (activeDesk === 'system') refreshSystemDesk();
   else if (activeDesk === 'fantasy') refreshFantasyDesk();
@@ -1066,6 +1370,16 @@ export function bindClimatePanel(opts = {}) {
   document.getElementById('stormSteerN')?.addEventListener('click', () => steer(0, 0.25));
   document.getElementById('stormOverlay')?.addEventListener('click', () => {
     setOverlay?.('storm');
+  });
+
+  const wxSpeed = document.getElementById('wxSpeed');
+  markDrag(wxSpeed);
+  wxSpeed?.addEventListener('input', () => {
+    const hps = +wxSpeed.value || 0;
+    setWeatherSpeed(W, hps);
+    const label = document.getElementById('wxSpeedVal');
+    if (label) label.textContent = hps > 0 ? `${hps} h/s` : 'off';
+    onChange?.('wxSpeed');
   });
 
   const stormLabel = (id, text) => {

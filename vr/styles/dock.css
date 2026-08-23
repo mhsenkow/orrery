@@ -59,9 +59,10 @@
     bottom: calc(var(--gutter) + var(--safe-b));
     width: min(320px, calc(100vw - 24px - var(--safe-l) - var(--safe-r)));
   }
-  #timeribbon .rib-head, #timeribbon .rib-clock,
-  #timeribbon .rib-faces, #timeribbon .rib-hold,
-  #timeribbon .rib-lived-season, #timeribbon .rib-lived-speed { pointer-events:auto; }
+  /* Whole panel is clickable — do not allowlist rows (Bio was missing and
+     felt dead). Outer #timeribbon stays none so empty gutter doesn't steal
+     globe clicks. */
+  #timeribbon .ics-ribbon { pointer-events:auto; }
   .ics-ribbon {
     padding:8px 10px 7px; border-radius:12px;
     background:var(--panel); backdrop-filter:blur(16px) saturate(1.1);

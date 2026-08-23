@@ -1,16 +1,16 @@
 {
-  "generated": "2026-08-23T01:57:33.374Z",
-  "tagged": 137,
-  "untagged": 4395,
-  "physics": 4512,
-  "denom": 4532,
-  "untaggedShare": 0.9697705207413946,
+  "generated": "2026-08-23T03:24:46.374Z",
+  "tagged": 171,
+  "untagged": 4438,
+  "physics": 4588,
+  "denom": 4609,
+  "untaggedShare": 0.9628986765024952,
   "kinds": {
-    "measured": 58,
-    "fitted": 51,
+    "measured": 66,
+    "fitted": 72,
     "invented": 24,
-    "numeric": 6,
-    "derived": 1,
+    "numeric": 8,
+    "derived": 4,
     "look": 0
   },
   "topUntagged": [
@@ -267,6 +267,30 @@
       "untaggedShare": 0.9697705207413946,
       "tagged": 137,
       "untagged": 4395
+    },
+    {
+      "at": "2026-08-23T02:57:44.878Z",
+      "untaggedShare": 0.9630110317975341,
+      "tagged": 171,
+      "untagged": 4452
+    },
+    {
+      "at": "2026-08-23T02:58:08.990Z",
+      "untaggedShare": 0.9630110317975341,
+      "tagged": 171,
+      "untagged": 4452
+    },
+    {
+      "at": "2026-08-23T03:21:15.793Z",
+      "untaggedShare": 0.9628986765024952,
+      "tagged": 171,
+      "untagged": 4438
+    },
+    {
+      "at": "2026-08-23T03:24:46.374Z",
+      "untaggedShare": 0.9628986765024952,
+      "tagged": 171,
+      "untagged": 4438
     }
   ]
 }

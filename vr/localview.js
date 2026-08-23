@@ -16,6 +16,7 @@ import {
 import { isLand, isSubmerged } from './sim/cellSurface.js';
 import { squareSegments } from './sim/isoline.js';
 import { BRUSH } from './sim/god/brush.js';
+import { precipTypeAt, visibilityReduction, frostDewAt, rainbowAt } from './sim/weather.js';
 
 /** Frame ladder: I (icon) → C (metrics chip) → S → M → L → XL → Full.
  *  I/C are chrome modes; S–XL size the map. Panel width is locked to the
@@ -1698,17 +1699,30 @@ function weatherOverlay(ctx, ox, oy, cellPx, cells, side) {
         const [dx, dy] = downhillDelta(cells, side, ix, iy, c);
         const n = precip > 0.32 ? 2 + ((precip * 3) | 0) : precip > 0.14 ? 1 + ((precip * 2) | 0) : 1;
         const a = precip < 0.12 ? precip * 0.55 : Math.min(0.42, 0.08 + precip * 0.34);
-        ctx.strokeStyle = `rgba(198,218,232,${a})`;
+        const ptype = precipTypeAt(W, c);
+        const col = ptype === 'snow' ? '220,230,248'
+          : ptype === 'sleet' ? '180,210,240'
+          : ptype === 'hail' ? '240,240,255'
+          : '198,218,232';
+        ctx.strokeStyle = `rgba(${col},${a})`;
         ctx.lineWidth = precip > 0.28 ? 1.2 : 1;
-        const len = Math.max(2, cellPx * (0.1 + precip * 0.14));
+        const len = ptype === 'snow'
+          ? Math.max(1, cellPx * 0.06)
+          : Math.max(2, cellPx * (0.1 + precip * 0.14));
         for (let i = 0; i < n; i++) {
           const h = hash2(c, i * 17);
           const px = x + 2 + ((h + ((t * 36) | 0)) % Math.max(1, cellPx - 4));
           const py = y + (((h >> 8) + ((t * 62) | 0)) % cellPx);
           ctx.beginPath();
-          ctx.moveTo(px, py);
-          ctx.lineTo(px + dx * len * 0.35, py + dy * len * 0.35 + len);
-          ctx.stroke();
+          if (ptype === 'snow') {
+            ctx.fillStyle = `rgba(${col},${Math.min(0.5, a * 1.4)})`;
+            ctx.arc(px, py, Math.max(1, cellPx * 0.04), 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.moveTo(px, py);
+            ctx.lineTo(px + dx * len * 0.35, py + dy * len * 0.35 + len);
+            ctx.stroke();
+          }
         }
       }
       if (storm > 0.35 && sun < 0.05) {
@@ -1717,6 +1731,72 @@ function weatherOverlay(ctx, ox, oy, cellPx, cells, side) {
           ctx.fillStyle = 'rgba(230,240,255,0.55)';
           ctx.fillRect(x, y, cellPx, cellPx);
         }
+      }
+
+      /* LOC8-10: visibility reduction — dim cells with heavy precip/fog/dust. */
+      const vis = visibilityReduction(W, c);
+      if (vis > 0.08) {
+        ctx.fillStyle = `rgba(160,170,180,${Math.min(0.45, vis * 0.5)})`;
+        ctx.fillRect(x, y, cellPx, cellPx);
+      }
+
+      /* LOC16-18: shimmer over hot dry land in sun. */
+      if (sun > 0.35 && isLand(W, c)) {
+        const temp = W.temp?.[c] || 0.5;
+        if (temp > 0.62 && moist < 0.25 && !still) {
+          const shimA = Math.min(0.12, (temp - 0.55) * 0.4);
+          const shimY = y + cellPx - 2 + Math.sin(t * 2.8 + c * 0.7) * 1.2;
+          ctx.fillStyle = `rgba(255,240,200,${shimA})`;
+          ctx.fillRect(x, shimY, cellPx, 2);
+        }
+      }
+
+      /* LOC11-13: snow cover on ground when precipType=snow and ice present. */
+      const iceV = W.ice?.[c] || 0;
+      if (iceV > 0.08 && isLand(W, c)) {
+        const snowA = Math.min(0.35, iceV * 0.6);
+        ctx.fillStyle = `rgba(240,245,255,${snowA})`;
+        ctx.fillRect(x, y, cellPx, cellPx);
+      }
+
+      /* LOC14: puddles from recent rain on wet ground. */
+      const wetness = W.wetness?.[c] || (moist > 0.7 ? (moist - 0.55) * 0.6 : 0);
+      if (wetness > 0.08 && isLand(W, c) && iceV < 0.1 && cellPx >= 8) {
+        const puddA = Math.min(0.22, wetness * 0.35);
+        const ph = hash2(c, 0xdead);
+        const pr = Math.max(2, (cellPx * 0.2) | 0);
+        ctx.fillStyle = `rgba(100,130,170,${puddA})`;
+        ctx.beginPath();
+        ctx.ellipse(
+          x + (ph % Math.max(1, cellPx - pr * 2)) + pr,
+          y + ((ph >> 8) % Math.max(1, cellPx - pr)) + pr,
+          pr, pr * 0.5, 0, 0, Math.PI * 2
+        );
+        ctx.fill();
+      }
+
+      /* LOC15: frost/dew at dawn. */
+      if (!still) {
+        const fd = frostDewAt(W, c);
+        if (fd === 'frost' && isLand(W, c)) {
+          ctx.fillStyle = 'rgba(220,235,255,0.18)';
+          ctx.fillRect(x, y, cellPx, cellPx);
+        } else if (fd === 'dew' && isLand(W, c)) {
+          ctx.fillStyle = 'rgba(180,210,190,0.10)';
+          ctx.fillRect(x, y, cellPx, cellPx);
+        }
+      }
+
+      /* LOC19-20: rainbow when sun opposite rain. */
+      if (!still && cellPx >= 12 && rainbowAt(W, c)) {
+        const rbW = cellPx * 0.8;
+        const grad = ctx.createLinearGradient(x, y, x + rbW, y);
+        grad.addColorStop(0, 'rgba(200,50,50,0.12)');
+        grad.addColorStop(0.35, 'rgba(220,180,40,0.10)');
+        grad.addColorStop(0.65, 'rgba(40,160,80,0.10)');
+        grad.addColorStop(1, 'rgba(60,80,200,0.12)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(x, y, rbW, cellPx * 0.15);
       }
     }
   }
@@ -1867,6 +1947,59 @@ function stampIceLife(ctx, x, y, cellPx, c, life, seed, fid = 2) {
   }
 }
 
+/** Scatter flora like stands + gaps: 1–2 seed hubs, radial jitter, a few loners.
+ *  Deterministic from (seed, i) so the patch doesn't shimmer every frame. */
+function floraSpot(x, y, cellPx, seed, i, hubs) {
+  const h = hash2(seed ^ 0x7f4a, i * 31 + 11);
+  const pad = Math.max(2, cellPx * 0.12);
+  const span = Math.max(1, cellPx - pad * 2);
+  // ~1 in 5 trees are loners (gap regeneration / edge pioneers).
+  if ((h & 7) === 0 || hubs.length === 0) {
+    return {
+      px: x + pad + (h % span),
+      py: y + pad + ((h >>> 8) % span),
+      h,
+      loner: true,
+    };
+  }
+  const hub = hubs[(h >>> 16) % hubs.length];
+  // Soft Gaussian-ish clump: two independent hashes → polar offset.
+  const ang = ((h >>> 4) & 1023) / 1023 * Math.PI * 2;
+  const rad = Math.sqrt(((h >>> 14) & 1023) / 1023) * hub.r;
+  let px = hub.x + Math.cos(ang) * rad;
+  let py = hub.y + Math.sin(ang) * rad;
+  // Tiny extra jitter so siblings don't stack on the same pixel.
+  px += ((h & 15) - 7) * 0.35;
+  py += (((h >>> 20) & 15) - 7) * 0.35;
+  const lo = x + pad;
+  const hi = x + cellPx - pad;
+  const to = y + pad;
+  const bo = y + cellPx - pad;
+  return {
+    px: Math.min(hi, Math.max(lo, px)),
+    py: Math.min(bo, Math.max(to, py)),
+    h,
+    loner: false,
+  };
+}
+
+function floraHubs(x, y, cellPx, seed, cover) {
+  const n = cover > 0.85 ? 2 : 1;
+  const hubs = [];
+  const pad = cellPx * 0.22;
+  const span = Math.max(1, cellPx - pad * 2);
+  for (let k = 0; k < n; k++) {
+    const h = hash2(seed ^ 0xc1ad, k * 97 + 3);
+    hubs.push({
+      x: x + pad + (h % span),
+      y: y + pad + ((h >>> 10) % span),
+      // Dense cover → tighter stands; open cover → looser clumps.
+      r: cellPx * (0.16 + (1 - cover) * 0.22 + ((h >>> 20) & 7) * 0.01),
+    });
+  }
+  return hubs;
+}
+
 function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light, fid = 2) {
   const life = desc.life;
   const biome = desc.biome;
@@ -1874,11 +2007,12 @@ function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light, fid = 2) {
   const autumn = ph.autumn > 0.28 && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest');
   if (cls < 2 && life < 0.35) {
     const n = Math.min(fidCap(fid, 3, 6, 10), (life * 5) | 0);
+    const hubs = floraHubs(x, y, cellPx, seed, Math.min(1, life * 2));
     for (let i = 0; i < n; i++) {
-      const h = hash2(seed, i * 17);
+      const spot = floraSpot(x, y, cellPx, seed, i, hubs);
       const sway = windSway(c, i, cellPx);
       ctx.fillStyle = autumn ? 'rgba(180,110,40,0.7)' : 'rgba(90,160,60,0.7)';
-      ctx.fillRect(x + (h % cellPx) + sway[0], y + ((h >> 8) % cellPx) + sway[1], 1, Math.max(2, (cellPx * 0.12) | 0));
+      ctx.fillRect(spot.px + sway[0], spot.py + sway[1], 1, Math.max(2, (cellPx * 0.12) | 0));
     }
     return;
   }
@@ -1892,12 +2026,15 @@ function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light, fid = 2) {
   const cover = Math.min(1, life * 1.1);
   if (cover > 0.62 && (biome === 'tropRainforest' || biome === 'tempRainforest' || biome === 'boreal' || life > 0.7)) {
     const crowns = fidCap(fid, 3, 5, 8) + ((cover * 3) | 0);
+    const hubs = floraHubs(x, y, cellPx, seed, cover);
     for (let i = 0; i < crowns; i++) {
-      const h = hash2(seed, i * 17);
+      const spot = floraSpot(x, y, cellPx, seed, i, hubs);
       const sway = windSway(c, i, cellPx);
-      const px = x + cellPx * (0.18 + (i / crowns) * 0.64) + sway[0];
-      const py = y + cellPx * (0.38 + ((h >> 8) % 20) * 0.01) + sway[1];
-      const rw = cellPx * (0.28 + cover * 0.16);
+      const px = spot.px + sway[0];
+      const py = spot.py + sway[1];
+      // Loners / edge trees run a bit smaller; hub trees a bit fuller.
+      const sizeK = spot.loner ? 0.82 : (0.92 + ((spot.h >>> 12) & 7) * 0.025);
+      const rw = cellPx * (0.22 + cover * 0.14) * sizeK;
       if (cellPx >= 14) castShadow(ctx, px, py + rw * 0.4, rw, light);
       const a = autumn ? (i & 1 ? 'rgba(176,92,32,0.7)' : 'rgba(148,78,28,0.65)')
         : (i & 1 ? 'rgba(28,90,48,0.72)' : 'rgba(40,110,55,0.65)');
@@ -1910,18 +2047,21 @@ function stampFlora(ctx, x, y, cellPx, c, desc, cls, seed, light, fid = 2) {
   }
 
   const count = Math.min(1 + (life * 5) | 0, fidCap(fid, 5, 10, 16));
+  const hubs = floraHubs(x, y, cellPx, seed, cover);
   for (let i = 0; i < count; i++) {
-    const h = hash2(seed, i * 17);
+    const spot = floraSpot(x, y, cellPx, seed, i, hubs);
+    const h = spot.h;
     const sway = windSway(c, i, cellPx);
-    const px = x + 2 + (h % Math.max(1, cellPx - 4)) + sway[0];
-    const py = y + 2 + ((h >> 8) % Math.max(1, cellPx - 4)) + sway[1];
+    const px = spot.px + sway[0];
+    const py = spot.py + sway[1];
     let kind;
     if (biome === 'boreal' || biome === 'tundra' || biome === 'ice') kind = 1;
     else if (biome === 'desert') kind = (h & 3) === 0 ? 3 : 2;
     else if (biome === 'savanna' || biome === 'grassland') kind = (h & 3) ? 2 : 0;
     else if (biome === 'tropRainforest' || biome === 'tempRainforest') kind = (h & 1) ? 0 : 1;
     else kind = life > 0.45 ? ((h & 1) ? 0 : 1) : 2;
-    const s = Math.max(5, cellPx * (0.26 + ((h >> 16) & 7) * 0.03 + (kind <= 1 ? 0.06 : 0)));
+    const s = Math.max(5, cellPx * (0.26 + ((h >> 16) & 7) * 0.03 + (kind <= 1 ? 0.06 : 0)
+      + (spot.loner ? -0.04 : 0.02)));
     if (life < 0.18 && (h & 3) !== 0) continue;
     if (cellPx >= 12) castShadow(ctx, px, py, s, light);
     drawSprite(ctx, kind, px, py, s);

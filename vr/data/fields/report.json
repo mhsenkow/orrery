@@ -1,20 +1,20 @@
 {
   "updated": "2026-08-23",
-  "censusNames": 756,
-  "budget": 756,
-  "curatedRows": 56,
-  "curatedSaved": 21,
+  "censusNames": 832,
+  "budget": 835,
+  "curatedRows": 121,
+  "curatedSaved": 22,
   "byKind": {
-    "record": 32,
-    "field": 50,
-    "meta": 355,
-    "scalar": 30,
-    "derived": 281,
+    "record": 35,
+    "field": 105,
+    "meta": 362,
+    "scalar": 32,
+    "derived": 290,
     "flag": 8
   },
   "uncurated": 0,
-  "schemaCurated": 56,
-  "multiWriterCount": 372,
+  "schemaCurated": 116,
+  "multiWriterCount": 393,
   "note": "H3/H28/P1/P22 — classify via fields-census; multi-writers in multi-writers.json",
   "multiWritersTop": [
     {
@@ -34,6 +34,7 @@
         "sim/city.js",
         "sim/coast.js",
         "sim/colstack.js",
+        "sim/convect.js",
         "sim/cover.js",
         "sim/dark-scenario.mjs",
         "sim/dark-test.mjs",
@@ -79,6 +80,7 @@
         "sim/sensory.js",
         "sim/shellApply.js",
         "sim/shellFixtures.js",
+        "sim/smoke.mjs",
         "sim/stampApply.js",
         "sim/storms.js",
         "sim/substrateField.js",
@@ -88,12 +90,13 @@
         "sim/test.mjs",
         "sim/tides.js",
         "sim/trophicField.js",
+        "sim/weather.js",
         "sim/wind.js",
         "tools.js",
         "world.js"
       ],
-      "writeCount": 71,
-      "refs": 443,
+      "writeCount": 74,
+      "refs": 455,
       "owner": "tectonics",
       "saved": true
     },
@@ -134,11 +137,12 @@
         "sim/redox.js",
         "sim/scale.mjs",
         "sim/test.mjs",
+        "sim/weather.js",
         "tools.js",
         "world.js"
       ],
-      "writeCount": 36,
-      "refs": 260,
+      "writeCount": 37,
+      "refs": 278,
       "owner": "bio",
       "saved": false
     },
@@ -181,7 +185,7 @@
         "world.js"
       ],
       "writeCount": 34,
-      "refs": 115,
+      "refs": 133,
       "owner": "atmo",
       "saved": false
     },
@@ -198,6 +202,7 @@
         "sim/earth.js",
         "sim/ecology.js",
         "sim/epoch.js",
+        "sim/fronts.js",
         "sim/gaia.js",
         "sim/god/brush.js",
         "sim/god/climate.js",
@@ -216,8 +221,8 @@
         "tools.js",
         "world.js"
       ],
-      "writeCount": 27,
-      "refs": 105,
+      "writeCount": 28,
+      "refs": 109,
       "owner": "hydro",
       "saved": false
     },
@@ -253,7 +258,7 @@
         "world.js"
       ],
       "writeCount": 27,
-      "refs": 105,
+      "refs": 114,
       "owner": "hydro",
       "saved": false
     },
@@ -283,10 +288,11 @@
         "sim/present.js",
         "sim/storms.js",
         "sim/test.mjs",
+        "sim/weather.js",
         "tools.js"
       ],
-      "writeCount": 24,
-      "refs": 243,
+      "writeCount": 25,
+      "refs": 248,
       "owner": "city",
       "saved": true
     },
@@ -354,9 +360,29 @@
         "world.js"
       ],
       "writeCount": 12,
-      "refs": 43,
+      "refs": 45,
       "owner": null,
       "saved": null
+    },
+    {
+      "name": "ash",
+      "writers": [
+        "sim/alien.js",
+        "sim/fire.js",
+        "sim/god/disaster.js",
+        "sim/gpgpu/index.js",
+        "sim/iceshell.js",
+        "sim/ordnance.js",
+        "sim/planetTick.js",
+        "sim/tectonics.js",
+        "sim/test.mjs",
+        "sim/weather.js",
+        "tools.js"
+      ],
+      "writeCount": 11,
+      "refs": 72,
+      "owner": "atmo",
+      "saved": false
     },
     {
       "name": "bound",
@@ -379,25 +405,6 @@
       "saved": null
     },
     {
-      "name": "ash",
-      "writers": [
-        "sim/alien.js",
-        "sim/fire.js",
-        "sim/god/disaster.js",
-        "sim/gpgpu/index.js",
-        "sim/iceshell.js",
-        "sim/ordnance.js",
-        "sim/planetTick.js",
-        "sim/tectonics.js",
-        "sim/test.mjs",
-        "tools.js"
-      ],
-      "writeCount": 10,
-      "refs": 69,
-      "owner": "atmo",
-      "saved": false
-    },
-    {
       "name": "iceLand",
       "writers": [
         "sim/bio.js",
@@ -412,7 +419,7 @@
         "world.js"
       ],
       "writeCount": 10,
-      "refs": 40,
+      "refs": 41,
       "owner": "hydro",
       "saved": false
     },
@@ -468,7 +475,7 @@
         "sim/wind.js"
       ],
       "writeCount": 9,
-      "refs": 60,
+      "refs": 69,
       "owner": "wind",
       "saved": false
     }

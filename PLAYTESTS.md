@@ -72,3 +72,27 @@ Do not invent rows. Human sessions only.
 | Date | Build | Platform | n | Length | Comfort | Loop s | Legibility | Hook | Notes | Decision |
 |---|---|---|---|---|---|---|---|---|---|---|
 | — | — | — | 0 | — | — | — | — | — | Harness shipped (`?playtest=1`). No human sessions yet. | open |
+
+### GATE41 — Weather legibility
+
+Does the player notice the weather changed after their perturbation (Ignite / Meteor)? Record: "after you struck, what happened to the sky?" Legibility is yes if they name cloud/rain/drought/storm without coaching.
+
+| Date | Build | Platform | n | Length | Comfort | Loop s | Legibility | Hook | Notes | Decision |
+|---|---|---|---|---|---|---|---|---|---|---|
+| — | — | — | 0 | — | — | — | — | — | Stub — no sessions yet. | open |
+
+### GATE42 — Four-at-once
+
+Can the player see a hurricane, an outbreak, and a drought together on one globe? Record: "how many things are happening?" Legibility is yes if they count ≥ 3 without overlay help.
+
+| Date | Build | Platform | n | Length | Comfort | Loop s | Legibility | Hook | Notes | Decision |
+|---|---|---|---|---|---|---|---|---|---|---|
+| — | — | — | 0 | — | — | — | — | — | Stub — no sessions yet. | open |
+
+### GATE43 — Storm comfort
+
+Does localview storm motion (precip, lightning flash, wind sway) cause discomfort? Record comfort score specifically for the weather overlay; note if `reducedMotion` was active.
+
+| Date | Build | Platform | n | Length | Comfort | Loop s | Legibility | Hook | Notes | Decision |
+|---|---|---|---|---|---|---|---|---|---|---|
+| — | — | — | 0 | — | — | — | — | — | Stub — no sessions yet. | open |

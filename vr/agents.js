@@ -245,9 +245,39 @@ function kindForCell(c, rng) {
 }
 
 function writeEnt(n, c, kind, rng) {
-  const jx = (rng() - 0.5) * 0.012;
-  const jy = (rng() - 0.5) * 0.012;
-  const jz = (rng() - 0.5) * 0.012;
+  /* Vegetation used to sit almost on the cell centroid (±0.012), so a forest
+     belt read as ruler-straight sprite rows along the mesh. Animals stay close
+     to the cell; plants get a wider, clumpy scatter — stands + gaps, not a grid. */
+  let jx, jy, jz;
+  if (!isAnimalKind(kind)) {
+    const spread = 0.018 + rng() * 0.034;
+    // Soft disc (sqrt) so density peaks near a local hub, not a hard ring.
+    const ang = rng() * Math.PI * 2;
+    const rad = Math.sqrt(rng()) * spread;
+    // Tangent frame on the sphere so the scatter stays in-cell, not radial.
+    const ux = DIR[c * 3], uy = DIR[c * 3 + 1], uz = DIR[c * 3 + 2];
+    let tx = -uy, ty = ux, tz = 0;
+    let tl = Math.hypot(tx, ty, tz);
+    if (tl < 1e-6) { tx = 0; ty = -uz; tz = uy; tl = Math.hypot(tx, ty, tz) || 1; }
+    tx /= tl; ty /= tl; tz /= tl;
+    const sx = uy * tz - uz * ty;
+    const sy = uz * tx - ux * tz;
+    const sz = ux * ty - uy * tx;
+    // Hub offset so neighboring cells don't share the same lattice phase.
+    const hubAng = rng() * Math.PI * 2;
+    const hubRad = rng() * spread * 0.45;
+    const hx = Math.cos(hubAng) * hubRad;
+    const hy = Math.sin(hubAng) * hubRad;
+    const ox = hx + Math.cos(ang) * rad;
+    const oy = hy + Math.sin(ang) * rad;
+    jx = tx * ox + sx * oy;
+    jy = ty * ox + sy * oy;
+    jz = tz * ox + sz * oy;
+  } else {
+    jx = (rng() - 0.5) * 0.012;
+    jy = (rng() - 0.5) * 0.012;
+    jz = (rng() - 0.5) * 0.012;
+  }
   let x = DIR[c * 3] + jx, y = DIR[c * 3 + 1] + jy, z = DIR[c * 3 + 2] + jz;
   const l = Math.hypot(x, y, z) || 1;
   x /= l; y /= l; z /= l;
@@ -820,9 +850,37 @@ function writePos(n, c) {
   const rel = W.rule.earthLike ? Math.min(W.rule.relief, 0.018) : W.rule.relief;
   const buildLift = (W.build[c] || 0) * (W.rule.earthLike ? 0.0035 : 0.012);
   const rr = 1 + (Math.max(W.h[c], W.seaLevel) - W.seaLevel) * rel + buildLift;
-  ENT.data[o] = DIR[c * 3] * rr;
-  ENT.data[o + 1] = DIR[c * 3 + 1] * rr;
-  ENT.data[o + 2] = DIR[c * 3 + 2] * rr;
+  const kind = ENT.data[o + 4] | 0;
+  let x = DIR[c * 3], y = DIR[c * 3 + 1], z = DIR[c * 3 + 2];
+  // Keep plant scatter stable across ticks (hash of id+cell) so writePos
+  // doesn't collapse stands back onto the mesh lattice.
+  if (!isAnimalKind(kind)) {
+    const id = ENT.meta[n]?.id ?? n;
+    const h1 = Math.sin(id * 12.9898 + c * 78.233) * 43758.5453;
+    const h2 = Math.sin(id * 39.346 + c * 11.135) * 24634.6345;
+    const u1 = h1 - Math.floor(h1);
+    const u2 = h2 - Math.floor(h2);
+    const spread = 0.018 + u1 * 0.034;
+    const ang = u2 * Math.PI * 2;
+    const rad = Math.sqrt((u1 + u2) * 0.5) * spread;
+    let tx = -y, ty = x, tz = 0;
+    let tl = Math.hypot(tx, ty, tz);
+    if (tl < 1e-6) { tx = 0; ty = -z; tz = y; tl = Math.hypot(tx, ty, tz) || 1; }
+    tx /= tl; ty /= tl; tz /= tl;
+    const sx = y * tz - z * ty;
+    const sy = z * tx - x * tz;
+    const sz = x * ty - y * tx;
+    const ox = Math.cos(ang) * rad;
+    const oy = Math.sin(ang) * rad;
+    x += tx * ox + sx * oy;
+    y += ty * ox + sy * oy;
+    z += tz * ox + sz * oy;
+    const l = Math.hypot(x, y, z) || 1;
+    x /= l; y /= l; z /= l;
+  }
+  ENT.data[o] = x * rr;
+  ENT.data[o + 1] = y * rr;
+  ENT.data[o + 2] = z * rr;
 }
 
 /** Interpolate beings between cells on the presentation clock. */

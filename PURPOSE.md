@@ -30,6 +30,13 @@ Work order lives in one place: [`NEXT.md`](NEXT.md). Playtest claims live in [`P
 
 **Dark / Evil** — war, ordnance, deterrence, authored harm — is implemented but **not** one of the four faces. It is a gated optional layer (`?dark=1`). Default play and demos stay on the planet loop and Strike tools. See [`briefs/product.md`](briefs/product.md) and [`briefs/evil.md`](briefs/evil.md).
 
+## Weather (GATE46)
+
+Weather exists to make the atmosphere *legible*, not to predict it. The column, convection, and
+severe markers are diagnostic tools for the same 90-second loop: perturb the planet, descend,
+read what the sky says. Weather does not become the whole game — the pillars (Observe, Perturb,
+Descend, Read) still lead, and weather is one thing to read. See [`briefs/weather-model.md`](briefs/weather-model.md).
+
 ## Not for
 
 - Predicting next year’s climate.
