@@ -149,30 +149,58 @@ export function loadGardenVisit() {
 
 /** I23/I24 — write staging → rotate previous → commit; keep one prior slot.
  *  I26 — quota / private-mode surfaces as a user-visible report. */
+let _autosaveQuotaAt = 0;
+let _autosavePaused = false;
+let _autosaveWarned = false;
+
+export function autosavePaused() {
+  return _autosavePaused;
+}
+
 export function writeAutosave(payload) {
-  try {
+  if (_autosavePaused) return false;
+  const commit = () => {
     const next = JSON.stringify(payload);
     localStorage.setItem(AUTOSAVE_STAGING_KEY, next);
     const cur = localStorage.getItem(AUTOSAVE_KEY);
     if (cur) localStorage.setItem(AUTOSAVE_PREV_KEY, cur);
     localStorage.setItem(AUTOSAVE_KEY, next);
     localStorage.removeItem(AUTOSAVE_STAGING_KEY);
+  };
+  try {
+    commit();
     return true;
   } catch (e) {
     const msg = String(e?.name || e?.message || e);
     const quota = /quota|storage/i.test(msg);
-    try {
-      // Lazy import avoids circular deps with report at module init.
-      import('./report.js').then(({ report }) => {
-        report(
-          'broken',
-          quota ? 'ORR-SAVE-001' : 'ORR-SAVE-002',
-          quota
-            ? 'Storage full — export a save file; autosave could not write.'
-            : `Autosave failed (${msg}). Export a save if you need to keep this world.`,
-        );
-      }).catch(() => { void 0; });
-    } catch { expected('ORR-EXPECTED-STORAGE', 'autosave report path'); }
+    if (quota) {
+      try {
+        localStorage.removeItem(AUTOSAVE_PREV_KEY);
+        localStorage.removeItem(AUTOSAVE_STAGING_KEY);
+        localStorage.removeItem(AUTOSAVE_KEY);
+        commit();
+        return true;
+      } catch { expected('ORR-EXPECTED-STORAGE', 'autosave retry'); }
+      _autosavePaused = true;
+      clearAutosave();
+    }
+    const now = Date.now();
+    if (!_autosaveWarned && now - _autosaveQuotaAt > 120000) {
+      _autosaveWarned = true;
+      _autosaveQuotaAt = now;
+      try {
+        import('./report.js').then(({ report }) => {
+          report(
+            'degraded',
+            quota ? 'ORR-SAVE-001' : 'ORR-SAVE-002',
+            quota
+              ? 'Storage full — export a save file; autosave paused.'
+              : `Autosave failed (${msg}). Export a save if you need to keep this world.`,
+            { silent: true, autosave: true },
+          );
+        }).catch(() => { void 0; });
+      } catch { expected('ORR-EXPECTED-STORAGE', 'autosave report path'); }
+    }
     return false;
   }
 }

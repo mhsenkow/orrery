@@ -16,6 +16,7 @@ import {
 import { coverTick, reservoirTick } from './cover.js';
 import { clathrateTick } from './columnSketch.js';
 import { waterInventory } from './assert.js';
+import { windSpeedAt } from './wind.js';
 
 /* The water cycle's rates, in one place.
  *
@@ -202,6 +203,8 @@ export function updateContinentality(W) {
     }
   }
   W._contTick = W._tickIndex || 0;
+  if (!W._maritime || W._maritime.length !== NC) W._maritime = new Float32Array(NC);
+  for (let c = 0; c < NC; c++) W._maritime[c] = Math.exp(-(dist[c] || 0) / 900);
 }
 
 /** Scratch queue for the coast BFS — length NC, so it cannot grow without bound. */
@@ -586,7 +589,7 @@ export function hydroTick(W) {
   let evapTotal = 0;
   for (let c = 0; c < NC; c++) {
     const isSea = h[c] < seaLevel;
-    const wind = Math.sqrt((windU?.[c] || 0) ** 2 + (windV?.[c] || 0) ** 2);
+    const wind = windSpeedAt(W, c);
     const gust = 0.55 + 0.45 * Math.min(1, wind / 0.45);
     const sat = satV[c];
     const deficit = sat - vapourF[c];
@@ -631,13 +634,13 @@ export function hydroTick(W) {
     const localV = vapourF[c];
     const sat = satV[c];
     const rh = localV / Math.max(1e-6, sat);
-    const maritime = Math.exp(-(W.cont[c] || 0) / 900);
+    const maritime = W._maritime?.[c] ?? Math.exp(-(W.cont[c] || 0) / 900);
     const conv = W.converg?.[c] || 0;
     const upslope = upF[c] || 0;
     const lee = leeF[c] || 0;
     const wu = W.windU?.[c] || 0;
     const wv = W.windV?.[c] || 0;
-    const spd = Math.sqrt(wu * wu + wv * wv);
+    const spd = windSpeedAt(W, c);
 
     // How hard this column is being lifted, from every source that lifts it.
     let lift = Math.max(0, conv) * 1.7

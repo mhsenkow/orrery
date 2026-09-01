@@ -213,7 +213,16 @@ await section('url flags present (F37)', () => {
     'F-touch-44',
     /min-height:\s*44px/.test(phoneCss) && phoneCss.includes('@media (pointer: coarse)'),
   );
-  ok('F-phone-sheet', /max-width:\s*820px/.test(phoneCss) && main.includes('max-width: 820px'));
+  ok(
+    'F-phone-sheet',
+    /max-width:\s*900px/.test(phoneCss) && phoneCss.includes('max-height: 560px'),
+  );
+  const phoneLayout = readFileSync(join(__dir, '../phoneLayout.js'), 'utf8');
+  ok('F-phone-mq', phoneLayout.includes('PHONE_MQ') && phoneLayout.includes('max-height: 560px'));
+  ok(
+    'F-phone-map-toggle',
+    html.includes('id="localmaptoggle"') && phoneLayout.includes('PHONE_LOCAL_PEEK'),
+  );
   ok('F-lab-diag', html.includes('id="labDiag"') && main.includes('droppedTicks'));
   const render = readFileSync(join(__dir, '../render.js'), 'utf8');
   ok('F-cloud-vnoise', /densAt[\s\S]*?vnoise\(sp \* 3\.2/.test(render));

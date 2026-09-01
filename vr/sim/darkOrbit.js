@@ -25,13 +25,14 @@ export function resetOrbit(W) {
 export function spawnSat(W, opts = {}) {
   if (!W.sats) W.sats = [];
   if (W.dark?.orbitClosed) return null; // no access when Kessler closed orbit
+  const rng = rngOf(W, 'orbit');
   const sat = {
     kind: opts.kind || 'recon', // recon | earlywarn | nav | ew | asat
-    period: opts.period != null ? opts.period : 20 + ((Math.random() * 40) | 0),
+    period: opts.period != null ? opts.period : 20 + ((rng() * 40) | 0),
     phase: opts.phase || 0,
     owner: opts.owner ?? -1,
     alive: true,
-    alt: opts.alt ?? 0.4 + Math.random() * 0.4,
+    alt: opts.alt ?? 0.4 + rng() * 0.4,
   };
   W.sats.push(sat);
   return sat;
@@ -117,8 +118,9 @@ export function strikeLaunchSite(W, site, log = null) {
   site.dead = true;
   const owner = site.owner;
   if (owner >= 0) {
+    const rng = rngOf(W, 'orbit');
     for (const s of W.sats || []) {
-      if (s.owner === owner && s.alive && Math.random() < 0.3) {
+      if (s.owner === owner && s.alive && rng() < 0.3) {
         s.alive = false;
         W.dark.debris = (W.dark.debris | 0) + 2;
       }

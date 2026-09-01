@@ -326,7 +326,7 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
   return `<div class="ics-ribbon${pausedCls}${lived ? ' is-now' : ' is-years'}">
     <div class="rib-head">
       <span class="rib-mode">${mode}</span>
-      ${eras.length ? `<select class="rib-era" data-era-select aria-label="History era">${eraOpts}</select>` : ''}
+      ${eras.length ? `<select id="rib-era" name="rib-era" class="rib-era" data-era-select aria-label="History era">${eraOpts}</select>` : ''}
     </div>
     <div class="rib-track">${segs}<div class="rib-needle" style="left:${needle}%"></div></div>
     <div class="rib-marks">${marks}</div>
@@ -340,7 +340,7 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
     ${lived ? `<div class="rib-lived-season" role="group" aria-label="Time of year">
       <span class="rib-lived-label">Season</span>
       <div class="rib-lived-season-btns">${livedSeasonBtns}</div>
-      <input type="range" class="rib-season-range" data-lived-season-range min="0" max="359" value="${seasonDeg}" step="1" aria-label="Season angle">
+      <input type="range" id="rib-season-range" name="rib-season-range" class="rib-season-range" data-lived-season-range min="0" max="359" value="${seasonDeg}" step="1" aria-label="Season angle">
       <span class="rib-season-val" data-lived-season-val>${seasonDeg}°</span>
     </div>
     <div class="rib-lived-speed" role="group" aria-label="Sky animation speed">
@@ -355,7 +355,7 @@ export function icsRibbonHTML(ics, ageLabel, maBP, clock, panel = {}) {
       <button type="button" class="rib-pause" data-time-pause aria-pressed="${paused ? 'true' : 'false'}" title="Pause (Space)">${paused ? '▶' : '⏸'}</button>
       ${lived ? '' : `
       <button type="button" class="rib-step" data-rate-step="-1" title="Slower (,)" aria-label="Slower clock">−</button>
-      <select class="rib-rate" data-rate-select aria-label="Years per tick" title="${panel.rateCapNote || 'Years advanced per simulation tick'}">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
+      <select id="rib-rate" name="rib-rate" class="rib-rate" data-rate-select aria-label="Years per tick" title="${panel.rateCapNote || 'Years advanced per simulation tick'}">${rateOpts || `<option value="${rateId}">${clock?.rate || 'Adaptive'}</option>`}</select>
       <button type="button" class="rib-step" data-rate-step="1" title="Faster (.)" aria-label="Faster clock">+</button>
       <button type="button" class="rib-ff${panel.ff ? ' on' : ''}" data-time-ff${ff} title="4× frames until an event">⏩</button>`}
       <span class="rib-dt" data-lived-tick title="${panel.rateCapNote || ''}">${clock?.paused ? 'paused' : (lived ? (panel.livedLabel || 'lived') : dt)}</span>

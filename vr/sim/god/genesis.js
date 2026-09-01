@@ -4,6 +4,7 @@
 import { clamp } from '../../math.js';
 import { W } from '../../world.js';
 import { RULESETS } from '../../rulesets.js';
+import { resolvePlayLandscape } from '../playLandscape.js';
 import { freshSeed, makeRng } from '../rng.js';
 
 export function blankGenesis() {
@@ -11,7 +12,7 @@ export function blankGenesis() {
     name: 'Unnamed',
     seed: freshSeed(),
     rulesetId: 'terra',
-    landscape: 'auto',
+    landscape: 'familiar',
     deepTime: false,
     startAgeGa: null,
     star: { teff: 5772, mass: 1, radius: 1, ageGyr: 4.6 },
@@ -163,7 +164,7 @@ export function rulesetFromGenesis(genesis) {
   const rule = {
     ...base,
     deepTime: !!genesis.deepTime,
-    landscape: genesis.landscape || 'auto',
+    landscape: resolvePlayLandscape(genesis.landscape, base),
     startAgeGa: genesis.startAgeGa,
     nPlates: genesis.nPlates,
     continentFrac: genesis.continentFrac,

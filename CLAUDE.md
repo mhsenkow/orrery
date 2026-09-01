@@ -36,7 +36,7 @@ Module index: [`briefs/module-map.md`](briefs/module-map.md) (`npm run modules:m
 
 - Prefer `NEXT.md` over inventing new backlog files.
 - Dark / Evil stays behind `?dark=1`; do not expand until playtests land.
-- Saves are versioned (`serializeRun` v9); fixtures in `vr/data/fixtures/saves/`.
+- Saves are versioned (`serializeRun` v11); fixtures in `vr/data/fixtures/saves/`.
 - Lint/format scope starts narrow (`eslint.config.js`); expand with a ratchet, not a format-all bomb.
 - Provenance tags (`@provenance`) matter for fidelity; see `scripts/provenance.mjs`.
 - **New `W` field checklist (H29):** add a row in `vr/sim/fields.js` (name, kind, type, unit?, owner, saved); re-run `npm run fields:census` + `fields:report`; add a fast or smoke assert if it is state.

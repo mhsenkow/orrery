@@ -58,12 +58,17 @@ export function report(level, code, detail, extra = {}) {
   if (RING.length > RING_MAX) RING.shift();
 
   const msg = `[${code}] ${row.detail}`;
+  const quiet = extra.expected && !globalThis.__ORRERY_DEBUG;
+  const silent = !!extra.silent;
   if (level === 'broken') console.error(msg, extra);
-  else if (level === 'degraded') console.warn(msg, extra);
-  else console.info(msg);
+  else if (level === 'degraded' && !silent) console.warn(msg, extra);
+  else if (!quiet && !silent) console.info(msg);
 
   // J23 — do not toast-storm during boot unless broken.
-  if (_showErr && (level === 'broken' || (!_bootDefer && level === 'degraded'))) {
+  if (
+    _showErr &&
+    (level === 'broken' || (!_bootDefer && (level === 'degraded' || extra.autosave)))
+  ) {
     try {
       _showErr(row.detail, code);
     } catch {

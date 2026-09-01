@@ -166,6 +166,9 @@
     flex: 0 0 auto; opacity: 0.85; display: block;
   }
   button[aria-pressed="true"] .ico { opacity: 1; }
+  .tools button.vandal-suggest {
+    box-shadow: 0 0 0 1px rgba(255, 196, 90, .55), 0 0 12px rgba(255, 180, 60, .18);
+  }
   button .btn-label { line-height: 1; }
   .tools-more { display:none; margin-top:6px; padding-top:6px; border-top:1px solid var(--line); }
   .tools-more.open { display:flex; gap:4px; flex-wrap:wrap; }

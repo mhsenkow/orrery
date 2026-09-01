@@ -22,10 +22,10 @@
   #tip .tip-body { margin:0; font-size:11px; line-height:1.45; color:#a8b8d0; }
   #tip .tip-meta { margin:6px 0 0; font-size:10px; color:#6a7a94; }
 
-  @media (max-width:820px) {
+  @media (max-width:900px), ((max-height: 560px) and (max-width: 1100px)) {
     #topbar { gap:6px; padding:6px 8px; }
     #topbar .brand { letter-spacing:.18em; font-size:12px; }
-    /* Side-column dock only above phone sheet breakpoint (see phone.css ≤820px). */
+    /* Side-column dock only above phone sheet breakpoint (see phone.css ≤900px). */
     #catpanel {
       left: calc(var(--gutter) + var(--safe-l));
       right: calc(var(--gutter) + var(--safe-r));
@@ -167,25 +167,48 @@
   .dock-sheet-bar {
     display: none;
     flex: 0 0 auto;
+    justify-content: center;
+    padding: 8px 16px 2px;
+    min-height: 32px;
+    touch-action: none;
+  }
+  .dock-sheet-dismiss {
+    width: 100%;
+    max-width: 104px;
+    min-height: 36px;
+    padding: 4px 0 2px;
+    margin: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 10px;
-    padding: 0 4px 6px;
-    min-height: 28px;
+    gap: 5px;
+    cursor: pointer;
+    color: rgba(255, 255, 255, .42);
+  }
+  .dock-sheet-dismiss:hover,
+  .dock-sheet-dismiss:focus-visible {
+    background: rgba(255, 255, 255, .05);
+    color: rgba(255, 255, 255, .62);
   }
   .dock-sheet-bar .dock-sheet-grip {
-    width: 36px; height: 4px; border-radius: 999px;
-    background: rgba(255, 255, 255, .18);
+    width: 40px; height: 5px; border-radius: 999px;
+    background: rgba(255, 255, 255, .28);
     flex: 0 0 auto;
+    pointer-events: none;
   }
-  .dock-sheet-btn {
-    width: 40px; height: 40px; min-width: 40px; min-height: 40px;
-    padding: 0; border-radius: 10px;
-    display: inline-flex; align-items: center; justify-content: center;
-    background: rgba(255, 255, 255, .05); border: 1px solid var(--line);
+  .dock-sheet-dismiss::after {
+    content: '';
+    width: 7px; height: 7px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translateY(-1px);
+    opacity: .85;
+    pointer-events: none;
   }
-  .dock-sheet-btn .ico { width: 16px; height: 16px; }
-  .dock-sheet-btn .btn-label { display: none; }
 
   #localpanel.parked {
     opacity: 0; pointer-events: none; visibility: hidden;

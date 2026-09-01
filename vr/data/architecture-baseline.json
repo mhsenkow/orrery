@@ -1,13 +1,13 @@
 {
-  "updated": "2026-08-23",
-  "mainJsLines": 6018,
-  "renderJsLines": 3201,
-  "indexHtmlLines": 848,
-  "indexHtmlIds": 214,
+  "updated": "2026-09-01",
+  "mainJsLines": 5560,
+  "renderJsLines": 3152,
+  "indexHtmlLines": 851,
+  "indexHtmlIds": 216,
   "inlineCssLines": 211,
   "stylesCssFiles": 7,
-  "stylesCssBytes": 80787,
+  "stylesCssBytes": 87523,
   "censusNames": 832,
   "bareCatches": 0,
-  "note": "architecture-400 ratchets — growth fails CI. 2026-08-23: censusNames 778→832 for weather wave (aircol/weather/convect/fronts fields); stylesCssBytes +41 for ribbon clickability (whole .ics-ribbon pointer-events)."
+  "note": "architecture-400 ratchets — growth fails CI"
 }

@@ -270,9 +270,9 @@
 
   <div id="dock">
     <div class="dock-sheet-bar" id="dockSheetBar">
-      <button type="button" id="dockshrink" class="dock-sheet-btn" title="Close menu" aria-label="Close menu">Close</button>
-      <span class="dock-sheet-grip" aria-hidden="true"></span>
-      <span style="width:40px" aria-hidden="true"></span>
+      <button type="button" id="dockshrink" class="dock-sheet-dismiss" title="Swipe down or tap to close" aria-label="Close menu">
+        <span class="dock-sheet-grip" aria-hidden="true"></span>
+      </button>
     </div>
     <div class="dock-tabs">
       <button type="button" data-tab="tools" aria-pressed="true" title="Verbs — raise, seed, strike, inspect">Tools</button>
@@ -296,43 +296,45 @@
           <p class="god-note phone-only" style="margin:0 0 8px"><b>Pick a verb</b>, then tap the globe. The chip bottom-right shows what’s armed — tap the eye to look / spin again.</p>
           <div class="tools" id="toolsLand"></div>
           <div id="godprice" class="hint-mini" style="margin-top:6px"></div>
-          <div class="god-h" data-sec-icon="brush" style="margin-top:12px">This stroke</div>
-          <div class="view-row">
-            <label for="brushmask">Only on</label>
-            <select id="brushmask">
-              <option value="">anywhere</option>
-              <option value="land">land</option>
-              <option value="ocean">ocean</option>
-              <option value="dry">dry ground</option>
-              <option value="wet">wet ground</option>
-              <option value="continent">continents</option>
-              <option value="snow">ice</option>
-              <option value="belowSnow">ice-free</option>
-            </select>
-          </div>
-          <div class="view-row">
-            <label for="brushsnap">Snap to</label>
-            <select id="brushsnap">
-              <option value="">off</option>
-              <option value="coast">coastline</option>
-              <option value="bound">plate edge</option>
-              <option value="river">river</option>
-              <option value="biome">biome edge</option>
-            </select>
-          </div>
-          <div class="view-row">
-            <label for="brushhard">Edge</label>
-            <input type="range" id="brushhard" min="0" max="100" value="35" title="Soft → hard brush">
-          </div>
-          <div class="view-row">
-            <label for="brushsym">Symmetry</label>
-            <select id="brushsym" title="Mirror the stroke">
-              <option value="">off</option>
-              <option value="equator">equator</option>
-              <option value="lat">opposite longitude</option>
-              <option value="great">great circle</option>
-            </select>
-          </div>
+          <details class="god-details" id="strokeDetails">
+            <summary>This stroke</summary>
+            <div class="view-row">
+              <label for="brushmask">Only on</label>
+              <select id="brushmask">
+                <option value="">anywhere</option>
+                <option value="land">land</option>
+                <option value="ocean">ocean</option>
+                <option value="dry">dry ground</option>
+                <option value="wet">wet ground</option>
+                <option value="continent">continents</option>
+                <option value="snow">ice</option>
+                <option value="belowSnow">ice-free</option>
+              </select>
+            </div>
+            <div class="view-row">
+              <label for="brushsnap">Snap to</label>
+              <select id="brushsnap">
+                <option value="">off</option>
+                <option value="coast">coastline</option>
+                <option value="bound">plate edge</option>
+                <option value="river">river</option>
+                <option value="biome">biome edge</option>
+              </select>
+            </div>
+            <div class="view-row">
+              <label for="brushhard">Edge</label>
+              <input type="range" id="brushhard" min="0" max="100" value="35" title="Soft → hard brush">
+            </div>
+            <div class="view-row">
+              <label for="brushsym">Symmetry</label>
+              <select id="brushsym" title="Mirror the stroke">
+                <option value="">off</option>
+                <option value="equator">equator</option>
+                <option value="lat">opposite longitude</option>
+                <option value="great">great circle</option>
+              </select>
+            </div>
+          </details>
           <details class="god-details">
             <summary>Height layers</summary>
             <div id="layerlist" class="layer-list" role="listbox" aria-label="Height layers"></div>
@@ -449,8 +451,8 @@
 
         <div class="suite-desk" data-suite-panel="god" data-desk-panel="genesis" hidden>
           <div class="god-h" data-sec-icon="genesis">New world</div>
-          <input id="genesisname" placeholder="Name (optional)">
-          <input id="genesisseed" placeholder="Seed, word-id, or paste a link">
+          <input id="genesisname" name="genesisname" placeholder="Name (optional)">
+          <input id="genesisseed" name="genesisseed" placeholder="Seed, word-id, or paste a link">
           <div class="view-row">
             <label for="genesisland">Shape</label>
             <select id="genesisland" title="Where the continents start"></select>
@@ -771,7 +773,7 @@
       </div>
     </div>
     <div id="catkinds"></div>
-    <input id="catq" type="search" placeholder="Search Earth, Europa, TRAPPIST…" autocomplete="off">
+    <input id="catq" name="catq" type="search" placeholder="Search Earth, Europa, TRAPPIST…" autocomplete="off">
     <div id="cattools" class="cat-tools" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0">
       <label>Sort
         <select id="catsort" aria-label="Sort worlds">
@@ -815,6 +817,7 @@
         <div class="local-opt"><span>Track</span><div class="seg" id="localSeek"></div></div>
       </div>
       <canvas id="localview" width="280" height="280"></canvas>
+      <button type="button" id="localmaptoggle" class="phone-only local-map-toggle" hidden aria-pressed="false">Full map</button>
       <button type="button" id="localpark" title="Tuck map" aria-label="Tuck map">Tuck</button>
       <div id="lifecard" hidden>
         <div class="lc-kicker">following</div>
@@ -842,6 +845,6 @@
     <button type="button" id="kbdSheetClose">Close</button>
   </div>
 </div>
-<script type="module" src="./main.js?v=alive77"></script>
+<script type="module" src="./main.js?v=alive84"></script>
 </body>
 </html>

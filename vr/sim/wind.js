@@ -414,6 +414,18 @@ function upperFlow(W, fScale, surface) {
   W._jetMax = jetMax;
   W._jetCoreLat = jetLat;
   W._jetCoreU = jetSpd;
+  if (!W._windSpd || W._windSpd.length !== NC) W._windSpd = new Float32Array(NC);
+  for (let c = 0; c < NC; c++) {
+    const u = W.windU[c] || 0, v = W.windV[c] || 0;
+    W._windSpd[c] = Math.sqrt(u * u + v * v);
+  }
+}
+
+/** Cached wind magnitude — filled each tick by geostrophicWind. */
+export function windSpeedAt(W, c) {
+  if (W._windSpd) return W._windSpd[c] || 0;
+  const u = W.windU?.[c] || 0, v = W.windV?.[c] || 0;
+  return Math.sqrt(u * u + v * v);
 }
 
 /** Band name at a latitude for instruments. */

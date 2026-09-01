@@ -102,6 +102,7 @@ export function blankTraits() {
 }
 
 let _nextId = 1;
+let _cladeStamp = null;
 
 export function createTree() {
   _nextId = 1;
@@ -653,14 +654,19 @@ export function evolveTick(W, chronLog) {
   }
 
   if (W.cladeCount) {
+    const stamp = W._tickIndex || 0;
+    if (!_cladeStamp || _cladeStamp.length !== NC + 1) _cladeStamp = new Int32Array(NC + 1);
     for (let c = 0; c < NC; c++) {
-      const ids = new Set();
-      if (W.popId[c]) ids.add(W.popId[c]);
-      for (let k = 0; k < 4; k++) {
-        const n = NBR[c * 4 + k];
-        if (W.popId[n]) ids.add(W.popId[n]);
+      let n = 0;
+      const self = W.popId[c];
+      if (self) {
+        if (_cladeStamp[self] !== stamp) { _cladeStamp[self] = stamp; n++; }
       }
-      W.cladeCount[c] = Math.min(255, ids.size);
+      for (let k = 0; k < 4; k++) {
+        const id = W.popId[NBR[c * 4 + k]];
+        if (id && _cladeStamp[id] !== stamp) { _cladeStamp[id] = stamp; n++; }
+      }
+      W.cladeCount[c] = Math.min(255, n);
     }
   }
 

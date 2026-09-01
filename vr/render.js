@@ -1,10 +1,9 @@
 /** WebGL2 rendering: planet, atmosphere, clouds, extruded entities. */
 
-import { m4, m4ident, m4mul, m4trs, m3fromM4rot, clamp, lerp } from './math.js';
+import { m4, m4ident, m4mul, m4trs, m3fromM4rot, clamp, lerp, showErr } from './math.js';
 import { N, NF, NC, warp, facePoint, dirToCell, sampleFaceField, cellAt, DIR, NBR, cellSizeKm } from './sphere.js';
 import { W } from './world.js';
-import { ENT, MAX_ENT } from './agents.js';
-import { showErr } from './math.js';
+import { ENT } from './agents.js';
 import { lifeRGB, oceanLifeRGB, GUILD_RGB, dominantGuildAt } from './sim/lifeColour.js';
 import { GUILDS } from './sim/redox.js';
 import { BIOMES } from './sim/ecology.js';
@@ -53,6 +52,13 @@ function prog(vs, fs) {
     u[nm] = gl.getUniformLocation(p, nm);
   }
   p.u = u;
+  const a = {};
+  const na = gl.getProgramParameter(p, gl.ACTIVE_ATTRIBUTES);
+  for (let i = 0; i < na; i++) {
+    const nm = gl.getActiveAttrib(p, i).name;
+    a[nm] = gl.getAttribLocation(p, nm);
+  }
+  p.a = a;
   return p;
 }
 function upload(b, arr, usage) {
@@ -140,6 +146,8 @@ let _plumeCells = null;
 let _reentryCells = null;
 let _mushroomAmt = null;
 let _mushroomCore = null;
+let _bfsSeen = null;
+let _bfsQ = null;
 
 let weldGroups = [];
 
@@ -331,6 +339,8 @@ let buf, atlasTex, SPH_COUNT = 0, GRID_COUNT = 0, CELL_GRID_COUNT = 0, NSTAR = 1
  *  limb clips to white where two differently-scaled images overlap. */
 let _exposure = 1;
 const MVP = m4(), MODEL = m4(), NRM = new Float32Array(9), TMP = m4();
+const _TMP2 = m4(), _TMP3 = m4();
+const _defaultSun = new Float32Array([1, 0, 0]);
 let _cellGrid = null;
 let _localRim = null;
 let LOCAL_RIM_COUNT = 0;
@@ -811,6 +821,10 @@ void main(){
   col += atmo * hair * (1.5 + 0.8 * (1.0 - lit)) * uAtmoK;
   // Outer glow / limb airglow
   col += vec3(0.2,0.55,0.4)*f2*(1.0-lit)*uAtmoK*0.4;
+  // Sunset band — long-path Rayleigh at the terminator warms to deep orange
+  float termGraze = exp(-pow(dot(N,uSun) - 0.02, 2.0) * 60.0);
+  col += vec3(1.0, 0.42, 0.12) * termGraze * f * uAtmoK * 0.28;
+  col += vec3(0.9, 0.25, 0.08) * termGraze * hair * uAtmoK * 0.55;
   // Aurora contribution on shell
   float magLat=abs(N.y);
   float oval=exp(-pow(magLat-0.72,2.0)*70.0)*uMag;
@@ -899,6 +913,12 @@ void main(){
   // Silver lining toward sun
   shade += vec3(1.0,0.95,0.88) * pow(max(dot(V,-L),0.0), 8.0) * dens * 0.55;
   shade *= 1.0 - dens * 0.2 * (1.0 - nl);
+  // Terminator glow — clouds at the day/night edge catch long-path sunset light
+  float termW = exp(-pow(nl - 0.04, 2.0) * 55.0);
+  shade = mix(shade, vec3(1.0, 0.52, 0.22) * (0.55 + 0.45 * dens), termW * 0.45);
+  // Night-side clouds dimly lit by earthshine
+  float nightF = pow(clamp(1.0 - nl, 0.0, 1.0), 2.5);
+  shade = mix(shade, vec3(0.06, 0.08, 0.14), nightF * 0.65);
   o=vec4(shade,a);
 }`);
 
@@ -968,7 +988,17 @@ in vec3 aPos; in float aMag; uniform mat4 uVP; out float vM;
 void main(){ gl_Position=uVP*vec4(aPos,1.0); gl_PointSize=aMag*2.6; vM=aMag; }
 `, F_HEAD + `
 in float vM; out vec4 o;
-void main(){ vec2 d=gl_PointCoord-0.5; float a=smoothstep(0.5,0.05,length(d)); o=vec4(vec3(0.78,0.84,1.0)*vM*a,a); }`);
+uniform float uTime;
+void main(){
+  vec2 d=gl_PointCoord-0.5;
+  float a=smoothstep(0.5,0.05,length(d));
+  // Color temperature variation — bright stars tend warm, dim stars cool
+  float warm = fract(vM * 7.31) * 0.4;
+  vec3 tint = mix(vec3(0.72, 0.82, 1.0), vec3(1.0, 0.88, 0.72), warm);
+  // Subtle scintillation — atmospheric seeing
+  float twinkle = 0.88 + 0.12 * sin(uTime * (2.8 + vM * 1.7) + vM * 43.0);
+  o=vec4(tint * vM * a * twinkle, a);
+}`);
 
   flatProg = prog(V_HEAD + `
 in vec3 aPos; uniform mat4 uMVP;
@@ -1341,13 +1371,13 @@ function syncIsolines() {
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.coastLine);
       gl.bufferData(gl.ARRAY_BUFFER, W.coastLine.subarray(0, COAST_COUNT * 3), gl.DYNAMIC_DRAW);
     }
+    if (!_riverScratch) _riverScratch = new Float32Array(4000 * 6);
+    RIVER_LINE_COUNT = fillRiverLines(W, _riverScratch, 3500);
+    if (RIVER_LINE_COUNT > 0 && buf.riverLine) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, buf.riverLine);
+      gl.bufferData(gl.ARRAY_BUFFER, _riverScratch.subarray(0, RIVER_LINE_COUNT * 3), gl.DYNAMIC_DRAW);
+    }
     _isoBufTick = tick;
-  }
-  if (!_riverScratch) _riverScratch = new Float32Array(4000 * 6);
-  RIVER_LINE_COUNT = fillRiverLines(W, _riverScratch, 3500);
-  if (RIVER_LINE_COUNT > 0 && buf.riverLine) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, buf.riverLine);
-    gl.bufferData(gl.ARRAY_BUFFER, _riverScratch.subarray(0, RIVER_LINE_COUNT * 3), gl.DYNAMIC_DRAW);
   }
 }
 
@@ -1501,23 +1531,25 @@ export function refreshColours(alpha = 1) {
   else _mushroomAmt.fill(0);
   if (!_mushroomCore || _mushroomCore.length !== NC) _mushroomCore = new Uint8Array(NC);
   else _mushroomCore.fill(0);
+  if (!_bfsSeen || _bfsSeen.length !== NC) _bfsSeen = new Uint8Array(NC);
   for (const m of W.mushrooms || []) {
     const c = m.cell | 0;
     if (c < 0 || c >= NC) continue;
     const age = m.age || 0;
     const pow = Math.max(0.4, m.power || 1);
-    // Cap radius grows with age; stem stays at epicentre.
     const capR = Math.min(5, 1 + ((age / 4) | 0) + (pow > 1.2 ? 1 : 0));
     const grow = Math.min(1, age / 5);
     const fade = age < 28 ? 1 : Math.max(0, 1 - (age - 28) / 28);
     const strength = grow * fade * pow;
     _mushroomAmt[c] = Math.max(_mushroomAmt[c], strength);
     _mushroomCore[c] = Math.max(_mushroomCore[c], Math.min(255, ((m.fireball || 0) * 200 + (age < 8 ? 180 : 40)) | 0));
-    // BFS out to capR for the orange ring.
-    const q = [[c, 0]];
-    const seen = new Set([c]);
-    while (q.length) {
-      const [x, d] = q.shift();
+    _bfsSeen.fill(0);
+    _bfsSeen[c] = 1;
+    if (!_bfsQ) _bfsQ = new Int32Array(NC * 2);
+    _bfsQ[0] = c; _bfsQ[1] = 0;
+    let head = 0, tail = 2;
+    while (head < tail) {
+      const x = _bfsQ[head++], d = _bfsQ[head++];
       if (d > 0) {
         const ring = d === capR ? 1.15 : (d < capR ? 0.55 : 0.25);
         _mushroomAmt[x] = Math.max(_mushroomAmt[x], strength * ring * (d === capR ? 1 : 0.7));
@@ -1525,10 +1557,11 @@ export function refreshColours(alpha = 1) {
       if (d >= capR) continue;
       for (let k = 0; k < 4; k++) {
         const n = NBR[x * 4 + k];
-        if (!seen.has(n)) { seen.add(n); q.push([n, d + 1]); }
+        if (!_bfsSeen[n]) { _bfsSeen[n] = 1; _bfsQ[tail++] = n; _bfsQ[tail++] = d + 1; }
       }
     }
   }
+  const _deep = [0, 0, 0], _seaCol = [0, 0, 0], _col = [0, 0, 0];
   for (let c = 0; c < NC; c++) {
     const temp = lerp(W.prevTemp[c], W.temp[c], alpha);
     const life = lerp(W.prevLife[c], W.life[c], alpha);
@@ -1538,101 +1571,85 @@ export function refreshColours(alpha = 1) {
     let col;
     if (isSubmerged(W, c)) {
       const d = oceanDepth01(sea - W.h[c]);
-      const deep = [
-        lerp(16, 4, d),
-        lerp(32, 8, d),
-        lerp(48, 14, d),
-      ];
+      _deep[0] = lerp(16, 4, d); _deep[1] = lerp(32, 8, d); _deep[2] = lerp(48, 14, d);
       const base = R.ocean(1 - d);
       const tint = W._epoch?.oceanRgb;
-      const seaCol = tint
-        ? [
-          base[0] * 0.45 + tint[0] * 0.55,
-          base[1] * 0.45 + tint[1] * 0.55,
-          base[2] * 0.45 + tint[2] * 0.55,
-        ]
-        : base;
-      col = ice > 0.5 ? [222, 234, 246] : [
-        lerp(seaCol[0], deep[0], 0.5),
-        lerp(seaCol[1], deep[1], 0.5),
-        lerp(seaCol[2], deep[2], 0.5),
-      ];
+      if (tint) {
+        _seaCol[0] = base[0] * 0.45 + tint[0] * 0.55;
+        _seaCol[1] = base[1] * 0.45 + tint[1] * 0.55;
+        _seaCol[2] = base[2] * 0.45 + tint[2] * 0.55;
+      } else {
+        _seaCol[0] = base[0]; _seaCol[1] = base[1]; _seaCol[2] = base[2];
+      }
+      if (ice > 0.5) {
+        col = _col; col[0] = 222; col[1] = 234; col[2] = 246;
+      } else {
+        col = _col;
+        col[0] = lerp(_seaCol[0], _deep[0], 0.5);
+        col[1] = lerp(_seaCol[1], _deep[1], 0.5);
+        col[2] = lerp(_seaCol[2], _deep[2], 0.5);
+      }
       // Sea ice leads / polynyas — not a flat white sheet. Item 142.
       if (ice > 0.35 && ice < 0.85) {
         const lead = hash01((DIR[c * 3] * 4096) | 0, ((DIR[c * 3 + 1] * 4096) | 0) ^ 0x11fe);
         if (lead > 0.7) {
-          col = [lerp(col[0], 40, 0.55), lerp(col[1], 90, 0.55), lerp(col[2], 140, 0.55)];
+          col[0] = lerp(col[0], 40, 0.55); col[1] = lerp(col[1], 90, 0.55); col[2] = lerp(col[2], 140, 0.55);
         } else {
-          col = [222, 234, 246];
+          col[0] = 222; col[1] = 234; col[2] = 246;
         }
       } else if (ice >= 0.85) {
-        col = [248, 251, 255];
+        col[0] = 248; col[1] = 251; col[2] = 255;
       }
       // Whitecaps / wind roughness — storm brightens the sea
       const wind = Math.hypot(W.windU?.[c] || 0, W.windV?.[c] || 0);
       const seaState = Math.max(wind, W.waveHt?.[c] || 0);
       if (seaState > 0.28 && ice < 0.3) {
         const foam = clamp(Math.pow(seaState, 3) * 0.55, 0, 0.45);
-        col = [lerp(col[0], 235, foam), lerp(col[1], 238, foam), lerp(col[2], 245, foam)];
+        col[0] = lerp(col[0], 235, foam); col[1] = lerp(col[1], 238, foam); col[2] = lerp(col[2], 245, foam);
       }
       const sst = W.oceanSurf?.[c];
       if (sst != null && ice < 0.25) {
         const warm = clamp((sst - 0.45) * 1.4, -0.35, 0.45);
-        col = [
-          col[0] + warm * 28,
-          col[1] + warm * 8,
-          col[2] - warm * 22,
-        ];
+        col[0] += warm * 28;
+        col[1] += warm * 8;
+        col[2] -= warm * 22;
       }
-      // Rain darkening under storm cells
       if ((W.precip?.[c] || 0) > 0.25 && ice < 0.2) {
         const rk = clamp(W.precip[c], 0, 1) * 0.22;
-        col = [col[0] * (1 - rk), col[1] * (1 - rk), col[2] * (1 - rk * 0.65)];
+        col[0] *= (1 - rk); col[1] *= (1 - rk); col[2] *= (1 - rk * 0.65);
       }
-      // Ocean colour from NPP / CDOM / sediment — guild-tinted blooms.
       const npp = W.npp?.[c] || 0;
       const sed = W.sediment?.[c] || 0;
       if (npp > 0.08) {
         const k = clamp(npp, 0, 1) * 0.55;
         const bloomCol = oceanLifeRGB(W, c, npp);
-        col = [
-          lerp(col[0], bloomCol[0], k),
-          lerp(col[1], bloomCol[1], k),
-          lerp(col[2], bloomCol[2], k),
-        ];
+        col[0] = lerp(col[0], bloomCol[0], k);
+        col[1] = lerp(col[1], bloomCol[1], k);
+        col[2] = lerp(col[2], bloomCol[2], k);
       }
       if (sed > 0.12) {
         const k = clamp(sed, 0, 1) * 0.45;
-        col = [lerp(col[0], 180, k), lerp(col[1], 140, k), lerp(col[2], 70, k)];
+        col[0] = lerp(col[0], 180, k); col[1] = lerp(col[1], 140, k); col[2] = lerp(col[2], 70, k);
       }
-      // Tropical carbonate shelves — turquoise, not the open-ocean navy.
       if (d < 0.22 && ice < 0.2 && npp < 0.28 && temp > 0.48) {
         const tk = (1 - d / 0.22) * 0.55;
-        col = [
-          lerp(col[0], 36, tk),
-          lerp(col[1], 178, tk),
-          lerp(col[2], 186, tk),
-        ];
+        col[0] = lerp(col[0], 36, tk); col[1] = lerp(col[1], 178, tk); col[2] = lerp(col[2], 186, tk);
       }
-      // Phytoplankton / reef — guild-tinted
       const bloom = Math.max(life * (W.h[c] < sea && (sea - W.h[c]) < 0.14 ? 1 : 0.35), W.reef[c]);
       if (bloom > 0.12) {
         const k = clamp((bloom - 0.12) / 0.7, 0, 1) * (R.earthLike ? 0.6 : 1);
         if (W.reef[c] > 0.05 && temp > 0.74 && life < 0.15) {
-          col = [lerp(col[0], 245, k), lerp(col[1], 242, k), lerp(col[2], 235, k)];
+          col[0] = lerp(col[0], 245, k); col[1] = lerp(col[1], 242, k); col[2] = lerp(col[2], 235, k);
         } else {
           const live = oceanLifeRGB(W, c, bloom);
-          col = [
-            lerp(col[0], live[0], k * 0.8),
-            lerp(col[1], live[1], k * 0.85),
-            lerp(col[2], live[2], k * 0.75),
-          ];
+          col[0] = lerp(col[0], live[0], k * 0.8);
+          col[1] = lerp(col[1], live[1], k * 0.85);
+          col[2] = lerp(col[2], live[2], k * 0.75);
         }
       }
-      // Sediment plumes at river mouths. Item 146.
       if (W.flow?.[c] > 0.8 && (sea - W.h[c]) < 0.08) {
         const k = Math.min(0.42, Math.log1p(W.flow[c]) * 0.12);
-        col = [lerp(col[0], 190, k), lerp(col[1], 150, k), lerp(col[2], 80, k)];
+        col[0] = lerp(col[0], 190, k); col[1] = lerp(col[1], 150, k); col[2] = lerp(col[2], 80, k);
       }
       // Storm field / surge — named cyclones read as bright rain + muddy surge
       const storm = W.stormField?.[c] || 0;
@@ -1640,37 +1657,29 @@ export function refreshColours(alpha = 1) {
       const trail = W.stormTrail?.[c] || 0;
       if (trail > 0.12 && ice < 0.4) {
         const tk = clamp(trail, 0, 1) * 0.35;
-        col = [lerp(col[0], 255, tk), lerp(col[1], 190, tk * 0.8), lerp(col[2], 70, tk * 0.5)];
+        col[0] = lerp(col[0], 255, tk); col[1] = lerp(col[1], 190, tk * 0.8); col[2] = lerp(col[2], 70, tk * 0.5);
       }
       if (storm > 0.08 && ice < 0.35) {
         const sk = clamp(storm, 0, 1);
-        col = [
-          lerp(col[0], 36, sk * 0.62),
-          lerp(col[1], 52, sk * 0.5),
-          lerp(col[2], 78, sk * 0.4),
-        ];
+        col[0] = lerp(col[0], 36, sk * 0.62);
+        col[1] = lerp(col[1], 52, sk * 0.5);
+        col[2] = lerp(col[2], 78, sk * 0.4);
         if (W.h[c] < sea) {
-          col = [
-            lerp(col[0], 230, sk * 0.38),
-            lerp(col[1], 235, sk * 0.4),
-            lerp(col[2], 245, sk * 0.42),
-          ];
+          col[0] = lerp(col[0], 230, sk * 0.38);
+          col[1] = lerp(col[1], 235, sk * 0.4);
+          col[2] = lerp(col[2], 245, sk * 0.42);
         }
       }
       if (surge > 0.01) {
         const gk = clamp(surge * 12, 0, 1);
-        col = [
-          lerp(col[0], 90, gk * 0.4),
-          lerp(col[1], 130, gk * 0.35),
-          lerp(col[2], 150, gk * 0.45),
-        ];
+        col[0] = lerp(col[0], 90, gk * 0.4);
+        col[1] = lerp(col[1], 130, gk * 0.35);
+        col[2] = lerp(col[2], 150, gk * 0.45);
       }
       if (inter > 0.15 && (sea - W.h[c]) < 0.035) {
-        col = [
-          lerp(col[0], 125, inter * 0.5),
-          lerp(col[1], 115, inter * 0.45),
-          lerp(col[2], 72, inter * 0.4),
-        ];
+        col[0] = lerp(col[0], 125, inter * 0.5);
+        col[1] = lerp(col[1], 115, inter * 0.45);
+        col[2] = lerp(col[2], 72, inter * 0.4);
       }
     } else if (W.noSurface) {
       const extra = {
@@ -1707,9 +1716,9 @@ export function refreshColours(alpha = 1) {
       // Intertidal ochre — coast that breathes with the presentation tide
       if (inter > 0.08) {
         const wet = (W.tideWet?.[c] || 0) * 0.35 + tidePhase(c) * 0.65;
-        const mud = [150 + wet * 40, 118 + wet * 22, 68];
+        const mr = 150 + wet * 40, mg = 118 + wet * 22, mb = 68;
         const ik = clamp(inter, 0, 1) * (0.55 + wet * 0.35);
-        col = [lerp(col[0], mud[0], ik), lerp(col[1], mud[1], ik), lerp(col[2], mud[2], ik)];
+        col[0] = lerp(col[0], mr, ik); col[1] = lerp(col[1], mg, ik); col[2] = lerp(col[2], mb, ik);
       }
       const biome = W.biome ? BIOMES[W.biome[c]] : '';
       const gnd = biome && GROUND[biome];
@@ -1725,18 +1734,18 @@ export function refreshColours(alpha = 1) {
           gb = gb * w1 + g2[2] * w2;
         }
         const k = life > 0.12 ? 0.16 : 0.34;
-        col = [lerp(col[0], gr, k), lerp(col[1], gg, k), lerp(col[2], gb, k)];
+        col[0] = lerp(col[0], gr, k); col[1] = lerp(col[1], gg, k); col[2] = lerp(col[2], gb, k);
       }
       const cd = W.coastDist?.[c];
       if (cd != null && cd >= 0 && cd < 160 && ice < 0.4) {
         const k = (1 - cd / 160) * 0.18;
-        col = [lerp(col[0], 194, k), lerp(col[1], 168, k), lerp(col[2], 118, k)];
+        col[0] = lerp(col[0], 194, k); col[1] = lerp(col[1], 168, k); col[2] = lerp(col[2], 118, k);
       }
       const autumn = Math.max(0, -Math.sin(season) * DIR[c * 3 + 1]);
       if (autumn > 0.3 && life > 0.1 && ice < 0.45 && usesWhittakerCover(W._planetKind, W)
         && (biome === 'tempDeciduous' || biome === 'boreal' || biome === 'tempRainforest')) {
         const k = Math.min(0.4, autumn * 0.45) * Math.min(1, life * 2);
-        col = [lerp(col[0], 196, k), lerp(col[1], 108, k), lerp(col[2], 40, k)];
+        col[0] = lerp(col[0], 196, k); col[1] = lerp(col[1], 108, k); col[2] = lerp(col[2], 40, k);
       }
       // Surface water only — groundwater is not a colour. Streams stay off the
       // vertex bake (they are lines on the map / a shader trunk) so continents
@@ -1744,55 +1753,51 @@ export function refreshColours(alpha = 1) {
       const wet = waterStage(c);
       if (wet.stage === 'lake' && ice < 0.55) {
         const lk = Math.min(0.62, 0.28 + wet.amount * 0.38);
-        col = [lerp(col[0], 14, lk), lerp(col[1], 42, lk), lerp(col[2], 66, lk)];
+        col[0] = lerp(col[0], 14, lk); col[1] = lerp(col[1], 42, lk); col[2] = lerp(col[2], 66, lk);
       } else if (wet.stage === 'river' && ice < 0.55) {
         const fk = Math.min(0.32, wet.amount * 0.42);
-        col = [lerp(col[0], 18, fk), lerp(col[1], 46, fk), lerp(col[2], 68, fk)];
+        col[0] = lerp(col[0], 18, fk); col[1] = lerp(col[1], 46, fk); col[2] = lerp(col[2], 68, fk);
       } else if (wet.stage === 'pond' && ice < 0.5) {
         const pk = wet.amount * 0.28;
-        col = [lerp(col[0], 24, pk), lerp(col[1], 54, pk), lerp(col[2], 72, pk)];
+        col[0] = lerp(col[0], 24, pk); col[1] = lerp(col[1], 54, pk); col[2] = lerp(col[2], 72, pk);
       } else if ((wet.stage === 'sheet' || wet.stage === 'drip') && ice < 0.45) {
         const sk = wet.stage === 'drip' ? wet.amount * 0.08 : wet.amount * 0.16;
-        col = [col[0] * (1 - sk), col[1] * (1 - sk * 0.88), col[2] * (1 - sk * 0.5)];
+        col[0] *= (1 - sk); col[1] *= (1 - sk * 0.88); col[2] *= (1 - sk * 0.5);
       }
       // Convergent boundaries sit in a slight shadow — plates made this relief
       if (W.bound?.[c] === 1 && ice < 0.4) {
-        col = [col[0] * 0.9, col[1] * 0.88, col[2] * 0.86];
+        col[0] *= 0.9; col[1] *= 0.88; col[2] *= 0.86;
       } else if (W.bound?.[c] === 0 && ice < 0.5) {
-        // Divergent — young crust, a warm rift
-        col = [lerp(col[0], 168, 0.12), lerp(col[1], 78, 0.1), lerp(col[2], 52, 0.08)];
+        col[0] = lerp(col[0], 168, 0.12); col[1] = lerp(col[1], 78, 0.1); col[2] = lerp(col[2], 52, 0.08);
       } else if (W.bound?.[c] === 2 && ice < 0.4) {
-        // Transform — gold strain
-        col = [lerp(col[0], 210, 0.08), lerp(col[1], 170, 0.06), lerp(col[2], 70, 0.05)];
+        col[0] = lerp(col[0], 210, 0.08); col[1] = lerp(col[1], 170, 0.06); col[2] = lerp(col[2], 70, 0.05);
       }
       const lava = W.lava?.[c] || 0;
       if (lava > 0.04) {
         const k = clamp(lava, 0, 1);
-        col = [
-          lerp(col[0], 255, k),
-          lerp(col[1], 70 + (1 - k) * 40, k),
-          lerp(col[2], 18, k * 0.9),
-        ];
+        col[0] = lerp(col[0], 255, k);
+        col[1] = lerp(col[1], 70 + (1 - k) * 40, k);
+        col[2] = lerp(col[2], 18, k * 0.9);
       }
       const precipL = W.precip?.[c] || 0;
       if (precipL > 0.28 && ice < 0.35) {
         const rk = clamp(precipL, 0, 1) * 0.2;
-        col = [col[0] * (1 - rk), col[1] * (1 - rk * 0.9), col[2] * (1 - rk * 0.72)];
+        col[0] *= (1 - rk); col[1] *= (1 - rk * 0.9); col[2] *= (1 - rk * 0.72);
       }
       const stormL = W.stormField?.[c] || 0;
       const trailL = W.stormTrail?.[c] || 0;
       const surgeL = W.surgeField?.[c] || 0;
       if (trailL > 0.12 && ice < 0.4) {
         const tk = clamp(trailL, 0, 1) * 0.28;
-        col = [lerp(col[0], 255, tk), lerp(col[1], 190, tk * 0.8), lerp(col[2], 70, tk * 0.5)];
+        col[0] = lerp(col[0], 255, tk); col[1] = lerp(col[1], 190, tk * 0.8); col[2] = lerp(col[2], 70, tk * 0.5);
       }
       if (stormL > 0.12 && ice < 0.4) {
         const sk = clamp(stormL, 0, 1) * 0.42;
-        col = [lerp(col[0], 36, sk), lerp(col[1], 48, sk), lerp(col[2], 72, sk)];
+        col[0] = lerp(col[0], 36, sk); col[1] = lerp(col[1], 48, sk); col[2] = lerp(col[2], 72, sk);
       }
       if (surgeL > 0.01) {
         const gk = clamp(surgeL * 12, 0, 1);
-        col = [lerp(col[0], 210, gk * 0.28), lerp(col[1], 110, gk * 0.22), lerp(col[2], 48, gk * 0.18)];
+        col[0] = lerp(col[0], 210, gk * 0.28); col[1] = lerp(col[1], 110, gk * 0.22); col[2] = lerp(col[2], 48, gk * 0.18);
       }
       // Seasonal phenology green wave. Item 140.
       const lat = DIR[c * 3 + 1];
@@ -1802,123 +1807,88 @@ export function refreshColours(alpha = 1) {
         const live = lifeRGB(W, c, life);
         if (live) {
           const mix = R.earthLike ? (0.4 + k * 0.35) : (0.55 + k * 0.4);
-          col = [
-            lerp(col[0], live[0], mix),
-            lerp(col[1], live[1], mix),
-            lerp(col[2], live[2], mix),
-          ];
+          col[0] = lerp(col[0], live[0], mix);
+          col[1] = lerp(col[1], live[1], mix);
+          col[2] = lerp(col[2], live[2], mix);
         } else if (R.earthLike && !W._epoch?.noGrass) {
-          let lush = [lerp(col[0], 22, k * 0.35), lerp(col[1], 140, k * 0.4), lerp(col[2], 48, k * 0.3)];
-          if (pigment === 'bchl') lush = [lerp(lush[0], 140, 0.35), lerp(lush[1], 50, 0.35), lerp(lush[2], 120, 0.35)];
-          if (pigment === 'retinal') lush = [lerp(lush[0], 180, 0.4), lerp(lush[1], 40, 0.4), lerp(lush[2], 140, 0.4)];
+          let lr = lerp(col[0], 22, k * 0.35), lg = lerp(col[1], 140, k * 0.4), lb = lerp(col[2], 48, k * 0.3);
+          if (pigment === 'bchl') { lr = lerp(lr, 140, 0.35); lg = lerp(lg, 50, 0.35); lb = lerp(lb, 120, 0.35); }
+          if (pigment === 'retinal') { lr = lerp(lr, 180, 0.4); lg = lerp(lg, 40, 0.4); lb = lerp(lb, 140, 0.4); }
           const mix = 0.35 + k * 0.25;
-          col = [lerp(col[0], lush[0], mix), lerp(col[1], lush[1], mix), lerp(col[2], lush[2], mix)];
+          col[0] = lerp(col[0], lr, mix); col[1] = lerp(col[1], lg, mix); col[2] = lerp(col[2], lb, mix);
         } else {
-          const neon = [lerp(22, 4, k), lerp(255, 150, k), lerp(12, 42, k)];
+          const nr = lerp(22, 4, k), ng = lerp(255, 150, k), nb = lerp(12, 42, k);
           const mix = clamp(0.55 + k * 0.45, 0, 1) * (1 - clamp((ice - 0.35) / 0.5, 0, 1) * 0.6);
-          col = [lerp(col[0], neon[0], mix), lerp(col[1], neon[1], mix), lerp(col[2], neon[2], mix)];
+          col[0] = lerp(col[0], nr, mix); col[1] = lerp(col[1], ng, mix); col[2] = lerp(col[2], nb, mix);
         }
       }
-      // BIF / ejecta surface hints
       if (W.bifRock?.[c] > 0.2) {
         const k = W.bifRock[c] * 0.4;
-        col = [lerp(col[0], 120, k), lerp(col[1], 70, k), lerp(col[2], 40, k)];
+        col[0] = lerp(col[0], 120, k); col[1] = lerp(col[1], 70, k); col[2] = lerp(col[2], 40, k);
       }
       if (W.ejecta?.[c] > 0.15) {
         const k = W.ejecta[c] * 0.35;
-        col = [lerp(col[0], 90, k), lerp(col[1], 85, k), lerp(col[2], 80, k)];
+        col[0] = lerp(col[0], 90, k); col[1] = lerp(col[1], 85, k); col[2] = lerp(col[2], 80, k);
       }
-      // Stromatolite texture on shores
       if (W.stromatolite?.[c] > 0.2) {
         const k = W.stromatolite[c] * 0.3;
-        col = [lerp(col[0], 100, k), lerp(col[1], 110, k), lerp(col[2], 90, k)];
+        col[0] = lerp(col[0], 100, k); col[1] = lerp(col[1], 110, k); col[2] = lerp(col[2], 90, k);
       }
-      // Sulfur allotropes. Item 133.
       if (W.sulfurPaint?.[c] > 0.05) {
         const t = W.sulfurPaint[c];
-        const sulf = t < 0.3 ? [220, 200, 40] : t < 0.6 ? [220, 120, 30] : [40, 30, 30];
-        const k = 0.35;
-        col = [lerp(col[0], sulf[0], k), lerp(col[1], sulf[1], k), lerp(col[2], sulf[2], k)];
+        const sr = t < 0.3 ? 220 : t < 0.6 ? 220 : 40;
+        const sg = t < 0.3 ? 200 : t < 0.6 ? 120 : 30;
+        const sb = t < 0.3 ? 40 : t < 0.6 ? 30 : 30;
+        col[0] = lerp(col[0], sr, 0.35); col[1] = lerp(col[1], sg, 0.35); col[2] = lerp(col[2], sb, 0.35);
       }
       const build = W.build?.[c] || 0;
       if (!R.daisyworld && build > 0.12) {
         const k = clamp((build - 0.12) / 0.7, 0, 1);
-        const stone = [
-          lerp(168, 92, k),
-          lerp(148, 88, k),
-          lerp(120, 78, k),
-        ];
-        col = [
-          lerp(col[0], stone[0], 0.55 + k * 0.4),
-          lerp(col[1], stone[1], 0.55 + k * 0.4),
-          lerp(col[2], stone[2], 0.55 + k * 0.4),
-        ];
+        const sr = lerp(168, 92, k), sg = lerp(148, 88, k), sb = lerp(120, 78, k);
+        const bk = 0.55 + k * 0.4;
+        col[0] = lerp(col[0], sr, bk); col[1] = lerp(col[1], sg, bk); col[2] = lerp(col[2], sb, bk);
       }
-      /* Tracks. `noteWear` has been recording every step every being takes since
-         before beings moved, `wearAt` decays it, and the movement scorer reads it
-         — but only the close-up grid ever drew it, so a herd crossing a plain
-         left nothing on the globe. A trodden path is the cheapest possible
-         evidence that something was here and went somewhere. */
       const wornL = wearAt(c);
       if (wornL > 0.06 && ice < 0.5) {
         const k = clamp((wornL - 0.06) / 0.7, 0, 1) * 0.3;
-        col = [lerp(col[0], 150, k), lerp(col[1], 128, k * 0.85), lerp(col[2], 96, k * 0.7)];
+        col[0] = lerp(col[0], 150, k); col[1] = lerp(col[1], 128, k * 0.85); col[2] = lerp(col[2], 96, k * 0.7);
       }
-      /* Ash and flame. All twelve field-texture channels are spoken for and none
-         of them carried `ash`, `fire` or `lava`, and no branch of this function
-         read the first two — so the two most dramatic events the simulation
-         produces drew nothing. Eruptions here are mostly explosive (silica above
-         0.58 makes ash, not lava), so a caldera collapse looked like clear
-         ground, and a continental wildfire looked like slightly less grass.
-         Ash first, as a settling blanket over whatever is beneath it; then flame
-         on top, because a burning forest should read as burning. */
       const ashL = W.ash?.[c] || 0;
       if (ashL > 0.02) {
         const k = clamp(ashL, 0, 1);
-        col = [
-          lerp(col[0], 152, k * 0.85),
-          lerp(col[1], 144, k * 0.85),
-          lerp(col[2], 132, k * 0.85),
-        ];
+        col[0] = lerp(col[0], 152, k * 0.85);
+        col[1] = lerp(col[1], 144, k * 0.85);
+        col[2] = lerp(col[2], 132, k * 0.85);
       }
       const fireL = W.fire?.[c] || 0;
       if (fireL > 0.02) {
         const k = clamp(fireL, 0, 1);
-        col = [
-          lerp(col[0], 255, Math.min(1, k * 1.15)),
-          lerp(col[1], 98 + (1 - k) * 70, k),
-          lerp(col[2], 26, k * 0.85),
-        ];
+        col[0] = lerp(col[0], 255, Math.min(1, k * 1.15));
+        col[1] = lerp(col[1], 98 + (1 - k) * 70, k);
+        col[2] = lerp(col[2], 26, k * 0.85);
       }
-      /* Anthropogenic hazards, each with a signature you can tell apart at a
-         glance — the point of having four fields instead of one "damage" scalar.
-         Toxin is a sick yellow-green stain that does not look like much, which is
-         what makes it frightening. Fallout is a bleached dead grey-violet.
-         Plague is a dull rust over the settlement it is eating. War is char and
-         cratered ground. Painted after `build` so ruin overrides the town. */
       const toxL = W.toxin?.[c] || 0;
       if (toxL > 0.02) {
         const k = clamp(toxL, 0, 1) * 0.72;
-        col = [lerp(col[0], 148, k), lerp(col[1], 152, k), lerp(col[2], 58, k)];
+        col[0] = lerp(col[0], 148, k); col[1] = lerp(col[1], 152, k); col[2] = lerp(col[2], 58, k);
       }
       const radL = W.rad?.[c] || 0;
       if (radL > 0.02) {
-        // Stronger rad overlay for asymmetric fallout plumes (§329).
         const k = clamp(radL, 0, 1) * 0.95;
-        col = [lerp(col[0], 168, k), lerp(col[1], 150, k), lerp(col[2], 188, k)];
+        col[0] = lerp(col[0], 168, k); col[1] = lerp(col[1], 150, k); col[2] = lerp(col[2], 188, k);
       }
       const disL = W.disease?.[c] || 0;
       if (disL > 0.04) {
         const k = clamp(disL, 0, 1) * 0.5;
-        col = [lerp(col[0], 150, k), lerp(col[1], 74, k), lerp(col[2], 52, k)];
+        col[0] = lerp(col[0], 150, k); col[1] = lerp(col[1], 74, k); col[2] = lerp(col[2], 52, k);
       }
       const warL = W.warFront?.[c] || 0;
       if (warL > 0.03) {
         const k = clamp(warL, 0, 1) * 0.7;
-        col = [lerp(col[0], 44, k), lerp(col[1], 36, k), lerp(col[2], 32, k)];
+        col[0] = lerp(col[0], 44, k); col[1] = lerp(col[1], 36, k); col[2] = lerp(col[2], 32, k);
       }
-      if (W.state === 'snowball' && life < 0.2) col = [lerp(col[0], 230, 0.5), lerp(col[1], 235, 0.5), lerp(col[2], 245, 0.5)];
-      if (W.state === 'moist-greenhouse' && life < 0.2) col = [lerp(col[0], 200, 0.3), lerp(col[1], 100, 0.3), lerp(col[2], 60, 0.3)];
+      if (W.state === 'snowball' && life < 0.2) { col[0] = lerp(col[0], 230, 0.5); col[1] = lerp(col[1], 235, 0.5); col[2] = lerp(col[2], 245, 0.5); }
+      if (W.state === 'moist-greenhouse' && life < 0.2) { col[0] = lerp(col[0], 200, 0.3); col[1] = lerp(col[1], 100, 0.3); col[2] = lerp(col[2], 60, 0.3); }
     }
     /* Tracer: something in flight. Cold blue-white, deliberately unlike
        lightning's warm yellow, so a missile track and a thunderstorm are never
@@ -2439,7 +2409,7 @@ function drawHostLights(proj, view, camPos, sun, scale, inXR) {
 
     m4trs(TMP, [0, 0, 0, 1], wx, wy, wz, starR);
     gl.useProgram(bodyProg);
-    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniformMatrix4fv(bodyProg.u.uModel, false, TMP);
     gl.uniform3fv(bodyProg.u.uSun, toCam);
     gl.uniform3fv(bodyProg.u.uCam, camPos);
@@ -2456,7 +2426,7 @@ function drawHostLights(proj, view, camPos, sun, scale, inXR) {
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
 
     m4trs(TMP, [0, 0, 0, 1], wx, wy, wz, starR * 3.2);
-    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.depthMask(false);
@@ -2473,7 +2443,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   const R = W.rule;
   const originPlay = S?.originSketch && !S.originSketch.done;
   // Sun direction from unified ephemeris (sky.js)
-  const sun = W._sunDir ? [W._sunDir[0], W._sunDir[1], W._sunDir[2]] : [1, 0, 0];
+  const sun = W._sunDir || _defaultSun;
 
   const scale = inXR ? S.scaleXR : 1;
   const px = inXR ? S.posXR[0] : (S.camPanX || 0);
@@ -2495,12 +2465,11 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   gl.disable(gl.DEPTH_TEST); gl.depthMask(false);
   gl.useProgram(starProg);
   m4mul(TMP, proj, view); gl.uniformMatrix4fv(starProg.u.uVP, false, TMP);
+  if (starProg.u.uTime) gl.uniform1f(starProg.u.uTime, (S._t || 0) * 0.001);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.star);
-  let l = gl.getAttribLocation(starProg, 'aPos');
-  gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(starProg.a.aPos); gl.vertexAttribPointer(starProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
   gl.bindBuffer(gl.ARRAY_BUFFER, buf.starMag);
-  l = gl.getAttribLocation(starProg, 'aMag');
-  gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 1, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(starProg.a.aMag); gl.vertexAttribPointer(starProg.a.aMag, 1, gl.FLOAT, false, 0, 0);
   gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   gl.drawArrays(gl.POINTS, 0, NSTAR);
   disableAll();
@@ -2515,10 +2484,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.depthMask(false);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l);
+    gl.enableVertexAttribArray(flatProg.a.aPos);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.originPts);
-    gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     const ph = S.originSketch.phase;
     if (ph === 'theia') gl.uniform4f(flatProg.u.uCol, 1.0, 0.75, 0.45, 0.95);
     else if (ph === 'freeze') gl.uniform4f(flatProg.u.uCol, 0.85, 0.7, 0.55, 0.9);
@@ -2533,11 +2501,10 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
 
   if (inXR) {
     gl.useProgram(flatProg);
-    m4ident(TMP); gl.uniformMatrix4fv(flatProg.u.uMVP, false, m4mul(m4(), proj, view));
+    m4ident(TMP); gl.uniformMatrix4fv(flatProg.u.uMVP, false, m4mul(_TMP2, proj, view));
     gl.uniform4f(flatProg.u.uCol, 0.28, 0.36, 0.55, 1.0);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.grid);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.drawArrays(gl.LINES, 0, GRID_COUNT);
     gl.disable(gl.BLEND); disableAll();
@@ -2549,7 +2516,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   if (xray > 0.01) {
     gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(healthProg, 'aPos');
+    const healthAPos = healthProg.a.aPos;
     if (W._iceShell) {
       // Ice-shell stack: mantle → ocean → lid
       const layers = [
@@ -2560,24 +2527,24 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       for (const ly of layers) {
         m4trs(TMP, S.q, px, py, pz, scale * ly.s);
         gl.useProgram(healthProg);
-        gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+        gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
         gl.uniform1f(healthProg.u.uScale, 1);
         gl.uniform3fv(healthProg.u.uCol, ly.c);
-        gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(healthAPos); gl.vertexAttribPointer(healthAPos, 3, gl.FLOAT, false, 0, 0);
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
         gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
       }
     } else {
       m4trs(TMP, S.q, px, py, pz, scale * 0.72);
       gl.useProgram(healthProg);
-      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
       gl.uniform1f(healthProg.u.uScale, 1);
       gl.uniform3fv(healthProg.u.uCol, [0.55, 0.22, 0.08]);
-      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(healthAPos); gl.vertexAttribPointer(healthAPos, 3, gl.FLOAT, false, 0, 0);
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
       gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
       m4trs(TMP, S.q, px, py, pz, scale * 0.32);
-      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
       gl.uniform3fv(healthProg.u.uCol, [0.95, 0.45, 0.12]);
       gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
     }
@@ -2713,8 +2680,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     const a = 0.15 + gridAmt * 0.75;
     gl.uniform4f(flatProg.u.uCol, 0.55, 0.78, 1.0, a);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.cellGrid);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     gl.drawArrays(gl.LINES, 0, CELL_GRID_COUNT);
@@ -2729,19 +2695,18 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l);
+    gl.enableVertexAttribArray(flatProg.a.aPos);
     if (COAST_COUNT > 0) {
       gl.uniform4f(flatProg.u.uCol, 0.06, 0.12, 0.20, 0.55);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.coastLine);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.lineWidth?.(1.4);
       gl.drawArrays(gl.LINES, 0, COAST_COUNT);
     }
     if (RIVER_LINE_COUNT > 0) {
       gl.uniform4f(flatProg.u.uCol, 0.14, 0.28, 0.42, 0.42);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.riverLine);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.lineWidth?.(1.2);
       gl.drawArrays(gl.LINES, 0, RIVER_LINE_COUNT);
     }
@@ -2757,27 +2722,26 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniformMatrix4fv(flatProg.u.uMVP, false, MVP);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.depthMask(false);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l);
+    gl.enableVertexAttribArray(flatProg.a.aPos);
     if (FLIGHT_LINE_COUNT > 0) {
       const [tr, tg, tb] = _flightTrailRGB;
       gl.uniform4f(flatProg.u.uCol, tr, tg, tb, 0.9);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.flightLine);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.lineWidth?.(2.4);
       gl.drawArrays(gl.LINES, 0, FLIGHT_LINE_COUNT);
     }
     if (SPECTER_SEG_COUNT > 0 && buf.specterLine) {
       gl.uniform4f(flatProg.u.uCol, 1.0, 0.55, 0.18, 0.55);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.specterLine);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.lineWidth?.(1.8);
       gl.drawArrays(gl.LINES, 0, SPECTER_SEG_COUNT);
     }
     if (WARHEAD_PT_COUNT > 0) {
       gl.uniform4f(flatProg.u.uCol, 1.0, 0.95, 0.7, 1.0);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.warheadPts);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.drawArrays(gl.POINTS, 0, WARHEAD_PT_COUNT);
       gl.uniform4f(flatProg.u.uCol, 1.0, 1.0, 1.0, 0.5);
       gl.drawArrays(gl.POINTS, 0, WARHEAD_PT_COUNT);
@@ -2785,13 +2749,13 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     if (IX_HEAD_COUNT > 0 && buf.ixHeads) {
       gl.uniform4f(flatProg.u.uCol, 1.0, 0.45, 0.15, 1.0);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.ixHeads);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.drawArrays(gl.POINTS, 0, IX_HEAD_COUNT);
     }
     if (SPECTER_PT_COUNT > 0 && buf.specterPts) {
       gl.uniform4f(flatProg.u.uCol, 1.0, 0.7, 0.25, 0.85);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.specterPts);
-      gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.drawArrays(gl.POINTS, 0, SPECTER_PT_COUNT);
     }
     gl.depthMask(true); gl.disable(gl.BLEND);
@@ -2807,8 +2771,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     const pulse = 0.82 + Math.sin(presentTime() * 2.15) * 0.16 * (0.35 + act);
     gl.uniform4f(flatProg.u.uCol, 1.0, 0.82 + pulse * 0.08, 0.32 + pulse * 0.08, 0.62 + pulse * 0.32);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.localRim);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     gl.lineWidth?.(2);
@@ -2832,8 +2795,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       else gl.uniform4f(flatProg.u.uCol, 0.92, 0.96, 1.0, 0.38);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
       gl.bufferData(gl.ARRAY_BUFFER, _flowBuf.subarray(0, FLOW_COUNT * 3), gl.DYNAMIC_DRAW);
-      l = gl.getAttribLocation(flatProg, 'aPos');
-      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
       gl.depthMask(false);
       gl.drawArrays(gl.LINES, 0, FLOW_COUNT);
@@ -2848,8 +2810,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
         gl.uniform4f(flatProg.u.uCol, 0.95, 0.97, 1.0, 0.42);
         gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
         gl.bufferData(gl.ARRAY_BUFFER, _flowBuf.subarray(0, nW * 3), gl.DYNAMIC_DRAW);
-        l = gl.getAttribLocation(flatProg, 'aPos');
-        gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
         gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
         gl.depthMask(false);
         gl.drawArrays(gl.LINES, 0, nW);
@@ -2870,8 +2831,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       gl.uniform4f(flatProg.u.uCol, 0.42 + pulse * 0.25, 1.0, 0.38 + pulse * 0.15, 0.55 + pulse * 0.28);
       gl.bindBuffer(gl.ARRAY_BUFFER, buf.flowStreaks);
       gl.bufferData(gl.ARRAY_BUFFER, _lifeMarkBuf.subarray(0, lifeN * 3), gl.DYNAMIC_DRAW);
-      l = gl.getAttribLocation(flatProg, 'aPos');
-      gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+      gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
       gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
       gl.depthMask(false);
       gl.drawArrays(gl.LINES, 0, lifeN);
@@ -2883,7 +2843,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   /* clouds */
   if (R.atmoStrength > 0.2 && !S.cloudFree) {
     m4trs(TMP, S.q, px, py, pz, scale * cloudShellMul(R));
-    const mv = m4mul(m4(), view, TMP), mvp = m4mul(m4(), proj, mv);
+    const mv = m4mul(_TMP2, view, TMP), mvp = m4mul(_TMP3, proj, mv);
     gl.useProgram(cloudProg);
     gl.uniformMatrix4fv(cloudProg.u.uMVP, false, mvp);
     gl.uniformMatrix4fv(cloudProg.u.uModel, false, TMP);
@@ -2891,11 +2851,9 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform3fv(cloudProg.u.uCam, camPos);
     if (cloudProg.u.uTime) gl.uniform1f(cloudProg.u.uTime, (S._t || 0) * 0.001);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloud);
-    l = gl.getAttribLocation(cloudProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(cloudProg.a.aPos); gl.vertexAttribPointer(cloudProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.cloudCov);
-    l = gl.getAttribLocation(cloudProg, 'aCov');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 1, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(cloudProg.a.aCov); gl.vertexAttribPointer(cloudProg.a.aCov, 1, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.cloudIdx);
@@ -2943,7 +2901,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     const atmoMul = atmoShellMul(R);
     m4trs(TMP, S.q, px, py, pz, scale * atmoMul);
     m3fromM4rot(NRM, TMP, 1 / (scale * atmoMul));
-    const mv = m4mul(m4(), view, TMP), mvp = m4mul(m4(), proj, mv);
+    const mv = m4mul(_TMP2, view, TMP), mvp = m4mul(_TMP3, proj, mv);
     gl.useProgram(atmoProg);
     gl.uniformMatrix4fv(atmoProg.u.uMVP, false, mvp);
     gl.uniformMatrix4fv(atmoProg.u.uModel, false, TMP);
@@ -2965,8 +2923,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     if (atmoProg.u.uTime) gl.uniform1f(atmoProg.u.uTime, (S._t || 0) * 0.001);
     if (atmoProg.u.uExposure) gl.uniform1f(atmoProg.u.uExposure, _exposure);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(atmoProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(atmoProg.a.aPos); gl.vertexAttribPointer(atmoProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
     gl.depthMask(false); gl.cullFace(gl.FRONT);
@@ -2993,12 +2950,11 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     if (W.state === 'snowball') { hCol[0] = 0.7; hCol[1] = 0.85; hCol[2] = 1; }
     if (W.state === 'moist-greenhouse') { hCol[0] = 1; hCol[1] = 0.4; hCol[2] = 0.1; }
     gl.useProgram(healthProg);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniform1f(healthProg.u.uScale, 1);
     gl.uniform3fv(healthProg.u.uCol, hCol);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(healthProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(healthProg.a.aPos); gl.vertexAttribPointer(healthProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
@@ -3014,12 +2970,11 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     if (W.state === 'snowball') { hCol[0] = 0.7; hCol[1] = 0.85; hCol[2] = 1; }
     if (W.state === 'moist-greenhouse') { hCol[0] = 1; hCol[1] = 0.4; hCol[2] = 0.1; }
     gl.useProgram(healthProg);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniform1f(healthProg.u.uScale, 1);
     gl.uniform3fv(healthProg.u.uCol, hCol);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(healthProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(healthProg.a.aPos); gl.vertexAttribPointer(healthProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
@@ -3104,7 +3059,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       for (let k = 0; k < (sat.id || '').length; k++) seed = (seed + (sat.id.charCodeAt(k) % 17)) % 17;
     }
     gl.useProgram(bodyProg);
-    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(bodyProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniformMatrix4fv(bodyProg.u.uModel, false, TMP);
     gl.uniform3fv(bodyProg.u.uSun, sun);
     gl.uniform3fv(bodyProg.u.uCam, camPos);
@@ -3114,8 +3069,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     gl.uniform1f(bodyProg.u.uSeed, seed % 17);
     gl.uniform1f(bodyProg.u.uExposure, _exposure);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(bodyProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(bodyProg.a.aPos); gl.vertexAttribPointer(bodyProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.enable(gl.DEPTH_TEST);
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
@@ -3129,12 +3083,11 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     const shadeR = (0.04 + W.solarShade * 0.12) * scale * (inXR ? 0.5 : 1);
     m4trs(TMP, [0, 0, 0, 1], sx, sy, sz, shadeR);
     gl.useProgram(healthProg);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniform1f(healthProg.u.uScale, 1);
     gl.uniform3fv(healthProg.u.uCol, [0.08, 0.09, 0.12]);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(healthProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(healthProg.a.aPos); gl.vertexAttribPointer(healthProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
@@ -3144,13 +3097,12 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
   if (inXR && hands) {
     gl.useProgram(flatProg);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(flatProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(flatProg.a.aPos); gl.vertexAttribPointer(flatProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     for (const h of hands) {
       if (!h.active) continue;
       m4trs(TMP, [0, 0, 0, 1], h.pos[0], h.pos[1], h.pos[2], h.grab ? 0.017 : 0.011);
-      gl.uniformMatrix4fv(flatProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      gl.uniformMatrix4fv(flatProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
       if (h.grab) gl.uniform4f(flatProg.u.uCol, 0.55, 0.78, 1.0, 1.0);
       else if (h.gesture === 'pinch') gl.uniform4f(flatProg.u.uCol, 0.9, 0.7, 0.3, 1.0);
       else gl.uniform4f(flatProg.u.uCol, 0.30, 0.36, 0.48, 1.0);
@@ -3167,17 +3119,16 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
     const xz = inXR ? 1 : 0.38;
     gl.useProgram(healthProg);
     m4trs(TMP, [0, 0, 0, 1], origin[0], origin[1] + th - 0.04, origin[2], (S.table.radius || 0.55) * xz);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniform1f(healthProg.u.uScale, 1);
     gl.uniform3fv(healthProg.u.uCol, [0.16, 0.14, 0.12]);
     gl.bindBuffer(gl.ARRAY_BUFFER, buf.sph);
-    l = gl.getAttribLocation(healthProg, 'aPos');
-    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(healthProg.a.aPos); gl.vertexAttribPointer(healthProg.a.aPos, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, buf.sphIdx);
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
     const starR = (S.table.starScale || 0.04) * (inXR ? 1 : 0.4);
     m4trs(TMP, [0, 0, 0, 1], origin[0], origin[1] + th + 0.05, origin[2], starR);
-    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+    gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
     gl.uniform3fv(healthProg.u.uCol, [1.0, 0.85, 0.45]);
     gl.drawElements(gl.TRIANGLES, SPH_COUNT, gl.UNSIGNED_INT, 0);
     for (const sl of S.table.slots) {
@@ -3186,7 +3137,7 @@ export function drawScene(proj, view, camPos, inXR, S, hands) {
       const sc = (sl.scale || 0.055) * (inXR ? 1 : 0.5);
       const active = S.table.activeId === sl.id;
       m4trs(TMP, [0, 0, 0, 1], p[0], p[1], p[2], sc * (active ? 1.15 : 1));
-      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(m4(), m4mul(m4(), proj, view), TMP));
+      gl.uniformMatrix4fv(healthProg.u.uMVP, false, m4mul(_TMP2, m4mul(_TMP3, proj, view), TMP));
       const tint = sl.tint || [0.35, 0.55, 0.75];
       gl.uniform3fv(healthProg.u.uCol, active
         ? [Math.min(1, tint[0] + 0.25), Math.min(1, tint[1] + 0.2), Math.min(1, tint[2] + 0.15)]

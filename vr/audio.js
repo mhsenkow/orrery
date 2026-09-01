@@ -15,7 +15,10 @@ let bedFilter = null;
 let windGain = null;
 let oceanGain = null;
 let impactPanner = null;
-let started = false;
+let bedNoise = null;
+let graphReady = false;
+let sourcesRunning = false;
+let unlockBound = false;
 let muted = false;
 let masterGainValue = 0.22;
 let lastKind = '';
@@ -28,8 +31,32 @@ export function audioMute(on) {
 }
 export function audioMuted() { return muted; }
 
+function unlockAudio() {
+  if (!ctx || !graphReady) return;
+  if (ctx.state === 'suspended') void ctx.resume();
+  if (sourcesRunning) return;
+  try {
+    humOsc?.start();
+    bedNoise?.start();
+    sourcesRunning = true;
+  } catch {
+    sourcesRunning = true;
+  }
+}
+
+function bindAudioUnlock() {
+  if (unlockBound || typeof window === 'undefined') return;
+  unlockBound = true;
+  const once = () => unlockAudio();
+  window.addEventListener('pointerdown', once, { passive: true, once: true });
+  window.addEventListener('keydown', once, { passive: true, once: true });
+}
+
 export function audioInit() {
-  if (started) return;
+  if (graphReady) {
+    unlockAudio();
+    return;
+  }
   try {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain();
@@ -59,7 +86,6 @@ export function audioInit() {
     humGain.gain.value = 0.04;
     humOsc.connect(humGain);
     humGain.connect(master);
-    humOsc.start();
 
     bedGain = ctx.createGain();
     bedGain.gain.value = 0.0;
@@ -79,13 +105,13 @@ export function audioInit() {
     const data = buf.getChannelData(0);
     let ns = 0xA11D0; const nr = () => { ns = (ns + 0x6d2b79f5) | 0; let t = Math.imul(ns ^ (ns >>> 15), 1 | ns); t ^= t + Math.imul(t ^ (t >>> 7), 61 | t); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
     for (let i = 0; i < bufSize; i++) data[i] = (nr() * 2 - 1) * 0.15;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buf;
-    noise.loop = true;
+    bedNoise = ctx.createBufferSource();
+    bedNoise.buffer = buf;
+    bedNoise.loop = true;
     bedFilter = ctx.createBiquadFilter();
     bedFilter.type = 'lowpass';
     bedFilter.frequency.value = 800;
-    noise.connect(bedFilter);
+    bedNoise.connect(bedFilter);
     bedFilter.connect(bedGain);
 
     // Wind / ocean branches from same noise
@@ -93,17 +119,17 @@ export function audioInit() {
     windF.type = 'bandpass';
     windF.frequency.value = 1200;
     windF.Q.value = 0.7;
-    noise.connect(windF);
+    bedNoise.connect(windF);
     windF.connect(windGain);
 
     const oceanF = ctx.createBiquadFilter();
     oceanF.type = 'lowpass';
     oceanF.frequency.value = 280;
-    noise.connect(oceanF);
+    bedNoise.connect(oceanF);
     oceanF.connect(oceanGain);
 
-    noise.start();
-    started = true;
+    graphReady = true;
+    bindAudioUnlock();
   } catch (e) {
     console.warn('[orrery] audio unavailable', e);
   }
@@ -111,7 +137,7 @@ export function audioInit() {
 
 /** Slowly shift the bed filter by geologic age / ICS era. */
 export function playEraDrone(ageYr) {
-  if (!started || !ctx || !bedFilter) return;
+  if (!graphReady || !ctx || !bedFilter) return;
   const age = ageYr ?? W.ageYr ?? W.year ?? 0;
   const ics = W.ics;
   const eraKey = ics ? `${ics.eon}|${ics.era}|${ics.period}` : '';
@@ -131,8 +157,9 @@ export function playEraDrone(ageYr) {
 }
 
 export function audioUpdate(focusCell = -1) {
-  if (!started || !ctx) return;
-  if (ctx.state === 'suspended') ctx.resume();
+  if (!graphReady || !ctx) return;
+  if (!sourcesRunning) return;
+  if (ctx.state === 'suspended') void ctx.resume();
   if (muted) {
     master.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
     return;
@@ -212,7 +239,9 @@ function tone(type, freq, dur, gain, ramp = 'exp', out = master) {
 }
 
 export function playEvent(kind, strength = 0.5) {
-  if (!started || !ctx) return;
+  if (!graphReady || !ctx) return;
+  unlockAudio();
+  if (!sourcesRunning) return;
   lastKind = kind;
   const t0 = ctx.currentTime;
   const s = Math.max(0.15, Math.min(1.5, strength));
@@ -262,12 +291,14 @@ export function playEvent(kind, strength = 0.5) {
 
 /** Dark-war cue bus — `darkAudioCue` looks for `window.__orreryAudio.cue`. */
 function playDarkCue(kind, cue) {
-  if (!started || !ctx || muted) return;
+  if (!graphReady || !ctx || muted) return;
+  unlockAudio();
+  if (!sourcesRunning) return;
   const s = Math.max(0.12, Math.min(1.4, cue?.peak || 0.5));
   const delayMs = Math.max(0, cue?.delayMs || 0);
   const pitch = cue?.pitch || 1;
   const run = () => {
-    if (!started || !ctx) return;
+    if (!graphReady || !ctx) return;
     const t0 = ctx.currentTime;
     if (kind === 'launch') {
       tone('sawtooth', 180 * pitch, 0.35, 0.09 * s, 'exp');
@@ -304,7 +335,6 @@ function playDarkCue(kind, cue) {
       if (windGain) windGain.gain.setTargetAtTime(0.001, t0, 0.08);
       tone('sine', 48, 0.9, 0.08 * s);
     } else if (kind === 'geiger') {
-      // One soft tick — ambient loop throttles how often this fires.
       const o = ctx.createOscillator();
       const g = ctx.createGain();
       o.type = 'square';

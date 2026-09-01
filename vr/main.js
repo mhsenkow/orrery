@@ -2,34 +2,24 @@
 
 import { clamp, qAxis, qmul, qnorm, qFromTo, qrot, qnlerp, m4, m4persp, m4lookAt, lookRay, showErr } from './math.js';
 import { installGlobalErrorHandlers, setErrorSink, endBootDeferral, expected } from './sim/report.js';
-import { NC, AREA, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
-import { mergeRunRule, isModernEarth } from './sim/ruleMode.js';
-import { timePanelState, ruleForEra, availableEras, eraPatch } from './sim/timePanel.js';
+import { NC, N_ALLOWED, N, cellKm, DIR, NBR } from './sphere.js';
+import { mergeRunRule } from './sim/ruleMode.js';
+import { ruleForEra, availableEras, eraPatch } from './sim/timePanel.js';
 import { setClockFace, setSeasonHold, livedTick, isLivedClock, SEASON_HOLDS } from './sim/clockFace.js';
 import { scrubLivedSeason, setLivedSkyRate, setLivedDayRate } from './sim/sky.js';
-import { W, generate, simTick, setSunDir, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed, enableWorldAsserts } from './world.js';
+import { W, generate, simTick, RULESETS, chronLog, formatAge, treeSummary, downloadSave, serializeRun, changeResolution, loadRunMeta, rerollTerrain, setLifeSpeed, enableWorldAsserts } from './world.js';
 import { LANDSCAPES, landscapeById, drawLandscapeThumb, nameWorld } from './sim/landscapes.js';
+import { resolvePlayLandscape } from './sim/playLandscape.js';
 import { freshSeed } from './sim/rng.js';
-import { describeGenome } from './sim/genome.js';
-import { solventBlurb, speciesPage, layoutTree, treeToSvg, explainCreature } from './sim/lifeGuide.js';
-import { lineageAt } from './sim/evolve.js';
-import { encodeWorldId, decodeWorldId, parseWorldInput, worldIdOf, seedToWords } from './sim/seedword.js';
-import { formatAxesLine, formatAxesExtras } from './sim/worldAxes.js';
-import { describeSubstrate, cycleMaterial, formatLiquidWindow, phaseAtCell, livePressureBar } from './sim/substrateField.js';
-import { formatCover, formatLivePressure } from './sim/cover.js';
-import { formatColumn } from './sim/columnSketch.js';
-import { formatColumnAt } from './sim/columnField.js';
-import { featureAt, formatFeatures } from './sim/definition.js';
-import { formatPlevel, formatDescent, formatGiantExtras, camDistMin } from './sim/plevel.js';
-import { formatEpoch } from './sim/epoch.js';
-import { formatTechno, formatMega } from './sim/techno.js';
-import { landformAt, explainForm, formatPalette } from './sim/landform.js';
+import { layoutTree, treeToSvg } from './sim/lifeGuide.js';
+import { encodeWorldId, decodeWorldId, parseWorldInput, worldIdOf } from './sim/seedword.js';
+import { formatDescent, camDistMin } from './sim/plevel.js';
 import { noteDroppedTicks } from './sim/meta.js';
 import { detectEnding, finaleArtefact, formatFinaleMarkdown } from './sim/finale.js';
 import { darkEnabled } from './sim/darkGate.js';
 import {
   vandalDone, markVandalDone, pickVandalTarget, captureGarden, gardenDelta,
-  awayTicks, writeAutosave, readAutosave, clearAutosave, saveGardenVisit,
+  awayTicks, writeAutosave, readAutosave, clearAutosave, saveGardenVisit, autosavePaused,
 } from './sim/hooks.js';
 import { isPlaytestMode, mountPlaytestUI } from './sim/playtest.js';
 import {
@@ -73,36 +63,43 @@ import {
   setTimeRate, TIME_RATES, addBookmark, setLetItRun, shouldHaltFF,
   cycleTimeRate, timeClockInfo, cycleGaiaButton, gaiaDriveOf, gaiaModeMeta,
 } from './sim/god/observe.js';
-import { addToShelf, loadShelf, rankByBiosignature } from './sim/god/shelf.js';
+import { addToShelf, loadShelf } from './sim/god/shelf.js';
 import { tipForTool, tipForId, SUITE_TIPS, RIBBON_TIPS } from './sim/god/tips.js';
 import { decorateButton, iconSVG, DOCK_TAB_ICONS } from './sim/god/icons.js';
 import {
   CAM_DIST_MAX, XR_SCALE_MIN, XR_SCALE_MAX,
   scaleRung, applyScalePreset, eorefById,
 } from './sim/eoref.js';
-import { matchKey, keymapHelpLines } from './sim/keymap.js';
+import { keymapHelpLines } from './sim/keymap.js';
 import { bindPlanetKeys, dispatchIntent } from './input.js';
 import { onIntent } from './sim/intents.js';
 import { dialogFocusables, trapTab } from './sim/focusTrap.js';
 
 installGlobalErrorHandlers();
 setErrorSink((detail) => showErr(detail));
-import { exportChronicle, currentEraName, whatHappenedHere } from './chronicle.js';
-import { audioInit, audioUpdate, playEvent, audioMute, audioMuted, installDarkAudioBus } from './audio.js';
+try {
+  if (new URLSearchParams(location.search).get('debug') === '1') globalThis.__ORRERY_DEBUG = true;
+} catch { expected('ORR-EXPECTED-URL', 'debug param'); }
+globalThis.__orreryErrors = () =>
+  import('./sim/report.js').then((m) => {
+    const errs = m.recentErrors().filter((e) => e.level !== 'info' || !e.expected);
+    if (errs.length) console.table(errs.map((e) => ({ level: e.level, code: e.code, detail: e.detail })));
+    else console.info('[orrery] no notable errors in ring');
+    return errs;
+  });
+import { exportChronicle } from './chronicle.js';
+import { audioInit, audioUpdate, playEvent, audioMute, installDarkAudioBus } from './audio.js';
 import {
   createOriginSketch, applyOriginDigestToRule, originDigestSummary,
 } from './sim/originSketch.js';
-import { LIFE_CLASSES } from './sim/bio.js';
-import { BIOMES } from './sim/ecology.js';
 import {
   redoxGauge, keelingCurve, diversityCurve, whitakerPoints, transitSpectrum,
   phylogenyView, exportPaper,
 } from './sim/instruments.js';
 import {
-  chartAreaSVG, redoxTowerSVG, spectrumSVG, whitakerSVG, coreStrataSVG, icsRibbonHTML,
+  chartAreaSVG, redoxTowerSVG, spectrumSVG, whitakerSVG, coreStrataSVG,
   diversityStripSVG, synopticChartSVG,
 } from './sim/viz.js';
-import { windBandAt } from './sim/wind.js';
 import { momentRGB, legendEntries, legendKeyAt, legendGlossary } from './sim/lifeColour.js';
 import {
   drawLocalView, layoutLocalPanel, stepFocus, hoverCellAt, beingAtLocalPixel,
@@ -112,21 +109,22 @@ import {
 } from './localview.js';
 import { presentAdvance, placeSentence, cellSun } from './sim/present.js';
 import { considerThought, thoughtView, resetThought, thoughtMemory } from './sim/thought.js';
-import { currentsAtCell } from './sim/ocean.js';
 import { stepFlow, resetFlow } from './sim/flowviz.js';
 import { ensureCatalogue, catalogueReady } from './sim/catalogueLoad.js';
 import { HUD_CADENCE_MS } from './sim/hudCadence.js';
 import { parseWorldCsv } from './sim/exophysics.js';
 import { makeWorldRecord, applyRecordToRule } from './sim/worldRecord.js';
 import { explainDrama, defineTerm, READING_LIST, toolsUnlocked } from './sim/glossary.js';
-import { OVERLAYS, overlaysForPicker, overlayById, markTouch } from './sim/overlay.js';
+import { overlaysForPicker, overlayById, markTouch } from './sim/overlay.js';
 import { downloadInstrumentPng } from './sim/exportPng.js';
 import { EARTH_DIVERSITY, earthOverlaySVG } from './sim/earthRecord.js';
 import { tideBudget } from './sim/tides.js';
 import { iceShellBudget } from './sim/iceshell.js';
-import { createTableState, syncTableFromShelf, slotWorldPos, pickTableSlot, pickTableSlotRay, slotToLoadMeta } from './sim/orreryTable.js';
-import { readHandSkeleton, gestureFromSkeleton, applyHandGesture } from './sim/handIk.js';
+import { createTableState, syncTableFromShelf, pickTableSlotRay, slotToLoadMeta } from './sim/orreryTable.js';
 import { getGpgpu } from './sim/gpgpu/index.js';
+import { xrSession, camWorld, initXR, setupXR as setupXRModule } from './xr.js';
+import { initHUD, updateHUD } from './hud.js';
+import { PHONE_MQ, PHONE_LOCAL_PEEK, isPhone, syncPhoneUiClass, bindPhoneLocalDrag, bindPhoneDockDrag, clearLocalFreePos } from './phoneLayout.js';
 
 const TABLE = createTableState();
 
@@ -294,20 +292,10 @@ function setDayWatch(on) {
   if (next) {
     S._dayWatchWasPaused = S.paused;
     S.paused = true;
-    const b = document.getElementById('pause');
-    if (b) {
-      b.setAttribute('aria-pressed', 'true');
-      b.textContent = 'Resume';
-    }
     showMoment('A day', 'The rock holds. The light moves.', 'Shift+D leaves · Space too');
   } else {
     if (S._dayWatchWasPaused === false) {
       S.paused = false;
-      const b = document.getElementById('pause');
-      if (b) {
-        b.setAttribute('aria-pressed', 'false');
-        b.textContent = 'Pause';
-      }
     }
     S._dayWatchWasPaused = undefined;
   }
@@ -391,7 +379,7 @@ function updateThoughtMindHint(snap) {
   }
   if (!hint) return;
   hint.classList.toggle('is-error', snap?.status === 'error' || snap?.status === 'unsupported');
-  const phone = typeof matchMedia === 'function' && matchMedia('(max-width: 820px)').matches;
+  const phone = isPhone();
   if (!snap || snap.status === 'off') {
     hint.textContent = phone
       ? 'Optional on-device voice (~220 MB, WebGPU).'
@@ -445,7 +433,7 @@ function tickThoughtVoice(dt) {
 }
 
 const VIEW = m4(), PROJ = m4();
-let lastT = 0, simAcc = 0, agentAcc = 0, geomDirty = false;
+let lastT = 0, simAcc = 0, geomDirty = false;
 let dragging = false, panning = false, lastX = 0, lastY = 0, grabbing = false;
 let _landPickDone = null;
 
@@ -461,9 +449,10 @@ let _playtest = null;
 function startVandalHook(opts = {}) {
   const target = pickVandalTarget(W);
   _vandalHook = { ...target, t0: performance.now() };
-  setTool(target.tool);
+  setTool('inspect');
   setDockTab('tools', { open: !isPhone() });
   setSuiteDesk('tools', 'strike');
+  syncVandalSuggest();
   lookAtCell(target.cell, { ms: 2200 });
   // Gold stroke so the patch reads from orbit.
   if (!W.strokeMark || W.strokeMark.length !== NC) W.strokeMark = new Float32Array(NC);
@@ -474,10 +463,18 @@ function startVandalHook(opts = {}) {
   }
   W._strokeTick = W._tickIndex || 0;
   setPaused(false);
+  const strike = target.tool === 'ignite' ? 'Ignite' : 'Meteor';
   const sub = opts.demo
-    ? `${target.hint} Demo uses Strike only — not Evil.`
-    : target.hint;
+    ? `Drag to spin · pick ${strike} below when you want to try it. Demo uses Strike only — not Evil.`
+    : `Drag to spin the globe · pick ${strike} in Strike when you're ready. ${target.hint}`;
   showMoment('Try this', target.label, sub);
+}
+
+function syncVandalSuggest() {
+  document.querySelectorAll(TOOL_BTN_SEL).forEach((b) => {
+    const on = !!(_vandalHook && b.dataset.id === _vandalHook.tool);
+    b.classList.toggle('vandal-suggest', on);
+  });
 }
 
 function finishVandalHook(res) {
@@ -489,6 +486,7 @@ function finishVandalHook(res) {
   const cell = (res.cell >= 0 ? res.cell : _vandalHook.cell) | 0;
   markVandalDone();
   _vandalHook = null;
+  syncVandalSuggest();
   markDoorSeen();
   skipReveal();
   lookAtCell(cell, { ms: 2600, descend: true });
@@ -511,11 +509,13 @@ function persistGardenLeave() {
   try {
     const garden = captureGarden(W);
     saveGardenVisit(garden);
-    writeAutosave({
-      data: serializeRun(),
-      garden,
-      leftAt: Date.now(),
-    });
+    if (!autosavePaused()) {
+      writeAutosave({
+        data: serializeRun(),
+        garden,
+        leftAt: Date.now(),
+      });
+    }
   } catch { expected('ORR-EXPECTED-SAVE', 'serialize mid-boot'); }
 }
 
@@ -551,7 +551,9 @@ function maybeGardenReturn() {
     const line = gardenDelta(before, after) || 'Your world kept its place while you were away.';
     clearAutosave();
     saveGardenVisit(after);
-    writeAutosave({ data: serializeRun(), garden: after, leftAt: Date.now() });
+    if (!autosavePaused()) {
+      writeAutosave({ data: serializeRun(), garden: after, leftAt: Date.now() });
+    }
     setTimeout(() => {
       showMoment('While you were away', line, formatAge(W.ageYr));
     }, 900);
@@ -601,9 +603,9 @@ function beginHoldEarthLesson() {
   applyScalePreset(S, 'hold');
   focusCoastForLesson();
   setTool('inspect');
-  setDockTab('tools');
+  setDockTab('tools', { open: false });
   setSuiteDesk('tools', 'land');
-  if (isPhone()) setPhoneDock(true);
+  if (isPhone()) setPhoneDock(false);
   else {
     document.getElementById('dock')?.classList.remove('collapsed');
     document.getElementById('docktoggle')?.setAttribute('aria-expanded', 'true');
@@ -615,7 +617,6 @@ function beginHoldEarthLesson() {
       : 'Drag to spin · scroll to come closer · click the coast for the map');
 }
 const CAM_FOV = 50 * Math.PI / 180;
-let xrSession = null, xrRefSpace = null, camWorld = null;
 const hands = [
   { active: false, pos: [0, 0, 0], grab: false, prev: null, vel: [0, 0, 0] },
   { active: false, pos: [0, 0, 0], grab: false, prev: null, vel: [0, 0, 0] },
@@ -665,7 +666,7 @@ function refreshLayerPanel() {
   for (const L of st.layers) {
     rows.push(`<div class="layer-row${L.active ? '' : ''}" data-layer="${L.id}" role="option" aria-selected="${L.active ? 'true' : 'false'}" aria-pressed="${L.active ? 'true' : 'false'}">
       <button type="button" class="layer-eye" data-eye="${L.id}" title="Hide layer">${L.visible ? '◉' : '○'}</button>
-      <input class="layer-name" data-rename="${L.id}" value="${L.name.replace(/"/g, '&quot;')}" aria-label="Layer name">
+      <input class="layer-name" id="layer-name-${L.id}" name="layer-name-${L.id}" data-rename="${L.id}" value="${L.name.replace(/"/g, '&quot;')}" aria-label="Layer name">
       <span class="layer-blend">${L.blend}${L.hasMask ? ' · mask' : ''}</span>
     </div>`);
   }
@@ -893,9 +894,56 @@ function loadTableSlot(slot) {
 
 const TOOL_BTN_SEL = '#toolsLand button, #toolsLife button, #toolsStrike button, #toolsClimate button, #toolsSample button, #toolsEvil button';
 
-function isPhone() {
-  // Keep in sync with vr/styles/phone.css — bottom-sheet dock, not a side column.
-  return typeof matchMedia === 'function' && matchMedia('(max-width: 820px)').matches;
+/** Phone minimap: Peek (200px) ↔ Full — skip the I/C/S/M/L ladder. */
+function stepPhoneLocalFrame(dir) {
+  if (S.localParked && dir > 0) {
+    unparkLocalMap();
+    return true;
+  }
+  if (dir > 0) {
+    if (S.localExpanded) return true;
+    S.localSize = PHONE_LOCAL_PEEK;
+    S.localExpanded = true;
+    const focus = S.focusCell ?? S.pinCell ?? S.kbCursor ?? S._localFocus ?? 0;
+    const last = W.receipts?.[W.receipts.length - 1]?.tool;
+    armLocalCue(focus, last);
+  } else if (S.localExpanded) {
+    S.localExpanded = false;
+    S.localSize = PHONE_LOCAL_PEEK;
+  } else {
+    parkLocalMap();
+    return true;
+  }
+  try { applyLocalLayout?.(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+  return true;
+}
+
+function syncPhoneLocalChrome() {
+  const panel = document.getElementById('localpanel');
+  const toggle = document.getElementById('localmaptoggle');
+  const frame = document.getElementById('localframe');
+  const park = document.getElementById('localpark');
+  const phone = isPhone();
+  panel?.classList.toggle('phone-map', phone);
+  panel?.classList.toggle('phone-peek', phone && !S.localExpanded && !S.localParked);
+  panel?.classList.toggle('phone-full', phone && !!S.localExpanded);
+  if (toggle) {
+    const show = phone && !S.localParked;
+    toggle.hidden = !show;
+    toggle.textContent = S.localExpanded ? 'Peek' : 'Full map';
+    toggle.setAttribute('aria-pressed', S.localExpanded ? 'true' : 'false');
+    toggle.setAttribute('aria-label', S.localExpanded ? 'Shrink map to peek' : 'Expand map to full screen');
+  }
+  if (frame) frame.hidden = phone;
+  const tag = document.getElementById('localframetag');
+  if (phone && tag) {
+    tag.textContent = S.localExpanded ? 'Full' : 'Map';
+    tag.title = S.localExpanded ? '' : 'Drag bar to move · double-tap bar to snap corner';
+  }
+  if (park && phone) {
+    park.title = S.localExpanded ? 'Hide map' : 'Tuck map away';
+    park.setAttribute('aria-label', park.title);
+  }
 }
 
 /** Phone bottom-sheet dock: open/close + scrim so the globe stays tappable. */
@@ -906,6 +954,8 @@ function setPhoneDock(open) {
   const scrim = document.getElementById('dockscrim');
   const ui = document.getElementById('ui');
   if (!dock) return;
+  // Phone uses is-open, not collapsed — collapsed hides .dock-tabs/.dock-body in index.html.
+  if (open) dock.classList.remove('collapsed');
   dock.classList.toggle('is-open', !!open);
   scrim?.classList.toggle('on', !!open);
   ui?.classList.toggle('phone-dock-open', !!open);
@@ -914,6 +964,12 @@ function setPhoneDock(open) {
   fab?.setAttribute('aria-expanded', open ? 'true' : 'false');
   fab?.setAttribute('aria-pressed', open ? 'true' : 'false');
   syncChromeFabs();
+}
+
+/** Hide dock for overlays — desktop collapses; phone closes the bottom sheet. */
+function hideDockForOverlay() {
+  if (isPhone()) setPhoneDock(false);
+  else document.getElementById('dock')?.classList.add('collapsed');
 }
 
 /** Floating menu / map icons — visible only when their panel is tucked. */
@@ -975,10 +1031,10 @@ function unparkLocalMap() {
   const prev = S.localSizeBeforePark;
   S.localParked = false;
   if (prev) {
-    S.localSize = prev.size || LOCAL_SIZES[0];
+    S.localSize = prev.size || (isPhone() ? PHONE_LOCAL_PEEK : LOCAL_SIZES[0]);
     S.localExpanded = !!prev.expanded;
   } else {
-    S.localSize = isPhone() ? LOCAL_SIZES[0] : LOCAL_SIZE_M;
+    S.localSize = isPhone() ? PHONE_LOCAL_PEEK : LOCAL_SIZE_M;
     S.localExpanded = false;
   }
   flashChromeFast(document.getElementById('localpanel'));
@@ -989,6 +1045,16 @@ function unparkLocalMap() {
 /** Collapse local map quickly: Full → icon, or icon → parked FAB. */
 function tuckLocalMap() {
   flashChromeFast(document.getElementById('localpanel'));
+  if (isPhone()) {
+    if (S.localExpanded) {
+      S.localExpanded = false;
+      S.localSize = PHONE_LOCAL_PEEK;
+      try { applyLocalLayout?.(); } catch { expected('ORR-EXPECTED-LAYOUT', 'local layout'); }
+      return;
+    }
+    parkLocalMap();
+    return;
+  }
   if (S.localExpanded) {
     S.localExpanded = false;
     S.localSize = LOCAL_SIZES[0];
@@ -1038,6 +1104,7 @@ function refreshToolGates() {
   if (needInspect) setTool('inspect');
   buttons.forEach((x) => x.setAttribute('aria-pressed', x.dataset.id === activeTool ? 'true' : 'false'));
   syncToolRail();
+  syncVandalSuggest();
 }
 
 function setRuleset(i) {
@@ -1311,11 +1378,6 @@ function togglePause() {
 function setPaused(on) {
   if (S.dayWatch && on) { setDayWatch(false); return; }
   S.paused = !!on;
-  const b = document.getElementById('pause');
-  if (b) {
-    b.setAttribute('aria-pressed', S.paused ? 'true' : 'false');
-    b.textContent = S.paused ? 'Resume' : 'Pause';
-  }
   const ribbon = document.getElementById('timeribbon');
   if (ribbon) delete ribbon.dataset.sig;
   updateHUD();
@@ -1522,424 +1584,6 @@ function bindTimeRibbon() {
 
 /** The most populous living body, described from its own genome, plus the sense this
  *  world actually delivers. Nothing here is a lookup — every word is expressed. */
-function dominantBodyLine() {
-  const tr = W.tree;
-  if (!tr?.living?.length) return '';
-  let best = null;
-  for (const id of tr.living) {
-    const n = tr.byId.get(id);
-    if (n?.genome && (!best || n.pop > best.pop)) best = n;
-  }
-  if (!best) return '';
-  const body = describeGenome(best.genome);
-  const pen = best.morphMult != null && best.morphMult < 0.95
-    ? ` <span style="color:#e0a060" title="${(best.morphWhy || []).join('; ')}">×${best.morphMult.toFixed(2)}</span>`
-    : '';
-  const sense = W.topSense ? ` · best sense <b>${W.topSense}</b>` : '';
-  return `<span style="color:#9fd6b4">${best.name}</span>: ${body}${pen}${sense}<br>`;
-}
-
-function speciesInspectHTML(cell) {
-  const node = lineageAt(W, cell);
-  if (!node) {
-    if (W.originCell === cell) return `<br><span style="color:#c8b56f">origin site</span>`;
-    return '';
-  }
-  const page = speciesPage(W, node);
-  if (!page) return '';
-  const why = explainCreature(W, node);
-  return `<br><span style="color:#9fd6b4"><b>${page.name}</b> · ${page.body}</span><br>` +
-    `census ~<b>${page.census | 0}</b> · Ne <b>${page.Ne | 0}</b> · range <b>${((page.rangeKm2 / 1e3) | 0)}</b>k km²` +
-    (page.diet?.length ? ` · eats ${page.diet.join(', ')}` : '') + `<br>` +
-    (page.card?.lines?.slice(0, 3).map((l) => `<span style="color:#8aa0bc">${l}</span>`).join('<br>') || '') +
-    (why ? `<br>${why}` : '');
-}
-
-function updateHUD() {
-  if (xrSession) return;
-  const R = W.rule;
-  let land = 0;
-  for (let c = 0; c < NC; c++) if (W.h[c] >= W.seaLevel) land += AREA[c];
-  const pc = (x) => ((x / NC) * 100).toFixed(1) + '%';
-  const g = W.gases;
-  const lifePct = (W.meanLife * 100).toFixed(1);
-  let landCells = 0, greenCells = 0, settleCells = 0;
-  for (let c = 0; c < NC; c++) {
-    if (W.h[c] < W.seaLevel) continue;
-    landCells++;
-    if (W.life[c] > 0.15) greenCells++;
-    if (W.build[c] > 0.2) settleCells++;
-  }
-  const landGreen = landCells ? ((greenCells / landCells) * 100).toFixed(0) : '0';
-  const bloom = W.lifeGrown > 80 ? ` · <b style="color:#7dff6a">bloom +${W.lifeGrown}</b>` :
-    W.lifeDied > 200 ? ` · <b style="color:#e08060">dieback −${W.lifeDied}</b>` : '';
-  const builders = W.buildersActive > 0
-    ? ` · <b style="color:#e8c48a">building ×${W.buildersActive}</b>` : '';
-  let bioLine;
-  if (R.daisyworld) {
-    let b = 0, w = 0, n = 0;
-    for (let c = 0; c < NC; c++) {
-      if (W.blackDaisy[c] > 0.25) b++;
-      if (W.whiteDaisy[c] > 0.25) w++;
-      n++;
-    }
-    bioLine = `<span style="color:#ddd">daisies <b>${lifePct}%</b> · ` +
-      `<b style="color:#222;background:#ccc;padding:0 3px">black ${(b / n * 100) | 0}%</b> · ` +
-      `<b style="color:#111;background:#fff;padding:0 3px">white ${(w / n * 100) | 0}%</b>${bloom}</span><br>`;
-  } else {
-    bioLine = `<span style="color:#7dff6a">life <b>${lifePct}%</b> · land green <b>${landGreen}%</b>${bloom}</span><br>` +
-      `<span style="color:#e8c48a">settlements <b>${settleCells}</b>${builders}</span><br>`;
-  }
-  const co2Str = g.CO2 < 0.005
-    ? `${(g.CO2 * 1e6).toFixed(0)} ppm`
-    : `${(g.CO2 * 100).toFixed(1)}%`;
-  const tK = R.tSurfK != null ? R.tSurfK : (288 + ((W.meanTemp ?? 0.5) - 0.5) * 160);
-  const tStr = R.teqK != null
-    ? `${tK.toFixed(0)} K` +
-      (R.earthLike ? ` (${((W.meanTemp - 0.5) * 80 + 15).toFixed(0)}°C)` : '') +
-      (R.greenhouseK != null ? ` · T<sub>eq</sub> ${R.teqK | 0} K · GH +${R.greenhouseK | 0} K` : '')
-    : R.earthLike
-      ? `${((W.meanTemp - 0.5) * 80 + 15).toFixed(0)}°C`
-      : W.meanTemp.toFixed(2);
-  const ics = W.ics;
-  const icsStr = ics
-    ? `${ics.eon}${ics.period && ics.period !== '—' ? ' · ' + ics.period : ''}`
-    : '';
-  const tree = treeSummary(W.tree);
-  const chem = solventBlurb(W);
-  const originLine = W.originCell != null && W.transitions?.abiogenesis
-    ? `origin cell <b>${W.originCell}</b>` + (W.originBudget ? ` · budget ${(W.originBudget.produced || 0).toExponential(1)}` : '')
-    : '';
-  const proxy = W.carbon
-    ? `δ¹³C <b>${W.carbon.d13C.toFixed(1)}</b> · pH <b>${W.carbon.surfacePH.toFixed(2)}</b><br>`
-    : '';
-  const bioSig = W.disequilibrium > 0.01
-    ? ` · diseq <b>${(W.disequilibrium * 100) | 0}</b>`
-    : '';
-  const sterile = W.sterileWhy
-    ? `<span style="color:#e08060">sterile: ${W.sterileWhy}</span><br>`
-    : (R.atmosphereUnknown
-      ? `<span style="color:#c8b56f">atmosphere: unmeasured — biosphere unknown</span><br>`
-      : '');
-  document.getElementById('stats').innerHTML =
-    `<span class="era-name">${currentEraName(W.chron, W)}</span>` +
-    `<b>${formatAge(W.ageYr || W.year)}</b>` +
-    (icsStr ? ` · <span style="color:#9fc0ff">${icsStr}</span>` : '') + `<br>` +
-    `dt <b>${fmtDt(W.dtYr)}</b> · L☉ <b>${(W.solar / (W._baseSolar || 1)).toFixed(2)}</b>` +
-    (W.solarShade ? ` · shade <b>${((W.solarShade || 0) * 100) | 0}%</b>` : '') + `<br>` +
-    `tilt <b>${((W.obliquity || 0) * 180 / Math.PI).toFixed(1)}°</b>` +
-    ` · day <b>${(W.rotationPeriod || 1).toFixed(2)}×</b>` +
-    (W.sky?.terminatorKmh ? ` · <b>${W.sky.terminatorKmh.toFixed(0)}</b> km/h` : '') +
-    (W.magnetosphere != null ? ` · B <b>${W.magnetosphere.toFixed(2)}</b>` : '') +
-    (W.interior?.lidMode ? ` · <b>${W.interior.lidMode}</b>` : '') +
-    (W.moon && W.moon.mass > 0.1
-      ? ` · moon <b>${(W.moon.mass).toFixed(1)} M</b>@${(W.moon.distance || 1).toFixed(1)}`
-      : ` · <span style="color:#e08060">no moon</span>`) +
-    (W.obliquityWander ? ` · <span style="color:#e4a060">axis wanders</span>` : '') + `<br>` +
-    (W.tidePhase
-      ? `tide <b>${W.tidePhase}</b>` +
-        (W.springsInDays != null ? ` · springs in <b>${W.springsInDays.toFixed(0)}d</b>` : '') +
-        ` · range <b>${(W.meanTideRange || 0).toFixed(3)}</b>` +
-        (W.moonIllum != null ? ` · moon <b>${(W.moonIllum * 100) | 0}%</b>` : '') + `<br>`
-      : '') +
-    (W._windRegime
-      ? `wind <b>${W._windRegime}</b> · ITCZ <b>${((W._itczLat || 0) * 57.3).toFixed(0)}°</b><br>`
-      : '') +
-    (W._droppedTicks
-      ? `<span style="color:#e08060">dropped ticks <b>${W._droppedTicks}</b>` +
-        (W._dropReason ? ` (${W._dropReason})` : '') + `</span><br>`
-      : '') +
-    (W._degraded?.length
-      ? `<span style="color:#c8b56f">sim reduced: <b>${W._degraded.slice(0, 6).join(', ')}</b>` +
-        (W._degraded.length > 6 ? '…' : '') + `</span><br>`
-      : '') +
-    (W._gpgpu
-      ? `<span style="color:#6fd6a4">GPGPU climate <b>${(W._gpgpuMs || 0).toFixed(2)} ms</b></span><br>`
-      : `<span style="color:#889">climate CPU</span><br>`) +
-    `state <b>${W.state}</b> · health <b>${(W.health * 100) | 0}%</b>` +
-    (W.mood?.label ? ` · mood <b>${W.mood.label}</b>` : '') +
-    ` · hab <b>${((W.habitability || 0) * 100) | 0}</b>/<b>${((W.inhabitance || 0) * 100) | 0}</b>${bioSig}<br>` +
-    `T <b>${tStr}</b> · sea <b>${W.seaLevel.toFixed(3)}</b>` +
-    (R.surfacePressureBar != null ? ` · <b>${formatLivePressure(W)}</b>` : '') +
-    (R.densityPhrase ? `<br>${R.densityPhrase}` : '') +
-    (R.orbitalPeriodDays != null
-      ? `<br>year <b>${Number(R.orbitalPeriodDays.toPrecision(4))}</b> d` +
-        (R.orbitalPeriodDays > 40 ? ` (${(R.orbitalPeriodDays / 365.25).toFixed(2)} yr)` : '') +
-        (R.solarDayHours != null ? ` · solar day <b>${(R.solarDayHours / 24).toFixed(2)}</b> d` : '')
-      : '') +
-    `<br>` +
-    `land <b>${pc(land)}</b> · ice <b>${pc(W.iceFrac * NC)}</b><br>` +
-    bioLine +
-    sterile +
-    (chem ? `<span style="color:#9fd6b4">${chem}</span><br>` : '') +
-    (originLine ? `<span style="color:#c8b56f">${originLine}</span><br>` : '') +
-    `CO₂ <b>${co2Str}</b> O₂ <b>${(g.O2 * 100).toFixed(1)}%</b>` +
-    (g.CH4 > 1e-5 ? ` CH₄ <b>${(g.CH4 * 1e6).toFixed(0)} ppm</b>` : '') + `<br>` +
-    proxy +
-    (tree.total
-      ? `clades <b>${tree.living}</b> living / <b>${tree.total}</b> · extinct <b>${tree.extinct}</b>` +
-        (tree.maxDepth ? ` · depth <b>${tree.maxDepth}</b>` : '') +
-        (W.morphospaceOccupied ? ` · bodies <b>${W.morphospaceOccupied}</b>` : '') +
-        (W.shannon ? ` · H′ <b>${W.shannon.toFixed(2)}</b>` : '') + `<br>`
-      : '') +
-    dominantBodyLine() +
-    (W.budgetMode || W.scarcityMode === 'observe' || W.scarcityMode === 'budgeted'
-      ? `energy <b>${W.energy.toFixed(0)}</b>${W.energyDebt ? ` · debt <b>${W.energyDebt | 0}</b>` : ''} · `
-      : '') +
-    (W.attribution ? `you <b>${((W.attribution.player || 0) * 100) | 0}%</b> · ` : '') +
-    `<b>${S.fps}</b> fps · ents ${ENT.n}` +
-    (W.overshootWarn ? `<br><span style="color:#e4a060">${W.overshootWarn}</span>` : '') +
-    (W.argueResponses?.length
-      ? `<br><span style="color:#9fc0ff">${W.argueResponses[W.argueResponses.length - 1].text}</span>`
-      : '');
-
-  // Price / brush readout
-  const priceEl = document.getElementById('godprice');
-  if (priceEl) {
-    const p = pricePreview(activeTool);
-    priceEl.textContent = p.free
-      ? `free · brush ${brushKm() | 0} km`
-      : `cost ${p.cost} · bal ${p.balance | 0} · +${(p.income || 0).toFixed(1)}/t · brush ${brushKm() | 0} km`
-        + (p.cooldownYr ? ` · cd` : '');
-  }
-
-  const ribbon = document.getElementById('timeribbon');
-  if (ribbon) {
-    const clock = { ...timeClockInfo(W), paused: S.paused };
-    const needle = Math.min(100, Math.max(0, ((4567 - (W.ics?.maBP ?? 0)) / 4567) * 100)) | 0;
-    const ageLabel = formatAge(W.ageYr || W.year);
-    const panel = timePanelState(W, S);
-    const sig = `${ageLabel}|${W.ics?.period}|${W.ics?.eon}|${needle}|${clock.id}|${clock.dt}|${clock.paused ? 1 : 0}|${W.fastForward ? 1 : 0}|${panel.eraId}|${panel.eras.length}|${panel.clockFace}|${panel.seasonHoldId}|${panel.lifeSpeed}|${panel.livedRate}|${panel.livedDayRate}|${panel.winterHint}|${(W.dark?.winter * 100) | 0}`;
-    if (ribbon.dataset.sig !== sig) {
-      ribbon.dataset.sig = sig;
-      ribbon.innerHTML = icsRibbonHTML(W.ics, ageLabel, W.ics?.maBP, clock, panel);
-      bindRibbonTips(ribbon);
-    }
-    refreshLivedRibbonDom(ribbon, panel);
-  }
-
-  announceNewMoments();
-  refreshToolGates();
-
-  if (darkEnabled()) {
-    if (!updateHUD._dark || performance.now() - updateHUD._dark > HUD_CADENCE_MS.dark) {
-      updateHUD._dark = performance.now();
-      if (_darkHud) _darkHud.refreshDarkHud(W);
-      else ensureDarkUi().then(() => _darkHud?.refreshDarkHud(W)).catch(() => { expected('ORR-EXPECTED-LAZY', 'dark HUD refresh'); });
-    }
-    if (_darkSpec) {
-      const mom = _darkSpec.drainDarkMoment(W);
-      if (mom) showMoment(mom.title, mom.body, mom.sub || formatAge(W.ageYr));
-    }
-  }
-
-  // Keep Sky / Rock panels live when open
-  if (document.getElementById('pane-climate')?.classList.contains('on')) {
-    if (!updateHUD._clim || performance.now() - updateHUD._clim > HUD_CADENCE_MS.climate) {
-      updateHUD._clim = performance.now();
-      refreshClimatePanel({ skipChart: (updateHUD._climN = (updateHUD._climN || 0) + 1) % 5 !== 0 });
-    }
-  }
-  if (document.getElementById('pane-rock')?.classList.contains('on')) {
-    if (!updateHUD._rock || performance.now() - updateHUD._rock > HUD_CADENCE_MS.rock) {
-      updateHUD._rock = performance.now();
-      refreshPlatesPanel();
-    }
-  }
-  if (document.getElementById('pane-sandbox')?.classList.contains('on')) {
-    const modesOn = document.querySelector('.suite-desk[data-suite-panel="sandbox"][data-desk-panel="modes"].on');
-    if (modesOn && (!updateHUD._modes || performance.now() - updateHUD._modes > HUD_CADENCE_MS.modes)) {
-      updateHUD._modes = performance.now();
-      refreshWorldModeStrip();
-    }
-  }
-
-  const chip = document.getElementById('worldchip');
-  if (chip) {
-    const mode = R.deepTime ? 'deep time' : (R.tutorial ? 'tutorial' : (S.catalogueId ? 'catalogue' : 'sandbox'));
-    const land = W._landscape && W._landscape !== 'auto' ? landscapeById(W._landscape).name : '';
-    const bits = seedToWords((W.landSeed ?? W.seed) >>> 0);
-    const short = `${bits[0]}-${bits[1]}`;
-    const name = W.worldName || R.name;
-    const kindBit = W._planetKind && W._planetKind !== 'earth'
-      ? ` · ${W._planetKind}${W._planetKindWhy ? ` (${W._planetKindWhy})` : ''}`
-      : '';
-    const shapeBit = W._nonHydrostatic ? ' · not round' : '';
-    const epochBit = W._epoch?.id && W._epoch.id !== 'present' && W._epoch.id !== 'venus-now'
-      && W._epoch.id !== 'mars-now' ? ` · ${W._epoch.name}` : '';
-    const surfBit = W.noSurface ? ' · no surface' : '';
-    const ax = W._worldAxes;
-    chip.innerHTML = S.catalogueId
-      ? `<b>${R.name}</b> <small>#${S.catalogueId} · ${mode} · seed ${W.seed}${R.teqK != null ? ` · ${R.teqK | 0} K` : ''}${kindBit}${shapeBit}${surfBit}${epochBit}${R.contested ? ' · contested' : ''}</small>`
-      : `<b>${name}</b> <small>${land ? `${land} · ` : ''}${short}${kindBit}${shapeBit}${surfBit}${epochBit}</small>`;
-    chip.title = [
-      S.catalogueId ? 'Open Worlds' : `Open Worlds · ${worldIdOf(W)}`,
-      ax ? [formatAxesLine(ax), formatAxesExtras(ax), formatGiantExtras(W), ax.fingerprint].filter(Boolean).join(' · ') : '',
-    ].filter(Boolean).join('\n');
-    chip.style.cursor = 'pointer';
-  }
-  const landLine = document.getElementById('landmassline');
-  if (landLine && W.noSurface) {
-    landLine.textContent = ['no surface · envelope', formatGiantExtras(W)].filter(Boolean).join(' · ');
-  } else if (landLine && W._landReport) {
-    const r = W._landReport;
-    landLine.textContent = `${r.count} landmasses · ${(r.landFrac * 100).toFixed(0)}% land · largest ${(r.largestShare * 100).toFixed(0)}% · coast ${Math.round(r.coastKm).toLocaleString()} km`;
-  }
-  const axLine = document.getElementById('axesline');
-  if (axLine) {
-    axLine.textContent = W._worldAxes
-      ? [formatAxesLine(W._worldAxes), formatAxesExtras(W._worldAxes), formatGiantExtras(W),
-        formatEpoch(W), formatTechno(W), formatMega(W),
-        formatLiquidWindow(cycleMaterial(W), livePressureBar(W)),
-        formatLivePressure(W),
-        formatColumn(W),
-        formatPalette(W),
-        formatFeatures(W),
-        W._worldAxes.fingerprint].filter(Boolean).join(' · ')
-      : '';
-  }
-
-  const insp = document.getElementById('inspect');
-  if (!insp) return;
-  if (S.inspect?.cell != null && S.inspect.h == null) {
-    S.inspect = { ...inspectCell(S.inspect.cell), ...S.inspect };
-  }
-  if (S.inspect && S.inspect.h != null) {
-    const x = S.inspect;
-    insp.style.display = 'block';
-    if (W.noSurface) {
-      const pLine = x.plevel || formatPlevel(W, x.cell);
-      const conv = W.converg?.[x.cell] || 0;
-      const band = conv < 0 ? 'belt (sinking · deeper)' : 'zone (rising · cloudy)';
-      insp.innerHTML =
-        `<b>${placeSentence(x.cell) || 'Cell ' + x.cell}</b><br>` +
-        `<span style="color:#8aa0bc">${band} · cell ${x.cell}</span><br>` +
-        (pLine ? `<b>${pLine}</b><br>` : '') +
-        (formatColumnAt(W, x.cell) ? `${formatColumnAt(W, x.cell)}<br>` : '') +
-        (x.wind != null
-          ? `wind ${Number(x.wind).toFixed(2)}` +
-            (x.windU != null ? ` (u ${Number(x.windU).toFixed(2)} v ${Number(x.windV).toFixed(2)})` : '') + `<br>`
-          : '') +
-        (W._jetCount ? `${W._jetCount} zonal jets · ${W._windRegime || 'zonal jets'}<br>` : '') +
-        (W.rule?.internalHeat > 0.02 ? `internal heat ${W.rule.internalHeat.toFixed(2)}` : '');
-    } else {
-    const biome = W.biome ? BIOMES[W.biome[x.cell]] : '—';
-    const guild = topGuild(x.cell);
-    const tec = tectonicsAtCell(W, x.cell);
-    const here = placeSentence(x.cell);
-    const feat = featureAt(W, x.cell);
-    insp.innerHTML =
-      `<b>${feat ? feat.name : (here || 'Cell ' + x.cell)}</b><br>` +
-      (feat && here ? `<span style="color:#c69a4f">${here}</span><br>` : '') +
-      `<span style="color:#8aa0bc">${biome} · cell ${x.cell}</span><br>` +
-      `elev ${x.h.toFixed(2)} · T ${x.temp.toFixed(2)} · moist ${x.moist.toFixed(2)}<br>` +
-      (W.substrate ? `substrate <b>${describeSubstrate(W, x.cell)}</b>` : '') +
-      (W.substrate ? ` · ${phaseAtCell(W, x.cell)}<br>` : '') +
-      (() => {
-        const cov = formatCover(W, x.cell);
-        return cov ? `cover <b>${cov}</b><br>` : '';
-      })() +
-      (() => {
-        const f = landformAt(W, x.cell);
-        if (!f) return '';
-        return `form <b>${explainForm(f)}</b><br>`
-          + `<span style="color:#8aa0bc">${f.why}</span><br>`;
-      })() +
-      (() => {
-        const mat = cycleMaterial(W);
-        const win = mat ? formatLiquidWindow(mat, livePressureBar(W)) : '';
-        const p = !W.rule?.earthLike && W._atmScale != null && Math.abs(W._atmScale - 1) > 0.02
-          ? formatLivePressure(W) : '';
-        const line = [win, p].filter(Boolean).join(' · ');
-        const col = formatColumnAt(W, x.cell) || formatColumn(W);
-        const extra = W.grain?.[x.cell] > 0.04 && (W.frost?.[x.cell] || 0) > 0.08
-          ? `grain ${W.grain[x.cell].toFixed(2)}` : '';
-        const bits = [line, col, extra].filter(Boolean).join(' · ');
-        return bits ? `<span style="color:#9fc0ff">${bits}</span><br>` : '';
-      })() +
-      `life ${x.life.toFixed(2)} (${LIFE_CLASSES[x.lifeClass]?.id || '—'}) · ice ${x.ice.toFixed(2)}<br>` +
-      (guild ? `guild <b>${guild}</b><br>` : '') +
-      `build ${(x.build || 0).toFixed(2)} · plate <b>${tec?.name || x.plate}</b>` +
-      (tec ? ` · ${tec.oceanic ? 'oceanic' : 'cont'}` : '') +
-      ` · crust ${(x.crust ?? W.crust[x.cell]).toFixed(2)}` +
-      (W.techno?.watts ? ` · ${formatTechno(W)}` : '') + `<br>` +
-      (W.interior
-        ? `core ${(W.interior.coreMassFrac * 100) | 0}% · lid <b>${W.interior.lidMode}</b> · B ${(W.magnetosphere || 0).toFixed(2)}<br>`
-        : '') +
-      (tec?.boundLabel
-        ? `bound <b>${tec.boundLabel}</b>` +
-          (tec.ageMyr != null ? ` · crust age ${tec.ageMyr.toFixed(0)} Myr` : '') + `<br>`
-        : '') +
-      `flow ${x.flow.toFixed(2)} · ground ${(x.groundW ?? 0).toFixed(2)}` +
-      ((x.lake || 0) > 0.05 ? ` · lake ${Number(x.lake).toFixed(2)}` : '') +
-      ` · clouds ${(x.clouds ?? 0).toFixed(2)}` +
-      (x.precip != null ? ` · precip ${Number(x.precip).toFixed(2)}` : '') +
-      (W.npp ? ` · npp ${W.npp[x.cell].toFixed(2)}` : '') + `<br>` +
-      (x.wind != null
-        ? `wind ${Number(x.wind).toFixed(2)}` +
-          (x.windU != null ? ` (u ${Number(x.windU).toFixed(2)} v ${Number(x.windV).toFixed(2)})` : '') +
-          ` · ${windBandAt(DIR[x.cell * 3 + 1], W._itczLat || 0, W._windCells || 3)}` +
-          // The flow aloft, and the shear between: a storm's whole prospects.
-          (W.jetU
-            ? ` · aloft ${Math.sqrt(W.jetU[x.cell] ** 2 + W.jetV[x.cell] ** 2).toFixed(2)}`
-              + ` · shear ${(W.shear?.[x.cell] || 0).toFixed(2)}`
-            : '') + `<br>`
-        : '') +
-      (() => {
-        const cur = currentsAtCell(W, x.cell);
-        if (!cur) return '';
-        return `current ${cur.spd.toFixed(2)} ${cur.dir}` +
-          (cur.upwell > 0.15 ? ` · upwell ${cur.upwell.toFixed(2)}` : '') +
-          ` · salt ${cur.salt.toFixed(2)}` +
-          (cur.wave > 0.12 ? ` · waves ${cur.wave.toFixed(2)}` : '') +
-          (cur.mix > 0.05 ? ` · mixed layer ${cur.mix.toFixed(2)}` : '') +
-          (W._mocSv != null ? ` · overturning ${W._mocSv.toFixed(0)} Sv` : '') +
-          `<br>`;
-      })() +
-      ((W._ensoPhase && W._ensoPhase !== 'neutral') || (W._monsoon || 0) > 0.55
-        ? `${W._ensoPhase || 'ENSO neutral'}` +
-          (W._ensoIndex != null ? ` (${W._ensoIndex >= 0 ? '+' : ''}${W._ensoIndex.toFixed(2)})` : '') +
-          ((W._monsoon || 0) > 0.5 ? ` · monsoon ${W._monsoon.toFixed(2)}` : '') +
-          (W._jetLat != null ? ` · jet lat ${W._jetLat.toFixed(2)}` : '') +
-          `<br>`
-        : '') +
-      (x.press != null ? `P ${Number(x.press).toFixed(2)} · ` : '') +
-      (x.tideRange != null
-        ? `tide h ${Number(x.tideHeight || 0).toFixed(3)} · range ${Number(x.tideRange).toFixed(3)}` +
-          (x.intertidal > 0.05 ? ` · intertidal ${Number(x.intertidal).toFixed(2)}` : '') + `<br>`
-        : '') +
-      ((W.stormField?.[x.cell] || 0) > 0.08 || (W.surgeField?.[x.cell] || 0) > 0.008
-        ? `storm ${(W.stormField[x.cell] || 0).toFixed(2)}` +
-          ((W.surgeField?.[x.cell] || 0) > 0.005 ? ` · surge ${(W.surgeField[x.cell] || 0).toFixed(3)}` : '') + `<br>`
-        : '') +
-      (x.seedOk === false ? `<span style="color:#e08060">seed refuses: ${(x.seedWhy || []).join('; ')}</span>` : '') +
-      (x.biomeGap?.gaps?.length ? `<br><span style="color:#c4a060">biome gap: ${x.biomeGap.gaps.join('; ')}</span>` : '') +
-      speciesInspectHTML(x.cell);
-    }
-    const hist = whatHappenedHere(W.chron, x.cell, 2);
-    if (hist.length) {
-      insp.innerHTML += '<br><span style="color:#9fc0ff">Here:</span> ' +
-        hist.slice(0, 3).map((e) => e.label).join(' · ');
-    }
-  } else insp.style.display = 'none';
-}
-
-function fmtDt(dt) {
-  if (!dt) return '—';
-  if (dt >= 1e6) return `${(dt / 1e6).toFixed(1)} Myr`;
-  if (dt >= 1e3) return `${(dt / 1e3).toFixed(0)} kyr`;
-  return `${dt | 0} yr`;
-}
-
-function topGuild(cell) {
-  if (!W.guildDens) return null;
-  let best = null, v = 0.08;
-  for (const id of Object.keys(W.guildDens)) {
-    const x = W.guildDens[id][cell];
-    if (x > v) { v = x; best = id; }
-  }
-  return best;
-}
 
 // Frame-loop element handles — looked up once, not 60× a second.
 let _lvEl = null, _rungEl = null;
@@ -2554,14 +2198,13 @@ function setupTips() {
     }
   });
 
-  // Topbar chrome — icons on phone (labels hide ≤820px).
+  // Topbar chrome — icons on phone (labels hide ≤900px).
   for (const [id, icon, label] of [
     ['tourbtn', 'chronicle', 'Tour'],
     ['catbtn', 'planet', 'Worlds'],
     ['newseed', 'genesisrand', 'Reseed'],
     ['docktoggle', 'menu', 'Menu'],
     ['dockfab', 'menu', 'Menu'],
-    ['dockshrink', 'chevronDown', 'Close'],
     ['localpark', 'eye', 'Tuck'],
   ]) {
     const el = document.getElementById(id);
@@ -2847,7 +2490,7 @@ function onTourButton() {
   // Always open the door — never trap on "re-show current lesson" while the
   // matching world is loaded (that made Tour feel dead mid-crisis).
   setPaused(true);
-  document.getElementById('dock')?.classList.add('collapsed');
+  hideDockForOverlay();
   openDoor();
 }
 
@@ -3730,7 +3373,7 @@ function syncLandscapeUi(id, suggestLand = false) {
  *  first run this project has ever shown was the same planet. A URL `?seed=` or
  *  `?land=` or `?world=` still pins it exactly, so a shared link is reproducible. */
 const OPENINGS = [
-  { seed: 20260808, landscape: 'auto' },
+  { seed: 20260808, landscape: 'familiar' },
   { seed: 1043, landscape: 'shattered' },
   { seed: 88117, landscape: 'twoworlds' },
   { seed: 4402, landscape: 'archipelago' },
@@ -3819,12 +3462,12 @@ function applyOpening(opening, opts = {}) {
   const base = opts.rule || W.rule || RULESETS[0];
   const g = genesisFromPanel(document);
   g.seed = opening.seed;
-  g.landscape = opening.landscape;
+  g.landscape = resolvePlayLandscape(opening.landscape, base);
   g.rulesetId = base.id || 'terra';
   if (!g.name) g.name = opening.name || nameWorld(g.seed, g.landscape);
   const born = rulesetFromGenesis(g);
   const rule = opening.epoch ? ruleForEra(born, opening.epoch) : born;
-  S.landscape = opening.landscape;
+  S.landscape = g.landscape;
   runGenerate(opening.seed, rule, {
     afterMeta() {
       W.worldName = g.name;
@@ -3833,9 +3476,18 @@ function applyOpening(opening, opts = {}) {
       rememberWorldId(worldIdOf(W));
       syncLandscapeUi(g.landscape);
       const seedEl = document.getElementById('genesisseed');
-      if (seedEl) seedEl.value = encodeWorldId(opening.seed, opening.landscape, opening.epoch);
+      if (seedEl) seedEl.value = encodeWorldId(opening.seed, g.landscape, opening.epoch);
       refreshGenesisReport(g);
       updateHUD();
+      if (opts.welcome) {
+        const rep = W._landReport;
+        const masses = rep ? `${rep.count} landmasses · ${(rep.landFrac * 100).toFixed(0)}% ocean` : '';
+        showMoment(
+          'Holocene Earth',
+          g.name,
+          `${landscapeById(g.landscape).name} — familiar blue marble, invented coastlines. ${masses} Tap a coast · open the map top-right.`,
+        );
+      }
     },
   });
 }
@@ -4110,7 +3762,7 @@ function openLandPicker(opts = {}) {
   }
   panel.classList.add('open');
   if (opts.pause) setPaused(true);
-  document.getElementById('dock')?.classList.add('collapsed');
+  hideDockForOverlay();
   enterOverlayFocus(panel, '#landpickclose');
 }
 
@@ -4379,6 +4031,9 @@ export function boot() {
       syncChromeFabs();
     }
   });
+  bindPhoneDockDrag(document.getElementById('dockSheetBar'), {
+    onDismiss: () => setPhoneDock(false),
+  });
   document.getElementById('dockscrim')?.addEventListener('click', () => {
     if (isPhone()) setPhoneDock(false);
   });
@@ -4404,14 +4059,15 @@ export function boot() {
     }
   });
   if (typeof matchMedia === 'function') {
-    const phoneQ = matchMedia('(max-width: 820px)');
+    const phoneQ = matchMedia(PHONE_MQ);
     const onPhone = (e) => {
+      syncPhoneUiClass();
       const dock = document.getElementById('dock');
       const btn = document.getElementById('docktoggle');
       if (!dock) return;
-      if (e.matches) {
-        dock.classList.remove('collapsed');
-        setPhoneDock(false);
+    if (phoneQ.matches) {
+      dock.classList.remove('collapsed');
+      setPhoneDock(false);
       } else {
         document.getElementById('dockscrim')?.classList.remove('on');
         document.getElementById('ui')?.classList.remove('phone-dock-open');
@@ -4422,14 +4078,13 @@ export function boot() {
       syncToolRail();
     };
     phoneQ.addEventListener('change', onPhone);
+    syncPhoneUiClass();
     if (phoneQ.matches) setPhoneDock(false);
     else syncChromeFabs();
   }
   syncToolRail();
   syncChromeFabs();
 
-  const pauseBtn = document.getElementById('pause');
-  if (pauseBtn) pauseBtn.onclick = togglePause;
   document.getElementById('newseed').onclick = () => {
     if (!confirmLeaveLand()) return;
     const g = genesisFromPanel(document);
@@ -4754,9 +4409,12 @@ export function boot() {
   syncView();
 
   const phone = isPhone();
-  // Phone starts as the icon peek so the globe isn’t covered; + grows the map.
-  S.localSize = phone ? LOCAL_SIZES[0] : LOCAL_SIZE_M;
-  if (phone) S.localSnap = 'tr';
+  // Phone: visible peek (200px) top-right; desktop starts at M.
+  S.localSize = phone ? PHONE_LOCAL_PEEK : LOCAL_SIZE_M;
+  if (phone) {
+    S.localSnap = 'tr';
+    S.localSeek = 'stay';
+  }
   const localPanel = document.getElementById('localpanel');
   const localCvs = document.getElementById('localview');
   const localLegend = document.getElementById('locallegend');
@@ -4799,15 +4457,21 @@ export function boot() {
     const shrink = document.getElementById('localshrink');
     const grow = document.getElementById('localgrow');
     const fi = localFrameIndex(S.localSize, S.localExpanded);
-    if (shrink) shrink.disabled = fi <= 0 && !!S.localParked;
-    if (grow) grow.disabled = fi >= LOCAL_SIZES.length;
+    if (grow) grow.disabled = isPhone()
+      ? !!S.localExpanded
+      : fi >= LOCAL_SIZES.length;
+    if (shrink) shrink.disabled = isPhone()
+      ? !!S.localParked
+      : (fi <= 0 && !!S.localParked);
     const park = document.getElementById('localpark');
     if (park) park.disabled = !!S.localParked;
     syncSegPressed('localSize', () => S.localSize);
     placeLocalBarOverflow();
     requestAnimationFrame(() => placeLocalBarOverflow());
     if (_playtest && S.localExpanded) _playtest.noteDescend();
+    syncPhoneLocalChrome();
     syncChromeFabs();
+    if (S.localExpanded || isPhone()) refreshColours(1);
   };
   applyLocalLayout = syncLocalLayout;
   /** Park bar controls into ⋯ when the panel is too narrow; restore when it grows. */
@@ -4821,6 +4485,28 @@ export function boot() {
     const radiusWrap = document.getElementById('localRadiusMoreWrap');
     const moveWrap = document.getElementById('localMoveMoreWrap');
     if (!tools || !moreBtn || !radius || !move || !radiusWrap || !moveWrap) return;
+
+    // Phone peek: keep nudge in the bar — drag-pan is primary but the pad helps precision.
+    if (localPanel?.classList.contains('phone-peek')) {
+      if (sepZoom) {
+        tools.insertBefore(sepZoom, moreBtn);
+        sepZoom.hidden = false;
+      }
+      tools.insertBefore(radius, moreBtn);
+      radiusWrap.hidden = true;
+      if (sepMove) {
+        tools.insertBefore(sepMove, moreBtn);
+        sepMove.hidden = false;
+      }
+      tools.insertBefore(move, moreBtn);
+      moveWrap.hidden = true;
+      moreBtn.dataset.packed = 'false';
+      moreBtn.title = 'snap · globe';
+      const more = document.getElementById('localmore');
+      const bar = document.getElementById('localbar');
+      if (more && bar) more.style.top = `${Math.ceil(bar.offsetHeight * 0.5 + 6)}px`;
+      return;
+    }
 
     const chrome = localPanel?.dataset.chrome || 'map';
     const tight = chrome === 'icon' || chrome === 'chip';
@@ -4868,6 +4554,7 @@ export function boot() {
     if (more && bar) more.style.top = `${Math.ceil(bar.offsetHeight * 0.5 + 6)}px`;
   };
   const stepLocalFrame = (dir) => {
+    if (isPhone() && stepPhoneLocalFrame(dir)) return;
     if (S.localParked && dir > 0) {
       unparkLocalMap();
       return;
@@ -5021,7 +4708,11 @@ export function boot() {
   }
   mkSeg('localSnap', LOCAL_SNAPS, ['TL', 'TR', 'BL', 'BR'],
     () => S.localSnap,
-    (v) => { S.localSnap = v; syncLocalLayout(); });
+    (v) => {
+      S.localSnap = v;
+      clearLocalFreePos();
+      syncLocalLayout();
+    });
   mkSeg('localGlobe', LOCAL_GLOBE, ['Off', 'Rim', 'Wash', 'Both'],
     () => S.localGlobe,
     (v) => {
@@ -5051,6 +4742,13 @@ export function boot() {
     () => S.localSize,
     (v) => { S.localExpanded = false; S.localSize = v; syncLocalLayout(); });
   syncLocalLayout();
+  bindPhoneLocalDrag(localPanel, document.getElementById('localbar'), {
+    onSnap: (snap) => {
+      S.localSnap = snap;
+      clearLocalFreePos();
+      syncLocalLayout();
+    },
+  });
   {
     let shrinkTapAt = 0;
     document.getElementById('localshrink')?.addEventListener('click', () => {
@@ -5066,10 +4764,17 @@ export function boot() {
   }
   document.getElementById('localgrow')?.addEventListener('click', () => stepLocalFrame(1));
   document.getElementById('localpark')?.addEventListener('click', () => tuckLocalMap());
+  document.getElementById('localmaptoggle')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    stepLocalFrame(S.localExpanded ? -1 : 1);
+  });
   document.getElementById('localfab')?.addEventListener('click', () => unparkLocalMap());
   document.getElementById('localframetag')?.addEventListener('click', () => {
-    // Snap to next rung (wraps Full → I)
     if (S.localParked) { unparkLocalMap(); return; }
+    if (isPhone()) {
+      stepLocalFrame(S.localExpanded ? -1 : 1);
+      return;
+    }
     const i = localFrameIndex(S.localSize, S.localExpanded);
     if (i >= LOCAL_SIZES.length) {
       S.localExpanded = false;
@@ -5215,10 +4920,12 @@ export function boot() {
     }
     const dx = e.clientX - localDrag.x;
     const dy = e.clientY - localDrag.y;
-    if (!localDrag.moved && Math.hypot(dx, dy) < 5) return;
+    const dragMin = phone ? 3 : 5;
+    if (!localDrag.moved && Math.hypot(dx, dy) < dragMin) return;
     localDrag.moved = true;
     const lay = S._localPatch?.layout;
-    const cellCss = lay ? lay.cellPx / (lay.dpr || 1) : 12;
+    const panK = phone ? 0.62 : 1;
+    const cellCss = (lay ? lay.cellPx / (lay.dpr || 1) : 12) * panK;
     localAccX += dx;
     localAccY += dy;
     localDrag.x = e.clientX;
@@ -5273,6 +4980,11 @@ export function boot() {
   localCvs.addEventListener('pointerup', endLocalDrag);
   localCvs.addEventListener('pointercancel', () => { localDrag = null; localCvs.style.cursor = 'crosshair'; });
   localCvs.addEventListener('dblclick', (e) => {
+    if (isPhone()) {
+      e.preventDefault();
+      stepLocalFrame(S.localExpanded ? -1 : 1);
+      return;
+    }
     if (localPanel?.dataset.chrome !== 'icon') return;
     e.preventDefault();
     stepLocalFrame(1);
@@ -5447,6 +5159,11 @@ export function boot() {
     if (e.button !== 0) return;
     e.preventDefault();
     const cell = desktopPick(e.clientX, e.clientY);
+    if (Math.abs(S.camPanX) > 1e-4 || Math.abs(S.camPanY) > 1e-4) {
+      if (cell == null || cell < 0) resetCamPan();
+      else lookAtCell(cell);
+      return;
+    }
     if (cell == null || cell < 0) return;
     lookAtCell(cell);
   });
@@ -5493,11 +5210,6 @@ export function boot() {
     qAxis(tmpQ, 1, 0, 0, dy); qmul(S.q, tmpQ, S.q);
     qnorm(S.q);
     dispatchIntent('spin', { dx, dy }, 'pointer');
-  });
-  canvas.addEventListener('dblclick', (e) => {
-    if (Math.abs(S.camPanX) < 1e-4 && Math.abs(S.camPanY) < 1e-4) return;
-    const cell = desktopPick(e.clientX, e.clientY);
-    if (cell == null || cell < 0) resetCamPan();
   });
   canvas.addEventListener('auxclick', (e) => {
     if (e.button === 1) e.preventDefault();
@@ -5732,20 +5444,38 @@ export function boot() {
     }));
   };
 
-  setupXR();
+  initXR({
+    gl, W, S, hands, tmpQ, TABLE,
+    get activeTool() { return activeTool; },
+    update, drawScene, showErr, audioInit, installDarkAudioBus,
+    desktopFrame, setRuleset, loadTableSlot, RULESETS,
+    get grabbing() { return grabbing; },
+    set grabbing(v) { grabbing = v; },
+  });
+  setupXRModule();
+  initHUD({
+    S,
+    refreshToolGates, bindRibbonTips, refreshLivedRibbonDom,
+    announceNewMoments, refreshWorldModeStrip, showMoment,
+    ensureDarkUi,
+    darkHud: () => _darkHud,
+    darkSpec: () => _darkSpec,
+    refreshClimatePanel, refreshPlatesPanel,
+  });
   // Catalogue validate deferred until first Worlds open / pitch worlds (K17).
 
   const gardened = maybeGardenReturn();
   let openingPinned = false;
   if (!gardened) {
     const opening = isDemoMode()
-      ? { seed: 20260808, landscape: 'auto', pinned: false }
+      ? { seed: 20260808, landscape: 'familiar', pinned: false }
       : pickOpening();
     openingPinned = !!opening.pinned;
     const bootRule = isDemoMode()
       ? (RULESETS.find((r) => r.id === 'thrive') || RULESETS[0])
       : RULESETS[0];
-    applyOpening(opening, { rule: bootRule });
+    const showWelcome = !gardened && !isDemoMode() && !isPlaytestMode() && !shouldOfferDoor();
+    applyOpening(opening, { rule: bootRule, welcome: showWelcome });
     if (isDemoMode()) setLifeSpeed(2);
   }
   let pitch = null;
@@ -5773,14 +5503,14 @@ export function boot() {
     setPaused(false);
     skipReveal();
     markDoorSeen();
-    document.getElementById('dock')?.classList.add('collapsed');
+    hideDockForOverlay();
     document.getElementById('reveal')?.setAttribute('hidden', '');
     startVandalHook();
   } else if (!gardened && !openingPinned && shouldOfferDoor()) {
     setPaused(true);
     setSuiteDesk('tools', 'land');
     skipReveal();
-    document.getElementById('dock')?.classList.add('collapsed');
+    hideDockForOverlay();
     openLandPicker({
       firstVisit: true,
       pause: true,
@@ -5825,193 +5555,5 @@ function desktopFrame(t) {
   drawScene(PROJ, VIEW, eye, false, S, hands);
 }
 
-function setupXR() {
-  const vrbtn = document.getElementById('vrbtn');
-  if (navigator.xr) {
-    navigator.xr.isSessionSupported('immersive-vr').then((ok) => {
-      if (ok) { vrbtn.disabled = false; vrbtn.textContent = 'Enter VR'; }
-      else vrbtn.textContent = 'No VR device';
-    }).catch(() => { vrbtn.textContent = 'VR unavailable'; });
-  } else vrbtn.textContent = 'WebXR not supported';
-
-  vrbtn.addEventListener('click', async () => {
-    if (xrSession) { xrSession.end(); return; }
-    try {
-      audioInit();
-      installDarkAudioBus();
-      const s = await navigator.xr.requestSession('immersive-vr', {
-        optionalFeatures: ['local-floor', 'bounded-floor', 'hand-tracking', 'layers'],
-      });
-      await gl.makeXRCompatible();
-      s.updateRenderState({ baseLayer: new XRWebGLLayer(s, gl), depthNear: 0.05, depthFar: 900 });
-      xrRefSpace = await s.requestReferenceSpace('local-floor').catch(() => s.requestReferenceSpace('local'));
-      xrSession = s;
-      document.getElementById('ui').classList.add('hidden');
-      vrbtn.textContent = 'Exit VR';
-      s.addEventListener('end', () => {
-        xrSession = null; camWorld = null;
-        document.getElementById('ui').classList.remove('hidden');
-        vrbtn.textContent = 'Enter VR';
-        requestAnimationFrame(desktopFrame);
-      });
-      s.requestAnimationFrame(xrFrame);
-    } catch (err) {
-      showErr('Could not start VR: ' + err.message);
-    }
-  });
-}
-
-function readControllers(frame) {
-  hands[0].active = hands[1].active = false;
-  let i = 0;
-  const grips = [];
-  for (const src of xrSession.inputSources) {
-    if (i > 1) break;
-    const h = hands[i];
-    const space = src.gripSpace || src.targetRaySpace;
-    const pose = space ? frame.getPose(space, xrRefSpace) : null;
-    if (!pose) { h.prev = null; i++; continue; }
-    const m = pose.transform.matrix;
-    const px = m[12], py = m[13], pz = m[14];
-    if (h.active) {
-      h.vel[0] = px - h.pos[0]; h.vel[1] = py - h.pos[1]; h.vel[2] = pz - h.pos[2];
-    }
-    h.active = true; h.pos[0] = px; h.pos[1] = py; h.pos[2] = pz;
-    grips.push(h.pos);
-
-    // Hand tracking: skeleton → gestures → grab / shade / cup / table pick
-    if (src.hand && typeof frame.getJointPose === 'function') {
-      const sk = readHandSkeleton(frame, xrRefSpace, src.hand);
-      h.skeleton = sk;
-      h.gesture = gestureFromSkeleton(sk);
-      if (sk?.wrist) h.wrist = sk.wrist;
-      if (sk?.indexTip) h.indexTip = sk.indexTip;
-      const g = applyHandGesture(h, {
-        planetPos: S.posXR,
-        planetScale: S.scaleXR,
-        tableEnabled: TABLE.enabled,
-      });
-      if (g.grab) h.grab = true;
-      if (g.solarMod != null) W._solarMod = Math.min(W._solarMod ?? 1, g.solarMod);
-      if (g.scaleDelta !== 1) S.scaleXR = clamp(S.scaleXR * g.scaleDelta, XR_SCALE_MIN, XR_SCALE_MAX);
-      if (g.aim) h.aim = g.aim;
-      if (g.loadPoint && !readControllers._tablePick) {
-        const slot = pickTableSlot(TABLE, g.loadPoint, [0, 0, 0], 0.16, 1);
-        if (slot) {
-          readControllers._tablePick = true;
-          loadTableSlot(slot);
-        }
-      } else if (!g.loadPoint) {
-        readControllers._tablePick = false;
-      }
-    }
-
-    const gp = src.gamepad;
-    const trig = gp ? (gp.buttons[0]?.pressed || gp.buttons[1]?.pressed) : false;
-    const wasGrab = !!h.grab;
-    if (!src.hand) h.grab = !!trig;
-    else if (trig) h.grab = true;
-
-    // Haptic pulse on grab edge when actuators exist
-    if (h.grab && !wasGrab && gp?.hapticActuators?.length) {
-      try {
-        gp.hapticActuators[0].pulse?.(0.55, 36);
-      } catch { expected('ORR-EXPECTED-XR', 'haptic optional'); }
-    }
-
-    if (trig) {
-      const dx = h.pos[0] - S.posXR[0], dy = h.pos[1] - S.posXR[1], dz = h.pos[2] - S.posXR[2];
-      const l = Math.hypot(dx, dy, dz) || 1;
-      const cur = [dx / l, dy / l, dz / l];
-      if (h.prev) {
-        qFromTo(tmpQ, h.prev, cur);
-        qmul(S.q, tmpQ, S.q); qnorm(S.q);
-      }
-      h.prev = cur;
-    } else {
-      // release after grab with velocity → meteor throw
-      if (h.prev && activeTool === 'meteor') {
-        const speed = Math.hypot(h.vel[0], h.vel[1], h.vel[2]);
-        if (speed > 0.02) {
-          const cell = pickCell(h.pos, h.vel, S.posXR, S.scaleXR, S.q);
-          dispatchIntent('act', { cell, opts: { power: clamp(speed * 20, 0.4, 2) } }, 'xr');
-        }
-      }
-      h.prev = null;
-    }
-
-    if (gp && gp.axes.length >= 4) {
-      const ay = gp.axes[3];
-      if (Math.abs(ay) > 0.18) {
-        const factor = 1 - ay * 0.006 / Math.max(0.01, S.scaleXR);
-        S.scaleXR = clamp(S.scaleXR - ay * 0.006, XR_SCALE_MIN, XR_SCALE_MAX);
-        dispatchIntent('zoom', { factor, dir: Math.sign(ay) }, 'xr');
-      }
-    }
-    // Squeeze grip (button 1) uses tool at aim
-    if (gp && gp.buttons[1]?.pressed && !readControllers._grip) {
-      readControllers._grip = true;
-      const ray = src.targetRaySpace ? frame.getPose(src.targetRaySpace, xrRefSpace) : null;
-      if (ray) {
-        const tm = ray.transform.matrix;
-        const origin = [tm[12], tm[13], tm[14]];
-        // forward is -Z of pose
-        const dir = [-tm[8], -tm[9], -tm[10]];
-        const cell = pickCell(origin, dir, S.posXR, S.scaleXR, S.q);
-        dispatchIntent('act', { cell }, 'xr');
-      }
-    }
-    if (gp && !gp.buttons[1]?.pressed) readControllers._grip = false;
-
-    if (gp && gp.buttons[4]?.pressed && !readControllers._btn) {
-      readControllers._btn = true;
-      setRuleset((RULESETS.indexOf(W.rule) + 1) % RULESETS.length);
-    }
-    if (gp && !gp.buttons[4]?.pressed) readControllers._btn = false;
-    i++;
-  }
-
-  // Two-handed scale: both grips held → distance drives scale
-  if (hands[0].grab && hands[1].grab && hands[0].active && hands[1].active) {
-    const d = Math.hypot(
-      hands[0].pos[0] - hands[1].pos[0],
-      hands[0].pos[1] - hands[1].pos[1],
-      hands[0].pos[2] - hands[1].pos[2]
-    );
-    if (readControllers._pinchD) {
-      const ratio = d / readControllers._pinchD;
-      S.scaleXR = clamp(S.scaleXR * ratio, XR_SCALE_MIN, XR_SCALE_MAX);
-    }
-    readControllers._pinchD = d;
-  } else readControllers._pinchD = null;
-
-  grabbing = hands[0].grab || hands[1].grab;
-}
-
-function xrFrame(t, frame) {
-  const s = frame.session;
-  s.requestAnimationFrame(xrFrame);
-  const pose = frame.getViewerPose(xrRefSpace);
-  if (!pose) return;
-  readControllers(frame);
-  update(t);
-
-  const layer = s.renderState.baseLayer;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, layer.framebuffer);
-  const sky = W.rule.sky;
-  gl.clearColor(sky[0], sky[1], sky[2], 1);
-  gl.clearDepth(1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  gl.enable(gl.DEPTH_TEST);
-
-  const hp = pose.transform.position;
-  camWorld = [hp.x, hp.y, hp.z];
-  for (const view of pose.views) {
-    const vp = layer.getViewport(view);
-    gl.viewport(vp.x, vp.y, vp.width, vp.height);
-    const ep = view.transform.position;
-    drawScene(view.projectionMatrix, view.transform.inverse.matrix, [ep.x, ep.y, ep.z], true, S, hands);
-  }
-}
 
 boot();

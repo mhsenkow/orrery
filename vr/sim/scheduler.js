@@ -29,6 +29,9 @@ export const NON_DROPPABLE = Object.freeze([
   'clock', 'atmo', 'hydro', 'carbon', 'bio', 'redox', 'ecology', 'fire', 'assert',
 ]);
 
+const NON_DROPPABLE_SET = new Set(NON_DROPPABLE);
+const DEGRADATION_INDEX = new Map(DEGRADATION_ORDER.map((name, i) => [name, i]));
+
 const RING = 32;
 const _rings = new Map();
 
@@ -102,12 +105,12 @@ export function tickBudgetMs(W) {
  * Conserving systems always run. Others follow DEGRADATION_ORDER.
  */
 export function shouldRun(W, name) {
-  if (NON_DROPPABLE.includes(name)) return true;
+  if (NON_DROPPABLE_SET.has(name)) return true;
   const budget = tickBudgetMs(W);
   const used = W._msTickAcc || 0;
   if (used < budget * 0.85) return true;
-  const idx = DEGRADATION_ORDER.indexOf(name);
-  if (idx < 0) return true;
+  const idx = DEGRADATION_INDEX.get(name);
+  if (idx == null) return true;
   // Deeper in the list drops first when over budget.
   const pressure = used / budget;
   const cutoff = Math.floor((pressure - 0.85) / 0.05);

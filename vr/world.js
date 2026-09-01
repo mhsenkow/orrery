@@ -1,14 +1,14 @@
 /** World state: fields, generation, coupled tick. */
 
 import { clamp } from './math.js';
-import { NC, AREA, DIR, NBR, setResolution, N as SIM_N } from './sphere.js';
+import { NC, DIR, setResolution, N as SIM_N } from './sphere.js';
 import { RULESETS } from './rulesets.js';
 import { createChronicle, logEvent, maybeNameEra } from './chronicle.js';
 import { generateTectonics, tectonicsTick, erosionTick } from './sim/tectonics.js';
 import { applyOriginDigestToWorld } from './sim/originSketch.js';
 import { roundCoastTips, laplacianCoast } from './sim/terrainShape.js';
 import { planetGeoTick } from './sim/planetTick.js';
-import { hydroTick, tsunamiTick, liquidWaterOk, startTsunami, primeDrainage } from './sim/hydro.js';
+import { hydroTick, tsunamiTick, primeDrainage } from './sim/hydro.js';
 import {
   atmoTick, atmoMetaTick, aerosolDecayTick, applyWarShade, cloudsTick, advect, advectScalar,
 } from './sim/atmo.js';
@@ -48,7 +48,7 @@ export { UNIT_MAP };
 import { initEvolution, evolveTick, forkWorldSeed, treeSummary, packTree, unpackTree, seedHoloceneTree } from './sim/evolve.js';
 import { deriveLifeClass, unlockedClassFromPool } from './sim/lifeclass.js';
 import { ecologyTick } from './sim/ecology.js';
-import { extinctionTick, noteImpact } from './sim/extinction.js';
+import { extinctionTick } from './sim/extinction.js';
 import { alienTick } from './sim/alien.js';
 import { multiRateMask } from './sim/meta.js';
 import {
@@ -58,8 +58,8 @@ import { initGod, godTick } from './sim/god/index.js';
 import { attachWorldRng } from './sim/rng.js';
 import { assertBudgets } from './sim/assert.js';
 import { initOcean, oceanTick } from './sim/ocean.js';
-import { geostrophicWind } from './sim/wind.js';
-import { frontsTick, frontBudget } from './sim/fronts.js';
+import { geostrophicWind, windSpeedAt } from './sim/wind.js';
+import { frontsTick } from './sim/fronts.js';
 import { giantTick } from './sim/jets.js';
 import { skyFromStarAtmosphere } from './sim/scatter.js';
 import { applyIceShell, iceShellTick } from './sim/iceshell.js';
@@ -69,7 +69,7 @@ import { applyCatalogueSky } from './sim/skyScenarios.js';
 import { initStorms, resetStorms, stormsTick } from './sim/storms.js';
 import { airColumnTick, allocAir, resetAir } from './sim/aircol.js';
 import { allocWeatherClock, weatherClockTick } from './sim/weatherClock.js';
-import { initWeather, resetWeather, severeTick, droughtTick, convectTick, wireWeatherModules, droughtBudget } from './sim/weather.js';
+import { initWeather, resetWeather, severeTick, droughtTick, convectTick, wireWeatherModules } from './sim/weather.js';
 import { orgConvectionTick } from './sim/convect.js';
 import { applyInterior, interiorTick } from './sim/core.js';
 import { initMantle, mantleTick } from './sim/mantle.js';

@@ -310,7 +310,11 @@ export const PLAY_TIPS = {
   },
   localfab: {
     title: 'Local map',
-    body: 'The map is tucked. Tap to restore the last size — same corner as the mini-map.',
+    body: 'The map is tucked away. Tap to restore the peek in the top-right corner.',
+  },
+  localmaptoggle: {
+    title: 'Full map',
+    body: 'Peek is the live patch in the corner. Full map fills the screen above the time ribbon — double-tap the map or tap Peek to shrink back.',
   },
   localpark: {
     title: 'Tuck map',

@@ -29,7 +29,6 @@
     "golden:corpus": "node ../scripts/golden-corpus.mjs",
     "golden": "node sim/headless.mjs --golden --ticks=40",
     "headless": "node sim/headless.mjs --ticks=100",
-    "params": "node ../scripts/exoparams.mjs",
     "fetch-archive": "node ../scripts/fetch-exoarchive.mjs",
     "probe": "node ../scripts/thrive-probe.mjs --ticks=500",
     "probe-fire": "node ../scripts/thrive-probe.mjs --ticks=500 --fire",

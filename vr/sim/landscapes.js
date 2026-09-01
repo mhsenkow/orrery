@@ -76,6 +76,25 @@ function shapeTwoWorlds(W, m, seed, rng) {
   blobField(m, seed, [a, [q[0] / l, q[1] / l, q[2] / l]], 0.95, 0.38);
 }
 
+/** Fixed hemispheres — Americas west, Afro-Eurasia east — with seed-warped coastlines. */
+function shapeFamiliar(W, m, seed, rng) {
+  const deg = Math.PI / 180;
+  const dir = (lat, lon) => {
+    const cl = Math.cos(lat * deg), sl = Math.sin(lat * deg);
+    const co = Math.cos(lon * deg), si = Math.sin(lon * deg);
+    return [cl * co, sl, cl * si];
+  };
+  const warp = 0.30 + rng() * 0.10;
+  const americas = dir(38, -98);
+  const oldWorld = dir(28, 24);
+  blobField(m, seed, [americas, oldWorld], 0.94, warp);
+  const aux = new Float32Array(NC);
+  blobField(aux, seed ^ 0x51, [dir(-22, 134)], 0.36, 0.20);
+  for (let c = 0; c < NC; c++) m[c] = Math.max(m[c], aux[c] * 0.72);
+  blobField(aux, seed ^ 0x52, [dir(-78, 12)], 0.50, 0.16);
+  for (let c = 0; c < NC; c++) m[c] = Math.max(m[c], aux[c] * 0.55);
+}
+
 function shapeShattered(W, m, seed, rng) {
   // Blobs this size merge into one landmass if they are allowed to touch, which
   // is the failure the archetype exists to avoid — keep them small and many.
@@ -180,7 +199,7 @@ export const LANDSCAPES = [
   {
     id: 'auto',
     name: 'Ruleset default',
-    blurb: 'Whatever the planet type generates on its own. One supercontinent, for Earth.',
+    blurb: 'On Earth play defaults to Familiar — invented coastlines on a recognizable layout.',
     mask: null,
   },
   {
@@ -194,6 +213,12 @@ export const LANDSCAPES = [
     name: 'Two continents',
     blurb: 'Two landmasses across an ocean from each other. Life on each has to invent itself twice.',
     mask: shapeTwoWorlds, land: 0.30, amp: 0.58,
+  },
+  {
+    id: 'familiar',
+    name: 'Familiar Earth',
+    blurb: 'Americas west, Afro-Eurasia east, southern ice — coastlines invented, layout recognizable.',
+    mask: shapeFamiliar, land: 0.29, amp: 0.56,
   },
   {
     id: 'shattered',

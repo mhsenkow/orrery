@@ -1,6 +1,7 @@
 /** Flat local patch view — unwraps a neighborhood of cells into a square map.
  *  Presentation clock, cached topology, shared cell description, motion. */
 
+import { isPhone, PHONE_LOCAL_PEEK, localFreePos } from './phoneLayout.js';
 import { NC, NBR, DIR, N, cellAtFace } from './sphere.js';
 import { W } from './world.js';
 import { ENT } from './agents.js';
@@ -451,12 +452,25 @@ export function layoutLocalPanel(panel, cvs, opts) {
 
   let size = opts.size | 0;
   if (expanded) {
-    const pad = innerWidth < 640 ? 12 : 40;
-    const chromeH = innerWidth < 640 ? 72 : 56;
-    const sideW = Math.min(innerWidth - pad * 2, innerHeight - 88 - chromeH);
-    size = Math.max(innerWidth < 640 ? 220 : 360, Math.min(920, sideW | 0));
+    const phone = isPhone();
+    const pad = phone ? 14 : (innerWidth < 640 ? 12 : 40);
+    const topChrome = phone ? 54 : 62;
+    const bottomChrome = phone ? 96 : 108;
+    const metaChrome = phone ? 68 : (innerWidth < 640 ? 72 : 56);
+    const availW = innerWidth - pad * 2;
+    const availH = innerHeight - topChrome - bottomChrome - metaChrome;
+    const cap = phone
+      ? Math.min(availW, availH)
+      : Math.min(innerWidth - pad * 2, innerHeight - 88 - metaChrome);
+    size = Math.max(phone ? PHONE_LOCAL_PEEK : (innerWidth < 640 ? 220 : 360), Math.min(920, cap | 0));
     panel.style.width = '';
+    panel.style.setProperty('--local-map-px', `${size}px`);
   } else {
+    panel.style.removeProperty('--local-map-px');
+    if (isPhone()) {
+      size = PHONE_LOCAL_PEEK;
+      panel.style.setProperty('--local-map-px', `${size}px`);
+    }
     // Chip keeps a small live peek; icon is the whole instrument.
     if (chrome === 'chip') size = 72;
     const panelW = localPanelWidth(opts.size, false);
@@ -472,6 +486,24 @@ export function layoutLocalPanel(panel, cvs, opts) {
   }
   cvs._cssSize = size;
   cvs._dpr = dpr;
+  panel.dataset.mapPx = String(size);
+
+  if (!expanded && isPhone() && localFreePos()) {
+    const pos = localFreePos();
+    panel.classList.add('phone-free');
+    panel.classList.remove('snap-tl', 'snap-tr', 'snap-bl', 'snap-br');
+    panel.style.left = `${pos.left}px`;
+    panel.style.top = `${pos.top}px`;
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+  } else {
+    panel.classList.remove('phone-free');
+    panel.style.left = '';
+    panel.style.top = '';
+    panel.style.right = '';
+    panel.style.bottom = '';
+  }
+
   return size;
 }
 
